@@ -1,0 +1,333 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Definition of the design system. All colors, gradients, fonts, etc should be defined here. 
+All colors MUST be HSL.
+*/
+
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 222.2 84% 4.9%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 222.2 84% 4.9%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 222.2 84% 4.9%;
+
+    /* RIANA Teal Primary Theme */
+    --primary: 185 83% 31%;
+    --primary-foreground: 0 0% 100%;
+    --primary-light: 185 83% 51%;
+    --primary-dark: 185 83% 21%;
+
+    --secondary: 200 20% 95%;
+    --secondary-foreground: 200 100% 20%;
+
+    --muted: 200 20% 96%;
+    --muted-foreground: 200 10% 46%;
+
+    --accent: 200 50% 90%;
+    --accent-foreground: 200 100% 20%;
+
+    /* RIANA Brand Colors */
+    --riana-blue: 185 83% 31%;
+    --riana-success: 142 76% 36%;
+    --riana-warning: 45 93% 47%;
+    --riana-danger: 0 84% 60%;
+
+    /* Status Semantic Colors */
+    --success: 142 76% 36%;
+    --success-foreground: 0 0% 100%;
+    --warning: 45 93% 47%;
+    --warning-foreground: 45 93% 20%;
+    --pending: 220 13% 91%;
+    --pending-foreground: 220 9% 46%;
+
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 210 40% 98%;
+
+    --border: 185 20% 91%;
+    --input: 185 20% 96%;
+    --ring: 185 83% 31%;
+
+    --radius: 0.625rem;
+
+    --sidebar-background: 185 30% 98%;
+    --sidebar-foreground: 185 20% 26%;
+    --sidebar-primary: 185 83% 31%;
+    --sidebar-primary-foreground: 0 0% 98%;
+    --sidebar-accent: 185 30% 95%;
+    --sidebar-accent-foreground: 185 100% 20%;
+    --sidebar-border: 185 20% 91%;
+    --sidebar-ring: 185 83% 31%;
+  }
+
+  .dark {
+    --background: 222.2 84% 4.9%;
+    --foreground: 210 40% 98%;
+
+    --card: 220 20% 10%;
+    --card-foreground: 210 40% 98%;
+
+    --popover: 220 20% 10%;
+    --popover-foreground: 210 40% 98%;
+
+    /* RIANA Teal preserved in dark mode */
+    --primary: 185 83% 41%;
+    --primary-foreground: 0 0% 100%;
+    --primary-light: 185 83% 61%;
+    --primary-dark: 185 83% 31%;
+
+    --secondary: 217.2 32.6% 17.5%;
+    --secondary-foreground: 210 40% 98%;
+
+    --muted: 217.2 32.6% 17.5%;
+    --muted-foreground: 215 20.2% 65.1%;
+
+    --accent: 217.2 32.6% 17.5%;
+    --accent-foreground: 210 40% 98%;
+
+    --destructive: 0 62.8% 50%;
+    --destructive-foreground: 210 40% 98%;
+
+    /* Status colors for dark mode */
+    --success: 142 76% 42%;
+    --success-foreground: 0 0% 100%;
+    --warning: 45 93% 52%;
+    --warning-foreground: 45 93% 10%;
+
+    --border: 217.2 32.6% 22%;
+    --input: 217.2 32.6% 17.5%;
+    --ring: 185 83% 41%;
+    --sidebar-background: 222 30% 8%;
+    --sidebar-foreground: 210 40% 92%;
+    --sidebar-primary: 185 83% 41%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 220 20% 15%;
+    --sidebar-accent-foreground: 210 40% 92%;
+    --sidebar-border: 217.2 32.6% 18%;
+    --sidebar-ring: 185 83% 41%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-family: 'Plus Jakarta Sans', 'Inter', system-ui, sans-serif;
+    font-size: 1rem;
+    line-height: 1.5;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    font-family: 'Plus Jakarta Sans', 'Inter', system-ui, sans-serif;
+    @apply font-semibold tracking-tight;
+  }
+
+  /* RIANA Custom Utilities */
+  .gradient-primary {
+    background: linear-gradient(135deg, hsl(var(--primary)), hsl(var(--primary-light)));
+  }
+  
+  .gradient-header {
+    background: linear-gradient(90deg, hsl(var(--primary-dark)), hsl(var(--primary)));
+  }
+  
+  .shadow-riana {
+    box-shadow: 0 4px 20px -4px hsl(var(--primary) / 0.3);
+  }
+
+  /* Status Color Codes */
+  .status-waiting {
+    background: linear-gradient(135deg, hsl(45, 93%, 47%), hsl(45, 93%, 57%));
+    color: hsl(45, 93%, 20%);
+  }
+  
+  .status-progress {
+    background: linear-gradient(135deg, hsl(200, 100%, 50%), hsl(200, 100%, 60%));
+    color: hsl(0, 0%, 100%);
+  }
+  
+  .status-complete {
+    background: linear-gradient(135deg, hsl(142, 76%, 36%), hsl(142, 76%, 46%));
+    color: hsl(0, 0%, 100%);
+  }
+
+  /* Robot Chatbot Animations */
+  @keyframes robot-blink {
+    0%, 90%, 100% { opacity: 1; }
+    95% { opacity: 0.3; }
+  }
+  
+  @keyframes robot-glow {
+    0%, 100% { box-shadow: 0 0 20px hsl(var(--primary) / 0.5); }
+    50% { box-shadow: 0 0 30px hsl(var(--primary) / 0.8); }
+  }
+  
+  @keyframes robot-processing {
+    0% { transform: scale(1); }
+    50% { transform: scale(1.05); }
+    100% { transform: scale(1); }
+  }
+  
+  .robot-eyes {
+    animation: robot-blink 3s infinite;
+  }
+  
+  .robot-face {
+    animation: robot-glow 2s ease-in-out infinite;
+  }
+  
+  .robot-processing {
+    animation: robot-processing 1s ease-in-out infinite;
+  }
+  
+  @keyframes progress {
+    0% { width: 0%; }
+    50% { width: 70%; }
+    100% { width: 100%; }
+  }
+
+  /* Toast and notification animations */
+  @keyframes toast-slide-in {
+    from {
+      transform: translateX(100%);
+      opacity: 0;
+    }
+    to {
+      transform: translateX(0);
+      opacity: 1;
+    }
+  }
+
+  @keyframes toast-slide-out {
+    from {
+      transform: translateX(0);
+      opacity: 1;
+    }
+    to {
+      transform: translateX(100%);
+      opacity: 0;
+    }
+  }
+
+  @keyframes button-press {
+    0% { transform: scale(1); }
+    50% { transform: scale(0.95); }
+    100% { transform: scale(1); }
+  }
+
+  @keyframes shake {
+    0%, 100% { transform: translateX(0); }
+    10%, 30%, 50%, 70%, 90% { transform: translateX(-5px); }
+    20%, 40%, 60%, 80% { transform: translateX(5px); }
+  }
+
+  @keyframes pulse-glow {
+    0%, 100% { box-shadow: 0 0 0 0 hsl(var(--primary) / 0.4); }
+    50% { box-shadow: 0 0 0 8px hsl(var(--primary) / 0); }
+  }
+
+  @keyframes success-bounce {
+    0%, 100% { transform: scale(1); }
+    50% { transform: scale(1.1); }
+  }
+
+  .animate-toast-in {
+    animation: toast-slide-in 0.3s ease-out;
+  }
+
+  .animate-toast-out {
+    animation: toast-slide-out 0.3s ease-in;
+  }
+
+  .animate-button-press {
+    animation: button-press 0.2s ease-out;
+  }
+
+  .animate-shake {
+    animation: shake 0.5s ease-in-out;
+  }
+
+  .animate-pulse-glow {
+    animation: pulse-glow 2s ease-in-out infinite;
+  }
+
+  .animate-success-bounce {
+    animation: success-bounce 0.3s ease-out;
+  }
+
+  /* Contract type color coding */
+  .contract-amc {
+    background: linear-gradient(135deg, hsl(142, 76%, 36%), hsl(142, 76%, 46%));
+    color: white;
+  }
+
+  .contract-warranty {
+    background: linear-gradient(135deg, hsl(200, 100%, 50%), hsl(200, 100%, 60%));
+    color: white;
+  }
+
+  .contract-lease {
+    background: linear-gradient(135deg, hsl(262, 83%, 58%), hsl(262, 83%, 68%));
+    color: white;
+  }
+
+  .contract-poc {
+    background: linear-gradient(135deg, hsl(45, 93%, 47%), hsl(45, 93%, 57%));
+    color: hsl(45, 93%, 20%);
+  }
+
+  /* Button click effect */
+  .btn-click-effect {
+    @apply transition-all duration-150 active:scale-95 hover:scale-105;
+  }
+
+  /* Card hover effect */
+  .card-hover {
+    @apply transition-all duration-300 hover:shadow-lg hover:-translate-y-1;
+  }
+
+  /* Professional Chat Styles */
+  .glass-card {
+    background: rgba(255, 255, 255, 0.7);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+  }
+
+  .dark .glass-card {
+    background: rgba(15, 23, 42, 0.7);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+  }
+
+  .chat-bubble-me {
+    @apply rounded-2xl rounded-tr-sm bg-primary text-white shadow-md;
+    background-color: hsl(var(--primary)) !important;
+  }
+
+  .chat-bubble-other {
+    @apply rounded-2xl rounded-tl-sm bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-slate-100 border border-slate-200 dark:border-slate-700 shadow-sm;
+  }
+
+  .chat-sidebar-item {
+    @apply relative mx-2 mb-1 rounded-xl transition-all duration-300 border border-transparent hover:bg-black/5 dark:hover:bg-white/5;
+  }
+
+  .chat-sidebar-active {
+    @apply bg-primary/10 border-r-4 border-primary shadow-sm;
+  }
+}

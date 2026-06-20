@@ -1,0 +1,310 @@
+import { useState } from "react";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/ui/badge";
+import { apiClient } from "@/integrations/apiClient";
+import { toast } from "sonner";
+import { FileText, Download, Loader2, Trophy, TrendingUp, Award, Calendar } from "lucide-react";
+import { User } from "@/types";
+import jsPDF from "jspdf";
+import autoTable from "jspdf-autotable";
+import { format, subMonths, subQuarters, subYears } from "date-fns";
+import { applyCompanyBranding } from "@/utils/companyLogo";
+
+interface PerformanceReportGeneratorProps {
+  user: User;
+}
+
+interface PerformanceScore {
+  id: string;
+  technician_id: string;
+  period_start: string;
+  period_end: string;
+  total_installations: number;
+  completed_on_time: number;
+  completed_late: number;
+  average_completion_days: number;
+  average_feedback_rating: number;
+  total_feedback_count: number;
+  completion_rate_score: number;
+  time_efficiency_score: number;
+  client_satisfaction_score: number;
+  overall_score: number;
+  performance_tier: string;
+  technician?: {
+    first_name: string | null;
+    last_name: string | null;
+    email: string;
+  };
+}
+
+const badgeNames: Record<string, string> = {
+  speed_demon: "Speed Demon",
+  perfectionist: "Perfectionist",
+  customer_champion: "Customer Champion",
+  workhorse: "Workhorse",
+  rising_star: "Rising Star",
+  champion: "Champion",
+  elite: "Elite Performer",
+  hot_streak: "Hot Streak",
+  crowd_favorite: "Crowd Favorite",
+  veteran: "Veteran",
+};
+
+const checkBadge = (badgeId: string, score: PerformanceScore, allScores: PerformanceScore[]): boolean => {
+  switch (badgeId) {
+    case "speed_demon":
+      return score.completed_late === 0 && score.total_installations >= 3;
+    case "perfectionist":
+      return score.overall_score >= 95;
+    case "customer_champion":
+      return score.average_feedback_rating >= 4.5 && score.total_feedback_count >= 2;
+    case "workhorse":
+      return score.total_installations >= 10;
+    case "rising_star":
+      return score.total_installations >= 5 && score.overall_score >= 80;
+    case "champion":
+      return allScores.length > 0 && allScores[0]?.id === score.id;
+    case "elite":
+      return score.performance_tier === "excellent" && score.total_installations >= 5;
+    case "hot_streak":
+      return score.completion_rate_score >= 85 && score.time_efficiency_score >= 85 && score.client_satisfaction_score >= 85;
+    case "crowd_favorite":
+      return score.total_feedback_count >= 5;
+    case "veteran":
+      return score.total_installations >= 20;
+    default:
+      return false;
+  }
+};
+
+export const PerformanceReportGenerator = ({ user }: PerformanceReportGeneratorProps) => {
+  const [period, setPeriod] = useState("monthly");
+  const [isGenerating, setIsGenerating] = useState(false);
+
+  const generateReport = async () => {
+    setIsGenerating(true);
+    
+    try {
+      // Calculate date range
+      let startDate: Date;
+      const endDate = new Date();
+      const periodLabel = period === "monthly" ? "Monthly" : "Quarterly";
+      
+      if (period === "monthly") {
+        startDate = subMonths(endDate, 1);
+      } else {
+        startDate = subQuarters(endDate, 1);
+      }
+
+      // Fetch performance data from local API
+      const scores = await apiClient.get(
+        `/technician_performance_scores?period_start=${startDate.toISOString().split("T")[0]}&period_end=${endDate.toISOString().split("T")[0]}`
+      );
+
+      if (!scores || scores.length === 0) {
+        toast.error("No performance data available for this period");
+        return;
+      }
+
+      // Generate PDF
+      const doc = new jsPDF();
+      const pageWidth = doc.internal.pageSize.getWidth();
+      const margin = 14;
+
+      // Header background FIRST
+      doc.setFillColor(59, 130, 246);
+      doc.rect(0, 0, pageWidth, 45, 'F');
+      
+      doc.setTextColor(255, 255, 255);
+      doc.setFontSize(22);
+      doc.setFont('helvetica', 'bold');
+      doc.text('RIANA CIMS', pageWidth / 2, 20, { align: 'center' });
+      
+      doc.setFontSize(12);
+      doc.setFont('helvetica', 'normal');
+      doc.text(`${periodLabel} Performance Report`, pageWidth / 2, 32, { align: 'center' });
+      
+      doc.setFontSize(10);
+      doc.text(`Period: ${format(startDate, 'MMM d, yyyy')} - ${format(endDate, 'MMM d, yyyy')}`, pageWidth / 2, 40, { align: 'center' });
+      
+      // Accent line under header
+      doc.setDrawColor(0, 160, 175);
+      doc.setLineWidth(1.5);
+      doc.line(0, 45, pageWidth, 45);
+
+      // Report metadata
+      doc.setTextColor(51, 51, 51);
+      doc.setFontSize(10);
+      let yPos = 55;
+      doc.text(`Generated by: ${user.first_name} ${user.last_name}`, margin, yPos + 6);
+      
+      yPos += 18;
+
+      // Summary Stats
+      const avgScore = scores.reduce((sum: number, s: PerformanceScore) => sum + s.overall_score, 0) / scores.length;
+      const totalInstallations = scores.reduce((sum: number, s: PerformanceScore) => sum + s.total_installations, 0);
+      const excellentCount = scores.filter((s: PerformanceScore) => s.performance_tier === "excellent").length;
+
+      doc.setFontSize(12);
+      doc.setFont('helvetica', 'bold');
+      doc.text('Summary Statistics', margin, yPos);
+      
+      yPos += 8;
+      doc.setFontSize(10);
+      doc.setFont('helvetica', 'normal');
+      doc.text(`Total Technicians: ${scores.length}`, margin, yPos);
+      doc.text(`Average Score: ${avgScore.toFixed(1)}%`, margin + 60, yPos);
+      yPos += 6;
+      doc.text(`Total Installations: ${totalInstallations}`, margin, yPos);
+      doc.text(`Excellent Performers: ${excellentCount}`, margin + 60, yPos);
+      
+      yPos += 12;
+
+      // Performance Leaderboard Table
+      doc.setFontSize(12);
+      doc.setFont('helvetica', 'bold');
+      doc.text('Performance Leaderboard', margin, yPos);
+      yPos += 6;
+
+      autoTable(doc, {
+        startY: yPos,
+        head: [['Rank', 'Technician', 'Installations', 'On Time', 'Score', 'Tier', 'Badges']],
+        body: scores.map((score: PerformanceScore, index: number) => {
+          const name = score.technician 
+            ? `${score.technician.first_name || ''} ${score.technician.last_name || ''}`.trim() || score.technician.email
+            : 'Unknown';
+          
+          const earnedBadges = Object.keys(badgeNames)
+            .filter(badgeId => checkBadge(badgeId, score, scores))
+            .map(badgeId => badgeNames[badgeId])
+            .slice(0, 3);
+          
+          return [
+            `#${index + 1}`,
+            name,
+            score.total_installations,
+            score.completed_on_time,
+            `${score.overall_score?.toFixed(1)}%`,
+            score.performance_tier?.replace('_', ' ').toUpperCase(),
+            earnedBadges.join(', ') || 'None'
+          ];
+        }),
+        theme: 'grid',
+        headStyles: {
+          fillColor: [59, 130, 246],
+          textColor: [255, 255, 255],
+          fontSize: 9,
+          fontStyle: 'bold'
+        },
+        bodyStyles: {
+          fontSize: 8
+        },
+        alternateRowStyles: {
+          fillColor: [243, 244, 246]
+        },
+        margin: { left: margin, right: margin }
+      });
+
+      // Get the final Y position after the table
+      const finalY = (doc as any).lastAutoTable?.finalY || yPos + 50;
+
+      // Badge Summary
+      if (finalY < 240) {
+        doc.setFontSize(12);
+        doc.setFont('helvetica', 'bold');
+        doc.text('Badge Distribution', margin, finalY + 15);
+        
+        let badgeY = finalY + 22;
+        doc.setFontSize(9);
+        doc.setFont('helvetica', 'normal');
+        
+        Object.entries(badgeNames).forEach(([badgeId, badgeName]) => {
+          const count = scores.filter((s: PerformanceScore) => checkBadge(badgeId, s, scores)).length;
+          if (count > 0) {
+            doc.text(`${badgeName}: ${count} technician(s)`, margin, badgeY);
+            badgeY += 5;
+          }
+        });
+      }
+
+      // Add company logo watermark and letterhead to all pages
+      try {
+        await applyCompanyBranding(doc);
+      } catch (error) {
+        console.log('Branding could not be added:', error);
+      }
+
+      // Download
+      doc.save(`Performance_Report_${period}_${format(new Date(), 'yyyy-MM-dd')}.pdf`);
+      toast.success("Performance report generated successfully");
+
+    } catch (error) {
+      console.error("Error generating report:", error);
+      toast.error("Failed to generate performance report");
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
+  return (
+    <Card className="shadow-riana">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <Trophy className="h-5 w-5 text-primary" />
+          Performance Report Generator
+        </CardTitle>
+        <CardDescription>
+          Generate PDF reports with technician performance metrics, rankings, and badges
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="space-y-2">
+            <Label>Report Period</Label>
+            <Select value={period} onValueChange={setPeriod}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="monthly">Monthly Report</SelectItem>
+                <SelectItem value="quarterly">Quarterly Report</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="flex items-end">
+            <Button 
+              onClick={generateReport} 
+              disabled={isGenerating}
+              className="w-full gradient-primary"
+            >
+              {isGenerating ? (
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              ) : (
+                <Download className="h-4 w-4 mr-2" />
+              )}
+              {isGenerating ? "Generating..." : "Generate PDF Report"}
+            </Button>
+          </div>
+        </div>
+        
+        <div className="flex flex-wrap gap-2 pt-2">
+          <Badge variant="outline" className="text-xs">
+            <Award className="h-3 w-3 mr-1" />
+            Includes Badges
+          </Badge>
+          <Badge variant="outline" className="text-xs">
+            <TrendingUp className="h-3 w-3 mr-1" />
+            Performance Rankings
+          </Badge>
+          <Badge variant="outline" className="text-xs">
+            <Calendar className="h-3 w-3 mr-1" />
+            Real-time Data
+          </Badge>
+        </div>
+      </CardContent>
+    </Card>
+  );
+};

@@ -1,0 +1,16 @@
+.git
+.agents
+.codex
+node_modules
+**/node_modules
+dist
+**/dist
+release
+logs
+*.log
+.env
+.env.local
+server/backups
+server/uploads
+CRMS/lint_errors.json
+CRMS/lint_output.txt

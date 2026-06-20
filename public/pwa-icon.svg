@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="RIANA CIMS">
+  <rect width="512" height="512" rx="112" fill="#ffffff"/>
+  <circle cx="256" cy="214" r="124" fill="#173f75"/>
+  <path d="M186 303V125h82c52 0 84 28 84 73 0 30-16 52-44 64l57 41h-63l-48-35h-17v35zm51-79h29c22 0 34-9 34-26s-12-25-34-25h-29z" fill="#ffffff"/>
+  <text x="256" y="390" text-anchor="middle" font-family="Arial, sans-serif" font-size="54" font-weight="700" fill="#173f75">RIANA</text>
+  <text x="256" y="436" text-anchor="middle" font-family="Arial, sans-serif" font-size="27" font-weight="600" letter-spacing="8" fill="#2563eb">CIMS</text>
+</svg>
