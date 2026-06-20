@@ -46,8 +46,10 @@ The API serves both production frontend builds, so one Node process is sufficien
 - Docker: `docker compose --env-file .env.local up -d --build`
 - Staged host bundle: `npm run build:host` (output in ignored `release/`)
 
+The hosting build includes `hosting/Mysql_host/riana_cims_host.sql`: the complete 27-table schema plus sanitized reference data for a clean deployment. It never includes live accounts, reset tokens, customer contacts, messages, or audit records.
+
 Detailed guidance is in [Architecture](docs/ARCHITECTURE.md), [Deployment](docs/DEPLOYMENT.md), and [Operations](docs/OPERATIONS.md).
 
 ## Security and secrets
 
-Never commit `.env.local`, database dumps, uploads, or provider credentials. Copy `.env.example`, supply production secrets outside Git, rotate the default JWT secret, use HTTPS, and restrict database access to the application host.
+Never commit `.env.local`, live database backups, uploads, or provider credentials. The tracked `Mysql_host` installer is schema-only with sanitized reference rows. Copy `.env.example`, supply production secrets outside Git, rotate the default JWT secret, use HTTPS, and restrict database access to the application host.

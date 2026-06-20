@@ -115,7 +115,7 @@ export const PerformanceReportGenerator = ({ user }: PerformanceReportGeneratorP
       const margin = 14;
 
       // Header background FIRST
-      doc.setFillColor(59, 130, 246);
+      doc.setFillColor(13, 131, 144);
       doc.rect(0, 0, pageWidth, 45, 'F');
       
       doc.setTextColor(255, 255, 255);
@@ -194,7 +194,7 @@ export const PerformanceReportGenerator = ({ user }: PerformanceReportGeneratorP
         }),
         theme: 'grid',
         headStyles: {
-          fillColor: [59, 130, 246],
+          fillColor: [13, 131, 144],
           textColor: [255, 255, 255],
           fontSize: 9,
           fontStyle: 'bold'

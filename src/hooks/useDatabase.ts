@@ -368,22 +368,28 @@ export const useDatabase = () => {
     try {
       const feedbackData = await apiClient.get('/installation_feedback');
       
+      const validRatings = feedbackData
+        .map((feedback: any) => Number(feedback.overall_satisfaction))
+        .filter((rating: number) => Number.isFinite(rating) && rating >= 1 && rating <= 5);
+      const validNpsResponses = feedbackData
+        .map((feedback: any) => Number(feedback.recommendation_score))
+        .filter((score: number) => Number.isFinite(score) && score >= 0 && score <= 10);
       const totalFeedback = feedbackData.length;
-      const averageRating = totalFeedback > 0 
-        ? feedbackData.reduce((sum, feedback) => sum + feedback.overall_satisfaction, 0) / totalFeedback
+      const averageRating = validRatings.length > 0
+        ? validRatings.reduce((sum: number, rating: number) => sum + rating, 0) / validRatings.length
         : 0;
 
-      const promoters = feedbackData.filter(f => f.recommendation_score >= 9).length;
-      const passives = feedbackData.filter(f => f.recommendation_score >= 7 && f.recommendation_score <= 8).length;
-      const detractors = feedbackData.filter(f => f.recommendation_score <= 6).length;
+      const promoters = validNpsResponses.filter((score: number) => score >= 9).length;
+      const passives = validNpsResponses.filter((score: number) => score >= 7 && score <= 8).length;
+      const detractors = validNpsResponses.filter((score: number) => score <= 6).length;
       
-      const npsScore = totalFeedback > 0 
-        ? Math.round(((promoters - detractors) / totalFeedback) * 100)
+      const npsScore = validNpsResponses.length > 0
+        ? Math.round(((promoters - detractors) / validNpsResponses.length) * 100)
         : 0;
 
-      const satisfiedCustomers = feedbackData.filter(f => f.overall_satisfaction >= 4).length;
-      const csatScore = totalFeedback > 0 
-        ? Math.round((satisfiedCustomers / totalFeedback) * 100)
+      const satisfiedCustomers = validRatings.filter((rating: number) => rating >= 4).length;
+      const csatScore = validRatings.length > 0
+        ? Math.round((satisfiedCustomers / validRatings.length) * 100)
         : 0;
 
       const recentFeedback = feedbackData.slice(0, 10).map(feedback => ({
@@ -399,6 +405,8 @@ export const useDatabase = () => {
         promoters,
         passives,
         detractors,
+        ratingResponseCount: validRatings.length,
+        npsResponseCount: validNpsResponses.length,
         recentFeedback
       };
     } catch (error) {

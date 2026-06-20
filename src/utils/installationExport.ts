@@ -14,7 +14,7 @@ const loadImageAsBase64 = (src: string): Promise<HTMLImageElement> =>
 
 const parseHexColor = (hex: string): [number, number, number] => {
   const clean = hex.replace('#', '');
-  if (clean.length !== 6) return [30, 58, 138];
+  if (clean.length !== 6) return [13, 131, 144];
   return [
     parseInt(clean.substring(0, 2), 16),
     parseInt(clean.substring(2, 4), 16),
@@ -49,7 +49,7 @@ export const generateInstallationReport = async (
   // Derive primary color from company settings (primary_color field) or default to Riana deep blue
   const companyPrimaryColor: [number, number, number] = (company as any).primary_color
     ? parseHexColor((company as any).primary_color)
-    : [30, 58, 138];
+    : [13, 131, 144];
 
   const textColor: [number, number, number] = [31, 41, 55];
   const mutedColor: [number, number, number] = [107, 114, 128];

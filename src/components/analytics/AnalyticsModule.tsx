@@ -465,13 +465,13 @@ export const AnalyticsModule = ({ user }: AnalyticsModuleProps) => {
               </CardContent>
             </Card>
 
-            <Card className="shadow-riana bg-gradient-to-br from-purple-500/10 to-purple-500/5 border-purple-500/20">
+            <Card className="shadow-riana bg-gradient-to-br from-primary/10 to-primary/5 border-primary/20">
               <CardHeader className="pb-2">
-                <CardTitle className="text-sm sm:text-lg text-purple-700">Client Satisfaction</CardTitle>
+                <CardTitle className="text-sm sm:text-lg text-primary">Client Satisfaction</CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="text-2xl sm:text-3xl font-bold text-purple-600">{performanceMetrics.clientSatisfaction}%</div>
-                <p className="text-[10px] sm:text-sm text-muted-foreground">Positive feedback rate</p>
+                <div className="text-2xl sm:text-3xl font-bold text-primary">{performanceMetrics.clientSatisfaction}%</div>
+                <p className="text-[10px] sm:text-sm text-muted-foreground">Average valid 1-5 rating converted to %</p>
               </CardContent>
             </Card>
           </div>

@@ -36,7 +36,7 @@ const LOGO_DIMENSIONS = {
 
 // Company brand colors
 export const COMPANY_COLORS = {
-  primary: [59, 130, 246] as [number, number, number],        // RIANA Blue
+  primary: [13, 131, 144] as [number, number, number],       // RIANA Teal
   secondary: [16, 185, 129] as [number, number, number],      // Green
   accent: [0, 160, 175] as [number, number, number],          // Teal (Matches Logo)
   text: [51, 51, 51] as [number, number, number],             // Dark Gray

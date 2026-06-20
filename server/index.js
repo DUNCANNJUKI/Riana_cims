@@ -17,6 +17,12 @@ const app = express();
 const port = process.env.VITE_API_PORT || 3001;
 const JWT_SECRET = process.env.JWT_SECRET || 'super-secret-key-change-in-prod';
 
+const normalizedScore = (value, minimum, maximum, fallback) => {
+  if (value === undefined || value === null || value === '') return fallback;
+  const score = Number(value);
+  return Number.isFinite(score) && score >= minimum && score <= maximum ? score : fallback;
+};
+
 const authMiddleware = (req, res, next) => {
   const authHeader = req.headers.authorization;
   if (!authHeader) return res.status(401).json({ error: 'Unauthorized' });
@@ -1497,8 +1503,8 @@ app.post('/api/feedback', async (req, res) => {
         feedbackData.technician_knowledge_rating || 5, 
         feedbackData.technician_professionalism_rating || feedbackData.professionalism || 5, 
         feedbackData.technician_helpfulness_rating || 5,
-        feedbackData.recommendation_score || feedbackData.recommend_to_others || 10, 
-        feedbackData.overall_satisfaction || 5, 
+        normalizedScore(feedbackData.recommendation_score ?? feedbackData.recommend_to_others, 0, 10, 10),
+        normalizedScore(feedbackData.overall_satisfaction, 1, 5, 5),
         feedbackData.positive_feedback || feedbackData.comments || '', 
         feedbackData.improvement_suggestions || '',
         JSON.stringify(dynamic_responses || {})
@@ -1837,8 +1843,8 @@ app.post('/api/public/installation-feedback', async (req, res) => {
         id, 
         data.client_id, 
         data.installation_id, 
-        data.overall_satisfaction || 5, 
-        data.recommendation_score || 10,
+        normalizedScore(data.overall_satisfaction, 1, 5, 5),
+        normalizedScore(data.recommendation_score, 0, 10, 10),
         JSON.stringify(data.dynamic_responses || {})
       ]
     );

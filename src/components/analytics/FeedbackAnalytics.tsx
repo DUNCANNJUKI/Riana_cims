@@ -20,6 +20,8 @@ interface FeedbackMetrics {
   promoters: number;
   passives: number;  
   detractors: number;
+  ratingResponseCount: number;
+  npsResponseCount: number;
   recentFeedback: any[];
 }
 
@@ -32,6 +34,8 @@ export const FeedbackAnalytics = ({ user, refreshTrigger }: FeedbackAnalyticsPro
     promoters: 0,
     passives: 0,
     detractors: 0,
+    ratingResponseCount: 0,
+    npsResponseCount: 0,
     recentFeedback: []
   });
   const [isLoading, setIsLoading] = useState(true);
@@ -133,7 +137,7 @@ export const FeedbackAnalytics = ({ user, refreshTrigger }: FeedbackAnalyticsPro
             <div className={`text-2xl font-bold ${getRatingColor(metrics.averageRating)}`}>
               {metrics.averageRating.toFixed(1)}/5
             </div>
-            <p className="text-xs text-muted-foreground">Overall satisfaction</p>
+            <p className="text-xs text-muted-foreground">Mean of {metrics.ratingResponseCount} valid 1-5 ratings</p>
           </CardContent>
         </Card>
 
@@ -146,7 +150,7 @@ export const FeedbackAnalytics = ({ user, refreshTrigger }: FeedbackAnalyticsPro
             <div className={`text-2xl font-bold ${getNPSColor(metrics.npsScore)}`}>
               {metrics.npsScore}
             </div>
-            <p className="text-xs text-muted-foreground">Net Promoter Score</p>
+            <p className="text-xs text-muted-foreground">Promoters minus detractors, {metrics.npsResponseCount} responses</p>
           </CardContent>
         </Card>
 
@@ -156,8 +160,8 @@ export const FeedbackAnalytics = ({ user, refreshTrigger }: FeedbackAnalyticsPro
             <Award className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-success">{metrics.csatScore}%</div>
-            <p className="text-xs text-muted-foreground">Customer Satisfaction</p>
+            <div className="text-2xl font-bold text-primary">{metrics.csatScore}%</div>
+            <p className="text-xs text-muted-foreground">Ratings of 4-5, {metrics.ratingResponseCount} responses</p>
           </CardContent>
         </Card>
       </div>

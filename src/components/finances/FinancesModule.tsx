@@ -279,7 +279,7 @@ export const FinancesModule = ({ user }: FinancesModuleProps) => {
     const serialNumber = `FIN-${clientInitials}-${dateCode}-${uniqueId}`;
 
     // Add header with company branding
-    const primaryColorHex = companySettings?.primary_color || '#1e3a8a';
+    const primaryColorHex = companySettings?.primary_color || '#0D8390';
     const parseHex = (hex: string): [number, number, number] => {
       const c = hex.replace('#', '');
       return [parseInt(c.substring(0, 2), 16), parseInt(c.substring(2, 4), 16), parseInt(c.substring(4, 6), 16)];

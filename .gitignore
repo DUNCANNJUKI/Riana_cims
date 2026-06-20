@@ -26,6 +26,7 @@ CRMS/lint_errors.json
 CRMS/lint_output.txt
 playwright-report/
 test-results/
+tmp/
 release/
 
 # Editor directories and files

@@ -341,13 +341,13 @@ export const CompanySettingsModule = ({ user }: CompanySettingsModuleProps) => {
                     <Input 
                       id="primary_color"
                       type="color" 
-                      value={settings.primary_color || '#1e3a8a'} 
+                      value={settings.primary_color || '#0D8390'}
                       onChange={(e) => setSettings({...settings, primary_color: e.target.value})}
                       className="w-12 h-10 p-1"
                     />
                     <Input 
                       type="text" 
-                      value={settings.primary_color || '#1e3a8a'} 
+                      value={settings.primary_color || '#0D8390'}
                       onChange={(e) => setSettings({...settings, primary_color: e.target.value})}
                       className="flex-1"
                     />

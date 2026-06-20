@@ -5,11 +5,29 @@ import { ChangeRequestWithRelations } from '@/hooks/useSupabaseData';
 
 import logoImage from '@/assets/riana-group-logo.jpg';
 
-// Riana Group brand colors as tuples
-const BRAND_PRIMARY: [number, number, number] = [139, 35, 50];
-const BRAND_LIGHT: [number, number, number] = [245, 240, 241];
-const GREEN_PRIMARY: [number, number, number] = [34, 139, 34];
-const GREEN_LIGHT: [number, number, number] = [240, 248, 240];
+// Shared RIANA palette: teal for identity, restrained green only for status.
+const BRAND_PRIMARY: [number, number, number] = [13, 131, 144];
+const BRAND_DARK: [number, number, number] = [6, 78, 87];
+const BRAND_LIGHT: [number, number, number] = [239, 248, 249];
+const GREEN_PRIMARY: [number, number, number] = [22, 138, 85];
+const GREEN_LIGHT: [number, number, number] = [239, 249, 244];
+
+const addProfessionalFooters = (doc: jsPDF) => {
+  const pageCount = doc.getNumberOfPages();
+  for (let page = 1; page <= pageCount; page += 1) {
+    doc.setPage(page);
+    doc.setFillColor(255, 255, 255);
+    doc.rect(0, 275, 210, 22, 'F');
+    doc.setDrawColor(...BRAND_PRIMARY);
+    doc.setLineWidth(0.35);
+    doc.line(14, 279, 196, 279);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7.5);
+    doc.setTextColor(...BRAND_DARK);
+    doc.text(`RIANA CIMS | Confidential | Page ${page} of ${pageCount}`, 14, 286);
+    doc.text(`Generated ${format(new Date(), 'MMM d, yyyy h:mm a')}`, 196, 286, { align: 'right' });
+  }
+};
 
 interface AuditLogEntry {
   action_label: string;
@@ -29,7 +47,7 @@ export const generateChangeRequestPDF = (
   doc.rect(0, 0, 210, 45, 'F');
 
   // Header accent line
-  doc.setFillColor(255, 200, 50);
+  doc.setFillColor(BRAND_DARK[0], BRAND_DARK[1], BRAND_DARK[2]);
   doc.rect(0, 42, 210, 3, 'F');
 
   // Add Company Logo
@@ -229,6 +247,7 @@ export const generateChangeRequestPDF = (
   doc.text(`Generated on ${format(new Date(), 'MMMM d, yyyy h:mm a')}`, 105, 282, { align: 'center' });
   doc.text(`© ${new Date().getFullYear()} Riana Group. All rights reserved.`, 105, 288, { align: 'center' });
 
+  addProfessionalFooters(doc);
   return doc;
 };
 
@@ -238,12 +257,12 @@ export const generateCompletionReportPDF = (
 ): jsPDF => {
   const doc = new jsPDF();
 
-  // Header with Riana Group branding - Green for completion
-  doc.setFillColor(GREEN_PRIMARY[0], GREEN_PRIMARY[1], GREEN_PRIMARY[2]);
+  // Keep the shared RIANA header; green remains a semantic completion accent.
+  doc.setFillColor(BRAND_PRIMARY[0], BRAND_PRIMARY[1], BRAND_PRIMARY[2]);
   doc.rect(0, 0, 210, 45, 'F');
 
   // Header accent line
-  doc.setFillColor(50, 205, 50);
+  doc.setFillColor(GREEN_PRIMARY[0], GREEN_PRIMARY[1], GREEN_PRIMARY[2]);
   doc.rect(0, 42, 210, 3, 'F');
 
   doc.setTextColor(255, 255, 255);
@@ -441,6 +460,7 @@ export const generateCompletionReportPDF = (
   doc.text(`Generated on ${format(new Date(), 'MMMM d, yyyy h:mm a')}`, 105, 282, { align: 'center' });
   doc.text(`© ${new Date().getFullYear()} Riana Group. All rights reserved.`, 105, 288, { align: 'center' });
 
+  addProfessionalFooters(doc);
   return doc;
 };
 
