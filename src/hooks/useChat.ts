@@ -23,6 +23,7 @@ export const useChat = (currentUser: User | null) => {
   const [unreadCounts, setUnreadCounts] = useState<Record<string, number>>({});
   const [isConnected, setIsConnected] = useState(false);
   const eventSourceRef = useRef<EventSource | null>(null);
+  const reconnectTimerRef = useRef<number | null>(null);
 
   const playNotificationSound = useCallback(() => {
     // Use a reliable remote URL for the notification sound
@@ -83,17 +84,17 @@ export const useChat = (currentUser: User | null) => {
 
     const connectSSE = () => {
       if (eventSourceRef.current) {
-        console.log('[Chat] Closing existing SSE connection');
+        console.debug('[Chat] Closing existing SSE connection');
         eventSourceRef.current.close();
       }
 
-      console.log(`[Chat] Connecting to SSE stream for user ${currentUser.id}...`);
+      console.debug(`[Chat] Connecting to SSE stream for user ${currentUser.id}...`);
       const url = `${API_URL}/chat/stream?userId=${encodeURIComponent(currentUser.id)}&token=${encodeURIComponent(getAuthToken() || '')}`;
       const es = new EventSource(url);
       eventSourceRef.current = es;
 
       es.onopen = () => {
-        console.log('[Chat] SSE Connection established');
+        console.debug('[Chat] SSE Connection established');
         setIsConnected(true);
       };
       
@@ -103,7 +104,7 @@ export const useChat = (currentUser: User | null) => {
         
         try {
           const data = JSON.parse(event.data);
-          console.log('[Chat] Received event:', data.type);
+          console.debug('[Chat] Received event:', data.type);
           
           if (data.type === 'new_message') {
             const msg = data.message;
@@ -132,19 +133,18 @@ export const useChat = (currentUser: User | null) => {
         }
       };
 
-      es.onerror = (err) => {
-        console.error('[Chat] SSE Connection error:', err);
+      es.onerror = () => {
         setIsConnected(false);
         es.close();
-        // Exponential backoff or simple retry
-        console.log('[Chat] Retrying connection in 5s...');
-        setTimeout(connectSSE, 5000);
+        if (reconnectTimerRef.current) window.clearTimeout(reconnectTimerRef.current);
+        reconnectTimerRef.current = window.setTimeout(connectSSE, 5000);
       };
     };
 
     connectSSE();
 
     return () => {
+      if (reconnectTimerRef.current) window.clearTimeout(reconnectTimerRef.current);
       if (eventSourceRef.current) eventSourceRef.current.close();
     };
   }, [currentUser?.id, activeChatUserId, loadUsers, playNotificationSound]);

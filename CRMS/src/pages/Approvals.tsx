@@ -9,14 +9,14 @@ import {
   Eye,
   MessageSquare,
 } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { StatusBadge } from '@/components/common/StatusBadge';
-import { PriorityBadge } from '@/components/common/PriorityBadge';
-import { Skeleton } from '@/components/ui/skeleton';
-import { Textarea } from '@/components/ui/textarea';
-import { Label } from '@/components/ui/label';
+import { Button } from '@crms/components/ui/button';
+import { Card, CardContent } from '@crms/components/ui/card';
+import { Badge } from '@crms/components/ui/badge';
+import { StatusBadge } from '@crms/components/common/StatusBadge';
+import { PriorityBadge } from '@crms/components/common/PriorityBadge';
+import { Skeleton } from '@crms/components/ui/skeleton';
+import { Textarea } from '@crms/components/ui/textarea';
+import { Label } from '@crms/components/ui/label';
 import {
   Dialog,
   DialogContent,
@@ -24,12 +24,12 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from '@/components/ui/dialog';
-import { useToast } from '@/hooks/use-toast';
-import { useChangeRequests, useUpdateChangeRequest, useProfiles } from '@/hooks/useSupabaseData';
-import { sendNotificationEmail } from '@/lib/notifications';
-import { notifyStatusChangeSMS } from '@/lib/smsNotifications';
-import type { Database } from '@/integrations/supabase/types';
+} from '@crms/components/ui/dialog';
+import { useToast } from '@crms/hooks/use-toast';
+import { useChangeRequests, useUpdateChangeRequest, useProfiles } from '@crms/hooks/useSupabaseData';
+import { sendNotificationEmail } from '@crms/lib/notifications';
+import { notifyStatusChangeSMS } from '@crms/lib/smsNotifications';
+import type { Database } from '@crms/integrations/supabase/types';
 
 type RequestStatus = Database['public']['Enums']['request_status'];
 type PriorityLevel = Database['public']['Enums']['priority_level'];
@@ -46,19 +46,19 @@ export default function Approvals() {
   const [selectedRequest, setSelectedRequest] = useState<{ id: string; ticketNumber: string } | null>(null);
 
   const pendingRequests = (changeRequests || []).filter((r) => r.status === 'pending_approval');
-  const waitingRequests = (changeRequests || []).filter((r) => r.status === 'waiting');
+  const waitingRequests = (changeRequests || []).filter((r) => ['waiting', 'waiting_clarification'].includes(String(r.status)));
 
   const handleQuickAction = async (action: 'approve' | 'reject' | 'waiting', requestId: string, ticketNumber: string, comment?: string) => {
-    const statusMap: Record<string, RequestStatus> = {
+    const statusMap: Record<string, RequestStatus | 'waiting_clarification'> = {
       approve: 'approved',
       reject: 'rejected',
-      waiting: 'waiting',
-    };
+      waiting: 'waiting_clarification',
+    } as const;
 
     try {
       const updateData: any = {
         id: requestId,
-        status: statusMap[action],
+        status: statusMap[action] as any,
       };
 
       // Add comment if holding
@@ -84,7 +84,7 @@ export default function Approvals() {
             requestDescription: action === 'waiting' && comment
               ? `Hold Comment: ${comment}\n\n${request.change_description}`
               : request.change_description,
-            actionUrl: `${window.location.origin}/requests/${requestId}`,
+            actionUrl: `${window.location.origin}/developers/requests/${requestId}`,
           });
 
           // Send SMS for critical/high priority
@@ -114,7 +114,7 @@ export default function Approvals() {
               ticketNumber,
               clientName: request.client?.name || 'Unknown Client',
               requestDescription: request.change_description,
-              actionUrl: `${window.location.origin}/requests/${requestId}`,
+              actionUrl: `${window.location.origin}/developers/requests/${requestId}`,
             });
           }
         }
@@ -245,7 +245,7 @@ export default function Approvals() {
                   <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
                     <div className="flex-1 space-y-3">
                       <div className="flex items-center gap-3">
-                        <Link to={`/requests/${request.id}`} className="font-semibold text-primary hover:underline">
+                        <Link to={`/developers/requests/${request.id}`} className="font-semibold text-primary hover:underline">
                           {request.ticket_number}
                         </Link>
                         <StatusBadge status={request.status as RequestStatus} />
@@ -278,7 +278,7 @@ export default function Approvals() {
                       </p>
                     </div>
                     <div className="flex flex-wrap gap-2 lg:flex-col">
-                      <Link to={`/requests/${request.id}`}>
+                      <Link to={`/developers/requests/${request.id}`}>
                         <Button variant="outline" size="sm" className="w-full">
                           <Eye className="mr-2 h-4 w-4" />
                           Review
@@ -334,7 +334,7 @@ export default function Approvals() {
                   <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
                     <div className="flex-1 space-y-2">
                       <div className="flex items-center gap-3">
-                        <Link to={`/requests/${request.id}`} className="font-semibold text-primary hover:underline">
+                        <Link to={`/developers/requests/${request.id}`} className="font-semibold text-primary hover:underline">
                           {request.ticket_number}
                         </Link>
                         <StatusBadge status={request.status as RequestStatus} />

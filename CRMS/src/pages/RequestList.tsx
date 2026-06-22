@@ -2,16 +2,16 @@ import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { format } from 'date-fns';
 import { Plus, Search, Filter, Loader2, FileText, CheckCircle, Clock, AlertCircle, Eye, ArrowRight } from 'lucide-react';
-import { PageLoader } from '@/components/common/CompanyLogoLoader';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
+import { PageLoader } from '@crms/components/common/CompanyLogoLoader';
+import { Button } from '@crms/components/ui/button';
+import { Input } from '@crms/components/ui/input';
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select';
+} from '@crms/components/ui/select';
 import {
   Table,
   TableBody,
@@ -19,17 +19,17 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from '@/components/ui/table';
+} from '@crms/components/ui/table';
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-import { useChangeRequests } from '@/hooks/useSupabaseData';
-import { StatusBadge } from '@/components/common/StatusBadge';
-import { PriorityBadge } from '@/components/common/PriorityBadge';
+} from '@crms/components/ui/dropdown-menu';
+import { useChangeRequests } from '@crms/hooks/useSupabaseData';
+import { StatusBadge } from '@crms/components/common/StatusBadge';
+import { PriorityBadge } from '@crms/components/common/PriorityBadge';
 
 export default function RequestList() {
   const [searchQuery, setSearchQuery] = useState('');
@@ -64,7 +64,7 @@ export default function RequestList() {
             Manage and track all system modification requests
           </p>
         </div>
-        <Link to="/requests/new">
+        <Link to="/developers/requests/new">
           <Button>
             <Plus className="mr-2 h-4 w-4" />
             New Request
@@ -143,7 +143,7 @@ export default function RequestList() {
               <TableRow key={request.id} className="table-row-interactive">
                 <TableCell className="font-medium">
                   <Link
-                    to={`/requests/${request.id}`}
+                    to={`/developers/requests/${request.id}`}
                     className="text-primary hover:underline"
                   >
                     {request.ticket_number}
@@ -197,7 +197,7 @@ export default function RequestList() {
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end">
                       <DropdownMenuItem asChild>
-                        <Link to={`/requests/${request.id}`} className="flex items-center">
+                        <Link to={`/developers/requests/${request.id}`} className="flex items-center">
                           <Eye className="mr-2 h-4 w-4" />
                           View Details
                         </Link>
@@ -207,7 +207,7 @@ export default function RequestList() {
                         Edit Request
                       </DropdownMenuItem>
                       <DropdownMenuItem asChild>
-                        <Link to={`/requests/${request.id}?assign=true`} className="flex items-center">
+                        <Link to={`/developers/requests/${request.id}?assign=true`} className="flex items-center">
                           <CheckCircle className="mr-2 h-4 w-4" />
                           Assign Developer
                         </Link>

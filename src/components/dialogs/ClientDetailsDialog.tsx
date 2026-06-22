@@ -39,7 +39,7 @@ export const ClientDetailsDialog = ({
 
   if (!client) return null;
 
-  const canEdit = user.role === 'Admin' && isEditing;
+  const canEdit = (user.role === 'SuperAdmin' || user.role === 'Admin') && isEditing;
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>

@@ -68,7 +68,7 @@ export const InstallationActionsMenu = ({
 
 
         
-        {onEdit && user.role === 'Admin' && (
+        {onEdit && (user.role === 'SuperAdmin' || user.role === 'Admin') && (
           <>
             <DropdownMenuSeparator />
             <DropdownMenuItem onClick={() => onEdit(installation)}>

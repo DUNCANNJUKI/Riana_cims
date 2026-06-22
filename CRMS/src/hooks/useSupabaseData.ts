@@ -1,7 +1,18 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Database } from '@/integrations/supabase/types';
+import { Database } from '@crms/integrations/supabase/types';
 
 const API_URL = '/api/crms';
+const DEFAULT_STALE_TIME = 60_000;
+const DEFAULT_GC_TIME = 5 * 60_000;
+
+async function fetchJson<T>(url: string, message: string): Promise<T> {
+  const res = await fetch(url);
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.error || message);
+  }
+  return res.json() as Promise<T>;
+}
 
 type Client = Database['public']['Tables']['clients']['Row'];
 type Profile = Database['public']['Tables']['profiles']['Row'] & {
@@ -21,6 +32,7 @@ export interface ChangeRequestWithRelations extends ChangeRequest {
 
 export interface AuditLogWithRelations extends AuditLog {
   user?: Profile;
+  profiles?: Profile;
   change_request?: { ticket_number: string };
 }
 
@@ -28,11 +40,9 @@ export interface AuditLogWithRelations extends AuditLog {
 export function useClients() {
   return useQuery({
     queryKey: ['clients'],
-    queryFn: async () => {
-      const res = await fetch(`${API_URL}/clients`);
-      if (!res.ok) throw new Error('Failed to fetch clients');
-      return res.json() as Promise<Client[]>;
-    },
+    queryFn: () => fetchJson<Client[]>(`${API_URL}/clients`, 'Failed to fetch clients'),
+    staleTime: DEFAULT_STALE_TIME,
+    gcTime: DEFAULT_GC_TIME,
   });
 }
 
@@ -76,11 +86,9 @@ export function useUpdateClient() {
 export function useProfiles() {
   return useQuery({
     queryKey: ['profiles'],
-    queryFn: async () => {
-      const res = await fetch(`${API_URL}/profiles`);
-      if (!res.ok) throw new Error('Failed to fetch profiles');
-      return res.json() as Promise<Profile[]>;
-    },
+    queryFn: () => fetchJson<Profile[]>(`${API_URL}/profiles`, 'Failed to fetch profiles'),
+    staleTime: DEFAULT_STALE_TIME,
+    gcTime: DEFAULT_GC_TIME,
   });
 }
 
@@ -189,11 +197,9 @@ export function useUpdateUserRole() {
 export function useChangeRequests() {
   return useQuery({
     queryKey: ['change_requests'],
-    queryFn: async () => {
-      const res = await fetch(`${API_URL}/change_requests`);
-      if (!res.ok) throw new Error('Failed to fetch change requests');
-      return res.json() as Promise<ChangeRequestWithRelations[]>;
-    },
+    queryFn: () => fetchJson<ChangeRequestWithRelations[]>(`${API_URL}/change_requests`, 'Failed to fetch change requests'),
+    staleTime: DEFAULT_STALE_TIME,
+    gcTime: DEFAULT_GC_TIME,
   });
 }
 
@@ -251,32 +257,16 @@ export function useUpdateChangeRequest() {
 export function useDashboardStats() {
   return useQuery({
     queryKey: ['dashboard_stats'],
-    queryFn: async () => {
-      const res = await fetch(`${API_URL}/change_requests`);
-      if (!res.ok) throw new Error('Failed to fetch stats');
-      const data = await res.json() as ChangeRequest[];
-
-      const stats = {
-        totalRequests: data.length,
-        pendingApproval: data.filter(r => r.status === 'pending_approval').length,
-        inProgress: data.filter(r => r.status === 'in_progress').length,
-        completed: data.filter(r => r.status === 'completed').length,
-        overdue: 0,
-        avgCompletionDays: 0,
-      };
-
-      const completedWithDates = data.filter(r => r.completion_date && r.commencement_date);
-      if (completedWithDates.length > 0) {
-        const totalDays = completedWithDates.reduce((sum, r) => {
-          const start = new Date(r.commencement_date!);
-          const end = new Date(r.completion_date!);
-          return sum + Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
-        }, 0);
-        stats.avgCompletionDays = Math.round(totalDays / completedWithDates.length * 10) / 10;
-      }
-
-      return stats;
-    },
+    queryFn: () => fetchJson<{
+      totalRequests: number;
+      pendingApproval: number;
+      inProgress: number;
+      completed: number;
+      overdue: number;
+      avgCompletionDays: number;
+    }>(`${API_URL}/dashboard/stats`, 'Failed to fetch stats'),
+    staleTime: DEFAULT_STALE_TIME,
+    gcTime: DEFAULT_GC_TIME,
   });
 }
 
@@ -284,11 +274,10 @@ export function useDashboardStats() {
 export function useAuditLogs() {
   return useQuery({
     queryKey: ['audit_logs'],
-    queryFn: async () => {
-      const res = await fetch(`${API_URL}/audit_logs`);
-      if (!res.ok) throw new Error('Failed to fetch audit logs');
-      return res.json();
-    },
+    queryFn: () => fetchJson<AuditLogWithRelations[]>(`${API_URL}/audit_logs?limit=25`, 'Failed to fetch audit logs'),
+    staleTime: DEFAULT_STALE_TIME,
+    gcTime: DEFAULT_GC_TIME,
+    retry: 1,
   });
 }
 

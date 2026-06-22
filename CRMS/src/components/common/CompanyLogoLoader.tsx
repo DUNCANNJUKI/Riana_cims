@@ -1,17 +1,42 @@
-import { Skeleton } from "@/components/ui/skeleton";
+import { Skeleton } from "@crms/components/ui/skeleton";
+import { useEffect, useState } from "react";
+import { fetchCompanyBranding, resolveCompanyLogoUrl } from "@crms/lib/companyBranding";
 
 export function CompanyLogoLoader({ className = "", size = "md" }: { className?: string; size?: "sm" | "md" | "lg" }) {
+    const [logoUrl, setLogoUrl] = useState(resolveCompanyLogoUrl());
     const sizeClasses = {
         sm: "h-12 w-12",
         md: "h-24 w-24",
         lg: "h-32 w-32",
     };
 
+    useEffect(() => {
+        let cancelled = false;
+        fetchCompanyBranding()
+            .then((branding) => {
+                if (!cancelled && branding?.logo_path) {
+                    setLogoUrl(resolveCompanyLogoUrl(branding.logo_path, branding.updated_at || branding.id));
+                }
+            })
+            .catch(() => undefined);
+
+        const handleBrandingUpdate = (event: Event) => {
+            const detail = (event as CustomEvent<{ logoPath?: string | null; version?: number }>).detail;
+            setLogoUrl(resolveCompanyLogoUrl(detail?.logoPath, detail?.version || Date.now()));
+        };
+
+        window.addEventListener("riana-company-branding-updated", handleBrandingUpdate);
+        return () => {
+            cancelled = true;
+            window.removeEventListener("riana-company-branding-updated", handleBrandingUpdate);
+        };
+    }, []);
+
     return (
         <div className={`flex flex-col items-center justify-center gap-4 ${className}`}>
             <div className={`relative ${sizeClasses[size]} animate-pulse`}>
                 <img
-                    src="/src/assets/riana-group-logo.jpg"
+                    src={logoUrl}
                     alt="Riana Group"
                     className="h-full w-full object-contain rounded-lg shadow-sm"
                 />

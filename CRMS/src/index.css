@@ -105,6 +105,22 @@
     --border: 217.2 32.6% 22%;
     --input: 217.2 32.6% 17.5%;
     --ring: 185 83% 41%;
+    --status-pending: 45 93% 62%;
+    --status-pending-bg: 38 70% 16%;
+    --status-approved: 152 69% 48%;
+    --status-approved-bg: 152 55% 15%;
+    --status-rejected: 0 72% 60%;
+    --status-rejected-bg: 0 55% 15%;
+    --status-waiting: 262 70% 72%;
+    --status-waiting-bg: 262 45% 18%;
+    --status-in-progress: 200 80% 62%;
+    --status-in-progress-bg: 200 55% 16%;
+    --status-completed: 152 69% 48%;
+    --status-completed-bg: 152 55% 15%;
+    --priority-low: 152 69% 48%;
+    --priority-medium: 45 93% 62%;
+    --priority-high: 25 95% 65%;
+    --priority-critical: 0 72% 60%;
 
     --sidebar-background: 222 30% 8%;
     --sidebar-foreground: 210 40% 92%;
@@ -132,7 +148,7 @@
   h5,
   h6 {
     font-family: 'Plus Jakarta Sans', 'Inter', system-ui, sans-serif;
-    @apply font-semibold tracking-tight text-primary;
+    @apply font-semibold tracking-tight;
   }
 }
 

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { 
   Settings as SettingsIcon, 
   Plus,
@@ -13,10 +13,10 @@ import {
   Globe,
   Palette,
 } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
+import { Button } from '@crms/components/ui/button';
+import { Input } from '@crms/components/ui/input';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@crms/components/ui/card';
+import { Badge } from '@crms/components/ui/badge';
 import {
   Dialog,
   DialogContent,
@@ -25,15 +25,15 @@ import {
   DialogHeader,
   DialogTitle,
   DialogTrigger,
-} from '@/components/ui/dialog';
-import { Label } from '@/components/ui/label';
+} from '@crms/components/ui/dialog';
+import { Label } from '@crms/components/ui/label';
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select';
+} from '@crms/components/ui/select';
 import {
   Table,
   TableBody,
@@ -41,16 +41,16 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from '@/components/ui/table';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Switch } from '@/components/ui/switch';
-import { Textarea } from '@/components/ui/textarea';
-import { useClients, useCreateClient, useUpdateClient } from '@/hooks/useSupabaseData';
-import { useDeleteClient } from '@/hooks/useDeleteClient';
-import { useToast } from '@/hooks/use-toast';
-import { Skeleton } from '@/components/ui/skeleton';
-import { validateKenyanPhone, formatKenyanPhoneDisplay } from '@/lib/smsNotifications';
-import logoImage from '@/assets/riana-group-logo.jpg';
+} from '@crms/components/ui/table';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@crms/components/ui/tabs';
+import { Switch } from '@crms/components/ui/switch';
+import { Textarea } from '@crms/components/ui/textarea';
+import { useClients, useCreateClient, useUpdateClient } from '@crms/hooks/useSupabaseData';
+import { useDeleteClient } from '@crms/hooks/useDeleteClient';
+import { useToast } from '@crms/hooks/use-toast';
+import { Skeleton } from '@crms/components/ui/skeleton';
+import { validateKenyanPhone, formatKenyanPhoneDisplay } from '@crms/lib/smsNotifications';
+import { fetchCompanyBranding, resolveCompanyLogoUrl } from '@crms/lib/companyBranding';
 
 // Default modules
 const defaultModules = [
@@ -91,6 +91,7 @@ const contractTypeLabels: Record<string, string> = {
 };
 
 export default function Settings() {
+  const [logoUrl, setLogoUrl] = useState(resolveCompanyLogoUrl());
   const [modules, setModules] = useState<string[]>(defaultModules);
   const [departments, setDepartments] = useState<string[]>(defaultDepartments);
   const [newModule, setNewModule] = useState('');
@@ -135,6 +136,21 @@ export default function Settings() {
   const updateClient = useUpdateClient();
   const deleteClient = useDeleteClient();
   const { toast } = useToast();
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchCompanyBranding()
+      .then((branding) => {
+        if (!cancelled && branding?.logo_path) {
+          setLogoUrl(resolveCompanyLogoUrl(branding.logo_path, branding.updated_at || branding.id));
+        }
+      })
+      .catch(() => undefined);
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // Phone validation state
   const [phoneError, setPhoneError] = useState<string | null>(null);
@@ -316,7 +332,7 @@ export default function Settings() {
               <CardContent className="space-y-4">
                 <div className="flex items-center gap-4">
                   <div className="w-20 h-20 rounded-xl border-2 border-dashed border-border flex items-center justify-center overflow-hidden bg-muted">
-                    <img src={logoImage} alt="Company Logo" className="w-full h-full object-contain" />
+                    <img src={logoUrl} alt="Company Logo" className="w-full h-full object-contain" />
                   </div>
                   <div className="flex-1">
                     <p className="font-medium text-foreground">Company Logo</p>

@@ -7,6 +7,7 @@ export default {
 		"./components/**/*.{ts,tsx}",
 		"./app/**/*.{ts,tsx}",
 		"./src/**/*.{ts,tsx}",
+		"./CRMS/src/**/*.{ts,tsx}",
 	],
 	prefix: "",
 	theme: {
@@ -17,7 +18,10 @@ export default {
 				'2xl': '1400px'
 			}
 		},
-		extend: {
+			extend: {
+			fontFamily: {
+				sans: ['Plus Jakarta Sans', 'Inter', 'system-ui', 'sans-serif'],
+			},
 			colors: {
 				border: 'hsl(var(--border))',
 				input: 'hsl(var(--input))',
@@ -73,7 +77,27 @@ export default {
 				pending: {
 					DEFAULT: 'hsl(var(--pending))',
 					foreground: 'hsl(var(--pending-foreground))'
-				}
+				},
+				status: {
+					pending: 'hsl(var(--status-pending))',
+					'pending-bg': 'hsl(var(--status-pending-bg))',
+					approved: 'hsl(var(--status-approved))',
+					'approved-bg': 'hsl(var(--status-approved-bg))',
+					rejected: 'hsl(var(--status-rejected))',
+					'rejected-bg': 'hsl(var(--status-rejected-bg))',
+					waiting: 'hsl(var(--status-waiting))',
+					'waiting-bg': 'hsl(var(--status-waiting-bg))',
+					'in-progress': 'hsl(var(--status-in-progress))',
+					'in-progress-bg': 'hsl(var(--status-in-progress-bg))',
+					completed: 'hsl(var(--status-completed))',
+					'completed-bg': 'hsl(var(--status-completed-bg))',
+				},
+				priority: {
+					low: 'hsl(var(--priority-low))',
+					medium: 'hsl(var(--priority-medium))',
+					high: 'hsl(var(--priority-high))',
+					critical: 'hsl(var(--priority-critical))',
+				},
 			},
 			borderRadius: {
 				lg: 'var(--radius)',
@@ -122,7 +146,11 @@ export default {
 				'robot-glow': 'robot-glow 2s ease-in-out infinite',
 				'robot-head-tilt': 'robot-head-tilt 4s ease-in-out infinite',
 				'pulse-glow': 'pulse-glow 2s ease-in-out infinite'
-			}
+			},
+			boxShadow: {
+				soft: '0 1px 3px rgb(0 0 0 / 0.04), 0 1px 2px -1px rgb(0 0 0 / 0.04)',
+				medium: '0 4px 6px -1px rgb(0 0 0 / 0.06), 0 2px 4px -2px rgb(0 0 0 / 0.06)',
+			},
 		}
 	},
 	plugins: [require("tailwindcss-animate")],

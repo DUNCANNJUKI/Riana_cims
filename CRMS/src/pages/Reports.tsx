@@ -10,17 +10,17 @@ import {
   FileText,
   FileCheck,
 } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
+import { Button } from '@crms/components/ui/button';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@crms/components/ui/card';
+import { Input } from '@crms/components/ui/input';
+import { Label } from '@crms/components/ui/label';
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select';
+} from '@crms/components/ui/select';
 import {
   Table,
   TableBody,
@@ -28,14 +28,15 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from '@/components/ui/table';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { StatusBadge } from '@/components/common/StatusBadge';
-import { PriorityBadge } from '@/components/common/PriorityBadge';
-import { AnalyticsCharts } from '@/components/reports/AnalyticsCharts';
-import { changeRequests, clients } from '@/data/mockData';
-import { generateChangeRequestPDF, generateCompletionReportPDF, downloadPDF } from '@/lib/pdfGenerator';
-import { useToast } from '@/hooks/use-toast';
+} from '@crms/components/ui/table';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@crms/components/ui/tabs';
+import { StatusBadge } from '@crms/components/common/StatusBadge';
+import { PriorityBadge } from '@crms/components/common/PriorityBadge';
+import { AnalyticsCharts } from '@crms/components/reports/AnalyticsCharts';
+import { useChangeRequests, useClients } from '@crms/hooks/useSupabaseData';
+import { Skeleton } from '@crms/components/ui/skeleton';
+import { generateChangeRequestPDF, generateCompletionReportPDF, downloadPDF } from '@crms/lib/pdfGenerator';
+import { useToast } from '@crms/hooks/use-toast';
 
 export default function Reports() {
   const { toast } = useToast();
@@ -43,11 +44,16 @@ export default function Reports() {
   const [dateTo, setDateTo] = useState('');
   const [clientFilter, setClientFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
+  const { data: changeRequests = [], isLoading: requestsLoading } = useChangeRequests();
+  const { data: clients = [], isLoading: clientsLoading } = useClients();
 
   const filteredRequests = changeRequests.filter((request) => {
-    const matchesClient = clientFilter === 'all' || request.clientId === clientFilter;
+    const requestedAt = new Date(request.date_requested || request.created_at);
+    const matchesDateFrom = !dateFrom || requestedAt >= new Date(dateFrom);
+    const matchesDateTo = !dateTo || requestedAt <= new Date(`${dateTo}T23:59:59`);
+    const matchesClient = clientFilter === 'all' || request.client_id === clientFilter;
     const matchesStatus = statusFilter === 'all' || request.status === statusFilter;
-    return matchesClient && matchesStatus;
+    return matchesDateFrom && matchesDateTo && matchesClient && matchesStatus;
   });
 
   // Calculate summary stats
@@ -56,35 +62,51 @@ export default function Reports() {
     completed: filteredRequests.filter((r) => r.status === 'completed').length,
     inProgress: filteredRequests.filter((r) => r.status === 'in_progress').length,
     pending: filteredRequests.filter((r) => r.status === 'pending_approval').length,
-    chargeable: filteredRequests.filter((r) => r.isChargeable).length,
+    chargeable: filteredRequests.filter((r) => r.is_chargeable).length,
   };
 
-  const handleDownloadChangeRequest = (request: typeof changeRequests[0]) => {
-    const doc = generateChangeRequestPDF(request as any);
-    downloadPDF(doc, `${request.ticketNumber}-change-request.pdf`);
+  const toDocumentRequest = (request: typeof changeRequests[number]) => ({
+    ...request,
+    ticketNumber: request.ticket_number,
+    dateRequested: request.date_requested,
+    commencementDate: request.commencement_date,
+    completionDate: request.completion_date,
+    isChargeable: request.is_chargeable,
+    assignedDeveloper: request.assigned_developer,
+    client: {
+      ...request.client,
+      contractType: request.client?.contract_type,
+    },
+  });
+
+  const handleDownloadChangeRequest = (request: typeof changeRequests[number]) => {
+    const doc = generateChangeRequestPDF(toDocumentRequest(request) as any);
+    downloadPDF(doc, `${request.ticket_number}-change-request.pdf`);
     toast({
       title: 'Document Downloaded',
-      description: `Change Request Form for ${request.ticketNumber} has been downloaded.`,
+      description: `Change Request Form for ${request.ticket_number} has been downloaded.`,
     });
   };
 
-  const handleDownloadCompletionReport = (request: typeof changeRequests[0]) => {
-    const doc = generateCompletionReportPDF(request as any);
-    downloadPDF(doc, `${request.ticketNumber}-completion-report.pdf`);
+  const handleDownloadCompletionReport = (request: typeof changeRequests[number]) => {
+    const doc = generateCompletionReportPDF(toDocumentRequest(request) as any);
+    downloadPDF(doc, `${request.ticket_number}-completion-report.pdf`);
     toast({
       title: 'Document Downloaded',
-      description: `Completion Report for ${request.ticketNumber} has been downloaded.`,
+      description: `Completion Report for ${request.ticket_number} has been downloaded.`,
     });
   };
+
+  const isLoading = requestsLoading || clientsLoading;
 
   return (
     <div className="space-y-6 animate-fade-in">
       {/* Header */}
       <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
         <div>
-          <h1 className="text-2xl font-bold">Reports & Analytics</h1>
+          <h1 className="text-2xl font-bold text-foreground">Reports & Analytics</h1>
           <p className="text-muted-foreground">
-            Generate reports, view analytics, and export documents
+            Live Developers reporting, KPI trends, and branded exports
           </p>
         </div>
         <div className="flex gap-2">
@@ -124,7 +146,7 @@ export default function Reports() {
         {/* Data Tab */}
         <TabsContent value="data" className="space-y-6">
           {/* Filters */}
-          <Card>
+          <Card className="shadow-soft">
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Filter className="h-5 w-5" />
@@ -189,7 +211,7 @@ export default function Reports() {
           </Card>
 
           {/* Summary Stats */}
-          <div className="grid gap-4 md:grid-cols-5">
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
             <Card>
               <CardContent className="pt-6">
                 <div className="flex items-center gap-3">
@@ -248,7 +270,7 @@ export default function Reports() {
           </div>
 
           {/* Data Table */}
-          <Card>
+          <Card className="shadow-soft">
             <CardHeader>
               <CardTitle>Request Details</CardTitle>
               <CardDescription>
@@ -256,6 +278,11 @@ export default function Reports() {
               </CardDescription>
             </CardHeader>
             <CardContent className="p-0">
+              {isLoading ? (
+                <div className="p-6">
+                  <Skeleton className="h-72 w-full" />
+                </div>
+              ) : (
               <Table>
                 <TableHeader>
                   <TableRow className="bg-muted/50">
@@ -273,15 +300,15 @@ export default function Reports() {
                 <TableBody>
                   {filteredRequests.map((request) => (
                     <TableRow key={request.id}>
-                      <TableCell className="font-medium">{request.ticketNumber}</TableCell>
+                      <TableCell className="font-medium">{request.ticket_number}</TableCell>
                       <TableCell>
                         <div>
-                          <p className="font-medium">{request.client.name}</p>
-                          <p className="text-xs text-muted-foreground">{request.client.branch}</p>
+                          <p className="font-medium">{request.client?.name || 'Unknown client'}</p>
+                          <p className="text-xs text-muted-foreground">{request.client?.branch || '-'}</p>
                         </div>
                       </TableCell>
                       <TableCell className="uppercase text-xs">
-                        {request.client.contractType}
+                        {request.client?.contract_type || '-'}
                       </TableCell>
                       <TableCell>
                         <PriorityBadge priority={request.priority} />
@@ -290,32 +317,40 @@ export default function Reports() {
                         <StatusBadge status={request.status} />
                       </TableCell>
                       <TableCell>
-                        {request.assignedDeveloper?.name || '-'}
+                        {request.assigned_developer?.name || '-'}
                       </TableCell>
                       <TableCell className="text-muted-foreground">
-                        {format(new Date(request.dateRequested), 'MMM d, yyyy')}
+                        {format(new Date(request.date_requested || request.created_at), 'MMM d, yyyy')}
                       </TableCell>
                       <TableCell className="text-muted-foreground">
-                        {request.commencementDate 
-                          ? format(new Date(request.commencementDate), 'MMM d, yyyy') 
+                        {request.commencement_date 
+                          ? format(new Date(request.commencement_date), 'MMM d, yyyy') 
                           : '-'}
                       </TableCell>
                       <TableCell className="text-muted-foreground">
-                        {request.completionDate 
-                          ? format(new Date(request.completionDate), 'MMM d, yyyy') 
+                        {request.completion_date 
+                          ? format(new Date(request.completion_date), 'MMM d, yyyy') 
                           : '-'}
                       </TableCell>
                     </TableRow>
                   ))}
+                  {filteredRequests.length === 0 && (
+                    <TableRow>
+                      <TableCell colSpan={9} className="py-10 text-center text-muted-foreground">
+                        No requests match the selected filters.
+                      </TableCell>
+                    </TableRow>
+                  )}
                 </TableBody>
               </Table>
+              )}
             </CardContent>
           </Card>
         </TabsContent>
 
         {/* Documents Tab */}
         <TabsContent value="documents" className="space-y-6">
-          <Card>
+          <Card className="shadow-soft">
             <CardHeader>
               <CardTitle>Document Generation</CardTitle>
               <CardDescription>
@@ -336,8 +371,8 @@ export default function Reports() {
                 <TableBody>
                   {changeRequests.map((request) => (
                     <TableRow key={request.id}>
-                      <TableCell className="font-medium">{request.ticketNumber}</TableCell>
-                      <TableCell>{request.client.name}</TableCell>
+                      <TableCell className="font-medium">{request.ticket_number}</TableCell>
+                      <TableCell>{request.client?.name || 'Unknown client'}</TableCell>
                       <TableCell>
                         <StatusBadge status={request.status} />
                       </TableCell>
@@ -369,6 +404,13 @@ export default function Reports() {
                       </TableCell>
                     </TableRow>
                   ))}
+                  {changeRequests.length === 0 && (
+                    <TableRow>
+                      <TableCell colSpan={5} className="py-10 text-center text-muted-foreground">
+                        No live request documents are available yet.
+                      </TableCell>
+                    </TableRow>
+                  )}
                 </TableBody>
               </Table>
             </CardContent>

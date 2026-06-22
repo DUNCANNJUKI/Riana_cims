@@ -21,7 +21,7 @@ const App = () => (
       <Sonner />
       <BrowserRouter>
         <Routes>
-          <Route path="/" element={<Index />} />
+          <Route path="/*" element={<Index />} />
           <Route path="/install" element={<InstallApp />} />
           <Route path="/feedback/:token" element={<FeedbackForm />} />
           <Route path="/reset-password" element={<ResetPassword />} />

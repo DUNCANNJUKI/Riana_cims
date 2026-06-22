@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
 import { format } from 'date-fns';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { Skeleton } from '@/components/ui/skeleton';
+import { Card, CardContent, CardHeader, CardTitle } from '@crms/components/ui/card';
+import { Badge } from '@crms/components/ui/badge';
+import { Skeleton } from '@crms/components/ui/skeleton';
 import {
   FileText,
   CheckCircle2,
@@ -16,7 +16,7 @@ import {
   Edit3,
   AlertCircle
 } from 'lucide-react';
-import { cn } from '@/lib/utils';
+import { cn } from '@crms/lib/utils';
 
 interface AuditLog {
   id: string;

@@ -1,12 +1,12 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Button } from "@/components/ui/button";
-import { CompanyLogoLoader } from "@/components/common/CompanyLogoLoader";
-import { Input } from '@/components/ui/input';
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
-import { useToast } from '@/hooks/use-toast';
+import { Button } from "@crms/components/ui/button";
+import { CompanyLogoLoader } from "@crms/components/common/CompanyLogoLoader";
+import { Input } from '@crms/components/ui/input';
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@crms/components/ui/card';
+import { useToast } from '@crms/hooks/use-toast';
 import { LogIn, ShieldCheck } from 'lucide-react';
-import logoImage from '@/assets/riana-group-logo.jpg';
+import logoImage from '@crms/assets/riana-group-logo.jpg';
 
 export default function Login() {
     const [email, setEmail] = useState('');
@@ -39,14 +39,13 @@ export default function Login() {
                 if (data.developmentCode) setVerificationCode(data.developmentCode);
                 toast({ title: 'Verification required', description: `${data.method.toUpperCase()} verification code sent.` });
             } else if (res.ok && data.success) {
-                localStorage.setItem('crms-user-session', 'active');
-                localStorage.setItem('crms-user-id', data.user.id);
-                localStorage.setItem('crms-auth-token', data.token);
+                localStorage.setItem('riana_user', JSON.stringify(data.user));
+                localStorage.setItem('riana-auth-token', data.token);
                 toast({
                     title: 'Welcome back!',
                     description: `Successfully signed in as ${data.user.name}`,
                 });
-                navigate('/');
+                navigate('/developers');
             } else {
                 toast({
                     title: 'Login failed',

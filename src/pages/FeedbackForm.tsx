@@ -81,7 +81,7 @@ export const FeedbackForm = () => {
     try {
       setIsLoading(true);
       
-      const response = await fetch(`${API_URL}/public/feedback-links/${token}`);
+      const response = await fetch(`${API_URL}/public/feedback-links/${token}`, { credentials: 'include' });
       if (!response.ok) {
         setError('Invalid or expired feedback link');
         return;
@@ -123,6 +123,7 @@ export const FeedbackForm = () => {
       const response = await fetch(`${API_URL}/public/installation-feedback`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify({
             installation_id: feedbackLink.installation_id,
             client_id: feedbackLink.client_id,
@@ -136,7 +137,7 @@ export const FeedbackForm = () => {
       if (!response.ok) throw new Error('Failed to submit feedback');
 
       // Mark feedback link as used (simulated via public endpoint too)
-      await fetch(`${API_URL}/public/feedback-links/${token}/use`, { method: 'POST' });
+      await fetch(`${API_URL}/public/feedback-links/${token}/use`, { method: 'POST', credentials: 'include' });
 
       setIsSubmitted(true);
       toast({

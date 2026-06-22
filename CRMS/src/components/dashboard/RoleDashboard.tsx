@@ -1,7 +1,7 @@
- import { useCurrentUserRole } from '@/hooks/useCurrentUserRole';
- import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
- import { Badge } from '@/components/ui/badge';
- import { Button } from '@/components/ui/button';
+ import { useCurrentUserRole } from '@crms/hooks/useCurrentUserRole';
+ import { Card, CardContent, CardHeader, CardTitle } from '@crms/components/ui/card';
+ import { Badge } from '@crms/components/ui/badge';
+ import { Button } from '@crms/components/ui/button';
  import { Link } from 'react-router-dom';
  import { 
    ClipboardCheck, 
@@ -14,7 +14,7 @@
    AlertTriangle,
    TrendingUp,
  } from 'lucide-react';
- import { useChangeRequests, useClients } from '@/hooks/useSupabaseData';
+ import { useChangeRequests, useClients } from '@crms/hooks/useSupabaseData';
  
  interface RoleCardProps {
    title: string;
@@ -73,7 +73,7 @@
    // Calculate role-specific stats
    const pendingApproval = requests?.filter(r => r.status === 'pending_approval').length || 0;
    const inProgress = requests?.filter(r => r.status === 'in_progress').length || 0;
-   const waitingClarification = requests?.filter(r => r.status === 'waiting').length || 0;
+   const waitingClarification = requests?.filter(r => ['waiting', 'waiting_clarification'].includes(String(r.status))).length || 0;
    const completed = requests?.filter(r => r.status === 'completed').length || 0;
    const critical = requests?.filter(r => r.priority === 'critical' && r.status !== 'completed').length || 0;
    const assigned = requests?.filter(r => r.status === 'assigned').length || 0;
@@ -96,8 +96,8 @@
              { label: 'Completed', value: completed, icon: CheckCircle2 },
            ]}
            actions={[
-             { label: 'Manage Users', href: '/users' },
-             { label: 'View Reports', href: '/reports', variant: 'outline' },
+             { label: 'View Reports', href: '/developers/reports', variant: 'outline' },
+             { label: 'View Requests', href: '/developers/requests', variant: 'outline' },
            ]}
          />
        );
@@ -110,7 +110,7 @@
            key="senior"
            title="Development Lead"
            description="Request Management"
-           accentColor="border-l-blue-500"
+            accentColor="border-l-status-in-progress"
            stats={[
              { label: 'Pending Assignment', value: pendingApproval, icon: Clock },
              { label: 'In Progress', value: inProgress, icon: PlayCircle },
@@ -118,8 +118,8 @@
              { label: 'Assigned', value: assigned, icon: ClipboardCheck },
            ]}
            actions={[
-             { label: 'Create Request', href: '/requests/new' },
-             { label: 'View All Requests', href: '/requests', variant: 'outline' },
+             { label: 'Create Request', href: '/developers/requests/new' },
+             { label: 'View All Requests', href: '/developers/requests', variant: 'outline' },
            ]}
          />
        );
@@ -132,7 +132,7 @@
            key="developer"
            title="My Assignments"
            description="Developer Tasks"
-           accentColor="border-l-green-500"
+            accentColor="border-l-status-completed"
            stats={[
              { label: 'Assigned to Me', value: assigned, icon: ClipboardCheck },
              { label: 'In Progress', value: inProgress, icon: PlayCircle },
@@ -140,7 +140,7 @@
              { label: 'Completed', value: completed, icon: CheckCircle2 },
            ]}
            actions={[
-             { label: 'View My Tasks', href: '/assignments' },
+             { label: 'View My Tasks', href: '/developers/assignments' },
            ]}
          />
        );
@@ -153,7 +153,7 @@
            key="sales"
            title="Approvals Queue"
            description="Commercial Review"
-           accentColor="border-l-amber-500"
+            accentColor="border-l-status-pending"
            stats={[
              { label: 'Pending Approval', value: pendingApproval, icon: Clock },
              { label: 'On Hold', value: waitingClarification, icon: AlertTriangle },
@@ -161,8 +161,8 @@
              { label: 'Completion Rate', value: requests?.length ? Math.round((completed / requests.length) * 100) : 0, icon: TrendingUp },
            ]}
            actions={[
-             { label: 'Review Approvals', href: '/approvals' },
-             { label: 'View Reports', href: '/reports', variant: 'outline' },
+             { label: 'Review Approvals', href: '/developers/approvals' },
+             { label: 'View Reports', href: '/developers/reports', variant: 'outline' },
            ]}
          />
        );

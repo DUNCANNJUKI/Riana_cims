@@ -1,5 +1,5 @@
-import { cn } from '@/lib/utils';
-import { Priority } from '@/types';
+import { cn } from '@crms/lib/utils';
+import { Priority } from '@crms/types';
 
 interface PriorityBadgeProps {
   priority: Priority;

@@ -35,7 +35,7 @@ export const ImportModule = ({ user }: ImportModuleProps) => {
   const { toast } = useToast();
 
   // Only Admin and Teamlead can access this module
-  if (user.role !== 'Admin' && user.role !== 'Teamlead') {
+  if (user.role !== 'SuperAdmin' && user.role !== 'Admin' && user.role !== 'Teamlead') {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="text-center">

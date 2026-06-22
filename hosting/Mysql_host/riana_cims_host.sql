@@ -1,5 +1,5 @@
 -- RIANA CIMS MySQL hosting database
--- Generated 2026-06-20T22:52:27.384Z
+-- Generated 2026-06-21T03:47:04.431Z
 -- Complete schema with sanitized reference data; no credentials or customer records.
 SET NAMES utf8mb4;
 SET FOREIGN_KEY_CHECKS = 0;
@@ -128,6 +128,8 @@ CREATE TABLE `company_settings` (
   `backup_time` varchar(10) DEFAULT '02:00',
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+INSERT INTO `company_settings` (`id`, `name`, `logo_path`, `font_color`, `primary_color`, `font_type`, `contract_types`, `backup_schedule`, `updated_at`, `backup_day`, `backup_time`) VALUES (1, 'RIANA CIMS', '/Riana_logo.png', '#000000', '#1A91AB', 'Inter', '[\"AMC\",\"Once-off\",\"Subscription\"]', '0 2 * * *', '2026-03-21 23:06:17.000', 'Daily', '02:00');
 
 DROP TABLE IF EXISTS `crms_audit_logs`;
 CREATE TABLE `crms_audit_logs` (
@@ -425,6 +427,30 @@ CREATE TABLE `messages` (
   CONSTRAINT `messages_ibfk_2` FOREIGN KEY (`receiver_id`) REFERENCES `user_profiles` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+DROP TABLE IF EXISTS `migration_history`;
+CREATE TABLE `migration_history` (
+  `migration_id` varchar(100) NOT NULL,
+  `description` varchar(255) NOT NULL,
+  `applied_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`migration_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+INSERT INTO `migration_history` (`migration_id`, `description`, `applied_at`) VALUES ('20260621_security_foundation', 'Unified module RBAC, session revocation, security settings, and audit events', '2026-06-21 06:41:40.000');
+
+DROP TABLE IF EXISTS `modules`;
+CREATE TABLE `modules` (
+  `id` varchar(32) NOT NULL,
+  `code` varchar(32) NOT NULL,
+  `name` varchar(100) NOT NULL,
+  `is_active` tinyint(1) NOT NULL DEFAULT 1,
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `code` (`code`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+INSERT INTO `modules` (`id`, `code`, `name`, `is_active`, `created_at`) VALUES ('cims', 'cims', 'Client Installation Management', 1, '2026-06-21 06:41:40.000');
+INSERT INTO `modules` (`id`, `code`, `name`, `is_active`, `created_at`) VALUES ('crms', 'crms', 'Change Request Management', 1, '2026-06-21 06:41:40.000');
+
 DROP TABLE IF EXISTS `password_reset_tokens`;
 CREATE TABLE `password_reset_tokens` (
   `id` char(36) NOT NULL,
@@ -439,6 +465,117 @@ CREATE TABLE `password_reset_tokens` (
   KEY `idx_password_reset_lookup` (`token_hash`,`used_at`,`expires_at`),
   CONSTRAINT `password_reset_tokens_ibfk_1` FOREIGN KEY (`user_id`) REFERENCES `user_profiles` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+DROP TABLE IF EXISTS `permissions`;
+CREATE TABLE `permissions` (
+  `id` varchar(100) NOT NULL,
+  `module_id` varchar(32) NOT NULL,
+  `code` varchar(80) NOT NULL,
+  `description` varchar(255) NOT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_permissions_module_code` (`module_id`,`code`),
+  CONSTRAINT `fk_permissions_module` FOREIGN KEY (`module_id`) REFERENCES `modules` (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+INSERT INTO `permissions` (`id`, `module_id`, `code`, `description`) VALUES ('cims:admin', 'cims', 'admin', 'Manage CIMS users and settings');
+INSERT INTO `permissions` (`id`, `module_id`, `code`, `description`) VALUES ('cims:backup.manage', 'cims', 'backup.manage', 'View, schedule, and create verified backups');
+INSERT INTO `permissions` (`id`, `module_id`, `code`, `description`) VALUES ('cims:manage', 'cims', 'manage', 'Manage CIMS operational records');
+INSERT INTO `permissions` (`id`, `module_id`, `code`, `description`) VALUES ('cims:read', 'cims', 'read', 'Read permitted CIMS records');
+INSERT INTO `permissions` (`id`, `module_id`, `code`, `description`) VALUES ('crms:admin', 'crms', 'admin', 'Manage CRMS users and settings');
+INSERT INTO `permissions` (`id`, `module_id`, `code`, `description`) VALUES ('crms:approve', 'crms', 'approve', 'Approve or reject change requests');
+INSERT INTO `permissions` (`id`, `module_id`, `code`, `description`) VALUES ('crms:assign', 'crms', 'assign', 'Assign and schedule change requests');
+INSERT INTO `permissions` (`id`, `module_id`, `code`, `description`) VALUES ('crms:create', 'crms', 'create', 'Create change requests');
+INSERT INTO `permissions` (`id`, `module_id`, `code`, `description`) VALUES ('crms:implement', 'crms', 'implement', 'Update assigned implementation work');
+INSERT INTO `permissions` (`id`, `module_id`, `code`, `description`) VALUES ('crms:read', 'crms', 'read', 'Read permitted change requests');
+
+DROP TABLE IF EXISTS `roles`;
+CREATE TABLE `roles` (
+  `id` varchar(80) NOT NULL,
+  `module_id` varchar(32) NOT NULL,
+  `code` varchar(32) NOT NULL,
+  `name` varchar(100) NOT NULL,
+  `is_system` tinyint(1) NOT NULL DEFAULT 1,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_roles_module_code` (`module_id`,`code`),
+  CONSTRAINT `fk_roles_module` FOREIGN KEY (`module_id`) REFERENCES `modules` (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+INSERT INTO `roles` (`id`, `module_id`, `code`, `name`, `is_system`) VALUES ('cims:Admin', 'cims', 'Admin', 'Administrator', 1);
+INSERT INTO `roles` (`id`, `module_id`, `code`, `name`, `is_system`) VALUES ('cims:Developer', 'cims', 'Developer', 'Developer', 1);
+INSERT INTO `roles` (`id`, `module_id`, `code`, `name`, `is_system`) VALUES ('cims:Sales', 'cims', 'Sales', 'Sales', 1);
+INSERT INTO `roles` (`id`, `module_id`, `code`, `name`, `is_system`) VALUES ('cims:Teamlead', 'cims', 'Teamlead', 'Team Lead', 1);
+INSERT INTO `roles` (`id`, `module_id`, `code`, `name`, `is_system`) VALUES ('cims:User', 'cims', 'User', 'User', 1);
+INSERT INTO `roles` (`id`, `module_id`, `code`, `name`, `is_system`) VALUES ('crms:Admin', 'crms', 'Admin', 'Administrator', 1);
+INSERT INTO `roles` (`id`, `module_id`, `code`, `name`, `is_system`) VALUES ('crms:Developer', 'crms', 'Developer', 'Developer', 1);
+INSERT INTO `roles` (`id`, `module_id`, `code`, `name`, `is_system`) VALUES ('crms:Sales', 'crms', 'Sales', 'Sales', 1);
+INSERT INTO `roles` (`id`, `module_id`, `code`, `name`, `is_system`) VALUES ('crms:Teamlead', 'crms', 'Teamlead', 'Team Lead', 1);
+
+DROP TABLE IF EXISTS `role_permissions`;
+CREATE TABLE `role_permissions` (
+  `role_id` varchar(80) NOT NULL,
+  `permission_id` varchar(100) NOT NULL,
+  PRIMARY KEY (`role_id`,`permission_id`),
+  KEY `fk_role_permissions_permission` (`permission_id`),
+  CONSTRAINT `fk_role_permissions_permission` FOREIGN KEY (`permission_id`) REFERENCES `permissions` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_role_permissions_role` FOREIGN KEY (`role_id`) REFERENCES `roles` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+INSERT INTO `role_permissions` (`role_id`, `permission_id`) VALUES ('cims:Admin', 'cims:admin');
+INSERT INTO `role_permissions` (`role_id`, `permission_id`) VALUES ('cims:Admin', 'cims:backup.manage');
+INSERT INTO `role_permissions` (`role_id`, `permission_id`) VALUES ('cims:Admin', 'cims:manage');
+INSERT INTO `role_permissions` (`role_id`, `permission_id`) VALUES ('cims:Admin', 'cims:read');
+INSERT INTO `role_permissions` (`role_id`, `permission_id`) VALUES ('cims:Developer', 'cims:read');
+INSERT INTO `role_permissions` (`role_id`, `permission_id`) VALUES ('cims:Sales', 'cims:read');
+INSERT INTO `role_permissions` (`role_id`, `permission_id`) VALUES ('cims:Teamlead', 'cims:manage');
+INSERT INTO `role_permissions` (`role_id`, `permission_id`) VALUES ('cims:Teamlead', 'cims:read');
+INSERT INTO `role_permissions` (`role_id`, `permission_id`) VALUES ('cims:User', 'cims:read');
+INSERT INTO `role_permissions` (`role_id`, `permission_id`) VALUES ('crms:Admin', 'crms:admin');
+INSERT INTO `role_permissions` (`role_id`, `permission_id`) VALUES ('crms:Admin', 'crms:approve');
+INSERT INTO `role_permissions` (`role_id`, `permission_id`) VALUES ('crms:Admin', 'crms:assign');
+INSERT INTO `role_permissions` (`role_id`, `permission_id`) VALUES ('crms:Admin', 'crms:create');
+INSERT INTO `role_permissions` (`role_id`, `permission_id`) VALUES ('crms:Admin', 'crms:implement');
+INSERT INTO `role_permissions` (`role_id`, `permission_id`) VALUES ('crms:Admin', 'crms:read');
+INSERT INTO `role_permissions` (`role_id`, `permission_id`) VALUES ('crms:Developer', 'crms:implement');
+INSERT INTO `role_permissions` (`role_id`, `permission_id`) VALUES ('crms:Developer', 'crms:read');
+INSERT INTO `role_permissions` (`role_id`, `permission_id`) VALUES ('crms:Sales', 'crms:approve');
+INSERT INTO `role_permissions` (`role_id`, `permission_id`) VALUES ('crms:Sales', 'crms:create');
+INSERT INTO `role_permissions` (`role_id`, `permission_id`) VALUES ('crms:Sales', 'crms:read');
+INSERT INTO `role_permissions` (`role_id`, `permission_id`) VALUES ('crms:Teamlead', 'crms:assign');
+INSERT INTO `role_permissions` (`role_id`, `permission_id`) VALUES ('crms:Teamlead', 'crms:create');
+INSERT INTO `role_permissions` (`role_id`, `permission_id`) VALUES ('crms:Teamlead', 'crms:implement');
+INSERT INTO `role_permissions` (`role_id`, `permission_id`) VALUES ('crms:Teamlead', 'crms:read');
+
+DROP TABLE IF EXISTS `security_audit_events`;
+CREATE TABLE `security_audit_events` (
+  `id` char(36) NOT NULL,
+  `actor_user_id` varchar(36) DEFAULT NULL,
+  `module` varchar(32) NOT NULL,
+  `action` varchar(100) NOT NULL,
+  `outcome` enum('success','failure') NOT NULL DEFAULT 'success',
+  `source_ip` varchar(45) DEFAULT NULL,
+  `details` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL CHECK (json_valid(`details`)),
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`id`),
+  KEY `idx_security_audit_actor_created` (`actor_user_id`,`created_at`),
+  KEY `idx_security_audit_action_created` (`action`,`created_at`),
+  CONSTRAINT `security_audit_events_ibfk_1` FOREIGN KEY (`actor_user_id`) REFERENCES `user_profiles` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+DROP TABLE IF EXISTS `security_settings`;
+CREATE TABLE `security_settings` (
+  `id` tinyint(3) unsigned NOT NULL,
+  `inactivity_minutes` smallint(5) unsigned NOT NULL DEFAULT 10,
+  `warning_seconds` smallint(5) unsigned NOT NULL DEFAULT 60,
+  `sensitive_rate_limit` smallint(5) unsigned NOT NULL DEFAULT 20,
+  `sensitive_rate_window_minutes` smallint(5) unsigned NOT NULL DEFAULT 5,
+  `updated_by` varchar(36) DEFAULT NULL,
+  `updated_at` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  PRIMARY KEY (`id`),
+  KEY `fk_security_settings_user` (`updated_by`),
+  CONSTRAINT `fk_security_settings_user` FOREIGN KEY (`updated_by`) REFERENCES `user_profiles` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+INSERT INTO `security_settings` (`id`, `inactivity_minutes`, `warning_seconds`, `sensitive_rate_limit`, `sensitive_rate_window_minutes`, `updated_by`, `updated_at`) VALUES (1, 10, 60, 20, 5, NULL, '2026-06-21 06:41:40.000');
 
 DROP TABLE IF EXISTS `subsidiaries`;
 CREATE TABLE `subsidiaries` (
@@ -489,6 +626,23 @@ CREATE TABLE `technician_performance_scores` (
   CONSTRAINT `technician_performance_scores_ibfk_1` FOREIGN KEY (`technician_id`) REFERENCES `user_profiles` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+DROP TABLE IF EXISTS `user_module_roles`;
+CREATE TABLE `user_module_roles` (
+  `user_id` varchar(36) NOT NULL,
+  `module_id` varchar(32) NOT NULL,
+  `role_id` varchar(80) NOT NULL,
+  `granted_by` varchar(36) DEFAULT NULL,
+  `granted_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`user_id`,`module_id`),
+  KEY `idx_user_module_roles_role` (`role_id`),
+  KEY `fk_user_module_roles_module` (`module_id`),
+  KEY `fk_user_module_roles_grantor` (`granted_by`),
+  CONSTRAINT `fk_user_module_roles_grantor` FOREIGN KEY (`granted_by`) REFERENCES `user_profiles` (`id`) ON DELETE SET NULL,
+  CONSTRAINT `fk_user_module_roles_module` FOREIGN KEY (`module_id`) REFERENCES `modules` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_user_module_roles_role` FOREIGN KEY (`role_id`) REFERENCES `roles` (`id`),
+  CONSTRAINT `fk_user_module_roles_user` FOREIGN KEY (`user_id`) REFERENCES `user_profiles` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 DROP TABLE IF EXISTS `user_profiles`;
 CREATE TABLE `user_profiles` (
   `id` varchar(36) NOT NULL DEFAULT uuid(),
@@ -508,6 +662,7 @@ CREATE TABLE `user_profiles` (
   `two_factor_enabled` tinyint(1) NOT NULL DEFAULT 0,
   `two_factor_method` enum('email','sms','call') NOT NULL DEFAULT 'email',
   `two_factor_phone` varchar(30) DEFAULT NULL,
+  `session_version` int(10) unsigned NOT NULL DEFAULT 0,
   PRIMARY KEY (`id`),
   UNIQUE KEY `email` (`email`),
   KEY `idx_users_role_active` (`role`,`is_active`),

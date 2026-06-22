@@ -8,11 +8,11 @@ import {
   Mail,
   Building2,
 } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { Button } from '@crms/components/ui/button';
+import { Input } from '@crms/components/ui/input';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@crms/components/ui/card';
+import { Badge } from '@crms/components/ui/badge';
+import { Avatar, AvatarFallback, AvatarImage } from '@crms/components/ui/avatar';
 import {
   Table,
   TableBody,
@@ -20,7 +20,7 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from '@/components/ui/table';
+} from '@crms/components/ui/table';
 import {
   Dialog,
   DialogContent,
@@ -29,18 +29,18 @@ import {
   DialogHeader,
   DialogTitle,
   DialogTrigger,
-} from '@/components/ui/dialog';
-import { Label } from '@/components/ui/label';
+} from '@crms/components/ui/dialog';
+import { Label } from '@crms/components/ui/label';
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select';
-import { useUsersWithRoles, useCreateProfile, useUpdateProfile, useCreateUserRole, useUpdateUserRole, useDeleteProfile } from '@/hooks/useSupabaseData';
-import { useToast } from '@/hooks/use-toast';
-import { Skeleton } from '@/components/ui/skeleton';
+} from '@crms/components/ui/select';
+import { useUsersWithRoles, useCreateProfile, useUpdateProfile, useCreateUserRole, useUpdateUserRole, useDeleteProfile } from '@crms/hooks/useSupabaseData';
+import { useToast } from '@crms/hooks/use-toast';
+import { Skeleton } from '@crms/components/ui/skeleton';
 import {
   Trash2,
   Ban,
@@ -54,7 +54,7 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+} from "@crms/components/ui/dropdown-menu";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -64,7 +64,7 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
+} from "@crms/components/ui/alert-dialog";
 
 const roleColors: Record<string, string> = {
   admin: 'bg-primary/10 text-primary border-primary/20',

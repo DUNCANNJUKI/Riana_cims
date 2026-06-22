@@ -42,6 +42,7 @@ export const apiFetch = async (endpoint: string, options: RequestInit = {}, retr
   try {
     const response = await fetch(`${API_URL}${endpoint}`, {
       ...options,
+      credentials: options.credentials || 'include',
       headers
     });
 
@@ -57,12 +58,65 @@ export const apiFetch = async (endpoint: string, options: RequestInit = {}, retr
 
     return response.json();
   } catch (error: any) {
-    if (retries > 0 && (error.message.includes('Failed to fetch') || error.name === 'TypeError')) {
+    const method = (options.method || 'GET').toUpperCase();
+    const isSafeToRetry = method === 'GET' || method === 'HEAD';
+    if (isSafeToRetry && retries > 0 && (error.message.includes('Failed to fetch') || error.name === 'TypeError')) {
       console.warn(`API request failed, retrying... (${retries} left)`, endpoint);
       // Wait a bit before retrying
       await new Promise(resolve => setTimeout(resolve, 1000));
       return apiFetch(endpoint, options, retries - 1);
     }
+    throw error;
+  }
+};
+
+export const fetchAuthenticatedBlob = async (endpoint: string): Promise<Blob> => {
+  const token = getAuthToken();
+  const headers = new Headers();
+  if (token) headers.set('Authorization', `Bearer ${token}`);
+
+  const response = await fetch(`${API_URL}${endpoint}`, {
+    method: 'GET',
+    credentials: 'include',
+    headers,
+  });
+
+  if (!response.ok) {
+    if (response.status === 401) {
+      clearAuthToken();
+      localStorage.removeItem('riana_user');
+      window.location.assign('/');
+    }
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.error || response.statusText || 'File request failed');
+  }
+
+  return response.blob();
+};
+
+export const downloadAuthenticatedFile = async (endpoint: string, fileName: string) => {
+  const blob = await fetchAuthenticatedBlob(endpoint);
+  const objectUrl = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = objectUrl;
+  anchor.download = fileName;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  URL.revokeObjectURL(objectUrl);
+};
+
+export const previewAuthenticatedFile = async (endpoint: string) => {
+  const previewWindow = window.open('', '_blank');
+  if (previewWindow) previewWindow.opener = null;
+  try {
+    const blob = await fetchAuthenticatedBlob(endpoint);
+    const objectUrl = URL.createObjectURL(blob);
+    if (previewWindow) previewWindow.location.href = objectUrl;
+    else window.location.assign(objectUrl);
+    window.setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
+  } catch (error) {
+    previewWindow?.close();
     throw error;
   }
 };

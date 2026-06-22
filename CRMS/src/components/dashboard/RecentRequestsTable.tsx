@@ -8,18 +8,18 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from '@/components/ui/table';
-import { Button } from '@/components/ui/button';
+} from '@crms/components/ui/table';
+import { Button } from '@crms/components/ui/button';
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-import { StatusBadge } from '@/components/common/StatusBadge';
-import { PriorityBadge } from '@/components/common/PriorityBadge';
-import { useChangeRequests } from '@/hooks/useSupabaseData';
-import { Skeleton } from '@/components/ui/skeleton';
+} from '@crms/components/ui/dropdown-menu';
+import { StatusBadge } from '@crms/components/common/StatusBadge';
+import { PriorityBadge } from '@crms/components/common/PriorityBadge';
+import { useChangeRequests } from '@crms/hooks/useSupabaseData';
+import { Skeleton } from '@crms/components/ui/skeleton';
 
 export function RecentRequestsTable() {
   const { data: allRequests, isLoading } = useChangeRequests();
@@ -48,7 +48,7 @@ export function RecentRequestsTable() {
           <h3 className="font-semibold">Recent Change Requests</h3>
           <p className="text-sm text-muted-foreground">Latest requests requiring attention</p>
         </div>
-        <Link to="/requests">
+        <Link to="/developers/requests">
           <Button variant="outline" size="sm">
             View All
             <ExternalLink className="ml-2 h-4 w-4" />
@@ -71,7 +71,7 @@ export function RecentRequestsTable() {
           {recentRequests.map((request) => (
             <TableRow key={request.id} className="table-row-interactive">
               <TableCell className="font-medium text-primary">
-                <Link to={`/requests/${request.id}`} className="hover:underline">
+                <Link to={`/developers/requests/${request.id}`} className="hover:underline">
                   {request.ticket_number}
                 </Link>
               </TableCell>
@@ -104,7 +104,7 @@ export function RecentRequestsTable() {
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end">
                     <DropdownMenuItem asChild>
-                      <Link to={`/requests/${request.id}`}>View Details</Link>
+                      <Link to={`/developers/requests/${request.id}`}>View Details</Link>
                     </DropdownMenuItem>
                     <DropdownMenuItem>Edit Request</DropdownMenuItem>
                     <DropdownMenuItem>Assign Developer</DropdownMenuItem>

@@ -5,7 +5,18 @@ const pool = require('../db');
 
 const outputDirectory = path.join(__dirname, '../../hosting/Mysql_host');
 const outputFile = path.join(outputDirectory, 'riana_cims_host.sql');
-const safeSeedTables = new Set(['departments', 'subsidiaries', 'feedback_questions']);
+const safeSeedTables = new Set([
+  'company_settings',
+  'departments',
+  'subsidiaries',
+  'feedback_questions',
+  'modules',
+  'roles',
+  'permissions',
+  'role_permissions',
+  'security_settings',
+  'migration_history',
+]);
 
 async function run() {
   const database = process.env.DATABASE_NAME || 'riana_cims';

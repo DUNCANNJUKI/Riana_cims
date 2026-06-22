@@ -7,10 +7,10 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
-import { Upload, Download, FileText, Search, Shield, Calendar, User as UserIcon, AlertCircle, CheckCircle2, Loader2 } from "lucide-react";
+import { Upload, Download, FileText, Search, Calendar, AlertCircle, CheckCircle2, Loader2, Eye } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useDatabase } from "@/hooks/useDatabase";
-import { apiClient } from "@/integrations/apiClient";
+import { apiClient, downloadAuthenticatedFile, previewAuthenticatedFile } from "@/integrations/apiClient";
 import { User, Client, Installation } from "@/types";
 
 interface HandoverUploadModuleProps {
@@ -197,8 +197,8 @@ export const HandoverUploadModule = ({ user }: HandoverUploadModuleProps) => {
   };
   const handleDownload = async (handover: any) => {
     try {
-      const url = `${import.meta.env.VITE_API_BASE_URL || ''}/api/download?path=${encodeURIComponent(handover.file_path)}`;
-      window.open(url, '_blank');
+      const fileName = handover.file_name || handover.file_path.split('/').pop() || 'handover-document';
+      await downloadAuthenticatedFile(`/download?path=${encodeURIComponent(handover.file_path)}`, fileName);
       
       toast({
         title: "Download Started",
@@ -209,6 +209,19 @@ export const HandoverUploadModule = ({ user }: HandoverUploadModuleProps) => {
       toast({
         title: "Download Failed",
         description: error.message || "Failed to download handover document",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handlePreview = async (handover: any) => {
+    try {
+      await previewAuthenticatedFile(`/download?path=${encodeURIComponent(handover.file_path)}&disposition=inline`);
+    } catch (error: any) {
+      console.error('Preview error:', error);
+      toast({
+        title: "Preview Failed",
+        description: error.message || "Failed to preview handover document",
         variant: "destructive",
       });
     }
@@ -373,15 +386,25 @@ export const HandoverUploadModule = ({ user }: HandoverUploadModuleProps) => {
                   </TableCell>
                   <TableCell>
                     <div className="flex gap-2">
-                      {(user.role === 'Admin' || user.role === 'Teamlead') && (
-                        <Button 
-                          variant="outline" 
-                          size="sm"
-                          onClick={() => handleDownload(handover)}
-                        >
-                          <Download className="h-3 w-3 mr-1" />
-                          Download
-                        </Button>
+                      {(user.role === 'SuperAdmin' || user.role === 'Admin' || user.role === 'Teamlead') && (
+                        <>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handlePreview(handover)}
+                          >
+                            <Eye className="h-3 w-3 mr-1" />
+                            Preview
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleDownload(handover)}
+                          >
+                            <Download className="h-3 w-3 mr-1" />
+                            Download
+                          </Button>
+                        </>
                       )}
                     </div>
                   </TableCell>

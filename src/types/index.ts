@@ -3,8 +3,9 @@
 export interface User {
   id: string;
   email: string;
-  role: 'Admin' | 'Developer' | 'Teamlead' | 'Sales' | 'User';
-  designation?: 'Admin' | 'Developer' | 'Teamlead' | 'Sales' | 'Field specialist' | 'Product Specialist' | 'Customer success' | 'Intern' | 'Manager' | 'Support' | 'Hardware Engineer';
+  role: 'SuperAdmin' | 'Admin' | 'Developer' | 'Teamlead' | 'Sales' | 'User';
+  module_roles?: Partial<Record<'cims' | 'crms', 'SuperAdmin' | 'Admin' | 'Developer' | 'Teamlead' | 'Sales' | 'User' | null>>;
+  designation?: 'SuperAdmin' | 'Admin' | 'Developer' | 'Teamlead' | 'Sales' | 'Field specialist' | 'Product Specialist' | 'Customer success' | 'Intern' | 'Manager' | 'Support' | 'Hardware Engineer';
   department_id: string | null;
   subsidiary_id: string | null;
   department_name?: string;

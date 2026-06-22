@@ -2,9 +2,9 @@ import { useState, useEffect, useRef } from 'react';
 import { useTheme } from 'next-themes';
 import { useNavigate } from 'react-router-dom';
 import { Bell, Search, User, LogOut, Settings, Moon, Sun, Check, Loader2 } from 'lucide-react';
-import { useToast } from '@/hooks/use-toast';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
+import { useToast } from '@crms/hooks/use-toast';
+import { Button } from '@crms/components/ui/button';
+import { Input } from '@crms/components/ui/input';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -12,23 +12,23 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
+} from '@crms/components/ui/dropdown-menu';
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
-} from '@/components/ui/popover';
-import { Avatar, AvatarFallback } from '@/components/ui/avatar';
-import { useCurrentUserRole } from '@/hooks/useCurrentUserRole';
-import { cn } from '@/lib/utils';
+} from '@crms/components/ui/popover';
+import { Avatar, AvatarFallback } from '@crms/components/ui/avatar';
+import { useCurrentUserRole } from '@crms/hooks/useCurrentUserRole';
+import { cn } from '@crms/lib/utils';
 import { formatDistanceToNow } from 'date-fns';
 import {
   useUserNotifications,
   useMarkNotificationAsRead,
   useMarkAllNotificationsAsRead,
   useRealtimeNotifications
-} from '@/hooks/useNotificationsData';
-import { notificationSound } from '@/lib/notificationSound';
+} from '@crms/hooks/useNotificationsData';
+import { notificationSound } from '@crms/lib/notificationSound';
 
 export function Header() {
   const navigate = useNavigate();
@@ -238,7 +238,7 @@ export function Header() {
                 <Button
                   variant="ghost"
                   className="w-full text-sm text-primary hover:text-primary hover:bg-primary/10"
-                  onClick={() => navigate('/notifications')}
+                  onClick={() => navigate('/developers/notifications')}
                 >
                   View all notifications
                 </Button>
@@ -273,7 +273,7 @@ export function Header() {
             </DropdownMenuItem>
             <DropdownMenuItem
               className="hover:bg-primary/10 hover:text-primary cursor-pointer"
-              onClick={() => navigate('/settings')}
+              onClick={() => navigate('/developers/settings')}
             >
               <Settings className="mr-2 h-4 w-4" />
               Settings
@@ -282,11 +282,10 @@ export function Header() {
             <DropdownMenuItem
               className="text-destructive hover:bg-destructive/10 hover:text-destructive cursor-pointer"
               onClick={() => {
-                localStorage.removeItem('crms-user-session');
-                localStorage.removeItem('crms-user-id');
-                localStorage.removeItem('crms-auth-token');
+                localStorage.removeItem('riana-auth-token');
+                localStorage.removeItem('riana_user');
                 toast({ title: 'Logged out', description: 'You have been signed out.' });
-                navigate('/login');
+                window.location.assign('/');
               }}
             >
               <LogOut className="mr-2 h-4 w-4" />

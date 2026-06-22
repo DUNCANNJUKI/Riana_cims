@@ -137,7 +137,7 @@ export const Dashboard = ({ user, stats }: DashboardProps) => {
         })}
       </div>
 
-      {(user.role === 'Admin' || user.role === 'Teamlead') && (
+      {(user.role === 'SuperAdmin' || user.role === 'Admin' || user.role === 'Teamlead') && (
         <NoticeBoard />
       )}
 

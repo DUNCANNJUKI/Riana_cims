@@ -156,7 +156,7 @@ export const InstallationProgressModule = ({ user }: InstallationProgressProps) 
   });
 
   const handleStatusUpdate = async (installationId: string, newStatus: string, reason?: string) => {
-    if (user.role !== 'Teamlead' && user.role !== 'Admin') {
+    if (user.role !== 'SuperAdmin' && user.role !== 'Teamlead' && user.role !== 'Admin') {
       toast({
         title: "Access Denied",
         description: "Only team leads and admins can update installation status",
@@ -334,7 +334,7 @@ export const InstallationProgressModule = ({ user }: InstallationProgressProps) 
                 <TableHead>Status</TableHead>
                 <TableHead>Progress</TableHead>
                 <TableHead>Technician</TableHead>
-                {(user.role === 'Teamlead' || user.role === 'Admin') && <TableHead>Actions</TableHead>}
+                {(user.role === 'SuperAdmin' || user.role === 'Teamlead' || user.role === 'Admin') && <TableHead>Actions</TableHead>}
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -383,7 +383,7 @@ export const InstallationProgressModule = ({ user }: InstallationProgressProps) 
                       )}
                     </div>
                   </TableCell>
-                  {(user.role === 'Teamlead' || user.role === 'Admin') && (
+                  {(user.role === 'SuperAdmin' || user.role === 'Teamlead' || user.role === 'Admin') && (
                     <TableCell>
                       <div className="flex gap-2">
                         <Select

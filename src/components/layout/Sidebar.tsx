@@ -8,6 +8,8 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { useDatabase } from "@/hooks/useDatabase";
 import { useEffect } from "react";
 import { useToast } from "@/hooks/use-toast";
+import { useLocation, useNavigate } from "react-router-dom";
+import { getCompanyBrandingEventDetail, resolveCompanyLogoUrl } from "@/utils/logoUrl";
 
 interface SidebarProps {
   user: User;
@@ -21,45 +23,57 @@ export const Sidebar = ({ user, activeModule, setActiveModule, isMobileOpen, onM
   const currentYear = new Date().getFullYear();
   const { toast } = useToast();
   const { getCompanySettings } = useDatabase();
+  const navigate = useNavigate();
+  const location = useLocation();
   const [logoPath, setLogoPath] = useState("/Riana_logo.png");
+  const developerModuleRole = user.module_roles?.crms;
+  const canAccessDevelopers = Boolean(developerModuleRole && ['SuperAdmin', 'Admin', 'Teamlead', 'Developer', 'Sales'].includes(developerModuleRole));
 
   useEffect(() => {
     const loadSettings = async () => {
       try {
         const settings = await getCompanySettings();
         if (settings?.logo_path) {
-          setLogoPath(settings.logo_path);
+          setLogoPath(resolveCompanyLogoUrl(settings.logo_path, settings.updated_at || settings.id));
         }
       } catch (error) {
         console.error("Error loading logo settings:", error);
       }
     };
     loadSettings();
+
+    const handleBrandingUpdate = (event: Event) => {
+      const { logoPath, version } = getCompanyBrandingEventDetail(event);
+      setLogoPath(resolveCompanyLogoUrl(logoPath, version));
+    };
+
+    window.addEventListener('riana-company-branding-updated', handleBrandingUpdate);
+    return () => window.removeEventListener('riana-company-branding-updated', handleBrandingUpdate);
   }, []);
   
   const menuItems = [
-    { key: 'dashboard', label: 'Dashboard', icon: Home, roles: ['Admin', 'Teamlead', 'Developer', 'Sales', 'User'], category: 'main' },
+    { key: 'dashboard', label: 'Dashboard', icon: Home, roles: ['SuperAdmin', 'Admin', 'Teamlead', 'Developer', 'Sales', 'User'], category: 'main' },
     { key: 'technician-dashboard', label: 'My Tasks', icon: Wrench, roles: ['User'], mobileOnly: true, category: 'main' },
     { key: 'technician-profile', label: 'My Profile', icon: UserCircle, roles: ['User'], category: 'main' },
-    { key: 'clients', label: 'Clients', icon: Building2, roles: ['Admin', 'Teamlead', 'User'], category: 'management' },
-    { key: 'assignments', label: 'Assign', icon: Users, roles: ['Admin', 'Teamlead'], category: 'management' },
-    { key: 'calendar', label: 'Workload Calendar', icon: CalendarDays, roles: ['Admin', 'Teamlead'], category: 'management' },
-    { key: 'installations', label: 'Installations', icon: Package, roles: ['Admin', 'Teamlead', 'User'], category: 'operations' },
-    { key: 'progress', label: 'Installation Progress', icon: TrendingUp, roles: ['Admin', 'Teamlead'], category: 'operations' },
-    { key: 'users', label: 'Users', icon: Users, roles: ['Admin', 'Teamlead'], category: 'admin' },
-    { key: 'finances', label: 'Finances', icon: DollarSign, roles: ['Admin', 'Teamlead'], category: 'admin' },
-    { key: 'announcements-management', label: 'Announcements', icon: Megaphone, roles: ['Admin', 'Teamlead'], category: 'admin' },
-    { key: 'company', label: 'Company Settings', icon: History, roles: ['Admin'], category: 'admin' },
-    { key: 'import', label: 'Import Data', icon: Upload, roles: ['Admin', 'Teamlead'], category: 'data' },
-    { key: 'reports', label: 'Reports', icon: FileText, roles: ['Admin', 'Teamlead'], category: 'data' },
-    { key: 'analytics', label: 'Analytics', icon: BarChart3, roles: ['Admin', 'Teamlead'], category: 'data' },
-    { key: 'optimus', label: 'RIANA OPTIMUS', icon: Globe, roles: ['Admin', 'Teamlead', 'User'], category: 'external' },
-    { key: 'developers', label: 'Developers', icon: Code2, roles: ['Admin', 'Teamlead', 'Developer', 'Sales'], category: 'external' },
-    { key: 'help', label: 'Help & Support', icon: HelpCircle, roles: ['Admin', 'Teamlead', 'Developer', 'Sales', 'User'], category: 'support' },
+    { key: 'clients', label: 'Clients', icon: Building2, roles: ['SuperAdmin', 'Admin', 'Teamlead', 'User'], category: 'management' },
+    { key: 'assignments', label: 'Assign', icon: Users, roles: ['SuperAdmin', 'Admin', 'Teamlead'], category: 'management' },
+    { key: 'calendar', label: 'Workload Calendar', icon: CalendarDays, roles: ['SuperAdmin', 'Admin', 'Teamlead'], category: 'management' },
+    { key: 'installations', label: 'Installations', icon: Package, roles: ['SuperAdmin', 'Admin', 'Teamlead', 'User'], category: 'operations' },
+    { key: 'progress', label: 'Installation Progress', icon: TrendingUp, roles: ['SuperAdmin', 'Admin', 'Teamlead'], category: 'operations' },
+    { key: 'users', label: 'Users', icon: Users, roles: ['SuperAdmin', 'Admin'], category: 'admin' },
+    { key: 'finances', label: 'Finances', icon: DollarSign, roles: ['SuperAdmin', 'Admin', 'Teamlead'], category: 'admin' },
+    { key: 'announcements-management', label: 'Announcements', icon: Megaphone, roles: ['SuperAdmin', 'Admin', 'Teamlead'], category: 'admin' },
+    { key: 'company', label: 'Company Settings', icon: History, roles: ['SuperAdmin'], category: 'admin' },
+    { key: 'import', label: 'Import Data', icon: Upload, roles: ['SuperAdmin', 'Admin', 'Teamlead'], category: 'data' },
+    { key: 'reports', label: 'Reports', icon: FileText, roles: ['SuperAdmin', 'Admin', 'Teamlead'], category: 'data' },
+    { key: 'analytics', label: 'Analytics', icon: BarChart3, roles: ['SuperAdmin', 'Admin', 'Teamlead'], category: 'data' },
+    { key: 'optimus', label: 'RIANA OPTIMUS', icon: Globe, roles: ['SuperAdmin', 'Admin', 'Teamlead', 'User'], category: 'external' },
+    { key: 'developers', label: 'Developers', icon: Code2, roles: ['SuperAdmin', 'Admin', 'Teamlead', 'Developer', 'Sales'], category: 'developers' },
+    { key: 'help', label: 'Help & Support', icon: HelpCircle, roles: ['SuperAdmin', 'Admin', 'Teamlead', 'Developer', 'Sales', 'User'], category: 'support' },
   ];
 
   const filteredMenuItems = menuItems.filter(item => 
-    item.roles.includes(user.role)
+    item.roles.includes(user.role) || (item.key === 'developers' && canAccessDevelopers)
   );
 
   const handleModuleClick = (key: string) => {
@@ -84,6 +98,8 @@ export const Sidebar = ({ user, activeModule, setActiveModule, isMobileOpen, onM
       return;
     }
     
+    if (key === 'developers') navigate('/developers');
+    else if (location.pathname.startsWith('/developers')) navigate('/');
     setActiveModule(key);
     onMobileClose?.();
   };
@@ -94,6 +110,7 @@ export const Sidebar = ({ user, activeModule, setActiveModule, isMobileOpen, onM
     { key: 'operations', label: 'Operations' },
     { key: 'admin', label: 'Administration' },
     { key: 'data', label: 'Data & Reports' },
+    { key: 'developers', label: 'Developers' },
     { key: 'external', label: 'External Systems' },
     { key: 'support', label: 'Support' },
   ];
@@ -101,6 +118,17 @@ export const Sidebar = ({ user, activeModule, setActiveModule, isMobileOpen, onM
   const getItemsByCategory = (category: string) => {
     return filteredMenuItems.filter(item => item.category === category);
   };
+
+  const developerSubItems = [
+    { label: 'Overview', path: '/developers', roles: ['SuperAdmin', 'Admin', 'Teamlead', 'Developer', 'Sales'] },
+    { label: 'Requests', path: '/developers/requests', roles: ['SuperAdmin', 'Admin', 'Teamlead', 'Developer', 'Sales'] },
+    { label: 'New Request', path: '/developers/requests/new', roles: ['SuperAdmin', 'Admin', 'Teamlead', 'Sales'] },
+    { label: 'Approvals', path: '/developers/approvals', roles: ['SuperAdmin', 'Admin', 'Sales'] },
+    { label: 'Assignments', path: '/developers/assignments', roles: ['SuperAdmin', 'Admin', 'Teamlead', 'Developer'] },
+    { label: 'Reports', path: '/developers/reports', roles: ['SuperAdmin', 'Admin', 'Teamlead', 'Sales'] },
+    { label: 'Audit', path: '/developers/audit', roles: ['SuperAdmin', 'Admin', 'Teamlead'] },
+    { label: 'Notifications', path: '/developers/notifications', roles: ['SuperAdmin', 'Admin', 'Teamlead', 'Developer', 'Sales'] },
+  ].filter((item) => item.roles.includes(developerModuleRole || user.role));
 
   const SidebarContent = () => (
     <div className="flex flex-col h-full">
@@ -119,8 +147,8 @@ export const Sidebar = ({ user, activeModule, setActiveModule, isMobileOpen, onM
                   {items.map((item) => {
                     const isActive = activeModule === item.key;
                     return (
+                      <div key={item.key}>
                       <Button 
-                        key={item.key}
                         variant="ghost"
                         className={cn(
                           "w-full justify-start text-left h-10 px-3 transition-all duration-200 group relative",
@@ -144,6 +172,28 @@ export const Sidebar = ({ user, activeModule, setActiveModule, isMobileOpen, onM
                           isActive ? "opacity-100 translate-x-0" : "group-hover:opacity-50 group-hover:translate-x-0"
                         )} />
                       </Button>
+                      {item.key === 'developers' && isActive && (
+                        <div className="ml-6 mt-1 space-y-0.5 border-l border-border pl-2">
+                          {developerSubItems.map((subItem) => (
+                            <Button
+                              key={subItem.path}
+                              type="button"
+                              variant="ghost"
+                              className={cn(
+                                "h-8 w-full justify-start px-2 text-xs",
+                                location.pathname === subItem.path && "bg-primary/10 text-primary",
+                              )}
+                              onClick={() => {
+                                navigate(subItem.path);
+                                onMobileClose?.();
+                              }}
+                            >
+                              {subItem.label}
+                            </Button>
+                          ))}
+                        </div>
+                      )}
+                      </div>
                     );
                   })}
                 </div>

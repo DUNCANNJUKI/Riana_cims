@@ -32,7 +32,9 @@ async function verify() {
   await getSmsBalance();
   await sendWelcomeCredentials({
     email: 'new.user@riana.co', phoneNumber: '0712345678', name: 'New User',
-    password: 'Temporary123!', loginUrl: 'https://cims.riana.co/',
+    password: 'MUST-NOT-LEAK-Temporary123!',
+    loginUrl: 'https://cims.riana.co/',
+    setupUrl: 'https://cims.riana.co/reset-password?token=mock-secure-setup-token',
   });
 
   const databaseCalls = [];
@@ -67,9 +69,12 @@ async function verify() {
   assert.ok(calls[2].url.endsWith(`/${process.env.B_TEXTMAN_BALANCE_PATH}`));
   const welcomeEmail = JSON.parse(calls[3].options.body);
   assert.match(welcomeEmail.htmlContent, /new\.user@riana\.co/);
-  assert.match(welcomeEmail.htmlContent, /Temporary123!/);
+  assert.match(welcomeEmail.htmlContent, /reset-password\?token=mock-secure-setup-token/);
+  assert.match(welcomeEmail.htmlContent, /choose your password/i);
+  assert.doesNotMatch(welcomeEmail.htmlContent, /MUST-NOT-LEAK|Temporary123!/);
   const welcomeSms = JSON.parse(calls[4].options.body);
-  assert.match(welcomeSms.message, /https:\/\/cims\.riana\.co\//);
+  assert.match(welcomeSms.message, /reset-password\?token=mock-secure-setup-token/);
+  assert.doesNotMatch(welcomeSms.message, /MUST-NOT-LEAK|Temporary123!/);
   assert.equal(JSON.parse(calls[5].options.body).subject, 'New RIANA CIMS assignment');
   assert.match(JSON.parse(calls[6].options.body).message, /new assignment/i);
   assert.equal(JSON.parse(calls[7].options.body).subject, 'Your RIANA CIMS password was changed');

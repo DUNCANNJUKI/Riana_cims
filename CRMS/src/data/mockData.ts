@@ -1,4 +1,4 @@
-import { User, Client, ChangeRequest, Notification, DashboardStats } from '@/types';
+import { User, Client, ChangeRequest, Notification, DashboardStats } from '@crms/types';
 
 export const currentUser: User = {
   id: 'u1',
@@ -200,7 +200,7 @@ export const notifications: Notification[] = [
     message: 'CR-2024-002 from GlobalRetail Inc awaiting your review',
     type: 'info',
     read: false,
-    actionUrl: '/requests/cr2',
+    actionUrl: '/developers/requests/cr2',
     createdAt: '2024-01-16T14:05:00Z',
   },
   {
@@ -210,7 +210,7 @@ export const notifications: Notification[] = [
     message: 'Sarah Chen has completed CR-2024-005 for TechCorp Industries',
     type: 'success',
     read: false,
-    actionUrl: '/requests/cr5',
+    actionUrl: '/developers/requests/cr5',
     createdAt: '2024-01-19T17:00:00Z',
   },
   {
@@ -220,7 +220,7 @@ export const notifications: Notification[] = [
     message: 'CR-2024-003 has been approved by Sales Team for immediate action',
     type: 'warning',
     read: true,
-    actionUrl: '/requests/cr3',
+    actionUrl: '/developers/requests/cr3',
     createdAt: '2024-01-17T16:00:00Z',
   },
   {
@@ -230,7 +230,7 @@ export const notifications: Notification[] = [
     message: 'Michael Roberts has confirmed receipt of CR-2024-003',
     type: 'info',
     read: true,
-    actionUrl: '/requests/cr3',
+    actionUrl: '/developers/requests/cr3',
     createdAt: '2024-01-17T17:00:00Z',
   },
 ];

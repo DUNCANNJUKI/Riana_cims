@@ -28,16 +28,17 @@ export const DataManagementPanel = ({ user }: DataManagementPanelProps) => {
   const [backupTime, setBackupTime] = useState("02:00");
   const [isSavingSchedule, setIsSavingSchedule] = useState(false);
   const { toast } = useToast();
+  const isSuperAdmin = user.role === 'SuperAdmin';
 
   useEffect(() => {
+    if (!isSuperAdmin) return;
     loadBackupsList();
     loadBackupSchedule();
-  }, []);
+  }, [isSuperAdmin]);
 
   const loadBackupSchedule = async () => {
     try {
       const data = await apiClient.get('/admin/backup-schedule');
-      console.log('Loaded backup schedule:', data);
       if (data) {
         if (data.day) setBackupDay(data.day);
         if (data.time) setBackupTime(data.time);
@@ -97,12 +98,12 @@ export const DataManagementPanel = ({ user }: DataManagementPanelProps) => {
     }
   };
 
-  if (user.role !== 'Admin') {
+  if (!isSuperAdmin) {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="text-center">
           <Shield className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-          <p className="text-muted-foreground">Access denied. Admin privileges required.</p>
+          <p className="text-muted-foreground">Access denied. SuperAdmin privileges required.</p>
         </div>
       </div>
     );
