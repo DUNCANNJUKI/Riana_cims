@@ -1,5 +1,5 @@
 -- RIANA CIMS MySQL hosting database
--- Generated 2026-06-21T03:47:04.431Z
+-- Generated 2026-06-22T22:02:38.656Z
 -- Complete schema with sanitized reference data; no credentials or customer records.
 SET NAMES utf8mb4;
 SET FOREIGN_KEY_CHECKS = 0;
@@ -15,6 +15,11 @@ CREATE TABLE `announcements` (
   `priority` enum('low','normal','high') DEFAULT 'normal',
   `created_by` varchar(36) DEFAULT NULL,
   `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  `target_audience` varchar(50) DEFAULT 'all',
+  `is_active` tinyint(1) DEFAULT 1,
+  `expires_at` timestamp NULL DEFAULT NULL,
+  `updated_at` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  `created_by_user_id` varchar(36) DEFAULT NULL,
   PRIMARY KEY (`id`),
   KEY `subsidiary_id` (`subsidiary_id`),
   CONSTRAINT `announcements_ibfk_1` FOREIGN KEY (`subsidiary_id`) REFERENCES `subsidiaries` (`id`) ON DELETE SET NULL
@@ -503,11 +508,13 @@ CREATE TABLE `roles` (
 INSERT INTO `roles` (`id`, `module_id`, `code`, `name`, `is_system`) VALUES ('cims:Admin', 'cims', 'Admin', 'Administrator', 1);
 INSERT INTO `roles` (`id`, `module_id`, `code`, `name`, `is_system`) VALUES ('cims:Developer', 'cims', 'Developer', 'Developer', 1);
 INSERT INTO `roles` (`id`, `module_id`, `code`, `name`, `is_system`) VALUES ('cims:Sales', 'cims', 'Sales', 'Sales', 1);
+INSERT INTO `roles` (`id`, `module_id`, `code`, `name`, `is_system`) VALUES ('cims:SuperAdmin', 'cims', 'SuperAdmin', 'Super Administrator', 1);
 INSERT INTO `roles` (`id`, `module_id`, `code`, `name`, `is_system`) VALUES ('cims:Teamlead', 'cims', 'Teamlead', 'Team Lead', 1);
 INSERT INTO `roles` (`id`, `module_id`, `code`, `name`, `is_system`) VALUES ('cims:User', 'cims', 'User', 'User', 1);
 INSERT INTO `roles` (`id`, `module_id`, `code`, `name`, `is_system`) VALUES ('crms:Admin', 'crms', 'Admin', 'Administrator', 1);
 INSERT INTO `roles` (`id`, `module_id`, `code`, `name`, `is_system`) VALUES ('crms:Developer', 'crms', 'Developer', 'Developer', 1);
 INSERT INTO `roles` (`id`, `module_id`, `code`, `name`, `is_system`) VALUES ('crms:Sales', 'crms', 'Sales', 'Sales', 1);
+INSERT INTO `roles` (`id`, `module_id`, `code`, `name`, `is_system`) VALUES ('crms:SuperAdmin', 'crms', 'SuperAdmin', 'Super Administrator', 1);
 INSERT INTO `roles` (`id`, `module_id`, `code`, `name`, `is_system`) VALUES ('crms:Teamlead', 'crms', 'Teamlead', 'Team Lead', 1);
 
 DROP TABLE IF EXISTS `role_permissions`;
@@ -526,6 +533,10 @@ INSERT INTO `role_permissions` (`role_id`, `permission_id`) VALUES ('cims:Admin'
 INSERT INTO `role_permissions` (`role_id`, `permission_id`) VALUES ('cims:Admin', 'cims:read');
 INSERT INTO `role_permissions` (`role_id`, `permission_id`) VALUES ('cims:Developer', 'cims:read');
 INSERT INTO `role_permissions` (`role_id`, `permission_id`) VALUES ('cims:Sales', 'cims:read');
+INSERT INTO `role_permissions` (`role_id`, `permission_id`) VALUES ('cims:SuperAdmin', 'cims:admin');
+INSERT INTO `role_permissions` (`role_id`, `permission_id`) VALUES ('cims:SuperAdmin', 'cims:backup.manage');
+INSERT INTO `role_permissions` (`role_id`, `permission_id`) VALUES ('cims:SuperAdmin', 'cims:manage');
+INSERT INTO `role_permissions` (`role_id`, `permission_id`) VALUES ('cims:SuperAdmin', 'cims:read');
 INSERT INTO `role_permissions` (`role_id`, `permission_id`) VALUES ('cims:Teamlead', 'cims:manage');
 INSERT INTO `role_permissions` (`role_id`, `permission_id`) VALUES ('cims:Teamlead', 'cims:read');
 INSERT INTO `role_permissions` (`role_id`, `permission_id`) VALUES ('cims:User', 'cims:read');
@@ -540,6 +551,12 @@ INSERT INTO `role_permissions` (`role_id`, `permission_id`) VALUES ('crms:Develo
 INSERT INTO `role_permissions` (`role_id`, `permission_id`) VALUES ('crms:Sales', 'crms:approve');
 INSERT INTO `role_permissions` (`role_id`, `permission_id`) VALUES ('crms:Sales', 'crms:create');
 INSERT INTO `role_permissions` (`role_id`, `permission_id`) VALUES ('crms:Sales', 'crms:read');
+INSERT INTO `role_permissions` (`role_id`, `permission_id`) VALUES ('crms:SuperAdmin', 'crms:admin');
+INSERT INTO `role_permissions` (`role_id`, `permission_id`) VALUES ('crms:SuperAdmin', 'crms:approve');
+INSERT INTO `role_permissions` (`role_id`, `permission_id`) VALUES ('crms:SuperAdmin', 'crms:assign');
+INSERT INTO `role_permissions` (`role_id`, `permission_id`) VALUES ('crms:SuperAdmin', 'crms:create');
+INSERT INTO `role_permissions` (`role_id`, `permission_id`) VALUES ('crms:SuperAdmin', 'crms:implement');
+INSERT INTO `role_permissions` (`role_id`, `permission_id`) VALUES ('crms:SuperAdmin', 'crms:read');
 INSERT INTO `role_permissions` (`role_id`, `permission_id`) VALUES ('crms:Teamlead', 'crms:assign');
 INSERT INTO `role_permissions` (`role_id`, `permission_id`) VALUES ('crms:Teamlead', 'crms:create');
 INSERT INTO `role_permissions` (`role_id`, `permission_id`) VALUES ('crms:Teamlead', 'crms:implement');
@@ -649,7 +666,7 @@ CREATE TABLE `user_profiles` (
   `email` varchar(255) NOT NULL,
   `first_name` varchar(100) DEFAULT NULL,
   `last_name` varchar(100) DEFAULT NULL,
-  `role` enum('Admin','Developer','Teamlead','Sales','User') NOT NULL,
+  `role` enum('SuperAdmin','Admin','Developer','Teamlead','Sales','User') NOT NULL,
   `designation` varchar(100) DEFAULT NULL,
   `phone_number` varchar(20) DEFAULT NULL,
   `department_id` varchar(36) DEFAULT NULL,

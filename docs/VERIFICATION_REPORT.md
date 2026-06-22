@@ -94,3 +94,4 @@ After restart, verify `http://localhost:8081/api/health`, open `/`, sign in as a
   - `cmd /c npx tsc -p tsconfig.app.json --noEmit`
   - `cmd /c npx tsc -p CRMS/tsconfig.app.json --noEmit`
   - `cmd /c npm run build:all`
+  - `cmd /c npm run build:host` generated `hosting/Mysql_host/riana_cims_host.sql` and staged the ignored `release/` host bundle.
