@@ -24,13 +24,13 @@
    accentColor: string;
  }
  
- function RoleCard({ title, description, stats, actions, accentColor }: RoleCardProps) {
-   return (
-     <Card className={`border-l-4 ${accentColor} shadow-soft hover:shadow-medium transition-all`}>
-       <CardHeader className="pb-2">
-         <CardTitle className="flex items-center justify-between">
+function RoleCard({ title, description, stats, actions, accentColor }: RoleCardProps) {
+  return (
+     <Card className={`border-l-4 ${accentColor} border-y border-r border-border bg-card text-card-foreground shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md`}>
+       <CardHeader className="pb-3">
+         <CardTitle className="flex flex-wrap items-center justify-between gap-2">
            <span className="text-lg font-semibold text-foreground">{title}</span>
-           <Badge variant="secondary" className="text-xs">{description}</Badge>
+           <Badge variant="secondary" className="border border-border bg-muted text-xs font-semibold text-foreground">{description}</Badge>
          </CardTitle>
        </CardHeader>
        <CardContent className="space-y-4">
@@ -39,7 +39,9 @@
              const Icon = stat.icon;
              return (
                <div key={i} className="flex items-center gap-2">
-                 <Icon className="h-4 w-4 text-muted-foreground" />
+                 <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary/10">
+                   <Icon className="h-4 w-4 text-primary" />
+                 </div>
                  <div>
                    <p className="text-xl font-bold text-foreground">{stat.value}</p>
                    <p className="text-xs text-muted-foreground">{stat.label}</p>
@@ -48,7 +50,7 @@
              );
            })}
          </div>
-         <div className="flex gap-2 pt-2">
+         <div className="flex flex-wrap gap-2 pt-2">
            {actions.map((action, i) => (
              <Link key={i} to={action.href}>
                <Button variant={action.variant || 'default'} size="sm">
@@ -63,8 +65,8 @@
    );
  }
  
- export function RoleDashboard() {
-   const { isAdmin, isSeniorDeveloper, isDeveloper, isSales, isLoading } = useCurrentUserRole();
+export function RoleDashboard() {
+   const { isSuperAdmin, isAdmin, isSeniorDeveloper, isDeveloper, isSales, isLoading } = useCurrentUserRole();
    const { data: requests } = useChangeRequests();
    const { data: clients } = useClients();
  
@@ -86,8 +88,8 @@
        cards.push(
          <RoleCard
            key="admin"
-           title="Admin Overview"
-           description="Full System Access"
+           title={isSuperAdmin ? 'Platform SuperAdmin' : 'Admin Overview'}
+           description={isSuperAdmin ? 'RIANA CIMS Authority' : 'Full System Access'}
            accentColor="border-l-primary"
            stats={[
              { label: 'Total Clients', value: clients?.length || 0, icon: Users },

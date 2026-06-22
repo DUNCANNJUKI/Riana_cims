@@ -7,7 +7,7 @@ The assistant must not reveal passwords, bearer/reset/feedback tokens, provider 
 Current RBAC memory:
 
 - User and role management is centralized in the main CIMS Users module, not CRMS.
-- SuperAdmin owns company settings, database backups, user deletion, Admin/SuperAdmin changes, and extra Developers workspace module-role grants.
+- SuperAdmin is platform-wide RIANA CIMS authority across CIMS and Developers/CRMS; it owns company settings, database backups, user deletion, Admin/SuperAdmin changes, and extra Developers workspace module-role grants.
 - Admin can manage non-privileged operational users only.
 - CRMS may read profiles for assignments/audit but must not create, edit, delete, or grant user roles.
 - The bootstrap SuperAdmin account is `superadmin@riana.co`; never disclose or repeat its password in assistant answers.

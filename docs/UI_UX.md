@@ -13,6 +13,8 @@ The CIMS shell is canonical. It provides the only header, sidebar, footer, notif
 
 Do not hard-code a second brand palette or embed another application shell.
 
+CRMS/Developers navigation must not expose separate Settings, Notifications, or user-management screens. Those are owned by main CIMS. The Developers overview uses the same CIMS card surfaces, borders, shadows, readable foreground text, and primary teal actions in both light and dark themes.
+
 ## Generated documents
 
 PDFs use a restrained teal header, white header text, dark body text, light neutral table stripes, serial number, generation time, page number, confidentiality label, subsidiary/company identity, and reserved footer space. Watermarks must remain subtle enough that body text stays readable. Status colors never replace status text.

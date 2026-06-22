@@ -10,7 +10,7 @@ Account creation, assignment, password, approval, and handover workflows create 
 
 ## Backups
 
-Only administrators can view status, change the schedule, list backups, or start a manual backup. Confirm the latest run is successful and non-empty. The application has no backup-delete endpoint. Before upgrades, create and verify a backup and document its filename.
+Only SuperAdmin can view backup status, change the schedule, list backups, or start a manual backup. Confirm the latest run is successful and non-empty. The application has no backup-delete endpoint. Before upgrades, create and verify a backup and document its filename.
 
 ## Branding and documents
 
@@ -21,7 +21,7 @@ Maintain the canonical logo, primary teal, neutral text colors, and subsidiary c
 Back up, apply migrations, build both clients, restart the managed API process, check `/api/health`, test login for each role, test a read and approved write per module, preview/download a handover, and inspect notification and backup status.
 ## SuperAdmin authority
 
-SuperAdmin is the only role allowed to manage company settings, open/create database backups, delete users, change Admin/SuperAdmin accounts, and grant extra Developers workspace roles from the main CIMS Users module.
+SuperAdmin is the platform-wide RIANA CIMS authority across CIMS and Developers/CRMS. It is the only role allowed to manage company settings, open/create database backups, delete users, change Admin/SuperAdmin accounts, and grant extra Developers workspace roles from the main CIMS Users module.
 
 Admins may create and maintain non-privileged operational users, but they cannot create Admin/SuperAdmin accounts, delete users, manage company settings, open backups, or grant privileged/module roles.
 

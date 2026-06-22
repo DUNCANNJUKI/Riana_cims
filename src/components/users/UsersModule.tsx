@@ -276,7 +276,9 @@ export const UsersModule = ({ user }: UsersModuleProps) => {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold text-primary">Users Management</h1>
-          <p className="text-muted-foreground">Manage system users and access controls</p>
+          <p className="text-muted-foreground">
+            Manage RIANA CIMS users and access controls. SuperAdmin is platform-wide authority across CIMS and Developers/CRMS.
+          </p>
         </div>
         {canManageUsers && (
           <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
@@ -697,7 +699,7 @@ export const UsersModule = ({ user }: UsersModuleProps) => {
                     </SelectContent>
                   </Select>
                   <p className="text-xs text-muted-foreground">
-                    Grants Developers/CRMS access without managing users from CRMS.
+                    Optional Developers/CRMS access supplement. SuperAdmin remains a platform-wide CIMS authority, not a CRMS-only role.
                   </p>
                 </div>
               )}

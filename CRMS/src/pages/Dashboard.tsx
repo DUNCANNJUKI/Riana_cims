@@ -50,22 +50,22 @@ export default function Dashboard() {
   return (
     <div className="space-y-8 animate-fade-in">
       {/* Welcome Banner */}
-      <div className="dashboard-welcome text-primary-foreground">
-        <div className="pointer-events-none absolute inset-0 bg-gradient-to-r from-black/20 to-transparent" />
-        <div className="pointer-events-none absolute top-0 right-0 w-64 h-64 bg-white/5 rounded-full -translate-y-1/2 translate-x-1/2 blur-3xl" />
-        <div className="pointer-events-none absolute bottom-0 left-0 w-48 h-48 bg-white/5 rounded-full translate-y-1/2 -translate-x-1/2 blur-2xl" />
+      <div className="dashboard-welcome relative overflow-hidden rounded-2xl border border-primary/20 bg-card p-6 shadow-sm md:p-8">
+        <div className="pointer-events-none absolute inset-y-0 left-0 w-1.5 bg-primary" />
+        <div className="pointer-events-none absolute top-0 right-0 w-64 h-64 bg-primary/10 rounded-full -translate-y-1/2 translate-x-1/2 blur-3xl" />
+        <div className="pointer-events-none absolute bottom-0 left-0 w-48 h-48 bg-primary/5 rounded-full translate-y-1/2 -translate-x-1/2 blur-2xl" />
         
         <div className="relative z-10 flex flex-col md:flex-row md:items-center md:justify-between gap-6">
           <div className="flex items-start gap-4">
             <div>
               <div className="flex items-center gap-2 mb-1">
-                <Sparkles className="h-4 w-4 text-yellow-300" />
-                <span className="text-xs font-medium text-white/80 uppercase tracking-wider">Riana Group CRMS</span>
+                <Sparkles className="h-4 w-4 text-primary" />
+                <span className="text-xs font-semibold text-primary uppercase tracking-wider">Riana Group CRMS</span>
               </div>
-              <h1 className="text-2xl md:text-3xl font-bold text-white">
+              <h1 className="text-2xl md:text-3xl font-bold text-foreground">
                 {getGreeting()}!
               </h1>
-              <p className="text-white/80 mt-1 text-sm md:text-base">
+              <p className="text-muted-foreground mt-1 text-sm md:text-base">
                 Here's your change request management overview for {format(new Date(), 'EEEE, MMMM d, yyyy')}
               </p>
             </div>
@@ -73,7 +73,7 @@ export default function Dashboard() {
           
           <div className="flex gap-3">
             <Link to="/developers/requests/new">
-              <Button className="bg-white/15 hover:bg-white/25 text-white border border-white/20 backdrop-blur-sm shadow-lg">
+              <Button className="bg-primary text-primary-foreground hover:bg-primary/90 shadow-md">
                 New Request
                 <ArrowRight className="ml-2 h-4 w-4" />
               </Button>
@@ -148,7 +148,7 @@ export default function Dashboard() {
           <CardContent>
             <div className="space-y-3">
               <div className="flex items-end justify-between">
-                <span className="text-3xl font-bold text-gradient">{completionRate}%</span>
+                <span className="text-3xl font-bold text-foreground">{completionRate}%</span>
                 <span className="text-xs text-muted-foreground">
                   {stats?.completed || 0} of {stats?.totalRequests || 0}
                 </span>
@@ -171,7 +171,7 @@ export default function Dashboard() {
           <CardContent>
             <div className="space-y-3">
               <div className="flex items-end justify-between">
-                <span className="text-3xl font-bold text-gradient">{clients?.length || 0}</span>
+                <span className="text-3xl font-bold text-foreground">{clients?.length || 0}</span>
                 <span className="text-xs text-muted-foreground">total clients</span>
               </div>
               <div className="flex gap-2">
@@ -193,9 +193,9 @@ export default function Dashboard() {
                   </div>
                 )}
               </div>
-              <Link to="/developers/settings" className="text-xs text-primary hover:underline">
-                Manage clients →
-              </Link>
+              <p className="text-xs text-muted-foreground">
+                Client records are managed from the main CIMS Clients module.
+              </p>
             </div>
           </CardContent>
         </Card>
@@ -210,7 +210,7 @@ export default function Dashboard() {
           <CardContent>
             <div className="space-y-3">
               <div className="flex items-end justify-between">
-                <span className="text-3xl font-bold text-gradient">{thisMonthRequests}</span>
+                <span className="text-3xl font-bold text-foreground">{thisMonthRequests}</span>
                 <span className="text-xs text-muted-foreground">new requests</span>
               </div>
               <div className="grid grid-cols-2 gap-2 text-xs">
@@ -235,7 +235,7 @@ export default function Dashboard() {
                   </span>
                 </div>
               </div>
-              <Link to="/developers/reports" className="text-xs text-primary hover:underline">
+              <Link to="/developers/reports" className="text-xs font-medium text-primary hover:underline">
                 View reports →
               </Link>
             </div>

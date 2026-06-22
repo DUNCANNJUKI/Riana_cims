@@ -127,7 +127,6 @@ export const Sidebar = ({ user, activeModule, setActiveModule, isMobileOpen, onM
     { label: 'Assignments', path: '/developers/assignments', roles: ['SuperAdmin', 'Admin', 'Teamlead', 'Developer'] },
     { label: 'Reports', path: '/developers/reports', roles: ['SuperAdmin', 'Admin', 'Teamlead', 'Sales'] },
     { label: 'Audit', path: '/developers/audit', roles: ['SuperAdmin', 'Admin', 'Teamlead'] },
-    { label: 'Notifications', path: '/developers/notifications', roles: ['SuperAdmin', 'Admin', 'Teamlead', 'Developer', 'Sales'] },
   ].filter((item) => item.roles.includes(developerModuleRole || user.role));
 
   const SidebarContent = () => (

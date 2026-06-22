@@ -2,14 +2,12 @@ import { NavLink, Navigate, Route, Routes } from "react-router-dom";
 import { lazy, Suspense, useEffect } from "react";
 import {
   BarChart3,
-  Bell,
   ClipboardCheck,
   FileText,
   FolderKanban,
   History,
   LayoutDashboard,
   PlusCircle,
-  Settings,
 } from "lucide-react";
 import { cn } from "@crms/lib/utils";
 import { installAuthenticatedFetch } from "@crms/lib/authenticatedFetch";
@@ -23,8 +21,6 @@ const preloadApprovals = () => import("@crms/pages/Approvals");
 const preloadReports = () => import("@crms/pages/Reports");
 const preloadAuditLog = () => import("@crms/pages/AuditLog");
 const preloadAssignments = () => import("@crms/pages/Assignments");
-const preloadSettingsPage = () => import("@crms/pages/Settings");
-const preloadNotifications = () => import("@crms/pages/Notifications");
 const preloadNotFound = () => import("@crms/pages/NotFound");
 
 const Dashboard = lazy(preloadDashboard);
@@ -35,8 +31,6 @@ const Approvals = lazy(preloadApprovals);
 const Reports = lazy(preloadReports);
 const AuditLog = lazy(preloadAuditLog);
 const Assignments = lazy(preloadAssignments);
-const SettingsPage = lazy(preloadSettingsPage);
-const Notifications = lazy(preloadNotifications);
 const NotFound = lazy(preloadNotFound);
 
 const routePreloaders = [
@@ -47,8 +41,6 @@ const routePreloaders = [
   preloadReports,
   preloadAuditLog,
   preloadAssignments,
-  preloadSettingsPage,
-  preloadNotifications,
   preloadNotFound,
 ] as const;
 
@@ -69,8 +61,6 @@ const navigation = [
   { label: "Assignments", to: "/developers/assignments", icon: FolderKanban, roles: ["SuperAdmin", "Admin", "Teamlead", "Developer"] },
   { label: "Reports", to: "/developers/reports", icon: BarChart3, roles: ["SuperAdmin", "Admin", "Teamlead", "Sales"] },
   { label: "Audit", to: "/developers/audit", icon: History, roles: ["SuperAdmin", "Admin", "Teamlead"] },
-  { label: "Settings", to: "/developers/settings", icon: Settings, roles: ["SuperAdmin", "Admin", "Teamlead"] },
-  { label: "Notifications", to: "/developers/notifications", icon: Bell, roles: ["SuperAdmin", "Admin", "Teamlead", "Developer", "Sales"] },
 ] as const;
 
 export function NativeDevelopersWorkspace({ userId, role }: NativeDevelopersWorkspaceProps) {
@@ -127,8 +117,8 @@ export function NativeDevelopersWorkspace({ userId, role }: NativeDevelopersWork
           <Route path="/developers/audit" element={role === "SuperAdmin" || role === "Admin" || role === "Teamlead" ? <AuditLog /> : <Navigate to="/developers" replace />} />
           <Route path="/developers/assignments" element={<Assignments />} />
           <Route path="/developers/users" element={<Navigate to="/" replace />} />
-          <Route path="/developers/settings" element={role === "SuperAdmin" || role === "Admin" || role === "Teamlead" ? <SettingsPage /> : <Navigate to="/developers" replace />} />
-          <Route path="/developers/notifications" element={<Notifications />} />
+          <Route path="/developers/settings" element={<Navigate to="/" replace />} />
+          <Route path="/developers/notifications" element={<Navigate to="/" replace />} />
           <Route path="/developers/*" element={<NotFound />} />
         </Routes>
         </Suspense>

@@ -10,6 +10,7 @@ interface UserRoleState {
   userName: string | null;
   userEmail: string | null;
   roles: AppRole[];
+  isSuperAdmin: boolean;
   isAdmin: boolean;
   isSeniorDeveloper: boolean;
   isDeveloper: boolean;
@@ -40,6 +41,7 @@ export function useCurrentUserRole(): UserRoleState {
     const roles = mappedRole ? [mappedRole] : [];
 
     const isAdmin = roles.includes('admin');
+    const isSuperAdmin = user?.role === 'SuperAdmin';
     const isSeniorDeveloper = roles.includes('senior_developer');
     const isDeveloper = roles.includes('developer');
     const isSales = roles.includes('sales');
@@ -50,6 +52,7 @@ export function useCurrentUserRole(): UserRoleState {
       userName: `${user?.first_name || ''} ${user?.last_name || ''}`.trim() || user?.email || null,
       userEmail: user?.email || null,
       roles,
+      isSuperAdmin,
       isAdmin,
       isSeniorDeveloper,
       isDeveloper,
@@ -76,6 +79,7 @@ export function useDemoRole(): UserRoleState {
     userName: 'Demo User',
     userEmail: 'demo@example.com',
     roles: ['admin', 'senior_developer'],
+    isSuperAdmin: true,
     isAdmin: true,
     isSeniorDeveloper: true,
     isDeveloper: false,

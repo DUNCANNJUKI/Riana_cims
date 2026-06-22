@@ -6,16 +6,13 @@ import {
   FileText,
   PlusCircle,
   BarChart3,
-  Settings,
   ChevronLeft,
   ChevronRight,
   ClipboardCheck,
   FolderKanban,
   History,
   Building2,
-  ShieldCheck,
   Briefcase,
-  Bell,
 } from 'lucide-react';
 import { Button } from '@crms/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@crms/components/ui/tooltip';
@@ -35,7 +32,6 @@ const allNavItems: NavItem[] = [
   // Main - visible to all
   { label: 'Dashboard', href: '/', icon: LayoutDashboard, section: 'main' },
   { label: 'All Requests', href: '/developers/requests', icon: FileText, section: 'main' },
-  { label: 'Notifications', href: '/developers/notifications', icon: Bell, section: 'main' },
 
   // Workflow - role based
   { label: 'New Request', href: '/developers/requests/new', icon: PlusCircle, section: 'workflow', roles: ['admin', 'senior_developer'] },
@@ -46,15 +42,12 @@ const allNavItems: NavItem[] = [
   { label: 'Reports', href: '/developers/reports', icon: BarChart3, section: 'analytics', roles: ['admin', 'senior_developer', 'sales'] },
   { label: 'Audit Trail', href: '/developers/audit', icon: History, section: 'analytics', roles: ['admin', 'senior_developer'] },
 
-  // Admin - restricted. User and role management lives in the main CIMS Users module.
-  { label: 'Settings', href: '/developers/settings', icon: Settings, section: 'admin', roles: ['admin', 'senior_developer'] },
 ];
 
 const sectionLabels: Record<string, { label: string; icon: React.ElementType }> = {
   main: { label: 'Overview', icon: LayoutDashboard },
   workflow: { label: 'Workflow', icon: Briefcase },
   analytics: { label: 'Analytics', icon: BarChart3 },
-  admin: { label: 'Administration', icon: ShieldCheck },
 };
 
 export function Sidebar() {

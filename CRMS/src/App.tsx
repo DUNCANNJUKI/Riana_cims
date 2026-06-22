@@ -12,7 +12,7 @@ const queryClient = new QueryClient();
 const App = () => {
   const user = getCimsUser();
   const role = user?.role;
-  const isAllowed = role === "Admin" || role === "Teamlead" || role === "Developer" || role === "Sales";
+  const isAllowed = role === "SuperAdmin" || role === "Admin" || role === "Teamlead" || role === "Developer" || role === "Sales";
 
   if (!getCimsToken() || !user || !isAllowed) {
     window.location.replace("/");

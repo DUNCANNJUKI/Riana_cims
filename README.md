@@ -8,7 +8,7 @@ RIANA CIMS is the shared platform for client installations and the RIANA Develop
 - Developers workspace: `/developers/`
 - API and health check: `/api` and `/api/health`
 
-Developer users are taken directly to the native Developers module after signing in. Admin and Teamlead users can open its permitted views from the same CIMS navigation; there is no iframe or second application session.
+Developer users are taken directly to the native Developers module after signing in. Admin, SuperAdmin, Teamlead, and other granted module users can open permitted Developers views from the same CIMS navigation; there is no iframe or second application session. SuperAdmin is platform-wide RIANA CIMS authority across CIMS and Developers/CRMS.
 
 ## Local setup
 
@@ -48,7 +48,7 @@ The API serves both production frontend builds, so one Node process is sufficien
 
 The hosting build includes `hosting/Mysql_host/riana_cims_host.sql`: the complete 27-table schema plus sanitized reference data for a clean deployment. It never includes live accounts, reset tokens, customer contacts, messages, or audit records.
 
-Detailed guidance is in [Unified Architecture](docs/ARCHITECTURE_REFACTOR.md), [Security](docs/SECURITY.md), [Deployment](docs/DEPLOYMENT.md), [Operations](docs/OPERATIONS.md), [Administrator Guide](docs/ADMIN_GUIDE.md), [User Guide](docs/USER_GUIDE.md), [API Guide](docs/API.md), [Knowledge Base](docs/KNOWLEDGE_BASE.md), [UI/UX](docs/UI_UX.md), [Troubleshooting](docs/TROUBLESHOOTING.md), [Assistant Memory](docs/CHATBOT_MEMORY.md), and the [latest verification report](docs/VERIFICATION_REPORT.md).
+Detailed guidance is in [Security](docs/SECURITY.md), [Deployment](docs/DEPLOYMENT.md), [Operations](docs/OPERATIONS.md), [Administrator Guide](docs/ADMIN_GUIDE.md), [User Guide](docs/USER_GUIDE.md), [API Guide](docs/API.md), [Knowledge Base](docs/KNOWLEDGE_BASE.md), [UI/UX](docs/UI_UX.md), [Troubleshooting](docs/TROUBLESHOOTING.md), and [Assistant Memory](docs/CHATBOT_MEMORY.md).
 
 ## Security and secrets
 
