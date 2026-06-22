@@ -1,6 +1,6 @@
 import { LucideIcon } from 'lucide-react';
-import { cn } from '@/lib/utils';
-import { Card } from '@/components/ui/card';
+import { cn } from '@crms/lib/utils';
+import { Card } from '@crms/components/ui/card';
 
 interface StatCardProps {
   title: string;
@@ -48,7 +48,7 @@ export function StatCard({ title, value, icon: Icon, variant = 'default', trend,
       'border border-border/50',
       className
     )}>
-      <div className={cn('absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity', styles.accent)} />
+      <div className={cn('pointer-events-none absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity', styles.accent)} />
       
       <div className="relative p-5">
         <div className="flex items-start justify-between gap-4">

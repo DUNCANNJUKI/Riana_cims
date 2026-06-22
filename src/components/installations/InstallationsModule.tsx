@@ -208,7 +208,7 @@ export const InstallationsModule = ({ user }: InstallationsModuleProps) => {
   };
 
   const handleStatusChange = async (installationId: string, newStatus: string, waitingReason?: string) => {
-    if (user.role !== 'Teamlead' && user.role !== 'Admin') {
+    if (user.role !== 'SuperAdmin' && user.role !== 'Teamlead' && user.role !== 'Admin') {
       toast({
         title: "Access Denied",
         description: "Only team leads and admins can change installation status",
@@ -413,7 +413,7 @@ export const InstallationsModule = ({ user }: InstallationsModuleProps) => {
                         : clients.filter(c => !existingInstallationClientIds.includes(c.id));
                       
                       // For non-Admin/Teamlead users, only show assigned clients
-                      const isRegularUser = user.role !== 'Admin' && user.role !== 'Teamlead';
+                      const isRegularUser = user.role !== 'SuperAdmin' && user.role !== 'Admin' && user.role !== 'Teamlead';
                       const filteredClients = isRegularUser
                         ? availableClients.filter(c => 
                             assignments.some(a => 
@@ -806,7 +806,7 @@ export const InstallationsModule = ({ user }: InstallationsModuleProps) => {
                     </div>
                   </TableCell>
                   <TableCell>
-                    {user.role === 'Teamlead' || user.role === 'Admin' ? (
+                    {user.role === 'SuperAdmin' || user.role === 'Teamlead' || user.role === 'Admin' ? (
                       <Select 
                         value={installation.status} 
                         onValueChange={(value) => handleStatusChange(installation.id, value)}

@@ -8,7 +8,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { Badge } from "@/components/ui/badge";
 import { Upload, FileText, Download, Eye, CheckCircle, Clock } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { apiClient } from "@/integrations/apiClient";
+import { apiClient, downloadAuthenticatedFile, previewAuthenticatedFile } from "@/integrations/apiClient";
 import { Client, Installation, User } from "@/types";
 
 interface HandoverUpload {
@@ -159,16 +159,7 @@ export const EHandoverUpload = ({ user, client, installation, onUploadComplete }
 
   const downloadFile = async (filePath: string, fileName: string) => {
     try {
-      // For local files, we can just open them or download them
-      // Assuming filePath is relative to server root or accessible via /uploads/:filename
-      const url = `${import.meta.env.VITE_API_BASE_URL || ''}/api/download?path=${encodeURIComponent(filePath)}`;
-      
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = fileName;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
+      await downloadAuthenticatedFile(`/download?path=${encodeURIComponent(filePath)}`, fileName);
 
       toast({
         title: "Download Started",
@@ -186,10 +177,14 @@ export const EHandoverUpload = ({ user, client, installation, onUploadComplete }
 
   const previewFile = async (filePath: string) => {
     try {
-      const url = `${import.meta.env.VITE_API_BASE_URL || ''}/api/download?path=${encodeURIComponent(filePath)}`;
-      window.open(url, '_blank');
+      await previewAuthenticatedFile(`/download?path=${encodeURIComponent(filePath)}&disposition=inline`);
     } catch (error) {
       console.error('Error previewing file:', error);
+      toast({
+        title: "Preview Failed",
+        description: "Failed to preview the document",
+        variant: "destructive",
+      });
     }
   };
 

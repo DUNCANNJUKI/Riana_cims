@@ -19,26 +19,27 @@ import {
   Play,
   Flag,
 } from 'lucide-react';
-import { CompanyLogoLoader, PageLoader } from '@/components/common/CompanyLogoLoader';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Separator } from '@/components/ui/separator';
-import { Textarea } from '@/components/ui/textarea';
-import { Avatar, AvatarFallback } from '@/components/ui/avatar';
-import { Input } from '@/components/ui/input';
-import { StatusBadge } from '@/components/common/StatusBadge';
-import { PriorityBadge } from '@/components/common/PriorityBadge';
-import { RequestTimeline } from '@/components/request/RequestTimeline';
-import { useToast } from '@/hooks/use-toast';
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { CompanyLogoLoader, PageLoader } from '@crms/components/common/CompanyLogoLoader';
+import { Button } from '@crms/components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from '@crms/components/ui/card';
+import { Separator } from '@crms/components/ui/separator';
+import { Textarea } from '@crms/components/ui/textarea';
+import { Avatar, AvatarFallback } from '@crms/components/ui/avatar';
+import { Input } from '@crms/components/ui/input';
+import { StatusBadge } from '@crms/components/common/StatusBadge';
+import { PriorityBadge } from '@crms/components/common/PriorityBadge';
+import { RequestTimeline } from '@crms/components/request/RequestTimeline';
+import { useToast } from '@crms/hooks/use-toast';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@crms/components/ui/dialog';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@crms/components/ui/select';
 import { useState, useEffect } from 'react';
-import { Label } from '@/components/ui/label';
-import { useChangeRequest, useProfiles, useUpdateChangeRequest, useCreateAuditLog, useAuditLogs } from '@/hooks/useSupabaseData';
-import { generateChangeRequestPDF, generateCompletionReportPDF, downloadPDF } from '@/lib/pdfGenerator';
-import { sendNotificationEmail, createInAppNotification } from '@/lib/notifications';
-import { notifyStatusChangeSMS } from '@/lib/smsNotifications';
-import { useCurrentUserRole } from '@/hooks/useCurrentUserRole';
+import { getCimsUser } from '@crms/lib/cimsSession';
+import { Label } from '@crms/components/ui/label';
+import { useChangeRequest, useProfiles, useUpdateChangeRequest, useCreateAuditLog, useAuditLogs } from '@crms/hooks/useSupabaseData';
+import { generateChangeRequestPDF, generateCompletionReportPDF, downloadPDF } from '@crms/lib/pdfGenerator';
+import { sendNotificationEmail, createInAppNotification } from '@crms/lib/notifications';
+import { notifyStatusChangeSMS } from '@crms/lib/smsNotifications';
+import { useCurrentUserRole } from '@crms/hooks/useCurrentUserRole';
 import { useLocation } from 'react-router-dom';
 
 export default function RequestDetail() {
@@ -86,7 +87,7 @@ export default function RequestDetail() {
       if (params.get('assign') === 'true' && canAssignDevelopers) {
         setAssignDialogOpen(true);
         // Remove param from URL
-        navigate(`/requests/${id}`, { replace: true });
+        navigate(`/developers/requests/${id}`, { replace: true });
       }
     }
   }, [request, location.search, canAssignDevelopers]);
@@ -99,7 +100,7 @@ export default function RequestDetail() {
     return (
       <div className="flex flex-col items-center justify-center py-12">
         <h2 className="text-xl font-semibold">Request not found</h2>
-        <Button variant="link" onClick={() => navigate('/requests')}>
+        <Button variant="link" onClick={() => navigate('/developers/requests')}>
           Back to requests
         </Button>
       </div>
@@ -138,7 +139,7 @@ export default function RequestDetail() {
         action: 'assigned',
         action_label: `Assigned to ${developer?.name || 'developer'}`,
         details: `Request assigned to ${developer?.name}`,
-        user_id: localStorage.getItem('crms-user-id') || 'u1',
+        user_id: getCimsUser()?.id,
       });
 
       // Send email notification to assigned developer
@@ -150,7 +151,7 @@ export default function RequestDetail() {
           ticketNumber: request.ticket_number,
           clientName: request.client?.name || 'Unknown Client',
           requestDescription: request.change_description,
-          actionUrl: `${window.location.origin}/requests/${request.id}`,
+          actionUrl: `${window.location.origin}/developers/requests/${request.id}`,
           developerName: developer.name,
         });
       }
@@ -173,7 +174,7 @@ export default function RequestDetail() {
           'New Assignment',
           `You have been assigned to ${request.ticket_number} for ${request.client?.name}`,
           'info',
-          `/requests/${request.id}`,
+          `/developers/requests/${request.id}`,
           request.id
         );
       }
@@ -200,7 +201,7 @@ export default function RequestDetail() {
     const statusMap = {
       approve: 'approved',
       reject: 'rejected',
-      waiting: 'waiting',
+      waiting: 'waiting_clarification',
     } as const;
 
     const newStatus = statusMap[action];
@@ -222,7 +223,7 @@ export default function RequestDetail() {
         details: approvalComment || undefined,
         previous_value: request.status,
         new_value: newStatus,
-        user_id: localStorage.getItem('crms-user-id') || 'u1',
+        user_id: getCimsUser()?.id,
       });
 
       // Send email to senior developer
@@ -234,7 +235,7 @@ export default function RequestDetail() {
           ticketNumber: request.ticket_number,
           clientName: request.client?.name || 'Unknown Client',
           requestDescription: request.change_description,
-          actionUrl: `${window.location.origin}/requests/${request.id}`,
+          actionUrl: `${window.location.origin}/developers/requests/${request.id}`,
           comment: approvalComment || undefined,
         });
       }
@@ -257,7 +258,7 @@ export default function RequestDetail() {
           action === 'approve' ? 'Request Approved' : action === 'reject' ? 'Request Rejected' : 'Request On Hold',
           `${request.ticket_number} has been ${newStatus.replace('_', ' ')}`,
           action === 'approve' ? 'success' : action === 'reject' ? 'error' : 'warning',
-          `/requests/${request.id}`,
+          `/developers/requests/${request.id}`,
           request.id
         );
       }
@@ -299,7 +300,7 @@ export default function RequestDetail() {
         action_label: 'Work Commenced',
         previous_value: request.status,
         new_value: 'in_progress',
-        user_id: localStorage.getItem('crms-user-id') || 'u1',
+        user_id: getCimsUser()?.id,
       });
 
       // Notify senior developer
@@ -311,7 +312,7 @@ export default function RequestDetail() {
           ticketNumber: request.ticket_number,
           clientName: request.client?.name || 'Unknown Client',
           requestDescription: request.change_description,
-          actionUrl: `${window.location.origin}/requests/${request.id}`,
+          actionUrl: `${window.location.origin}/developers/requests/${request.id}`,
           developerName: request.assigned_developer?.name,
         });
       }
@@ -340,7 +341,7 @@ export default function RequestDetail() {
         action_label: 'Request Completed',
         previous_value: request.status,
         new_value: 'completed',
-        user_id: localStorage.getItem('crms-user-id') || 'u1',
+        user_id: getCimsUser()?.id,
       });
 
       // Notify senior developer
@@ -352,7 +353,7 @@ export default function RequestDetail() {
           ticketNumber: request.ticket_number,
           clientName: request.client?.name || 'Unknown Client',
           requestDescription: request.change_description,
-          actionUrl: `${window.location.origin}/requests/${request.id}`,
+          actionUrl: `${window.location.origin}/developers/requests/${request.id}`,
           developerName: request.assigned_developer?.name,
         });
       }
@@ -389,7 +390,7 @@ export default function RequestDetail() {
         action: 'status_changed',
         action_label: 'Request Updated',
         details: 'Manual edit by user',
-        user_id: localStorage.getItem('crms-user-id') || 'u1',
+        user_id: getCimsUser()?.id,
       });
 
       toast({ title: 'Request Updated', description: 'Changes saved successfully.' });

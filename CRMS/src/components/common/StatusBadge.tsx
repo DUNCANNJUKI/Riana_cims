@@ -1,5 +1,5 @@
-import { cn } from '@/lib/utils';
-import { RequestStatus } from '@/types';
+import { cn } from '@crms/lib/utils';
+import { RequestStatus } from '@crms/types';
 
 interface StatusBadgeProps {
   status: RequestStatus;

@@ -15,20 +15,20 @@ import {
   Search,
   Calendar,
 } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
+import { Button } from '@crms/components/ui/button';
+import { Input } from '@crms/components/ui/input';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@crms/components/ui/card';
+import { Badge } from '@crms/components/ui/badge';
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select';
-import { useAuditLogs, useProfiles } from '@/hooks/useSupabaseData';
-import { Skeleton } from '@/components/ui/skeleton';
-import { cn } from '@/lib/utils';
+} from '@crms/components/ui/select';
+import { useAuditLogs, useProfiles } from '@crms/hooks/useSupabaseData';
+import { Skeleton } from '@crms/components/ui/skeleton';
+import { cn } from '@crms/lib/utils';
 
 const actionIcons: Record<string, React.ElementType> = {
   created: FileText,

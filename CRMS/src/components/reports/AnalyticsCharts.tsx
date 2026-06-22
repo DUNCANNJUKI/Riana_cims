@@ -1,25 +1,40 @@
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line, Legend, Area, AreaChart, TooltipProps } from 'recharts';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { useChangeRequests, useClients, useProfiles } from '@/hooks/useSupabaseData';
-import { Skeleton } from '@/components/ui/skeleton';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@crms/components/ui/card';
+import { useChangeRequests, useClients } from '@crms/hooks/useSupabaseData';
+import { Skeleton } from '@crms/components/ui/skeleton';
 import { useMemo } from 'react';
 import { format, subMonths, startOfMonth, endOfMonth, isWithinInterval } from 'date-fns';
+import { CheckCircle2, Clock, Gauge, TrendingUp } from 'lucide-react';
 
 // Shared RIANA brand colors; status colors remain semantic.
 const THEME_COLORS = {
   primary: 'hsl(var(--primary))',
   highlight: 'hsl(var(--primary-light))',
-  pending: '#f59e0b',
-  approved: '#22c55e',
-  inProgress: '#3b82f6',
-  completed: '#10b981',
-  rejected: '#ef4444',
-  waiting: '#8b5cf6',
-  assigned: '#a855f7',
-  critical: '#ef4444',
-  high: '#f97316',
-  medium: '#f59e0b',
-  low: '#22c55e',
+  pending: 'hsl(var(--status-pending))',
+  approved: 'hsl(var(--status-approved))',
+  inProgress: 'hsl(var(--status-in-progress))',
+  completed: 'hsl(var(--status-completed))',
+  rejected: 'hsl(var(--status-rejected))',
+  waiting: 'hsl(var(--status-waiting))',
+  assigned: 'hsl(var(--status-waiting))',
+  critical: 'hsl(var(--priority-critical))',
+  high: 'hsl(var(--priority-high))',
+  medium: 'hsl(var(--priority-medium))',
+  low: 'hsl(var(--priority-low))',
+};
+
+const CHART_GRID = {
+  stroke: 'hsl(var(--border))',
+  strokeOpacity: 0.7,
+};
+
+const CHART_AXIS = {
+  stroke: 'hsl(var(--border))',
+};
+
+const CHART_TICK = {
+  fill: 'hsl(var(--muted-foreground))',
+  fontSize: 12,
 };
 
 // Custom tooltip component for better styling
@@ -42,7 +57,6 @@ function CustomTooltip({ active, payload, label }: TooltipProps<number, string>)
 export function AnalyticsCharts() {
   const { data: requests, isLoading: requestsLoading } = useChangeRequests();
   const { data: clients, isLoading: clientsLoading } = useClients();
-  const { data: profiles, isLoading: profilesLoading } = useProfiles();
 
   // Calculate status distribution from live data
   const statusData = useMemo(() => {
@@ -53,7 +67,7 @@ export function AnalyticsCharts() {
       in_progress: 0,
       completed: 0,
       rejected: 0,
-      waiting: 0,
+      waiting_clarification: 0,
       assigned: 0,
     };
     requests.forEach(r => {
@@ -66,7 +80,7 @@ export function AnalyticsCharts() {
       { name: 'Approved', value: statusCounts.approved, color: THEME_COLORS.approved },
       { name: 'In Progress', value: statusCounts.in_progress, color: THEME_COLORS.inProgress },
       { name: 'Completed', value: statusCounts.completed, color: THEME_COLORS.completed },
-      { name: 'Waiting', value: statusCounts.waiting, color: THEME_COLORS.waiting },
+      { name: 'Waiting', value: statusCounts.waiting_clarification, color: THEME_COLORS.waiting },
       { name: 'Assigned', value: statusCounts.assigned, color: THEME_COLORS.assigned },
       { name: 'Rejected', value: statusCounts.rejected, color: THEME_COLORS.rejected },
     ].filter(item => item.value > 0);
@@ -144,14 +158,16 @@ export function AnalyticsCharts() {
       const onTime = weekRequests.filter(r => {
         if (r.status !== 'completed' || !r.completion_date) return false;
         const completion = new Date(r.completion_date);
-        const estimated = new Date(r.estimated_completion_date);
+        const estimated = r.estimated_completion_date ? new Date(r.estimated_completion_date) : null;
+        if (!estimated) return false;
         return completion <= estimated;
       }).length;
       
       const late = weekRequests.filter(r => {
         if (r.status !== 'completed' || !r.completion_date) return false;
         const completion = new Date(r.completion_date);
-        const estimated = new Date(r.estimated_completion_date);
+        const estimated = r.estimated_completion_date ? new Date(r.estimated_completion_date) : null;
+        if (!estimated) return false;
         return completion > estimated;
       }).length;
       
@@ -186,7 +202,21 @@ export function AnalyticsCharts() {
       .slice(0, 5);
   }, [requests, clients]);
 
-  const isLoading = requestsLoading || clientsLoading || profilesLoading;
+  const kpis = useMemo(() => {
+    const total = requests?.length || 0;
+    const completed = requests?.filter((r) => r.status === 'completed').length || 0;
+    const active = requests?.filter((r) => !['completed', 'rejected'].includes(r.status)).length || 0;
+    const critical = requests?.filter((r) => r.priority === 'critical' && r.status !== 'completed').length || 0;
+    return {
+      total,
+      completed,
+      active,
+      critical,
+      completionRate: total ? Math.round((completed / total) * 100) : 0,
+    };
+  }, [requests]);
+
+  const isLoading = requestsLoading || clientsLoading;
 
   if (isLoading) {
     return (
@@ -218,16 +248,41 @@ export function AnalyticsCharts() {
 
   return (
     <div className="grid gap-6">
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        {[
+          { label: 'Total Requests', value: kpis.total, icon: TrendingUp, accent: 'text-primary', caption: 'All Developers requests' },
+          { label: 'Active Work', value: kpis.active, icon: Clock, accent: 'text-blue-500', caption: 'Open and in progress' },
+          { label: 'Completed', value: kpis.completed, icon: CheckCircle2, accent: 'text-green-600', caption: `${kpis.completionRate}% completion rate` },
+          { label: 'Critical Open', value: kpis.critical, icon: Gauge, accent: 'text-red-500', caption: 'Needs priority attention' },
+        ].map((item) => {
+          const Icon = item.icon;
+          return (
+            <Card key={item.label} className="overflow-hidden border-l-4 border-l-primary/70 shadow-sm">
+              <CardContent className="flex items-center justify-between gap-4 p-5">
+                <div>
+                  <p className="text-sm text-muted-foreground">{item.label}</p>
+                  <p className="mt-1 text-3xl font-bold text-foreground">{item.value}</p>
+                  <p className="mt-1 text-xs text-muted-foreground">{item.caption}</p>
+                </div>
+                <div className="rounded-lg bg-primary/10 p-3">
+                  <Icon className={`h-6 w-6 ${item.accent}`} />
+                </div>
+              </CardContent>
+            </Card>
+          );
+        })}
+      </div>
+
       {/* Top Row - Key Metrics */}
       <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
         {/* Status Distribution Pie Chart */}
-        <Card className="border-l-4 border-l-primary">
+          <Card className="border-l-4 border-l-primary shadow-sm">
           <CardHeader>
             <CardTitle className="text-lg text-foreground">Request Status Distribution</CardTitle>
             <CardDescription>Current status of all requests</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="h-[250px]">
+            <div className="h-[280px]">
               {statusData.length > 0 ? (
                 <ResponsiveContainer width="100%" height="100%">
                   <PieChart>
@@ -239,7 +294,7 @@ export function AnalyticsCharts() {
                       outerRadius={90}
                       paddingAngle={2}
                       dataKey="value"
-                      label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                      label={({ percent }) => `${(percent * 100).toFixed(0)}%`}
                       labelLine={false}
                     >
                       {statusData.map((entry, index) => (
@@ -259,18 +314,18 @@ export function AnalyticsCharts() {
         </Card>
 
         {/* Priority Breakdown */}
-        <Card className="border-l-4 border-l-amber-500">
+        <Card className="border-l-4 border-l-status-pending shadow-sm">
           <CardHeader>
             <CardTitle className="text-lg text-foreground">Priority Breakdown</CardTitle>
             <CardDescription>Requests by priority level</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="h-[250px]">
+            <div className="h-[280px]">
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={priorityData} layout="vertical">
-                  <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} />
-                  <XAxis type="number" />
-                  <YAxis dataKey="priority" type="category" width={60} />
+                  <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} {...CHART_GRID} />
+                  <XAxis type="number" axisLine={CHART_AXIS} tickLine={CHART_AXIS} tick={CHART_TICK} />
+                  <YAxis dataKey="priority" type="category" width={60} axisLine={CHART_AXIS} tickLine={CHART_AXIS} tick={CHART_TICK} />
                   <Tooltip content={<CustomTooltip />} />
                   <Bar dataKey="count" radius={[0, 4, 4, 0]}>
                     {priorityData.map((entry, index) => (
@@ -284,18 +339,18 @@ export function AnalyticsCharts() {
         </Card>
 
         {/* SLA Performance */}
-        <Card className="border-l-4 border-l-green-500">
+        <Card className="border-l-4 border-l-status-completed shadow-sm">
           <CardHeader>
             <CardTitle className="text-lg text-foreground">SLA Performance</CardTitle>
             <CardDescription>Weekly on-time completion rate</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="h-[250px]">
+            <div className="h-[280px]">
               <ResponsiveContainer width="100%" height="100%">
                 <AreaChart data={completionTrendData}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="week" tick={{ fontSize: 12 }} />
-                  <YAxis domain={[0, 100]} />
+                  <CartesianGrid strokeDasharray="3 3" {...CHART_GRID} />
+                  <XAxis dataKey="week" axisLine={CHART_AXIS} tickLine={CHART_AXIS} tick={CHART_TICK} />
+                  <YAxis domain={[0, 100]} axisLine={CHART_AXIS} tickLine={CHART_AXIS} tick={CHART_TICK} />
                   <Tooltip content={<CustomTooltip />} />
                   <Area
                     type="monotone"
@@ -313,19 +368,19 @@ export function AnalyticsCharts() {
       </div>
 
       {/* Monthly Trends */}
-      <Card className="border-t-4 border-t-primary">
+      <Card className="border-t-4 border-t-primary shadow-sm">
         <CardHeader>
           <CardTitle className="text-lg text-foreground">Monthly Request Trends</CardTitle>
           <CardDescription>Requests created vs completed over time</CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="h-[300px]">
+          <div className="h-[340px]">
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={monthlyData}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="month" />
-                <YAxis yAxisId="left" />
-                <YAxis yAxisId="right" orientation="right" />
+                <CartesianGrid strokeDasharray="3 3" {...CHART_GRID} />
+                <XAxis dataKey="month" axisLine={CHART_AXIS} tickLine={CHART_AXIS} tick={CHART_TICK} />
+                <YAxis yAxisId="left" axisLine={CHART_AXIS} tickLine={CHART_AXIS} tick={CHART_TICK} />
+                <YAxis yAxisId="right" orientation="right" axisLine={CHART_AXIS} tickLine={CHART_AXIS} tick={CHART_TICK} />
                 <Tooltip content={<CustomTooltip />} />
                 <Legend />
                 <Line
@@ -363,19 +418,19 @@ export function AnalyticsCharts() {
       </Card>
 
       {/* Client Request Distribution */}
-      <Card className="border-t-4 border-t-amber-500">
+      <Card className="border-t-4 border-t-status-pending shadow-sm">
         <CardHeader>
           <CardTitle className="text-lg text-foreground">Top Clients by Requests</CardTitle>
           <CardDescription>Request distribution across clients</CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="h-[300px]">
+          <div className="h-[340px]">
             {clientData.length > 0 ? (
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={clientData}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="name" tick={{ fontSize: 11 }} />
-                  <YAxis />
+                  <CartesianGrid strokeDasharray="3 3" {...CHART_GRID} />
+                  <XAxis dataKey="name" axisLine={CHART_AXIS} tickLine={CHART_AXIS} tick={{ ...CHART_TICK, fontSize: 11 }} />
+                  <YAxis axisLine={CHART_AXIS} tickLine={CHART_AXIS} tick={CHART_TICK} />
                   <Tooltip content={<CustomTooltip />} />
                   <Legend />
                   <Bar 

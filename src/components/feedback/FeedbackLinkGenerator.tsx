@@ -32,6 +32,7 @@ export const FeedbackLinkGenerator = ({ client, installation, onClose }: Feedbac
     getFeedbackLinks, 
     createFeedbackLink,
   } = useDatabase();
+  const buildFeedbackUrl = (token: string) => `${window.location.origin}/feedback/${encodeURIComponent(token)}`;
 
   // Check for existing active feedback link on mount
   useEffect(() => {
@@ -46,20 +47,16 @@ export const FeedbackLinkGenerator = ({ client, installation, onClose }: Feedbac
       const data = await getFeedbackLinks(client.id);
       
       // Filter for unused and non-expired links
-      const activeLinks = data.filter((link: any) => 
-        !link.is_used && new Date(link.expires_at) > new Date()
+      const activeLinks = data.filter((link: any) =>
+        !link.is_used &&
+        new Date(link.expires_at) > new Date() &&
+        String(link.installation_id || '') === String(installation?.id || '')
       );
 
       if (activeLinks.length > 0) {
         const link = activeLinks[0];
         setExistingLink(link);
-        const protocol = window.location.protocol;
-        const hostname = window.location.hostname;
-        const port = window.location.port ? `:${window.location.port}` : '';
-        const clientSlug = client.client_name.toLowerCase().replace(/[^a-z0-9]/g, '');
-        const domain = hostname === 'localhost' ? 'localhost' : hostname.startsWith('www.') ? hostname.substring(4) : hostname;
-        const feedbackUrl = `${protocol}//${clientSlug}.${domain}${port}/feedback/${link.unique_token}`;
-        setGeneratedLink(feedbackUrl);
+        setGeneratedLink(buildFeedbackUrl(link.unique_token));
       }
     } catch (error) {
       console.error('Error checking existing link:', error);
@@ -93,13 +90,7 @@ export const FeedbackLinkGenerator = ({ client, installation, onClose }: Feedbac
         created_by_user_id: user?.id
       });
 
-      const protocol = window.location.protocol;
-      const hostname = window.location.hostname;
-      const port = window.location.port ? `:${window.location.port}` : '';
-      const clientSlug = client.client_name.toLowerCase().replace(/[^a-z0-9]/g, '');
-      const domain = hostname === 'localhost' ? 'localhost' : hostname.startsWith('www.') ? hostname.substring(4) : hostname;
-      const feedbackUrl = `${protocol}//${clientSlug}.${domain}${port}/feedback/${linkData.unique_token}`;
-      setGeneratedLink(feedbackUrl);
+      setGeneratedLink(buildFeedbackUrl(linkData.unique_token));
       setExistingLink(linkData);
 
       toast({

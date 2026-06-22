@@ -14,26 +14,26 @@ import {
   Trash2,
   Search,
 } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { Input } from '@/components/ui/input';
+import { Button } from '@crms/components/ui/button';
+import { Card, CardContent } from '@crms/components/ui/card';
+import { Badge } from '@crms/components/ui/badge';
+import { Input } from '@crms/components/ui/input';
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select';
-import { Skeleton } from '@/components/ui/skeleton';
-import { ScrollArea } from '@/components/ui/scroll-area';
+} from '@crms/components/ui/select';
+import { Skeleton } from '@crms/components/ui/skeleton';
+import { ScrollArea } from '@crms/components/ui/scroll-area';
 import {
   useUserNotifications,
   useMarkNotificationAsRead,
   useMarkAllNotificationsAsRead,
   useRealtimeNotifications,
-} from '@/hooks/useNotificationsData';
-import { cn } from '@/lib/utils';
+} from '@crms/hooks/useNotificationsData';
+import { cn } from '@crms/lib/utils';
 
 type NotificationType = 'info' | 'success' | 'warning' | 'error';
 

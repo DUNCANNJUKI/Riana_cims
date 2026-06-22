@@ -48,6 +48,23 @@ All colors MUST be HSL.
     --pending: 220 13% 91%;
     --pending-foreground: 220 9% 46%;
 
+    --status-pending: 38 92% 40%;
+    --status-pending-bg: 38 80% 96%;
+    --status-approved: 152 69% 31%;
+    --status-approved-bg: 152 60% 96%;
+    --status-rejected: 0 72% 45%;
+    --status-rejected-bg: 0 65% 96%;
+    --status-waiting: 262 55% 45%;
+    --status-waiting-bg: 262 50% 96%;
+    --status-in-progress: 200 75% 38%;
+    --status-in-progress-bg: 200 65% 96%;
+    --status-completed: 152 69% 31%;
+    --status-completed-bg: 152 60% 96%;
+    --priority-low: 152 69% 31%;
+    --priority-medium: 38 92% 40%;
+    --priority-high: 25 85% 45%;
+    --priority-critical: 0 72% 45%;
+
     --destructive: 0 84.2% 60.2%;
     --destructive-foreground: 210 40% 98%;
 
@@ -100,6 +117,22 @@ All colors MUST be HSL.
     --success-foreground: 0 0% 100%;
     --warning: 45 93% 52%;
     --warning-foreground: 45 93% 10%;
+    --status-pending: 45 93% 62%;
+    --status-pending-bg: 38 70% 16%;
+    --status-approved: 152 69% 48%;
+    --status-approved-bg: 152 55% 15%;
+    --status-rejected: 0 72% 60%;
+    --status-rejected-bg: 0 55% 15%;
+    --status-waiting: 262 70% 72%;
+    --status-waiting-bg: 262 45% 18%;
+    --status-in-progress: 200 80% 62%;
+    --status-in-progress-bg: 200 55% 16%;
+    --status-completed: 152 69% 48%;
+    --status-completed-bg: 152 55% 15%;
+    --priority-low: 152 69% 48%;
+    --priority-medium: 45 93% 62%;
+    --priority-high: 25 95% 65%;
+    --priority-critical: 0 72% 60%;
 
     --border: 217.2 32.6% 22%;
     --input: 217.2 32.6% 17.5%;
@@ -164,6 +197,59 @@ All colors MUST be HSL.
   .status-complete {
     background: linear-gradient(135deg, hsl(142, 76%, 36%), hsl(142, 76%, 46%));
     color: hsl(0, 0%, 100%);
+  }
+
+  .crms-native .status-badge {
+    @apply inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold tracking-wide;
+  }
+
+  .crms-native .status-pending {
+    background-color: hsl(var(--status-pending-bg));
+    color: hsl(var(--status-pending));
+  }
+
+  .crms-native .status-approved,
+  .crms-native .status-completed {
+    background-color: hsl(var(--status-approved-bg));
+    color: hsl(var(--status-approved));
+  }
+
+  .crms-native .status-rejected {
+    background-color: hsl(var(--status-rejected-bg));
+    color: hsl(var(--status-rejected));
+  }
+
+  .crms-native .status-waiting {
+    background: hsl(var(--status-waiting-bg));
+    color: hsl(var(--status-waiting));
+  }
+
+  .crms-native .status-in-progress {
+    background-color: hsl(var(--status-in-progress-bg));
+    color: hsl(var(--status-in-progress));
+  }
+
+  .crms-native {
+    color-scheme: light;
+  }
+
+  .dark .crms-native {
+    color-scheme: dark;
+  }
+
+  .crms-native .recharts-cartesian-axis-tick text,
+  .crms-native .recharts-text {
+    fill: hsl(var(--muted-foreground));
+  }
+
+  .crms-native .recharts-cartesian-axis-line,
+  .crms-native .recharts-cartesian-axis-tick-line {
+    stroke: hsl(var(--border));
+  }
+
+  .crms-native .recharts-cartesian-grid line {
+    stroke: hsl(var(--border));
+    stroke-opacity: 0.7;
   }
 
   /* Robot Chatbot Animations */

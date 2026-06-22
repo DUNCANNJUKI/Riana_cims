@@ -116,7 +116,7 @@ export const NoticeBoard = () => {
           </div>
         </div>
 
-        {(user?.role === 'Admin' || user?.role === 'Teamlead') && (
+        {(user?.role === 'SuperAdmin' || user?.role === 'Admin' || user?.role === 'Teamlead') && (
           <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
             <DialogTrigger asChild>
               <Button className="gradient-primary">
@@ -218,7 +218,7 @@ export const NoticeBoard = () => {
                     </span>
                   </div>
                 </div>
-                {(user?.role === 'Admin' || user?.role === 'Teamlead') && (
+                {(user?.role === 'SuperAdmin' || user?.role === 'Admin' || user?.role === 'Teamlead') && (
                   <Button 
                     variant="ghost" 
                     size="icon" 

@@ -8,7 +8,7 @@ RIANA CIMS is the shared platform for client installations and the RIANA Develop
 - Developers workspace: `/developers/`
 - API and health check: `/api` and `/api/health`
 
-Developer users are taken directly to the Developers workspace after signing in. Admin, Teamlead, and Sales users can open it from the CIMS navigation.
+Developer users are taken directly to the native Developers module after signing in. Admin and Teamlead users can open its permitted views from the same CIMS navigation; there is no iframe or second application session.
 
 ## Local setup
 
@@ -48,8 +48,8 @@ The API serves both production frontend builds, so one Node process is sufficien
 
 The hosting build includes `hosting/Mysql_host/riana_cims_host.sql`: the complete 27-table schema plus sanitized reference data for a clean deployment. It never includes live accounts, reset tokens, customer contacts, messages, or audit records.
 
-Detailed guidance is in [Architecture](docs/ARCHITECTURE.md), [Deployment](docs/DEPLOYMENT.md), and [Operations](docs/OPERATIONS.md).
+Detailed guidance is in [Unified Architecture](docs/ARCHITECTURE_REFACTOR.md), [Security](docs/SECURITY.md), [Deployment](docs/DEPLOYMENT.md), [Operations](docs/OPERATIONS.md), [Administrator Guide](docs/ADMIN_GUIDE.md), [User Guide](docs/USER_GUIDE.md), [API Guide](docs/API.md), [Knowledge Base](docs/KNOWLEDGE_BASE.md), [UI/UX](docs/UI_UX.md), [Troubleshooting](docs/TROUBLESHOOTING.md), [Assistant Memory](docs/CHATBOT_MEMORY.md), and the [latest verification report](docs/VERIFICATION_REPORT.md).
 
 ## Security and secrets
 
-Never commit `.env.local`, live database backups, uploads, or provider credentials. The tracked `Mysql_host` installer is schema-only with sanitized reference rows. Copy `.env.example`, supply production secrets outside Git, rotate the default JWT secret, use HTTPS, and restrict database access to the application host.
+Never commit `.env.local`, live database backups, uploads, or provider credentials. The tracked `Mysql_host` installer is schema-only with sanitized reference rows. Copy `.env.example`, supply production secrets outside Git, set a strong production JWT secret, use HTTPS, and restrict database access to the application host.

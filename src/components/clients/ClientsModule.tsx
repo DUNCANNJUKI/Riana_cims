@@ -220,7 +220,7 @@ export const ClientsModule = ({ user }: ClientsModuleProps) => {
           <h1 className="text-3xl font-bold text-primary">Clients Management</h1>
           <p className="text-muted-foreground">Manage your client database and information</p>
         </div>
-        {(user.role === 'Admin' || user.role === 'Teamlead') && (
+        {(user.role === 'SuperAdmin' || user.role === 'Admin' || user.role === 'Teamlead') && (
           <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
             <DialogTrigger asChild>
               <Button className="gradient-primary">
@@ -454,7 +454,7 @@ export const ClientsModule = ({ user }: ClientsModuleProps) => {
                         <Eye className="h-3 w-3 mr-1" />
                         View
                       </Button>
-                      {user.role === 'Admin' && (
+                      {(user.role === 'SuperAdmin' || user.role === 'Admin') && (
                         <>
                           <Button variant="outline" size="sm" onClick={() => handleEditClient(client)}>
                             <Edit className="h-3 w-3 mr-1" />

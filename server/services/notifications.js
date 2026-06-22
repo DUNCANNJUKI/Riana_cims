@@ -40,7 +40,7 @@ const buildNotificationHtml = (notification) => {
     ['Request', notification.requestDescription], ['Approved by', notification.approverName],
     ['Developer', notification.developerName], ['Comment', notification.comment],
     ['Username', notification.username], ['Temporary password', notification.password],
-    ['Login URL', notification.loginUrl],
+    ['Login URL', notification.loginUrl], ['Account setup', notification.setupUrl],
   ].filter(([, value]) => value);
   return `<!doctype html><html><body style="margin:0;background:#f4f6f8;font-family:Arial,sans-serif;color:#172033">
     <div style="max-width:640px;margin:32px auto;background:#fff;border-radius:12px;overflow:hidden;border:1px solid #e5e7eb">
@@ -123,18 +123,24 @@ async function sendVerificationCode({ channel, destination, code }) {
   return sendSms({ phoneNumber: destination, message: `RIANA verification code: ${code}. Expires in 10 minutes.` });
 }
 
-async function sendWelcomeCredentials({ email, phoneNumber, name, password, loginUrl }) {
-  const message = `Welcome to RIANA CIMS. Username: ${email}. Temporary password: ${password}. Login: ${loginUrl}. You must change your password on first login.`;
+async function sendWelcomeCredentials({ email, phoneNumber, name, password, loginUrl, setupUrl }) {
+  const usesSecureSetup = Boolean(setupUrl);
+  const message = usesSecureSetup
+    ? `Welcome to RIANA CIMS. Complete your secure account setup within 30 minutes: ${setupUrl}`
+    : `Welcome to RIANA CIMS. Username: ${email}. Temporary password: ${password}. Login: ${loginUrl}. You must change your password on first login.`;
   const deliveries = await Promise.allSettled([
     sendEmail({
       recipientEmail: email,
       recipientName: name || email,
       notificationType: 'welcome',
-      requestDescription: 'Your account is ready. You must change the temporary password when you first log in.',
+      requestDescription: usesSecureSetup
+        ? 'Your account is ready. Use the secure link below within 30 minutes to choose your password.'
+        : 'Your account is ready. You must change the temporary password when you first log in.',
       username: email,
-      password,
+      password: usesSecureSetup ? undefined : password,
       loginUrl,
-      actionUrl: loginUrl,
+      setupUrl,
+      actionUrl: setupUrl || loginUrl,
     }),
     phoneNumber ? sendSms({ phoneNumber, message }) : Promise.resolve({ provider: 'b-textman', skipped: true, reason: 'No phone number' }),
   ]);

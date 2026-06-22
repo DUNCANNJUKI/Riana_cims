@@ -25,7 +25,7 @@ async function verify() {
       SELECT TABLE_NAME
       FROM information_schema.TABLES
       WHERE TABLE_SCHEMA = DATABASE()
-        AND (TABLE_NAME IN ('clients', 'user_profiles') OR TABLE_NAME LIKE 'crms\\_%')
+        AND (TABLE_NAME IN ('clients','user_profiles','modules','roles','permissions','role_permissions','user_module_roles','security_settings','security_audit_events') OR TABLE_NAME LIKE 'crms\\_%')
       ORDER BY TABLE_NAME
     `);
     const requiredTables = [
@@ -37,6 +37,13 @@ async function verify() {
       'crms_notifications',
       'crms_client_links',
       'crms_user_links',
+      'modules',
+      'roles',
+      'permissions',
+      'role_permissions',
+      'user_module_roles',
+      'security_settings',
+      'security_audit_events',
     ];
     const existingTables = new Set(tables.map(({ TABLE_NAME }) => TABLE_NAME));
     const missingTables = requiredTables.filter((table) => !existingTables.has(table));
@@ -55,6 +62,9 @@ async function verify() {
         (SELECT COUNT(*) FROM crms_notifications) AS notifications,
         (SELECT COUNT(*) FROM crms_client_links) AS client_links,
         (SELECT COUNT(*) FROM crms_user_links) AS user_links
+        ,(SELECT COUNT(*) FROM modules) AS modules
+        ,(SELECT COUNT(*) FROM roles) AS module_roles
+        ,(SELECT COUNT(*) FROM user_module_roles) AS module_grants
     `);
     const [[orphans]] = await connection.query(`
       SELECT

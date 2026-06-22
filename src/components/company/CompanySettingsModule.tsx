@@ -19,6 +19,7 @@ import { SubsidiaryEscalationManager } from "./SubsidiaryEscalationManager";
 import { FeedbackSettingsPanel } from "@/components/feedback/FeedbackSettingsPanel";
 import { useDatabase } from "@/hooks/useDatabase";
 import { apiClient } from "@/integrations/apiClient";
+import { dispatchCompanyBrandingUpdated, resolveCompanyLogoUrl } from "@/utils/logoUrl";
 
 interface CompanySettingsModuleProps {
   user: User;
@@ -108,11 +109,7 @@ export const CompanySettingsModule = ({ user }: CompanySettingsModuleProps) => {
         }));
         
         if (data.logo_path) {
-          const baseUrl = import.meta.env.VITE_API_BASE_URL || '';
-          const fullLogoPath = data.logo_path.startsWith('http') 
-            ? data.logo_path 
-            : `${baseUrl}/uploads/${data.logo_path}`;
-          setLogoPreview(fullLogoPath);
+          setLogoPreview(resolveCompanyLogoUrl(data.logo_path, data.updated_at || data.id));
         }
       }
     } catch (error) {
@@ -148,6 +145,7 @@ export const CompanySettingsModule = ({ user }: CompanySettingsModuleProps) => {
           
           if (response.success) {
             setSettings(prev => ({ ...prev, logo_path: response.filePath }));
+            setLogoPreview(resolveCompanyLogoUrl(response.filePath, Date.now()));
             toast({
               title: "Logo Uploaded",
               description: "New logo has been uploaded to the local server",
@@ -174,6 +172,7 @@ export const CompanySettingsModule = ({ user }: CompanySettingsModuleProps) => {
       };
 
       await updateCompanySettings(companyData);
+      dispatchCompanyBrandingUpdated(settings.logo_path);
 
       toast({
         title: "Success",
@@ -234,12 +233,12 @@ export const CompanySettingsModule = ({ user }: CompanySettingsModuleProps) => {
     });
   };
 
-  if (user.role !== 'Admin') {
+  if (user.role !== 'SuperAdmin') {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="text-center">
           <Shield className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-          <p className="text-muted-foreground">Access denied. Admin privileges required.</p>
+          <p className="text-muted-foreground">Access denied. SuperAdmin privileges required.</p>
         </div>
       </div>
     );
@@ -262,7 +261,7 @@ export const CompanySettingsModule = ({ user }: CompanySettingsModuleProps) => {
         </div>
         <Badge variant="outline" className="text-lg px-4 py-2">
           <Building2 className="h-4 w-4 mr-2" />
-          Admin Panel
+          SuperAdmin Panel
         </Badge>
       </div>
 

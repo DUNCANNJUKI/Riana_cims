@@ -1,11 +1,10 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { cn } from '@/lib/utils';
+import { cn } from '@crms/lib/utils';
 import {
   LayoutDashboard,
   FileText,
   PlusCircle,
-  Users,
   BarChart3,
   Settings,
   ChevronLeft,
@@ -18,10 +17,10 @@ import {
   Briefcase,
   Bell,
 } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { useCurrentUserRole } from '@/hooks/useCurrentUserRole';
-import logoImage from '@/assets/riana-group-logo.jpg';
+import { Button } from '@crms/components/ui/button';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@crms/components/ui/tooltip';
+import { useCurrentUserRole } from '@crms/hooks/useCurrentUserRole';
+import { fetchCompanyBranding, resolveCompanyLogoUrl } from '@crms/lib/companyBranding';
 
 interface NavItem {
   label: string;
@@ -35,21 +34,20 @@ interface NavItem {
 const allNavItems: NavItem[] = [
   // Main - visible to all
   { label: 'Dashboard', href: '/', icon: LayoutDashboard, section: 'main' },
-  { label: 'All Requests', href: '/requests', icon: FileText, section: 'main' },
-  { label: 'Notifications', href: '/notifications', icon: Bell, section: 'main' },
+  { label: 'All Requests', href: '/developers/requests', icon: FileText, section: 'main' },
+  { label: 'Notifications', href: '/developers/notifications', icon: Bell, section: 'main' },
 
   // Workflow - role based
-  { label: 'New Request', href: '/requests/new', icon: PlusCircle, section: 'workflow', roles: ['admin', 'senior_developer'] },
-  { label: 'Approvals', href: '/approvals', icon: ClipboardCheck, section: 'workflow', roles: ['admin', 'sales'] },
-  { label: 'My Assignments', href: '/assignments', icon: FolderKanban, section: 'workflow', roles: ['developer'] },
+  { label: 'New Request', href: '/developers/requests/new', icon: PlusCircle, section: 'workflow', roles: ['admin', 'senior_developer'] },
+  { label: 'Approvals', href: '/developers/approvals', icon: ClipboardCheck, section: 'workflow', roles: ['admin', 'sales'] },
+  { label: 'My Assignments', href: '/developers/assignments', icon: FolderKanban, section: 'workflow', roles: ['developer'] },
 
   // Analytics - limited access
-  { label: 'Reports', href: '/reports', icon: BarChart3, section: 'analytics', roles: ['admin', 'senior_developer', 'sales'] },
-  { label: 'Audit Trail', href: '/audit', icon: History, section: 'analytics', roles: ['admin', 'senior_developer'] },
+  { label: 'Reports', href: '/developers/reports', icon: BarChart3, section: 'analytics', roles: ['admin', 'senior_developer', 'sales'] },
+  { label: 'Audit Trail', href: '/developers/audit', icon: History, section: 'analytics', roles: ['admin', 'senior_developer'] },
 
-  // Admin - restricted
-  { label: 'User Management', href: '/users', icon: Users, section: 'admin', roles: ['admin'] },
-  { label: 'Settings', href: '/settings', icon: Settings, section: 'admin', roles: ['admin', 'senior_developer'] },
+  // Admin - restricted. User and role management lives in the main CIMS Users module.
+  { label: 'Settings', href: '/developers/settings', icon: Settings, section: 'admin', roles: ['admin', 'senior_developer'] },
 ];
 
 const sectionLabels: Record<string, { label: string; icon: React.ElementType }> = {
@@ -61,8 +59,31 @@ const sectionLabels: Record<string, { label: string; icon: React.ElementType }> 
 
 export function Sidebar() {
   const [collapsed, setCollapsed] = useState(false);
+  const [logoUrl, setLogoUrl] = useState(resolveCompanyLogoUrl());
   const location = useLocation();
   const userRole = useCurrentUserRole();
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchCompanyBranding()
+      .then((branding) => {
+        if (!cancelled && branding?.logo_path) {
+          setLogoUrl(resolveCompanyLogoUrl(branding.logo_path, branding.updated_at || branding.id));
+        }
+      })
+      .catch(() => undefined);
+
+    const handleBrandingUpdate = (event: Event) => {
+      const detail = (event as CustomEvent<{ logoPath?: string | null; version?: number }>).detail;
+      setLogoUrl(resolveCompanyLogoUrl(detail?.logoPath, detail?.version || Date.now()));
+    };
+
+    window.addEventListener('riana-company-branding-updated', handleBrandingUpdate);
+    return () => {
+      cancelled = true;
+      window.removeEventListener('riana-company-branding-updated', handleBrandingUpdate);
+    };
+  }, []);
 
   // Filter nav items based on user roles
   const navItems = allNavItems.filter(item => {
@@ -151,7 +172,7 @@ export function Sidebar() {
         {!collapsed && (
           <div className="flex items-center gap-3">
             <div className="relative h-10 w-10 rounded-xl overflow-hidden ring-2 ring-sidebar-primary/30 shadow-lg">
-              <img src={logoImage} alt="Riana Group" className="h-full w-full object-cover" />
+              <img src={logoUrl} alt="Riana Group" className="h-full w-full object-cover" />
             </div>
             <div className="flex flex-col">
               <h1 className="text-sm font-bold text-sidebar-foreground tracking-tight">CRMS</h1>
@@ -161,7 +182,7 @@ export function Sidebar() {
         )}
         {collapsed && (
           <div className="mx-auto relative h-10 w-10 rounded-xl overflow-hidden ring-2 ring-sidebar-primary/30 shadow-lg">
-            <img src={logoImage} alt="Riana Group" className="h-full w-full object-cover" />
+            <img src={logoUrl} alt="Riana Group" className="h-full w-full object-cover" />
           </div>
         )}
       </div>

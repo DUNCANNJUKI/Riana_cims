@@ -1,23 +1,23 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, Send, Save } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
+import { Button } from '@crms/components/ui/button';
+import { Input } from '@crms/components/ui/input';
+import { Label } from '@crms/components/ui/label';
+import { Textarea } from '@crms/components/ui/textarea';
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Checkbox } from '@/components/ui/checkbox';
-import { useToast } from '@/hooks/use-toast';
-import { useClients, useProfiles, useCreateChangeRequest, useUsersWithRoles } from '@/hooks/useSupabaseData';
-import { sendNotificationEmail } from '@/lib/notifications';
-import { Skeleton } from '@/components/ui/skeleton';
+} from '@crms/components/ui/select';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@crms/components/ui/card';
+import { Checkbox } from '@crms/components/ui/checkbox';
+import { useToast } from '@crms/hooks/use-toast';
+import { useClients, useProfiles, useCreateChangeRequest, useUsersWithRoles } from '@crms/hooks/useSupabaseData';
+import { sendNotificationEmail } from '@crms/lib/notifications';
+import { Skeleton } from '@crms/components/ui/skeleton';
 type RequestSource = 'email' | 'phone' | 'whatsapp' | 'meeting';
 type PriorityLevel = 'low' | 'medium' | 'high' | 'critical';
 
@@ -140,7 +140,7 @@ export default function NewRequest() {
               ticketNumber: newRequest.ticket_number,
               clientName: client?.name || 'Unknown Client',
               requestDescription: formData.description,
-              actionUrl: `${window.location.origin}/requests/${newRequest.id}`,
+              actionUrl: `${window.location.origin}/developers/requests/${newRequest.id}`,
             });
           }
         }
@@ -153,7 +153,7 @@ export default function NewRequest() {
           : 'Your draft has been saved successfully.',
       });
 
-      navigate('/requests');
+      navigate('/developers/requests');
     } catch (error) {
       console.error('Error creating request:', error);
       toast({

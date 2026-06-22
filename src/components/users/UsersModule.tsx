@@ -40,6 +40,15 @@ export const UsersModule = ({ user }: UsersModuleProps) => {
     getSubsidiaries, 
     loading 
   } = useDatabase();
+  const isSuperAdmin = user.role === 'SuperAdmin';
+  const canManageUsers = isSuperAdmin || user.role === 'Admin';
+  const privilegedRoles = new Set<User['role']>(['SuperAdmin', 'Admin']);
+  const canManageTarget = (targetUser: User) => isSuperAdmin || !privilegedRoles.has(targetUser.role);
+  const canDeleteTarget = (targetUser: User) => isSuperAdmin && targetUser.id !== user.id;
+  const assignableRoles: User['role'][] = isSuperAdmin
+    ? ['SuperAdmin', 'Admin', 'Developer', 'Sales', 'Teamlead', 'User']
+    : ['Developer', 'Sales', 'Teamlead', 'User'];
+  const crmsAssignableRoles: Exclude<User['role'], 'User'>[] = ['SuperAdmin', 'Admin', 'Developer', 'Sales', 'Teamlead'];
 
   useEffect(() => {
     loadInitialData();
@@ -67,13 +76,12 @@ export const UsersModule = ({ user }: UsersModuleProps) => {
     }
   };
 
-  // Only Admin and Teamlead can access this module
-  if (user.role !== 'Admin' && user.role !== 'Teamlead') {
+  if (!canManageUsers) {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="text-center">
           <Shield className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-          <p className="text-muted-foreground">Access denied. Insufficient permissions.</p>
+          <p className="text-muted-foreground">Access denied. Admin or SuperAdmin privileges required.</p>
         </div>
       </div>
     );
@@ -99,6 +107,14 @@ export const UsersModule = ({ user }: UsersModuleProps) => {
     }
     if (newUser.password.length < 8) {
       toast({ title: "Weak password", description: "Temporary passwords must be at least 8 characters.", variant: "destructive" });
+      return;
+    }
+    if (!assignableRoles.includes(newUser.role as User['role'])) {
+      toast({
+        title: "Role not allowed",
+        description: "Only SuperAdmin can create SuperAdmin/Admin accounts.",
+        variant: "destructive",
+      });
       return;
     }
 
@@ -133,11 +149,11 @@ export const UsersModule = ({ user }: UsersModuleProps) => {
     }
   };
 
-  const handleDeleteUser = async (userId: string) => {
-    if (userId === user.id) {
+  const handleDeleteUser = async (targetUser: User) => {
+    if (!canDeleteTarget(targetUser)) {
       toast({
-        title: "Error",
-        description: "You cannot delete your own account",
+        title: "Action not allowed",
+        description: targetUser.id === user.id ? "You cannot delete your own account." : "Only SuperAdmin can delete users.",
         variant: "destructive",
       });
       return;
@@ -146,7 +162,7 @@ export const UsersModule = ({ user }: UsersModuleProps) => {
     if (!confirm('Are you sure you want to delete this user?')) return;
 
     try {
-      await deleteUser(userId);
+      await deleteUser(targetUser.id);
       await loadInitialData();
     } catch (error) {
       console.error('Error deleting user:', error);
@@ -154,6 +170,10 @@ export const UsersModule = ({ user }: UsersModuleProps) => {
   };
 
   const handleResetPassword = async (targetUser: User) => {
+    if (!canManageTarget(targetUser)) {
+      toast({ title: "Action not allowed", description: "Only SuperAdmin can reset SuperAdmin/Admin accounts.", variant: "destructive" });
+      return;
+    }
     try {
       await apiClient.post('/auth/forgot-password', { email: targetUser.email });
       toast({
@@ -171,6 +191,10 @@ export const UsersModule = ({ user }: UsersModuleProps) => {
 
   // Admin change user password directly
   const handleAdminChangePassword = async (targetUser: User, newPassword: string) => {
+    if (!canManageTarget(targetUser)) {
+      toast({ title: "Action not allowed", description: "Only SuperAdmin can change SuperAdmin/Admin passwords.", variant: "destructive" });
+      return;
+    }
     if (!newPassword || newPassword.length < 8) {
       toast({
         title: "Error",
@@ -192,6 +216,10 @@ export const UsersModule = ({ user }: UsersModuleProps) => {
   };
 
   const handleEditUser = (targetUser: User) => {
+    if (!canManageTarget(targetUser)) {
+      toast({ title: "Action not allowed", description: "Only SuperAdmin can edit SuperAdmin/Admin accounts.", variant: "destructive" });
+      return;
+    }
     setEditingUser(targetUser);
     setIsEditDialogOpen(true);
   };
@@ -205,6 +233,8 @@ export const UsersModule = ({ user }: UsersModuleProps) => {
         last_name: editingUser.last_name,
         email: editingUser.email,
         phone_number: editingUser.phone_number,
+        ...(isSuperAdmin ? { role: editingUser.role } : {}),
+        ...(isSuperAdmin ? { module_roles: editingUser.module_roles || {} } : {}),
       });
 
       await loadInitialData();
@@ -218,6 +248,7 @@ export const UsersModule = ({ user }: UsersModuleProps) => {
 
   const getRoleColor = (role: string) => {
     switch (role) {
+      case 'SuperAdmin': return 'bg-purple-600 text-white';
       case 'Admin': return 'bg-red-500 text-white';
       case 'Developer': return 'bg-violet-500 text-white';
       case 'Sales': return 'bg-amber-500 text-white';
@@ -232,7 +263,9 @@ export const UsersModule = ({ user }: UsersModuleProps) => {
   };
 
   const roleStats = {
+    superadmin: users.filter(u => u.role === 'SuperAdmin').length,
     admin: users.filter(u => u.role === 'Admin').length,
+    developer: users.filter(u => u.role === 'Developer').length,
     teamlead: users.filter(u => u.role === 'Teamlead').length,
     user: users.filter(u => u.role === 'User').length,
     pending: users.filter(u => u.first_login).length
@@ -245,7 +278,7 @@ export const UsersModule = ({ user }: UsersModuleProps) => {
           <h1 className="text-3xl font-bold text-primary">Users Management</h1>
           <p className="text-muted-foreground">Manage system users and access controls</p>
         </div>
-        {user.role === 'Admin' && (
+        {canManageUsers && (
           <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
             <DialogTrigger asChild>
               <Button className="gradient-primary">
@@ -308,11 +341,11 @@ export const UsersModule = ({ user }: UsersModuleProps) => {
                       <SelectValue placeholder="Select user role" />
                     </SelectTrigger>
                     <SelectContent>
-                      {user.role === 'Admin' && <SelectItem value="Admin">Admin</SelectItem>}
-                      {user.role === 'Admin' && <SelectItem value="Developer">Developer</SelectItem>}
-                      {user.role === 'Admin' && <SelectItem value="Sales">Sales</SelectItem>}
-                      <SelectItem value="Teamlead">Team Lead</SelectItem>
-                      <SelectItem value="User">User</SelectItem>
+                      {assignableRoles.map((role) => (
+                        <SelectItem key={role} value={role}>
+                          {role === 'Teamlead' ? 'Team Lead' : role}
+                        </SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                 </div>
@@ -323,6 +356,7 @@ export const UsersModule = ({ user }: UsersModuleProps) => {
                        <SelectValue placeholder="Select user designation" />
                      </SelectTrigger>
                      <SelectContent>
+                       {isSuperAdmin && <SelectItem value="SuperAdmin">SuperAdmin</SelectItem>}
                        <SelectItem value="Admin">Admin</SelectItem>
                        <SelectItem value="Developer">Developer</SelectItem>
                        <SelectItem value="Teamlead">Teamlead</SelectItem>
@@ -374,7 +408,18 @@ export const UsersModule = ({ user }: UsersModuleProps) => {
         )}
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+      <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-6">
+        <Card className="shadow-riana">
+          <CardContent className="p-4">
+            <div className="flex items-center gap-2">
+              <Shield className="h-8 w-8 text-purple-600" />
+              <div>
+                <p className="text-sm text-muted-foreground">SuperAdmins</p>
+                <p className="text-2xl font-bold">{roleStats.superadmin}</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
         <Card className="shadow-riana">
           <CardContent className="p-4">
             <div className="flex items-center gap-2">
@@ -494,7 +539,7 @@ export const UsersModule = ({ user }: UsersModuleProps) => {
                   </TableCell>
                   <TableCell>
                     <div className="flex gap-2">
-                      {user.role === 'Admin' && (
+                      {canManageUsers && canManageTarget(u) && (
                         <>
                           <Button 
                             variant="outline" 
@@ -523,22 +568,17 @@ export const UsersModule = ({ user }: UsersModuleProps) => {
                             <Key className="h-3 w-3 mr-1" />
                             Change Password
                            </Button>
-                          {u.id !== user.id && (
+                          {canDeleteTarget(u) && (
                             <Button 
                               variant="outline" 
                               size="sm"
-                              onClick={() => handleDeleteUser(u.id)}
+                              onClick={() => handleDeleteUser(u)}
                               className="text-destructive hover:text-destructive"
                             >
                               Delete
                             </Button>
                           )}
                         </>
-                      )}
-                      {user.role === 'Teamlead' && (
-                        <Button variant="outline" size="sm">
-                          View Details
-                        </Button>
                       )}
                     </div>
                   </TableCell>
@@ -614,6 +654,53 @@ export const UsersModule = ({ user }: UsersModuleProps) => {
                   placeholder="+254700000000"
                 />
               </div>
+              {isSuperAdmin && (
+                <div className="space-y-2">
+                  <Label htmlFor="edit_role">Role</Label>
+                  <Select value={editingUser.role} onValueChange={(value) => setEditingUser({ ...editingUser, role: value as User['role'] })}>
+                    <SelectTrigger id="edit_role">
+                      <SelectValue placeholder="Select user role" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {assignableRoles.map((role) => (
+                        <SelectItem key={role} value={role}>
+                          {role === 'Teamlead' ? 'Team Lead' : role}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+              {isSuperAdmin && (
+                <div className="space-y-2">
+                  <Label htmlFor="edit_crms_role">Extra Developers Workspace Role</Label>
+                  <Select
+                    value={editingUser.module_roles?.crms || 'none'}
+                    onValueChange={(value) => setEditingUser({
+                      ...editingUser,
+                      module_roles: {
+                        ...(editingUser.module_roles || {}),
+                        crms: value === 'none' ? null : value as User['role'],
+                      },
+                    })}
+                  >
+                    <SelectTrigger id="edit_crms_role">
+                      <SelectValue placeholder="Select Developers access" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">No extra Developers access</SelectItem>
+                      {crmsAssignableRoles.map((role) => (
+                        <SelectItem key={role} value={role}>
+                          {role === 'Teamlead' ? 'Team Lead' : role}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-muted-foreground">
+                    Grants Developers/CRMS access without managing users from CRMS.
+                  </p>
+                </div>
+              )}
               <div className="flex justify-end gap-2 mt-4">
                 <Button variant="outline" onClick={() => setIsEditDialogOpen(false)}>
                   Cancel

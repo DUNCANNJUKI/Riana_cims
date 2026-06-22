@@ -76,7 +76,7 @@ export const AssignmentModule = ({ user }: AssignmentModuleProps) => {
   };
 
   // Only Admin and Teamlead can access this module
-  if (user.role !== 'Admin' && user.role !== 'Teamlead') {
+  if (user.role !== 'SuperAdmin' && user.role !== 'Admin' && user.role !== 'Teamlead') {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="text-center">
@@ -253,7 +253,7 @@ export const AssignmentModule = ({ user }: AssignmentModuleProps) => {
   console.log('Available technicians for assignment:', {
     total: availableTechnicians.length,
     userRole: user.role,
-    canAssignAny: user.role === 'Admin' || user.role === 'Teamlead'
+    canAssignAny: user.role === 'SuperAdmin' || user.role === 'Admin' || user.role === 'Teamlead'
   });
 
   return (

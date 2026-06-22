@@ -4,7 +4,9 @@
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
-    "dev": "nodemon index.js"
+    "dev": "nodemon index.js",
+    "test:security": "node --test security/security.test.js",
+    "security:init": "node scripts/ensure-runtime-secret.cjs"
   },
   "dependencies": {
     "bcrypt": "^5.1.1",

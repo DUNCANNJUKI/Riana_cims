@@ -19,6 +19,7 @@ import { NotificationBell } from "@/components/layout/NotificationBell";
 import { useDatabase } from "@/hooks/useDatabase";
 import { useChat } from "@/hooks/useChat";
 import { ChatModule } from "@/components/chat/ChatModule";
+import { getCompanyBrandingEventDetail, resolveCompanyLogoUrl } from "@/utils/logoUrl";
 
 interface HeaderProps {
   user: UserType;
@@ -52,13 +53,20 @@ export const Header = ({ user, className, setActiveModule }: HeaderProps) => {
       try {
         const settings = await getCompanySettings();
         if (settings?.logo_path) {
-          setLogoPath(settings.logo_path);
+          setLogoPath(resolveCompanyLogoUrl(settings.logo_path, settings.updated_at || settings.id));
         }
       } catch (error) {
         console.error("Error loading logo settings:", error);
       }
     };
     loadSettings();
+
+    const handleBrandingUpdate = (event: Event) => {
+      const { logoPath, version } = getCompanyBrandingEventDetail(event);
+      setLogoPath(resolveCompanyLogoUrl(logoPath, version));
+    };
+
+    window.addEventListener('riana-company-branding-updated', handleBrandingUpdate);
     
     const savedTheme = localStorage.getItem('theme');
     
@@ -70,6 +78,7 @@ export const Header = ({ user, className, setActiveModule }: HeaderProps) => {
       document.documentElement.classList.remove('dark');
       setIsDarkMode(false);
     }
+    return () => window.removeEventListener('riana-company-branding-updated', handleBrandingUpdate);
   }, []);
 
   // Listen for system preference changes (auto-detect)

@@ -10,9 +10,9 @@ import {
   MessageSquare,
   History,
 } from 'lucide-react';
-import { cn } from '@/lib/utils';
-import { useAuditLogs } from '@/hooks/useSupabaseData';
-import { Skeleton } from '@/components/ui/skeleton';
+import { cn } from '@crms/lib/utils';
+import { useAuditLogs } from '@crms/hooks/useSupabaseData';
+import { Skeleton } from '@crms/components/ui/skeleton';
 
 const activityIcons: Record<string, any> = {
   created: FileText,
@@ -90,7 +90,7 @@ export function ActivityFeed() {
         )}
       </div>
       <div className="border-t p-4">
-        <Link to="/audit" className="w-full text-sm text-primary hover:underline block text-center">
+        <Link to="/developers/audit" className="w-full text-sm text-primary hover:underline block text-center">
           View all activity
         </Link>
       </div>

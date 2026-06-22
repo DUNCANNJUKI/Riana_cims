@@ -1,19 +1,30 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Database } from '@/integrations/supabase/types';
+import { Database } from '@crms/integrations/supabase/types';
 import { useEffect, useState } from 'react';
+import { getCimsUser } from '@crms/lib/cimsSession';
 
 type Notification = Database['public']['Tables']['notifications']['Row'];
 
 const API_URL = '/api/crms';
+const NOTIFICATION_STALE_TIME = 30_000;
+
+async function fetchNotificationJson<T>(url: string, fallbackMessage: string): Promise<T> {
+  const res = await fetch(url);
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.error || fallbackMessage);
+  }
+  return res.json() as Promise<T>;
+}
 
 export function useCurrentUser() {
-  const [userId, setUserId] = useState<string | null>(localStorage.getItem('crms-user-id'));
+  const [userId, setUserId] = useState<string | null>(() => getCimsUser()?.id || null);
   const [isLoading, setIsLoading] = useState(false);
 
   useEffect(() => {
     // Listen for local storage changes (login/logout)
     const handleStorageChange = () => {
-      setUserId(localStorage.getItem('crms-user-id'));
+      setUserId(getCimsUser()?.id || null);
     };
     window.addEventListener('storage', handleStorageChange);
     return () => window.removeEventListener('storage', handleStorageChange);
@@ -29,13 +40,13 @@ export function useUserNotifications() {
     queryKey: ['notifications', userId],
     queryFn: async () => {
       if (!userId) return [];
-      const res = await fetch(`${API_URL}/notifications/${userId}`);
-      if (!res.ok) throw new Error('Failed to fetch notifications');
-      return res.json() as Promise<Notification[]>;
+      return fetchNotificationJson<Notification[]>(`${API_URL}/notifications`, 'Failed to fetch notifications');
     },
     enabled: !!userId,
+    staleTime: NOTIFICATION_STALE_TIME,
     refetchInterval: 30000,
     refetchIntervalInBackground: false,
+    retry: 1,
   });
 }
 
@@ -46,12 +57,12 @@ export function useUnreadNotificationCount() {
     queryKey: ['notifications_unread_count', userId],
     queryFn: async () => {
       if (!userId) return 0;
-      const res = await fetch(`${API_URL}/notifications/${userId}`);
-      if (!res.ok) throw new Error('Failed to fetch notifications');
-      const data = await res.json() as Notification[];
+      const data = await fetchNotificationJson<Notification[]>(`${API_URL}/notifications`, 'Failed to fetch notifications');
       return data.filter(n => !n.read).length;
     },
     enabled: !!userId,
+    staleTime: NOTIFICATION_STALE_TIME,
+    retry: 1,
   });
 }
 
@@ -83,10 +94,7 @@ export function useMarkAllNotificationsAsRead() {
   return useMutation({
     mutationFn: async () => {
       if (!userId) return;
-      // Note: This would ideally be a bulk update on backend, 
-      // but for now we can iterate or keep it simple if backend supports it.
-      // Assuming backend needs individual updates for now or simple fetch
-      const res = await fetch(`${API_URL}/notifications/${userId}/read-all`, {
+      const res = await fetch(`${API_URL}/notifications/read-all`, {
         method: 'POST'
       });
       if (!res.ok) throw new Error('Failed to mark all notifications read');

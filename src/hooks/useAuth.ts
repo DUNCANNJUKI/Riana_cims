@@ -109,6 +109,11 @@ export const useAuth = () => {
   const logout = (): void => {
     clearAuthToken();
     localStorage.removeItem('riana_user');
+    // Remove pre-unification session remnants during the migration window.
+    localStorage.removeItem('crms-user-session');
+    localStorage.removeItem('crms-user-id');
+    localStorage.removeItem('crms-user-role');
+    localStorage.removeItem('crms-auth-token');
     setAuthState({
       user: null,
       isAuthenticated: false,

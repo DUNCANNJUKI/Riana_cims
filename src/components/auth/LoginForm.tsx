@@ -5,10 +5,10 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Lock, Mail, Eye, EyeOff, Building2, Phone } from "lucide-react";
-import { apiClient } from "@/integrations/apiClient";
+import { API_URL, apiClient } from "@/integrations/apiClient";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
-import { useDatabase } from "@/hooks/useDatabase";
+import { resolveCompanyLogoUrl } from "@/utils/logoUrl";
 
 export const LoginForm = () => {
   const [email, setEmail] = useState("");
@@ -22,15 +22,15 @@ export const LoginForm = () => {
   const [resetPhone, setResetPhone] = useState("");
   const { login, verifyTwoFactor, isLoading } = useAuth();
   const { toast } = useToast();
-  const { getCompanySettings } = useDatabase();
   const [logoPath, setLogoPath] = useState("/Riana_logo.png");
 
   useEffect(() => {
     const loadSettings = async () => {
       try {
-        const settings = await getCompanySettings();
+        const response = await fetch(`${API_URL}/public/company-branding`, { credentials: 'include' });
+        const settings = response.ok ? await response.json() : null;
         if (settings?.logo_path) {
-          setLogoPath(settings.logo_path);
+          setLogoPath(resolveCompanyLogoUrl(settings.logo_path, settings.updated_at || settings.id));
         }
       } catch (error) {
         // Not critical for login form

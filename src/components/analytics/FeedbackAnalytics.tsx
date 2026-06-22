@@ -67,9 +67,16 @@ export const FeedbackAnalytics = ({ user, refreshTrigger }: FeedbackAnalyticsPro
   };
 
   const getNPSColor = (score: number) => {
-    if (score >= 50) return 'text-success';
-    if (score >= 0) return 'text-warning';
+    if (score >= 70) return 'text-success';
+    if (score >= 0) return 'text-primary';
     return 'text-destructive';
+  };
+
+  const getNPSBenchmark = (score: number) => {
+    if (score >= 70) return 'Excellent';
+    if (score >= 50) return 'Great';
+    if (score >= 0) return 'Good';
+    return 'Needs improvement';
   };
 
   const getRatingColor = (rating: number) => {
@@ -150,7 +157,9 @@ export const FeedbackAnalytics = ({ user, refreshTrigger }: FeedbackAnalyticsPro
             <div className={`text-2xl font-bold ${getNPSColor(metrics.npsScore)}`}>
               {metrics.npsScore}
             </div>
-            <p className="text-xs text-muted-foreground">Promoters minus detractors, {metrics.npsResponseCount} responses</p>
+            <p className="text-xs text-muted-foreground">
+              {getNPSBenchmark(metrics.npsScore)} · standard -100 to +100, {metrics.npsResponseCount} responses
+            </p>
           </CardContent>
         </Card>
 
@@ -170,7 +179,7 @@ export const FeedbackAnalytics = ({ user, refreshTrigger }: FeedbackAnalyticsPro
       <Card>
         <CardHeader>
           <CardTitle>NPS Breakdown</CardTitle>
-          <CardDescription>Distribution of promoters, passives, and detractors</CardDescription>
+          <CardDescription>Standard NPS groups: Promoters 9-10, Passives 7-8, Detractors 0-6</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="space-y-4">
@@ -181,7 +190,7 @@ export const FeedbackAnalytics = ({ user, refreshTrigger }: FeedbackAnalyticsPro
               </div>
               <span className="font-medium">{metrics.promoters}</span>
             </div>
-            <Progress value={(metrics.promoters / Math.max(metrics.totalFeedback, 1)) * 100} className="h-2" />
+            <Progress value={(metrics.promoters / Math.max(metrics.npsResponseCount, 1)) * 100} className="h-2" />
             
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
@@ -190,7 +199,7 @@ export const FeedbackAnalytics = ({ user, refreshTrigger }: FeedbackAnalyticsPro
               </div>
               <span className="font-medium">{metrics.passives}</span>
             </div>
-            <Progress value={(metrics.passives / Math.max(metrics.totalFeedback, 1)) * 100} className="h-2" />
+            <Progress value={(metrics.passives / Math.max(metrics.npsResponseCount, 1)) * 100} className="h-2" />
             
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
@@ -199,7 +208,7 @@ export const FeedbackAnalytics = ({ user, refreshTrigger }: FeedbackAnalyticsPro
               </div>
               <span className="font-medium">{metrics.detractors}</span>
             </div>
-            <Progress value={(metrics.detractors / Math.max(metrics.totalFeedback, 1)) * 100} className="h-2" />
+            <Progress value={(metrics.detractors / Math.max(metrics.npsResponseCount, 1)) * 100} className="h-2" />
           </div>
         </CardContent>
       </Card>

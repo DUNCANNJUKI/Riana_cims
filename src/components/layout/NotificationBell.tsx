@@ -140,7 +140,7 @@ export const NotificationBell = ({ user, onNavigate }: NotificationBellProps) =>
         }
       });
 
-      if (user.role === 'Admin' || user.role === 'Teamlead') {
+      if (user.role === 'SuperAdmin' || user.role === 'Admin' || user.role === 'Teamlead') {
         missionHandovers.forEach((installation: any) => {
           newNotifications.push({
             id: `handover-${installation.id}`,

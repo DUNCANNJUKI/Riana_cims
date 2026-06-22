@@ -38,9 +38,12 @@ import { usePushNotifications } from "@/hooks/usePushNotifications";
 import { useOfflineSync } from "@/hooks/useOfflineSync";
 import { NotificationBell } from "@/components/layout/NotificationBell";
 import { DevelopersWorkspace } from "@/components/developers/DevelopersWorkspace";
+import { InactivityGuard } from "@/components/auth/InactivityGuard";
+import { useLocation } from "react-router-dom";
 
 const Index = () => {
   const { user, isAuthenticated, isLoading, logout } = useAuth();
+  const location = useLocation();
 
   const [activeModule, setActiveModule] = useState('dashboard');
   const [showLoader, setShowLoader] = useState(true);
@@ -57,41 +60,10 @@ const Index = () => {
   }, []);
 
   useEffect(() => {
-    if (isAuthenticated && user?.role === 'Developer') {
+    if (isAuthenticated && (user?.role === 'Developer' || location.pathname.startsWith('/developers'))) {
       setActiveModule('developers');
     }
-  }, [isAuthenticated, user?.role]);
-
-  // Auto-logout due to inactivity (30 minutes)
-  useEffect(() => {
-    let timeoutId: NodeJS.Timeout;
-
-    const resetTimer = () => {
-      clearTimeout(timeoutId);
-      // 30 minutes = 30 * 60 * 1000 = 1800000 ms
-      timeoutId = setTimeout(() => {
-        if (isAuthenticated) {
-          logout();
-        }
-      }, 1800000);
-    };
-
-    if (isAuthenticated) {
-      resetTimer();
-      window.addEventListener('mousemove', resetTimer);
-      window.addEventListener('keydown', resetTimer);
-      window.addEventListener('click', resetTimer);
-      window.addEventListener('scroll', resetTimer);
-
-      return () => {
-        clearTimeout(timeoutId);
-        window.removeEventListener('mousemove', resetTimer);
-        window.removeEventListener('keydown', resetTimer);
-        window.removeEventListener('click', resetTimer);
-        window.removeEventListener('scroll', resetTimer);
-      };
-    }
-  }, [isAuthenticated, logout]);
+  }, [isAuthenticated, user?.role, location.pathname]);
 
   // Show loader during initial load
   if (showLoader || isLoading) {
@@ -107,6 +79,7 @@ const Index = () => {
   }
 
   const renderContent = () => {
+    const developerWorkspaceRole = user.module_roles?.crms || user.role;
     switch (activeModule) {
       case 'dashboard':
         return <Dashboard user={user} />;
@@ -141,8 +114,8 @@ const Index = () => {
       case 'announcements-management':
         return <AnnouncementsManagementModule user={user} />;
       case 'developers':
-        if (user.role === 'Admin' || user.role === 'Teamlead' || user.role === 'Developer' || user.role === 'Sales') {
-          return <DevelopersWorkspace userId={user.id} role={user.role} />;
+        if (developerWorkspaceRole === 'SuperAdmin' || developerWorkspaceRole === 'Admin' || developerWorkspaceRole === 'Teamlead' || developerWorkspaceRole === 'Developer' || developerWorkspaceRole === 'Sales') {
+          return <DevelopersWorkspace userId={user.id} role={developerWorkspaceRole} />;
         }
         return <Dashboard user={user} />;
       case 'help':
@@ -247,6 +220,7 @@ const Index = () => {
       </div>
       
       <ChatbotWidget user={user} />
+      <InactivityGuard active={isAuthenticated} onLogout={logout} />
     </div>
   );
 };

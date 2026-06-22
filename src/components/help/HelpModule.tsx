@@ -82,7 +82,7 @@ const helpArticles: HelpArticle[] = [
     id: '4',
     title: 'Managing user permissions',
     category: 'Users',
-    content: 'Admin users can create and manage user accounts with different role levels: Admin, Team Lead, and User. Each role has specific access permissions.',
+    content: 'User management is centralized in the main CIMS Users module. SuperAdmin can create Admin/SuperAdmin accounts, delete users, assign primary roles, and grant extra Developers workspace roles. Admin users can manage non-privileged operational users only.',
     helpful: 12
   },
   {
@@ -175,6 +175,27 @@ const helpArticles: HelpArticle[] = [
     category: 'Reports',
     content: 'Every PDF report features a professional graphical footer and a "Generated:" timestamp at the absolute bottom. This ensures all documents are clearly branded and dated.',
     helpful: 3
+  },
+  {
+    id: '18',
+    title: 'Developers workspace and shared login',
+    category: 'Developers',
+    content: 'The Developers workspace opens inside the normal CIMS page and uses the same login, notifications, theme, and inactivity timeout. Developer accounts are redirected there after sign-in.',
+    helpful: 0
+  },
+  {
+    id: '19',
+    title: 'How Client Satisfaction is calculated',
+    category: 'Feedback',
+    content: 'Client Satisfaction uses CSAT: valid ratings of 4 or 5 divided by all valid 1-to-5 ratings, shown as a percentage. Average Rating and the 0-to-10 NPS recommendation score are separate metrics.',
+    helpful: 0
+  },
+  {
+    id: '20',
+    title: 'Session inactivity and security',
+    category: 'Security',
+    content: 'The system warns shortly before the ten-minute inactivity limit. Continuing resets the timer; otherwise CIMS and Developers sign out together. Password or privilege changes invalidate older sessions.',
+    helpful: 0
   }
 ];
 
@@ -184,7 +205,7 @@ const botResponses = [
   "For client management, you can add, edit, and search clients in the Clients section. Would you like specific instructions?",
   "To generate reports, go to the Reports section and select from our available templates. I can guide you through the process.",
   "For Excel imports, make sure to download the template first and follow the column format. Do you need help with a specific import issue?",
-  "User management is available for Admin and Team Lead users in the Users section. What aspect would you like help with?",
+  "User management is centralized in the main CIMS Users section. SuperAdmin controls Admin/SuperAdmin accounts, deletions, company settings, backups, and extra Developers workspace roles.",
   "Installation tracking includes equipment details, service points, and handover documentation. What information do you need?",
   "System logs are available for Admins to monitor all user activities and system events. Would you like to know how to access them?"
 ];

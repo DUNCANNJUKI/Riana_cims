@@ -1,9 +1,9 @@
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { format } from 'date-fns';
-import { ChangeRequestWithRelations } from '@/hooks/useSupabaseData';
+import { ChangeRequestWithRelations } from '@crms/hooks/useSupabaseData';
 
-import logoImage from '@/assets/riana-group-logo.jpg';
+import logoImage from '@crms/assets/riana-group-logo.jpg';
 
 // Shared RIANA palette: teal for identity, restrained green only for status.
 const BRAND_PRIMARY: [number, number, number] = [13, 131, 144];

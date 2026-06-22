@@ -12,17 +12,16 @@ import {
   Sparkles,
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
-import { StatCard } from '@/components/dashboard/StatCard';
-import { RecentRequestsTable } from '@/components/dashboard/RecentRequestsTable';
-import { ActivityFeed } from '@/components/dashboard/ActivityFeed';
-import { useDashboardStats, useChangeRequests, useClients } from '@/hooks/useSupabaseData';
-import { Skeleton } from '@/components/ui/skeleton';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Progress } from '@/components/ui/progress';
+import { StatCard } from '@crms/components/dashboard/StatCard';
+import { RecentRequestsTable } from '@crms/components/dashboard/RecentRequestsTable';
+import { ActivityFeed } from '@crms/components/dashboard/ActivityFeed';
+import { useDashboardStats, useChangeRequests, useClients } from '@crms/hooks/useSupabaseData';
+import { Skeleton } from '@crms/components/ui/skeleton';
+import { Card, CardContent, CardHeader, CardTitle } from '@crms/components/ui/card';
+import { Button } from '@crms/components/ui/button';
+import { Progress } from '@crms/components/ui/progress';
 import { format } from 'date-fns';
-import logoImage from '@/assets/riana-group-logo.jpg';
- import { RoleDashboard } from '@/components/dashboard/RoleDashboard';
+import { RoleDashboard } from '@crms/components/dashboard/RoleDashboard';
 
 export default function Dashboard() {
   const { data: stats, isLoading } = useDashboardStats();
@@ -52,15 +51,12 @@ export default function Dashboard() {
     <div className="space-y-8 animate-fade-in">
       {/* Welcome Banner */}
       <div className="dashboard-welcome text-primary-foreground">
-        <div className="absolute inset-0 bg-gradient-to-r from-black/20 to-transparent" />
-        <div className="absolute top-0 right-0 w-64 h-64 bg-white/5 rounded-full -translate-y-1/2 translate-x-1/2 blur-3xl" />
-        <div className="absolute bottom-0 left-0 w-48 h-48 bg-white/5 rounded-full translate-y-1/2 -translate-x-1/2 blur-2xl" />
+        <div className="pointer-events-none absolute inset-0 bg-gradient-to-r from-black/20 to-transparent" />
+        <div className="pointer-events-none absolute top-0 right-0 w-64 h-64 bg-white/5 rounded-full -translate-y-1/2 translate-x-1/2 blur-3xl" />
+        <div className="pointer-events-none absolute bottom-0 left-0 w-48 h-48 bg-white/5 rounded-full translate-y-1/2 -translate-x-1/2 blur-2xl" />
         
         <div className="relative z-10 flex flex-col md:flex-row md:items-center md:justify-between gap-6">
           <div className="flex items-start gap-4">
-            <div className="h-14 w-14 rounded-xl overflow-hidden ring-2 ring-white/30 shadow-xl hidden sm:block">
-              <img src={logoImage} alt="Riana Group" className="h-full w-full object-cover" />
-            </div>
             <div>
               <div className="flex items-center gap-2 mb-1">
                 <Sparkles className="h-4 w-4 text-yellow-300" />
@@ -76,7 +72,7 @@ export default function Dashboard() {
           </div>
           
           <div className="flex gap-3">
-            <Link to="/requests/new">
+            <Link to="/developers/requests/new">
               <Button className="bg-white/15 hover:bg-white/25 text-white border border-white/20 backdrop-blur-sm shadow-lg">
                 New Request
                 <ArrowRight className="ml-2 h-4 w-4" />
@@ -197,7 +193,7 @@ export default function Dashboard() {
                   </div>
                 )}
               </div>
-              <Link to="/settings" className="text-xs text-primary hover:underline">
+              <Link to="/developers/settings" className="text-xs text-primary hover:underline">
                 Manage clients →
               </Link>
             </div>
@@ -239,7 +235,7 @@ export default function Dashboard() {
                   </span>
                 </div>
               </div>
-              <Link to="/reports" className="text-xs text-primary hover:underline">
+              <Link to="/developers/reports" className="text-xs text-primary hover:underline">
                 View reports →
               </Link>
             </div>

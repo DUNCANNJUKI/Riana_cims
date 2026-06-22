@@ -9,6 +9,7 @@ import { User } from "@/types";
 import { FeedbackAnalytics } from "@/components/analytics/FeedbackAnalytics";
 import { Button } from "@/components/ui/button";
 import { apiClient } from "@/integrations/apiClient";
+import { calculateSatisfaction } from "@/utils/satisfaction";
 
 interface AnalyticsModuleProps {
   user: User;
@@ -140,27 +141,14 @@ export const AnalyticsModule = ({ user }: AnalyticsModuleProps) => {
       // Get feedback satisfaction
       const feedbackData = await apiClient.get('/installation_feedback');
       
-      let validSatisfactionCount = 0;
-      const totalSatisfaction = feedbackData && feedbackData.length > 0
-        ? feedbackData.reduce((sum: number, f: any) => {
-            if (f.overall_satisfaction !== undefined && f.overall_satisfaction !== null) {
-              validSatisfactionCount++;
-              return sum + Number(f.overall_satisfaction);
-            }
-            return sum;
-          }, 0)
-        : 0;
-
-      const avgSatisfaction = validSatisfactionCount > 0
-        ? Math.round((totalSatisfaction / validSatisfactionCount) * 20)
-        : 0;
+      const satisfaction = calculateSatisfaction(feedbackData || []);
 
       const completedCount = completedInstallations.length;
       
       setPerformanceMetrics({
         totalInstallations: completedCount,
         avgInstallationTime: Number(avgTime.toFixed(1)),
-        clientSatisfaction: avgSatisfaction,
+        clientSatisfaction: satisfaction.csatScore,
       });
 
     } catch (error) {
@@ -171,7 +159,7 @@ export const AnalyticsModule = ({ user }: AnalyticsModuleProps) => {
     }
   };
   // Only Admin and Teamlead can access this module
-  if (user.role !== 'Admin' && user.role !== 'Teamlead') {
+  if (user.role !== 'SuperAdmin' && user.role !== 'Admin' && user.role !== 'Teamlead') {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="text-center">

@@ -20,6 +20,7 @@ dist-ssr
 # Runtime data and generated reports
 server/backups/*.sql
 server/backups/*.tmp
+server/.runtime/
 server/uploads/*
 !server/uploads/.gitkeep
 CRMS/lint_errors.json

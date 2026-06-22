@@ -13,16 +13,16 @@ import {
   AlertCircle,
   Loader2,
 } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
+import { Button } from '@crms/components/ui/button';
+import { Card, CardContent } from '@crms/components/ui/card';
+import { Badge } from '@crms/components/ui/badge';
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select';
+} from '@crms/components/ui/select';
 import {
   Dialog,
   DialogContent,
@@ -30,26 +30,27 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from '@/components/ui/dialog';
-import { Textarea } from '@/components/ui/textarea';
-import { Label } from '@/components/ui/label';
-import { StatusBadge } from '@/components/common/StatusBadge';
-import { PriorityBadge } from '@/components/common/PriorityBadge';
-import { useChangeRequests, useUpdateChangeRequest, useCreateAuditLog, useProfiles } from '@/hooks/useSupabaseData';
-import { Skeleton } from '@/components/ui/skeleton';
-import { useToast } from '@/hooks/use-toast';
-import { Database } from '@/integrations/supabase/types';
-import { sendNotificationEmail, createInAppNotification } from '@/lib/notifications';
-import { notifyStatusChangeSMS } from '@/lib/smsNotifications';
-import { useCurrentUserRole } from '@/hooks/useCurrentUserRole';
+} from '@crms/components/ui/dialog';
+import { Textarea } from '@crms/components/ui/textarea';
+import { Label } from '@crms/components/ui/label';
+import { StatusBadge } from '@crms/components/common/StatusBadge';
+import { PriorityBadge } from '@crms/components/common/PriorityBadge';
+import { useChangeRequests, useUpdateChangeRequest, useCreateAuditLog, useProfiles } from '@crms/hooks/useSupabaseData';
+import { Skeleton } from '@crms/components/ui/skeleton';
+import { useToast } from '@crms/hooks/use-toast';
+import { Database } from '@crms/integrations/supabase/types';
+import { sendNotificationEmail, createInAppNotification } from '@crms/lib/notifications';
+import { notifyStatusChangeSMS } from '@crms/lib/smsNotifications';
+import { useCurrentUserRole } from '@crms/hooks/useCurrentUserRole';
 
 type RequestStatus = Database['public']['Enums']['request_status'];
+type CrmsStatus = RequestStatus | 'waiting_clarification';
 
 export default function Assignments() {
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [statusDialogOpen, setStatusDialogOpen] = useState(false);
   const [selectedRequest, setSelectedRequest] = useState<string | null>(null);
-  const [newStatus, setNewStatus] = useState<RequestStatus>('in_progress');
+  const [newStatus, setNewStatus] = useState<CrmsStatus>('in_progress');
   const [statusComment, setStatusComment] = useState('');
 
   const { profileId, isAdmin } = useCurrentUserRole();
@@ -66,15 +67,16 @@ export default function Assignments() {
 
   const filteredRequests = assignedRequests.filter(request => {
     if (statusFilter === 'all') return true;
+    if (statusFilter === 'waiting_clarification') return ['waiting', 'waiting_clarification'].includes(String(request.status));
     return request.status === statusFilter;
   });
 
   const activeCount = assignedRequests.filter(r => r.status === 'in_progress').length;
   const pendingCount = assignedRequests.filter(r => r.status === 'assigned' || r.status === 'approved').length;
-  const waitingCount = assignedRequests.filter(r => r.status === 'waiting').length;
+  const waitingCount = assignedRequests.filter(r => ['waiting', 'waiting_clarification'].includes(String(r.status))).length;
   const completedCount = assignedRequests.filter(r => r.status === 'completed').length;
 
-  const handleOpenStatusDialog = (requestId: string, currentStatus: RequestStatus) => {
+  const handleOpenStatusDialog = (requestId: string, currentStatus: CrmsStatus) => {
     setSelectedRequest(requestId);
     setNewStatus(currentStatus === 'in_progress' ? 'completed' : 'in_progress');
     setStatusComment('');
@@ -96,7 +98,7 @@ export default function Assignments() {
 
     try {
       const updates: Partial<Database['public']['Tables']['change_requests']['Row']> = {
-        status: newStatus,
+        status: newStatus as any,
         approval_comment: statusComment,
       };
 
@@ -115,7 +117,7 @@ export default function Assignments() {
       // Create audit log
       const actionLabel = newStatus === 'in_progress'
         ? 'Started Work'
-        : newStatus === 'waiting'
+        : newStatus === 'waiting_clarification'
           ? 'Waiting for Clarification'
           : 'Completed';
 
@@ -129,7 +131,7 @@ export default function Assignments() {
       });
 
       // Send notifications for waiting_clarification or completed status
-      if (newStatus === 'waiting' || newStatus === 'completed') {
+      if (newStatus === 'waiting_clarification' || newStatus === 'completed') {
         const seniorDev = profiles?.find(p => p.id === request.senior_developer_id);
         const clientName = request.client?.name || 'Unknown Client';
         const clientPhone = request.client?.contact_phone;
@@ -139,11 +141,11 @@ export default function Assignments() {
           await sendNotificationEmail({
             recipientEmail: seniorDev.email,
             recipientName: seniorDev.name,
-            notificationType: newStatus === 'waiting' ? 'waiting_clarification' : 'completed',
+            notificationType: newStatus === 'waiting_clarification' ? 'waiting_clarification' : 'completed',
             ticketNumber: request.ticket_number,
             clientName,
             requestDescription: request.change_description,
-            actionUrl: `${window.location.origin}/requests/${request.id}`,
+            actionUrl: `${window.location.origin}/developers/requests/${request.id}`,
             comment: statusComment,
           });
         }
@@ -152,14 +154,14 @@ export default function Assignments() {
         if (seniorDev?.user_id) {
           await createInAppNotification(
             seniorDev.user_id,
-            newStatus === 'waiting'
+            newStatus === 'waiting_clarification'
               ? `Clarification Needed: ${request.ticket_number}`
               : `Request Completed: ${request.ticket_number}`,
-            newStatus === 'waiting'
+            newStatus === 'waiting_clarification'
               ? `Developer needs clarification on ${clientName} request: ${statusComment}`
               : `${clientName} request has been completed. Please verify.`,
-            newStatus === 'waiting' ? 'warning' : 'success',
-            `/requests/${request.id}`,
+            newStatus === 'waiting_clarification' ? 'warning' : 'success',
+            `/developers/requests/${request.id}`,
             request.id
           );
         }
@@ -193,11 +195,12 @@ export default function Assignments() {
     }
   };
 
-  const getStatusIcon = (status: RequestStatus) => {
+  const getStatusIcon = (status: CrmsStatus) => {
     switch (status) {
       case 'in_progress':
         return <Play className="h-4 w-4" />;
       case 'waiting':
+      case 'waiting_clarification':
         return <AlertCircle className="h-4 w-4" />;
       case 'completed':
         return <CheckCircle2 className="h-4 w-4" />;
@@ -260,7 +263,7 @@ export default function Assignments() {
             <SelectItem value="assigned">Assigned</SelectItem>
             <SelectItem value="approved">Approved</SelectItem>
             <SelectItem value="in_progress">In Progress</SelectItem>
-            <SelectItem value="waiting">Waiting Clarification</SelectItem>
+            <SelectItem value="waiting_clarification">Waiting Clarification</SelectItem>
             <SelectItem value="completed">Completed</SelectItem>
           </SelectContent>
         </Select>
@@ -346,7 +349,7 @@ export default function Assignments() {
                   <div className="flex">
                     {/* Status indicator bar */}
                     <div className={`w-1.5 ${request.status === 'in_progress' ? 'bg-status-in-progress' :
-                      request.status === 'waiting' ? 'bg-status-pending' :
+                      ['waiting', 'waiting_clarification'].includes(String(request.status)) ? 'bg-status-pending' :
                         request.status === 'completed' ? 'bg-status-completed' :
                           'bg-status-pending'
                       }`} />
@@ -356,7 +359,7 @@ export default function Assignments() {
                         <div className="flex-1 space-y-3">
                           <div className="flex items-center gap-3 flex-wrap">
                             <Link
-                              to={`/requests/${request.id}`}
+                              to={`/developers/requests/${request.id}`}
                               className="font-semibold text-primary hover:underline text-lg"
                             >
                               {request.ticket_number}
@@ -405,7 +408,7 @@ export default function Assignments() {
 
                         {/* Action buttons */}
                         <div className="flex flex-col gap-2 lg:items-end">
-                          <Link to={`/requests/${request.id}`}>
+                          <Link to={`/developers/requests/${request.id}`}>
                             <Button variant="outline" size="sm" className="w-full lg:w-auto">
                               <Eye className="mr-2 h-4 w-4" />
                               View Details
@@ -433,7 +436,7 @@ export default function Assignments() {
                                     className="border-status-pending/50 text-status-pending hover:bg-status-pending/10"
                                     onClick={() => {
                                       setSelectedRequest(request.id);
-                                      setNewStatus('waiting');
+                                      setNewStatus('waiting_clarification');
                                       setStatusComment('');
                                       setStatusDialogOpen(true);
                                     }}
@@ -452,7 +455,7 @@ export default function Assignments() {
                                 </>
                               )}
 
-                              {request.status === 'waiting' && (
+                              {['waiting', 'waiting_clarification'].includes(String(request.status)) && (
                                 <Button
                                   size="sm"
                                   className="bg-status-in-progress hover:bg-status-in-progress/90"
@@ -487,12 +490,12 @@ export default function Assignments() {
             <DialogTitle className="flex items-center gap-2">
               {getStatusIcon(newStatus)}
               {newStatus === 'in_progress' && 'Start Work on Request'}
-              {newStatus === 'waiting' && 'Request Clarification'}
+              {newStatus === 'waiting_clarification' && 'Request Clarification'}
               {newStatus === 'completed' && 'Mark as Completed'}
             </DialogTitle>
             <DialogDescription>
               {newStatus === 'in_progress' && 'Add a comment to indicate you are starting work on this request.'}
-              {newStatus === 'waiting' && 'Describe what clarification you need from the client or team.'}
+              {newStatus === 'waiting_clarification' && 'Describe what clarification you need from the client or team.'}
               {newStatus === 'completed' && 'Add a summary of the work completed.'}
             </DialogDescription>
           </DialogHeader>
@@ -510,7 +513,7 @@ export default function Assignments() {
                 placeholder={
                   newStatus === 'in_progress'
                     ? "e.g., Beginning implementation of the requested changes..."
-                    : newStatus === 'waiting'
+                    : newStatus === 'waiting_clarification'
                       ? "e.g., Need clarification on the expected behavior when..."
                       : "e.g., Successfully implemented all requested changes. Testing completed."
                 }
@@ -528,13 +531,13 @@ export default function Assignments() {
               disabled={updateRequest.isPending || !statusComment.trim()}
               className={
                 newStatus === 'in_progress' ? 'bg-status-in-progress hover:bg-status-in-progress/90' :
-                  newStatus === 'waiting' ? 'bg-status-pending hover:bg-status-pending/90' :
+                  newStatus === 'waiting_clarification' ? 'bg-status-pending hover:bg-status-pending/90' :
                     'bg-status-completed hover:bg-status-completed/90'
               }
             >
               {updateRequest.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               {newStatus === 'in_progress' && 'Start Work'}
-              {newStatus === 'waiting' && 'Request Clarification'}
+              {newStatus === 'waiting_clarification' && 'Request Clarification'}
               {newStatus === 'completed' && 'Mark Complete'}
             </Button>
           </DialogFooter>

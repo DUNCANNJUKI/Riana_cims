@@ -6,16 +6,32 @@ const cors = require('cors');
 const { v4: uuidv4 } = require('uuid');
 const pool = require('./db');
 const fs = require('fs');
+const fsp = require('fs/promises');
 const jwt = require('jsonwebtoken');
 const createCrmsRouter = require('./routes/crms');
 const { createChallenge, verifyChallenge } = require('./utils/twoFactor');
 const { sendEmail, sendSms, sendWelcomeCredentials } = require('./services/notifications');
 const { sendUserNotification, sendUsersNotification } = require('./services/notificationDispatcher');
 const { createDatabaseBackup, listBackups, pruneBackups, getLastRun } = require('./services/databaseBackup');
+const { hashPassword, verifyPassword, verifyAndUpgradePassword } = require('./security/passwords');
+const {
+  auditSecurityEvent,
+  buildCorsOptions,
+  canonicalAppUrl,
+  createGlobalApiPolicy,
+  createSensitiveRateLimiter,
+  createSessionAuthenticator,
+  parseCookies,
+  requireRole,
+  resolveJwtSecret,
+  resolveStoredFile,
+  safeUpload,
+  securityHeaders,
+} = require('./security/apiSecurity');
 
 const app = express();
 const port = process.env.VITE_API_PORT || 3001;
-const JWT_SECRET = process.env.JWT_SECRET || 'super-secret-key-change-in-prod';
+const JWT_SECRET = resolveJwtSecret();
 
 const normalizedScore = (value, minimum, maximum, fallback) => {
   if (value === undefined || value === null || value === '') return fallback;
@@ -23,18 +39,68 @@ const normalizedScore = (value, minimum, maximum, fallback) => {
   return Number.isFinite(score) && score >= minimum && score <= maximum ? score : fallback;
 };
 
-const authMiddleware = (req, res, next) => {
-  const authHeader = req.headers.authorization;
-  if (!authHeader) return res.status(401).json({ error: 'Unauthorized' });
-  const token = authHeader.split(' ')[1];
-  try {
-    const decoded = jwt.verify(token, JWT_SECRET);
-    req.user = decoded;
-    next();
-  } catch (err) {
-    res.status(401).json({ error: 'Invalid token' });
+const allowedEntries = (body, allowedFields) => Object.entries(body || {}).filter(([key]) => allowedFields.has(key));
+const sqlValue = (value) => typeof value === 'object' && value !== null ? JSON.stringify(value) : value;
+const CLIENT_FIELDS = new Set(['client_name','industry_classification','current_vendor','tags','contact_person_name','contact_person_department','contact_email','contact_phone','account_manager_id','subsidiary_id','department_id','branch','start_date','contract_type']);
+const INSTALLATION_FIELDS = new Set(['client_id','branch','kiosk_type','kiosk_count','counter_count','counter_names','led_count','led_names','service_points','ups_count','speakers','screen_with_size','media_controllers','tablets','digital_signage_system','staff_trained','amplifiers','hdmis','splitters','handover_file_path','account_manager_id','assigned_technician_id','hardware_technician_id','software_technician_id','status','remarks','assigned_date','completion_date','scheduled_end_date','extension_reason','escalation_matrix','waiting_reason']);
+const ASSIGNMENT_FIELDS = new Set(['client_id','installation_id','hardware_technician_id','software_technician_id','installation_start_date','scheduled_end_date','status','progress_percentage','notes','branch']);
+const SUBSIDIARY_FIELDS = new Set(['subsidiary_name','default_escalation_matrix']);
+const FEEDBACK_LINK_FIELDS = new Set(['client_id','installation_id','expires_at','is_used']);
+const COMPANY_FIELDS = new Set(['name','logo_path','contract_types','font_color','primary_color','backup_schedule','backup_day','backup_time']);
+const SYSTEM_ROLES = new Set(['SuperAdmin', 'Admin', 'Developer', 'Teamlead', 'Sales', 'User']);
+const PRIVILEGED_ROLES = new Set(['SuperAdmin', 'Admin']);
+const CRMS_ACCESS_ROLES = new Set(['SuperAdmin', 'Admin', 'Teamlead', 'Developer', 'Sales']);
+const isSuperAdmin = (req) => req.user?.role === 'SuperAdmin';
+const isAdminOrSuperAdmin = (req) => req.user?.role === 'SuperAdmin' || req.user?.role === 'Admin';
+const userCanManageTargetRole = (req, targetRole) => isSuperAdmin(req) || !PRIVILEGED_ROLES.has(targetRole);
+const USER_MODULE_ROLES_SQL = `
+  COALESCE((
+    SELECT JSON_OBJECTAGG(umr.module_id, r.code)
+    FROM user_module_roles umr
+    JOIN roles r ON r.id = umr.role_id
+    WHERE umr.user_id = u.id
+  ), JSON_OBJECT()) AS module_roles
+`;
+
+const normalizeModuleRoles = (moduleRoles) => {
+  if (!moduleRoles) return {};
+  if (typeof moduleRoles === 'string') {
+    try { return JSON.parse(moduleRoles) || {}; } catch { return {}; }
   }
+  return typeof moduleRoles === 'object' ? moduleRoles : {};
 };
+
+const applyModuleRoleAssignments = async ({ userId, moduleRoles, grantedBy }) => {
+  const normalized = normalizeModuleRoles(moduleRoles);
+  for (const [moduleId, roleCode] of Object.entries(normalized)) {
+    if (!['cims', 'crms'].includes(moduleId)) {
+      throw new Error(`Unsupported module role target: ${moduleId}`);
+    }
+
+    const cleanRole = roleCode === null || roleCode === undefined || roleCode === '' || roleCode === 'none'
+      ? null
+      : String(roleCode);
+
+    if (!cleanRole) {
+      await pool.query('DELETE FROM user_module_roles WHERE user_id = ? AND module_id = ?', [userId, moduleId]);
+      continue;
+    }
+
+    const allowedRoles = moduleId === 'crms' ? CRMS_ACCESS_ROLES : SYSTEM_ROLES;
+    if (!allowedRoles.has(cleanRole)) {
+      throw new Error(`Invalid ${moduleId.toUpperCase()} module role.`);
+    }
+
+    await pool.query(
+      `INSERT INTO user_module_roles (user_id,module_id,role_id,granted_by) VALUES (?,?,?,?)
+       ON DUPLICATE KEY UPDATE role_id=VALUES(role_id),granted_by=VALUES(granted_by),granted_at=CURRENT_TIMESTAMP`,
+      [userId, moduleId, `${moduleId}:${cleanRole}`, grantedBy || null],
+    );
+  }
+  await pool.query('UPDATE user_profiles SET session_version=session_version+1 WHERE id=?', [userId]);
+};
+
+const authMiddleware = createSessionAuthenticator({ pool, jwtSecret: JWT_SECRET });
 
 // Ensure uploads directory exists
 const uploadsDir = path.join(__dirname, 'uploads');
@@ -42,22 +108,68 @@ if (!fs.existsSync(uploadsDir)) {
   fs.mkdirSync(uploadsDir);
 }
 
-app.use(cors());
-app.use(express.json({ limit: '50mb' }));
-app.use('/uploads', express.static(uploadsDir));
+const normalizeStoredFileReference = (reference) => {
+  const raw = String(reference || '').replace(/\\/g, '/').trim();
+  if (!raw || raw.includes('\0') || raw.includes('..')) return '';
+  const parts = raw.split('/').filter(Boolean);
+  const filename = parts.length === 1
+    ? parts[0]
+    : (parts.length === 2 && parts[0] === 'uploads' ? parts[1] : '');
+  if (!filename || filename !== path.basename(filename)) return '';
+  return filename;
+};
+
+const storedFileIsRegistered = async (filename) => {
+  const safeFilename = normalizeStoredFileReference(filename);
+  if (!safeFilename) return false;
+  const compatiblePaths = [safeFilename, `uploads/${safeFilename}`, `/uploads/${safeFilename}`];
+  const [handoverRows] = await pool.query('SELECT id FROM handover_uploads WHERE file_path IN (?, ?, ?) LIMIT 1', compatiblePaths);
+  if (handoverRows.length) return true;
+  const [companyRows] = await pool.query('SELECT id FROM company_settings WHERE logo_path IN (?, ?, ?) LIMIT 1', compatiblePaths);
+  return companyRows.length > 0;
+};
+
+const authorizeStoredFile = async (req, res, next) => {
+  try {
+    const filename = path.basename(String(req.path || '').replace(/^\/+/, ''));
+    const resolved = resolveStoredFile(uploadsDir, filename);
+    if (!resolved || !fs.existsSync(resolved) || !(await storedFileIsRegistered(filename))) {
+      return res.status(404).json({ error: 'File not found.' });
+    }
+    req.storedFile = { filename, resolved };
+    req.url = `/${encodeURIComponent(filename)}`;
+    next();
+  } catch {
+    res.status(500).json({ error: 'Unable to authorize file access.' });
+  }
+};
+
+app.disable('x-powered-by');
+app.set('trust proxy', 1);
+app.use(securityHeaders);
+// CORS is an API boundary. Applying it to same-origin hashed assets can reject
+// legitimate browser resource requests when production and test hostnames differ.
+app.use('/api', cors(buildCorsOptions()));
+app.use(express.json({ limit: '15mb' }));
+app.use(createSensitiveRateLimiter({ limit: 20, windowMs: 5 * 60 * 1000 }));
+app.use('/api', createGlobalApiPolicy(authMiddleware));
+app.use('/uploads', authMiddleware, authorizeStoredFile, express.static(uploadsDir, {
+  fallthrough: false,
+  setHeaders: (res, filePath) => {
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    if (path.extname(filePath).toLowerCase() === '.pdf') res.setHeader('Content-Disposition', 'attachment');
+  },
+}));
 app.use('/api/crms', createCrmsRouter({ pool, jwtSecret: JWT_SECRET }));
 
 // File Upload & Handover Metadata
 app.post('/api/upload', async (req, res) => {
   try {
-    const { fileName, base64Data, client_id, installation_id, uploaded_by_user_id, is_signed, notes } = req.body;
+    const { fileName, base64Data, client_id, installation_id, is_signed, notes } = req.body;
     if (!fileName || !base64Data) return res.status(400).json({ error: 'Missing file data' });
-    
-    // Save file
-    const buffer = Buffer.from(base64Data, 'base64');
-    const finalFileName = `${Date.now()}_${fileName}`;
-    const filePath = path.join(uploadsDir, finalFileName);
-    fs.writeFileSync(filePath, buffer);
+    const { buffer, storedName: finalFileName } = safeUpload({ fileName, base64Data });
+    const filePath = resolveStoredFile(uploadsDir, finalFileName);
+    await fsp.writeFile(filePath, buffer, { flag: 'wx', mode: 0o640 });
     
     // If metadata provided, also save to DB
     let handoverId = null;
@@ -65,7 +177,7 @@ app.post('/api/upload', async (req, res) => {
       handoverId = uuidv4();
       await pool.query(
         'INSERT INTO handover_uploads (id, client_id, installation_id, file_name, file_path, file_size, is_signed, notes, uploaded_by_user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
-        [handoverId, client_id, installation_id, fileName, finalFileName, buffer.length, is_signed === 'true' || is_signed === true, notes || '', uploaded_by_user_id]
+        [handoverId, client_id, installation_id, fileName, finalFileName, buffer.length, is_signed === 'true' || is_signed === true, notes || '', req.user.id]
       );
     }
     
@@ -77,9 +189,9 @@ app.post('/api/upload', async (req, res) => {
       file_name: fileName,
       upload_date: new Date().toISOString()
     });
-  } catch (err) { 
+  } catch (err) {
     console.error('Upload error:', err);
-    res.status(500).json({ error: err.message }); 
+    res.status(err.status || 500).json({ error: err.status ? err.message : 'Upload failed.' });
   }
 });
 
@@ -105,7 +217,7 @@ const initDb = async () => {
       id VARCHAR(36) PRIMARY KEY,
       email VARCHAR(255) NOT NULL UNIQUE,
       password VARCHAR(255) NOT NULL,
-      role ENUM('Admin', 'Developer', 'Teamlead', 'Sales', 'User') NOT NULL,
+      role ENUM('SuperAdmin', 'Admin', 'Developer', 'Teamlead', 'Sales', 'User') NOT NULL,
       designation VARCHAR(100),
       department_id VARCHAR(36),
       subsidiary_id VARCHAR(36),
@@ -117,16 +229,18 @@ const initDb = async () => {
       two_factor_enabled BOOLEAN DEFAULT FALSE,
       two_factor_method ENUM('email', 'sms', 'call') DEFAULT 'email',
       two_factor_phone VARCHAR(30),
+      session_version INT UNSIGNED NOT NULL DEFAULT 0,
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (department_id) REFERENCES departments(id) ON DELETE SET NULL,
       FOREIGN KEY (subsidiary_id) REFERENCES subsidiaries(id) ON DELETE SET NULL
     )`);
 
-    await pool.query("ALTER TABLE user_profiles MODIFY role ENUM('Admin','Developer','Teamlead','Sales','User') NOT NULL");
+    await pool.query("ALTER TABLE user_profiles MODIFY role ENUM('SuperAdmin','Admin','Developer','Teamlead','Sales','User') NOT NULL");
     await pool.query(`ALTER TABLE user_profiles
       ADD COLUMN IF NOT EXISTS two_factor_enabled BOOLEAN NOT NULL DEFAULT FALSE,
       ADD COLUMN IF NOT EXISTS two_factor_method ENUM('email','sms','call') NOT NULL DEFAULT 'email',
-      ADD COLUMN IF NOT EXISTS two_factor_phone VARCHAR(30) NULL`);
+      ADD COLUMN IF NOT EXISTS two_factor_phone VARCHAR(30) NULL,
+      ADD COLUMN IF NOT EXISTS session_version INT UNSIGNED NOT NULL DEFAULT 0`);
     await pool.query(`CREATE TABLE IF NOT EXISTS auth_two_factor_challenges (
       id CHAR(36) PRIMARY KEY,
       user_id VARCHAR(36) NOT NULL,
@@ -375,6 +489,15 @@ const initDb = async () => {
       FOREIGN KEY (created_by_user_id) REFERENCES user_profiles(id) ON DELETE SET NULL
     )`);
 
+    await pool.query(`ALTER TABLE announcements
+      ADD COLUMN IF NOT EXISTS subsidiary_id VARCHAR(36) NULL,
+      ADD COLUMN IF NOT EXISTS priority ENUM('low', 'normal', 'high', 'urgent') DEFAULT 'normal',
+      ADD COLUMN IF NOT EXISTS target_audience VARCHAR(50) DEFAULT 'all',
+      ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT TRUE,
+      ADD COLUMN IF NOT EXISTS expires_at TIMESTAMP NULL,
+      ADD COLUMN IF NOT EXISTS created_by_user_id VARCHAR(36) NULL,
+      ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP`);
+
     // Announcement Reads
     await pool.query(`CREATE TABLE IF NOT EXISTS announcement_reads (
       id VARCHAR(36) PRIMARY KEY,
@@ -519,6 +642,20 @@ const initDb = async () => {
       FOREIGN KEY (user_id) REFERENCES user_profiles(id) ON DELETE SET NULL
     )`);
 
+    await pool.query(`CREATE TABLE IF NOT EXISTS security_audit_events (
+      id CHAR(36) PRIMARY KEY,
+      actor_user_id VARCHAR(36),
+      module VARCHAR(32) NOT NULL,
+      action VARCHAR(100) NOT NULL,
+      outcome ENUM('success','failure') NOT NULL DEFAULT 'success',
+      source_ip VARCHAR(45),
+      details JSON,
+      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      INDEX idx_security_audit_actor_created (actor_user_id,created_at),
+      INDEX idx_security_audit_action_created (action,created_at),
+      FOREIGN KEY (actor_user_id) REFERENCES user_profiles(id) ON DELETE SET NULL
+    )`);
+
     // Messages for user-to-user chat
     await pool.query(`CREATE TABLE IF NOT EXISTS messages (
       id VARCHAR(36) PRIMARY KEY,
@@ -554,6 +691,71 @@ const initDb = async () => {
         ['RIANA Technologies', '/Riana_logo.png', JSON.stringify(['AMC', 'Once-off', 'Subscription'])]);
     }
 
+    try {
+      const [superAdminRows] = await pool.query("SELECT id FROM user_profiles WHERE role='SuperAdmin' LIMIT 1");
+      if (!superAdminRows.length) {
+        const [adminRows] = await pool.query("SELECT id,email FROM user_profiles WHERE role='Admin' AND is_active = TRUE ORDER BY created_at ASC LIMIT 1");
+        if (adminRows.length) {
+          await pool.query(
+            "UPDATE user_profiles SET role='SuperAdmin', session_version=session_version+1 WHERE id=?",
+            [adminRows[0].id],
+          );
+          console.log(`No SuperAdmin account existed; promoted ${adminRows[0].email} to SuperAdmin.`);
+        }
+      }
+      await pool.query(`
+        INSERT IGNORE INTO roles (id,module_id,code,name) VALUES
+          ('cims:SuperAdmin','cims','SuperAdmin','Super Administrator'),
+          ('crms:SuperAdmin','crms','SuperAdmin','Super Administrator')
+      `);
+      if (process.env.SUPERADMIN_PASSWORD) {
+        const superAdminEmail = String(process.env.SUPERADMIN_EMAIL || 'superadmin@riana.co').trim().toLowerCase();
+        const superAdminPasswordHash = await hashPassword(String(process.env.SUPERADMIN_PASSWORD));
+        const [existingSuperAdmins] = await pool.query('SELECT id FROM user_profiles WHERE LOWER(email)=LOWER(?) LIMIT 1', [superAdminEmail]);
+        const superAdminId = existingSuperAdmins[0]?.id || uuidv4();
+        if (existingSuperAdmins.length) {
+          await pool.query(
+            `UPDATE user_profiles
+             SET password=?,role='SuperAdmin',designation='SuperAdmin',first_login=FALSE,is_active=TRUE,session_version=session_version+1
+             WHERE id=?`,
+            [superAdminPasswordHash, superAdminId],
+          );
+        } else {
+          await pool.query(
+            `INSERT INTO user_profiles
+             (id,email,password,role,designation,first_name,last_name,first_login,is_active)
+             VALUES (?,?,?,?,?,?,?,FALSE,TRUE)`,
+            [superAdminId, superAdminEmail, superAdminPasswordHash, 'SuperAdmin', 'SuperAdmin', 'Super', 'Admin'],
+          );
+        }
+        await applyModuleRoleAssignments({
+          userId: superAdminId,
+          moduleRoles: { cims: 'SuperAdmin', crms: 'SuperAdmin' },
+          grantedBy: superAdminId,
+        });
+      }
+      await pool.query(`
+        INSERT IGNORE INTO role_permissions (role_id,permission_id)
+        SELECT 'cims:SuperAdmin',id FROM permissions WHERE module_id='cims'
+      `);
+      await pool.query(`
+        INSERT IGNORE INTO role_permissions (role_id,permission_id)
+        SELECT 'crms:SuperAdmin',id FROM permissions WHERE module_id='crms'
+      `);
+      await pool.query(`
+        INSERT INTO user_module_roles (user_id,module_id,role_id)
+        SELECT id,'cims','cims:SuperAdmin' FROM user_profiles WHERE role='SuperAdmin'
+        ON DUPLICATE KEY UPDATE role_id=VALUES(role_id)
+      `);
+      await pool.query(`
+        INSERT INTO user_module_roles (user_id,module_id,role_id)
+        SELECT id,'crms','crms:SuperAdmin' FROM user_profiles WHERE role='SuperAdmin'
+        ON DUPLICATE KEY UPDATE role_id=VALUES(role_id)
+      `);
+    } catch (err) {
+      console.warn('Error patching SuperAdmin RBAC rows:', err.message);
+    }
+
     // Patch: Ensure all users are active so they show up in chat
     await pool.query('UPDATE user_profiles SET is_active = 1 WHERE is_active IS NULL');
     
@@ -562,8 +764,6 @@ const initDb = async () => {
     console.error('Database initialization failed:', err);
   }
 };
-
-initDb();
 
 // ------------------------------------------------------------------
 // API ENDPOINTS
@@ -601,12 +801,44 @@ app.post('/api/notifications/read-all', authMiddleware, async (req, res) => {
 });
 
 // File Serving
-app.get('/api/files/:filename', (req, res) => {
-  const filePath = path.join(uploadsDir, req.params.filename);
-  if (fs.existsSync(filePath)) {
-    res.sendFile(filePath);
+app.get('/api/files/:filename', async (req, res) => {
+  const filePath = resolveStoredFile(uploadsDir, req.params.filename);
+  if (filePath && fs.existsSync(filePath) && await storedFileIsRegistered(req.params.filename)) {
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.download(filePath, path.basename(filePath));
   } else {
     res.status(404).json({ error: 'File not found' });
+  }
+});
+
+// Compatibility endpoints for E-Handover document consumers.
+app.get('/api/uploads', async (req, res) => {
+  try {
+    const filters = [];
+    const values = [];
+    if (req.query.client_id) { filters.push('client_id = ?'); values.push(req.query.client_id); }
+    if (req.query.installation_id) { filters.push('installation_id = ?'); values.push(req.query.installation_id); }
+    const where = filters.length ? ` WHERE ${filters.join(' AND ')}` : '';
+    const [rows] = await pool.query(`SELECT * FROM handover_uploads${where} ORDER BY upload_date DESC`, values);
+    res.json(rows);
+  } catch {
+    res.status(500).json({ error: 'Unable to load uploaded documents.' });
+  }
+});
+
+app.get('/api/download', async (req, res) => {
+  try {
+    const filename = normalizeStoredFileReference(req.query.path);
+    const filePath = resolveStoredFile(uploadsDir, filename);
+    if (!filePath || !fs.existsSync(filePath) || !(await storedFileIsRegistered(filename))) {
+      return res.status(404).json({ error: 'File not found.' });
+    }
+    const disposition = req.query.disposition === 'inline' ? 'inline' : 'attachment';
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('Content-Disposition', `${disposition}; filename="${path.basename(filename).replace(/["\r\n]/g, '')}"`);
+    res.sendFile(filePath);
+  } catch {
+    res.status(500).json({ error: 'Unable to download file.' });
   }
 });
 
@@ -640,7 +872,7 @@ const initBackupSchedule = async () => {
   }
 };
 
-app.get('/api/admin/backup-schedule', async (req, res) => {
+app.get('/api/admin/backup-schedule', requireRole('SuperAdmin'), async (req, res) => {
   try {
     const [rows] = await pool.query('SELECT backup_schedule, backup_day, backup_time FROM company_settings WHERE id = 1');
     if (rows.length) {
@@ -655,7 +887,7 @@ app.get('/api/admin/backup-schedule', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.post('/api/admin/backup-schedule', async (req, res) => {
+app.post('/api/admin/backup-schedule', requireRole('SuperAdmin'), async (req, res) => {
   try {
     const { schedule, day, time } = req.body;
     let finalSchedule = schedule;
@@ -686,17 +918,18 @@ app.post('/api/admin/backup-schedule', async (req, res) => {
       [finalSchedule, day || 'Daily', time || '02:00']
     );
     await initBackupSchedule();
+    await auditSecurityEvent(pool, req, 'backup_schedule_updated', { schedule: finalSchedule, day, time });
     res.json({ success: true, schedule: finalSchedule, day, time });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.get('/api/admin/backups', async (req, res) => {
+app.get('/api/admin/backups', requireRole('SuperAdmin'), async (req, res) => {
   try {
     res.json(listBackups());
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.get('/api/admin/backup-status', async (_req, res) => {
+app.get('/api/admin/backup-status', requireRole('SuperAdmin'), async (_req, res) => {
   try {
     const [rows] = await pool.query('SELECT backup_schedule, backup_day, backup_time FROM company_settings WHERE id = 1');
     res.json({
@@ -711,10 +944,11 @@ app.get('/api/admin/backup-status', async (_req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.post('/api/admin/backup', async (req, res) => {
+app.post('/api/admin/backup', requireRole('SuperAdmin'), async (req, res) => {
   try {
     const result = await createDatabaseBackup(pool);
     pruneBackups();
+    await auditSecurityEvent(pool, req, 'database_backup_created', { fileName: result.fileName, size: result.size });
     res.json({ success: true, message: 'Database backup created successfully', ...result });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
@@ -723,7 +957,7 @@ app.post('/api/admin/backup', async (req, res) => {
 app.get('/api/dashboard/stats', async (req, res) => {
   try {
     const { userId, role } = req.query;
-    const isRegularUser = role !== 'Admin' && role !== 'Teamlead';
+    const isRegularUser = role !== 'SuperAdmin' && role !== 'Admin' && role !== 'Teamlead';
 
     const [[{ count: totalClients }]] = await pool.query('SELECT COUNT(*) as count FROM clients');
     const [[{ count: totalInstallations }]] = await pool.query('SELECT COUNT(*) as count FROM installations');
@@ -749,11 +983,20 @@ app.get('/api/dashboard/stats', async (req, res) => {
 // AUTHENTICATION
 const safeUser = (user) => {
   const { password, ...result } = user;
+  result.module_roles = normalizeModuleRoles(result.module_roles);
   return result;
 };
 
 const issueCimsSession = (res, user) => {
-  const token = jwt.sign({ id: user.id, email: user.email, role: user.role }, JWT_SECRET, { expiresIn: '7d' });
+  const sessionVersion = Number(user.session_version || 0);
+  const token = jwt.sign({ id: user.id, email: user.email, role: user.role, sv: sessionVersion }, JWT_SECRET, { algorithm: 'HS256', expiresIn: '7d' });
+  res.cookie('riana_session', token, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'strict',
+    maxAge: 7 * 24 * 60 * 60 * 1000,
+    path: '/',
+  });
   res.json({ user: safeUser(user), token });
 };
 
@@ -762,12 +1005,12 @@ app.post('/api/auth/login', async (req, res) => {
     const email = String(req.body.email || '').trim().toLowerCase();
     const password = String(req.body.password || '');
     if (!email || !password) return res.status(400).json({ error: 'Email and password are required.' });
-    const [rows] = await pool.query('SELECT * FROM user_profiles WHERE LOWER(email) = ?', [email]);
+    const [rows] = await pool.query(`SELECT u.*, ${USER_MODULE_ROLES_SQL} FROM user_profiles u WHERE LOWER(u.email) = ?`, [email]);
     if (!rows.length) return res.status(401).json({ error: 'Invalid credentials' });
     
     const user = rows[0];
     if (!user.is_active) return res.status(403).json({ error: 'This user account is inactive.' });
-    if (user.password !== password) {
+    if (!(await verifyAndUpgradePassword(pool, user, password))) {
       return res.status(401).json({ error: 'Invalid credentials' });
     }
 
@@ -784,7 +1027,7 @@ app.post('/api/auth/verify-2fa', async (req, res) => {
   try {
     const challenge = await verifyChallenge(pool, req.body.challengeId, req.body.code, JWT_SECRET);
     if (!challenge) return res.status(401).json({ error: 'Invalid or expired verification code.' });
-    const [rows] = await pool.query('SELECT * FROM user_profiles WHERE id = ? AND is_active = TRUE', [challenge.user_id]);
+    const [rows] = await pool.query(`SELECT u.*, ${USER_MODULE_ROLES_SQL} FROM user_profiles u WHERE u.id = ? AND u.is_active = TRUE`, [challenge.user_id]);
     if (!rows.length) return res.status(403).json({ error: 'User account is unavailable.' });
     issueCimsSession(res, rows[0]);
   } catch (err) { res.status(500).json({ error: err.message }); }
@@ -819,23 +1062,17 @@ app.patch('/api/auth/2fa-settings', authMiddleware, async (req, res) => {
 
 app.get('/api/auth/me', async (req, res) => {
   try {
-    const authHeader = req.headers.authorization;
-    if (!authHeader) return res.status(401).json({ error: 'Unauthorized' });
-    const token = authHeader.split(' ')[1];
-    const decoded = jwt.verify(token, JWT_SECRET);
-    
     const [rows] = await pool.query(`
-      SELECT u.*, d.department_name, s.subsidiary_name
+      SELECT u.*, d.department_name, s.subsidiary_name, ${USER_MODULE_ROLES_SQL}
       FROM user_profiles u
       LEFT JOIN departments d ON u.department_id = d.id
       LEFT JOIN subsidiaries s ON u.subsidiary_id = s.id
       WHERE u.id = ?
-    `, [decoded.id]);
+    `, [req.user.id]);
 
     if (!rows.length) return res.status(404).json({ error: 'User not found' });
-    console.log(`Auth/me for ${decoded.email}: first_login=${rows[0].first_login}`);
     res.json({ user: safeUser(rows[0]) });
-  } catch (err) { res.status(401).json({ error: 'Invalid token' }); }
+  } catch (err) { res.status(500).json({ error: 'Unable to load the current user.' }); }
 });
 
 app.get('/api/user_profiles', authMiddleware, async (req, res) => {
@@ -843,13 +1080,13 @@ app.get('/api/user_profiles', authMiddleware, async (req, res) => {
     const [rows] = await pool.query(`
       SELECT u.id,u.email,u.role,u.designation,u.department_id,u.subsidiary_id,u.phone_number,
         u.first_name,u.last_name,u.first_login,u.is_active,u.two_factor_enabled,u.two_factor_method,
-        u.two_factor_phone,u.created_at,d.department_name,s.subsidiary_name
+        u.two_factor_phone,u.created_at,d.department_name,s.subsidiary_name, ${USER_MODULE_ROLES_SQL}
       FROM user_profiles u
       LEFT JOIN departments d ON u.department_id = d.id
       LEFT JOIN subsidiaries s ON u.subsidiary_id = s.id
       ORDER BY u.created_at DESC
     `);
-    res.json(rows);
+    res.json(rows.map((row) => ({ ...row, module_roles: normalizeModuleRoles(row.module_roles) })));
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
@@ -857,8 +1094,9 @@ app.patch('/api/auth/password', authMiddleware, async (req, res) => {
   try {
     const password = String(req.body.password || '');
     if (password.length < 8) return res.status(400).json({ error: 'Password must be at least 8 characters.' });
-    await pool.query('UPDATE user_profiles SET password = ?, first_login = FALSE WHERE id = ?', [password, req.user.id]);
-    const loginUrl = process.env.CIMS_LOGIN_URL || `${req.protocol}://${req.get('host')}/`;
+    const passwordHash = await hashPassword(password);
+    await pool.query('UPDATE user_profiles SET password = ?, first_login = FALSE, session_version = session_version + 1 WHERE id = ?', [passwordHash, req.user.id]);
+    const loginUrl = canonicalAppUrl(req);
     const delivery = await sendUserNotification({
       pool,
       userId: req.user.id,
@@ -877,17 +1115,11 @@ app.patch('/api/auth/password', authMiddleware, async (req, res) => {
 
 app.patch('/api/auth/first-login', async (req, res) => {
   try {
-    const authHeader = req.headers.authorization;
-    if (!authHeader) return res.status(401).json({ error: 'Unauthorized' });
-    const token = authHeader.split(' ')[1];
-    const decoded = jwt.verify(token, JWT_SECRET);
-    console.log(`Clearing first_login for user ID: ${decoded.id}`);
-    const [result] = await pool.query('UPDATE user_profiles SET first_login = 0 WHERE id = ?', [decoded.id]);
-    console.log(`Update result: ${JSON.stringify(result)}`);
+    await pool.query('UPDATE user_profiles SET first_login = 0 WHERE id = ?', [req.user.id]);
     res.json({ success: true });
   } catch (err) { 
     console.error('Error in first-login PATCH:', err);
-    res.status(500).json({ error: err.message }); 
+    res.status(500).json({ error: 'Unable to update first-login state.' });
   }
 });
 
@@ -954,7 +1186,7 @@ app.post('/api/clients', async (req, res) => {
     await pool.query(
       `INSERT INTO clients (id, client_name, industry_classification, current_vendor, tags, contact_person_name, contact_person_department, contact_email, contact_phone, account_manager_id, subsidiary_id, department_id, branch, added_by_user_id, start_date, contract_type) 
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [id, data.client_name, data.industry_classification, data.current_vendor, JSON.stringify(data.tags || []), data.contact_person_name, data.contact_person_department, data.contact_email, data.contact_phone, data.account_manager_id, data.subsidiary_id, data.department_id, data.branch, data.added_by_user_id, data.start_date, data.contract_type]
+       [id, data.client_name, data.industry_classification, data.current_vendor, JSON.stringify(data.tags || []), data.contact_person_name, data.contact_person_department, data.contact_email, data.contact_phone, data.account_manager_id, data.subsidiary_id, data.department_id, data.branch, req.user.id, data.start_date, data.contract_type]
     );
     res.json({ id, ...data });
   } catch (err) { res.status(500).json({ error: err.message }); }
@@ -963,9 +1195,10 @@ app.post('/api/clients', async (req, res) => {
 app.put('/api/clients/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    const body = req.body;
-    const fields = Object.keys(body).map(k => `${k} = ?`).join(', ');
-    const values = Object.values(body).map(v => typeof v === 'object' ? JSON.stringify(v) : v);
+    const updates = allowedEntries(req.body, CLIENT_FIELDS);
+    if (!updates.length) return res.status(400).json({ error: 'No valid client fields supplied.' });
+    const fields = updates.map(([key]) => `${key} = ?`).join(', ');
+    const values = updates.map(([, value]) => sqlValue(value));
     await pool.query(`UPDATE clients SET ${fields} WHERE id = ?`, [...values, id]);
     res.json({ success: true });
   } catch (err) { res.status(500).json({ error: err.message }); }
@@ -1018,21 +1251,23 @@ app.get('/api/installations/:id', async (req, res) => {
 app.post('/api/installations', async (req, res) => {
   try {
     const id = uuidv4();
-    const data = req.body;
-    const fields = ['id', ...Object.keys(data)];
+    const updates = allowedEntries(req.body, INSTALLATION_FIELDS);
+    if (!updates.some(([key]) => key === 'client_id')) return res.status(400).json({ error: 'client_id is required.' });
+    const fields = ['id', ...updates.map(([key]) => key)];
     const placeholders = fields.map(() => '?').join(', ');
-    const values = [id, ...Object.values(data).map(v => typeof v === 'object' ? JSON.stringify(v) : v)];
+    const values = [id, ...updates.map(([, value]) => sqlValue(value))];
     await pool.query(`INSERT INTO installations (${fields.join(', ')}) VALUES (${placeholders})`, values);
-    res.json({ id, ...data });
+    res.json({ id, ...Object.fromEntries(updates) });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 app.patch('/api/installations/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    const body = req.body;
-    const fields = Object.keys(body).map(k => `${k} = ?`).join(', ');
-    const values = Object.values(body).map(v => typeof v === 'object' ? JSON.stringify(v) : v);
+    const updates = allowedEntries(req.body, INSTALLATION_FIELDS);
+    if (!updates.length) return res.status(400).json({ error: 'No valid installation fields supplied.' });
+    const fields = updates.map(([key]) => `${key} = ?`).join(', ');
+    const values = updates.map(([, value]) => sqlValue(value));
     await pool.query(`UPDATE installations SET ${fields} WHERE id = ?`, [...values, id]);
     res.json({ success: true });
   } catch (err) { res.status(500).json({ error: err.message }); }
@@ -1095,14 +1330,15 @@ app.get('/api/client_assignments/:id', async (req, res) => {
 app.post('/api/client_assignments', async (req, res) => {
   try {
     const id = uuidv4();
-    const data = req.body;
-    const fields = ['id', ...Object.keys(data)];
+    const data = { ...req.body, assigned_by_user_id: req.user.id };
+    const updates = allowedEntries(data, new Set([...ASSIGNMENT_FIELDS, 'assigned_by_user_id']));
+    const fields = ['id', ...updates.map(([key]) => key)];
     const placeholders = fields.map(() => '?').join(', ');
-    await pool.query(`INSERT INTO client_assignments (${fields.join(', ')}) VALUES (${placeholders})`, [id, ...Object.values(data)]);
+    await pool.query(`INSERT INTO client_assignments (${fields.join(', ')}) VALUES (${placeholders})`, [id, ...updates.map(([, value]) => sqlValue(value))]);
     const [clients] = await pool.query('SELECT client_name,branch FROM clients WHERE id = ? LIMIT 1', [data.client_id]);
     const client = clients[0] || {};
     const clientLabel = `${client.client_name || 'a client'}${data.branch || client.branch ? ` - ${data.branch || client.branch}` : ''}`;
-    const loginUrl = process.env.CIMS_LOGIN_URL || `${req.protocol}://${req.get('host')}/`;
+    const loginUrl = canonicalAppUrl(req);
     const notificationDelivery = await sendUsersNotification({
       pool,
       userIds: [data.hardware_technician_id, data.software_technician_id],
@@ -1126,9 +1362,10 @@ app.patch('/api/client_assignments/:id', async (req, res) => {
     const [beforeRows] = await pool.query('SELECT * FROM client_assignments WHERE id = ? LIMIT 1', [req.params.id]);
     if (!beforeRows.length) return res.status(404).json({ error: 'Assignment not found' });
     const before = beforeRows[0];
-    const fields = Object.keys(req.body).map(k => `${k} = ?`).join(', ');
-    if (!fields) return res.status(400).json({ error: 'No assignment fields supplied' });
-    await pool.query(`UPDATE client_assignments SET ${fields} WHERE id = ?`, [...Object.values(req.body), req.params.id]);
+    const updates = allowedEntries(req.body, ASSIGNMENT_FIELDS);
+    if (!updates.length) return res.status(400).json({ error: 'No valid assignment fields supplied' });
+    const fields = updates.map(([key]) => `${key} = ?`).join(', ');
+    await pool.query(`UPDATE client_assignments SET ${fields} WHERE id = ?`, [...updates.map(([, value]) => sqlValue(value)), req.params.id]);
     const [afterRows] = await pool.query(
       `SELECT a.*,c.client_name,c.branch AS client_branch FROM client_assignments a
        LEFT JOIN clients c ON c.id = a.client_id WHERE a.id = ? LIMIT 1`,
@@ -1149,7 +1386,7 @@ app.patch('/api/client_assignments/:id', async (req, res) => {
         : newlyAssigned;
       const clientLabel = `${after.client_name || 'a client'}${after.branch || after.client_branch ? ` - ${after.branch || after.client_branch}` : ''}`;
       const statusLabel = String(after.status || 'updated').replaceAll('_', ' ');
-      const loginUrl = process.env.CIMS_LOGIN_URL || `${req.protocol}://${req.get('host')}/`;
+      const loginUrl = canonicalAppUrl(req);
       notificationDelivery = await sendUsersNotification({
         pool,
         userIds: recipients,
@@ -1186,7 +1423,7 @@ app.post('/api/auth/forgot-password', async (req, res) => {
         'INSERT INTO password_reset_tokens (id,user_id,token_hash,expires_at) VALUES (?,?,?,DATE_ADD(NOW(), INTERVAL 30 MINUTE))',
         [uuidv4(), users[0].id, tokenHash],
       );
-      const loginUrl = `${(process.env.CIMS_LOGIN_URL || `${req.protocol}://${req.get('host')}/`).replace(/\/+$/, '')}/`;
+      const loginUrl = canonicalAppUrl(req);
       const resetUrl = `${loginUrl}reset-password?token=${encodeURIComponent(token)}`;
       await sendUserNotification({
         pool,
@@ -1207,21 +1444,31 @@ app.post('/api/auth/forgot-password', async (req, res) => {
 });
 
 app.post('/api/auth/reset-password', async (req, res) => {
+  let connection;
   try {
     const token = String(req.body.token || '');
     const password = String(req.body.password || '');
     if (!token) return res.status(400).json({ error: 'Reset token is required.' });
     if (password.length < 8) return res.status(400).json({ error: 'Password must be at least 8 characters.' });
     const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
-    const [tokens] = await pool.query(
+    connection = await pool.getConnection();
+    await connection.beginTransaction();
+    const [tokens] = await connection.query(
       `SELECT id,user_id FROM password_reset_tokens
-       WHERE token_hash = ? AND used_at IS NULL AND expires_at > NOW() LIMIT 1`,
+       WHERE token_hash = ? AND used_at IS NULL AND expires_at > NOW() LIMIT 1 FOR UPDATE`,
       [tokenHash],
     );
-    if (!tokens.length) return res.status(400).json({ error: 'This password reset link is invalid or has expired.' });
-    await pool.query('UPDATE user_profiles SET password = ?, first_login = FALSE WHERE id = ?', [password, tokens[0].user_id]);
-    await pool.query('UPDATE password_reset_tokens SET used_at = NOW() WHERE user_id = ? AND used_at IS NULL', [tokens[0].user_id]);
-    const loginUrl = process.env.CIMS_LOGIN_URL || `${req.protocol}://${req.get('host')}/`;
+    if (!tokens.length) {
+      await connection.rollback();
+      return res.status(400).json({ error: 'This password reset link is invalid or has expired.' });
+    }
+    const passwordHash = await hashPassword(password);
+    await connection.query('UPDATE user_profiles SET password = ?, first_login = FALSE, session_version = session_version + 1 WHERE id = ?', [passwordHash, tokens[0].user_id]);
+    await connection.query('UPDATE password_reset_tokens SET used_at = NOW() WHERE user_id = ? AND used_at IS NULL', [tokens[0].user_id]);
+    await connection.commit();
+    connection.release();
+    connection = null;
+    const loginUrl = canonicalAppUrl(req);
     await sendUserNotification({
       pool,
       userId: tokens[0].user_id,
@@ -1235,7 +1482,13 @@ app.post('/api/auth/reset-password', async (req, res) => {
       smsMessage: 'RIANA CIMS: Your password reset is complete. If this was not you, contact an administrator immediately.',
     });
     res.json({ success: true });
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) {
+    if (connection) {
+      await connection.rollback().catch(() => {});
+      connection.release();
+    }
+    res.status(500).json({ error: 'Unable to reset password.' });
+  }
 });
 
 app.get('/api/user_profiles/:id', authMiddleware, async (req, res) => {
@@ -1243,43 +1496,64 @@ app.get('/api/user_profiles/:id', authMiddleware, async (req, res) => {
     const [rows] = await pool.query(`
       SELECT u.id,u.email,u.role,u.designation,u.department_id,u.subsidiary_id,u.phone_number,
         u.first_name,u.last_name,u.first_login,u.is_active,u.two_factor_enabled,u.two_factor_method,
-        u.two_factor_phone,u.created_at,d.department_name,s.subsidiary_name
+        u.two_factor_phone,u.created_at,d.department_name,s.subsidiary_name, ${USER_MODULE_ROLES_SQL}
       FROM user_profiles u
       LEFT JOIN departments d ON u.department_id = d.id
       LEFT JOIN subsidiaries s ON u.subsidiary_id = s.id
       WHERE u.id = ?
     `, [req.params.id]);
     if (rows.length === 0) return res.status(404).json({ error: 'User not found' });
-    res.json(rows[0]);
+    res.json({ ...rows[0], module_roles: normalizeModuleRoles(rows[0].module_roles) });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 app.post('/api/user_profiles', authMiddleware, async (req, res) => {
   try {
-    if (req.user.role !== 'Admin') return res.status(403).json({ error: 'Only Admin can create users.' });
+    if (!isAdminOrSuperAdmin(req)) return res.status(403).json({ error: 'Only Admin or SuperAdmin can create users.' });
     const id = uuidv4();
     const data = req.body;
     const email = String(data.email || '').trim().toLowerCase();
     if (!/^[^\s@]+@riana\.co$/i.test(email)) return res.status(400).json({ error: 'New users must use a @riana.co email address.' });
-    const allowedRoles = new Set(['Admin', 'Developer', 'Teamlead', 'Sales', 'User']);
-    if (!allowedRoles.has(data.role)) return res.status(400).json({ error: 'Invalid user role.' });
-    const password = String(data.password || '');
-    if (password.length < 8) return res.status(400).json({ error: 'Temporary password must be at least 8 characters.' });
+    if (!SYSTEM_ROLES.has(data.role)) return res.status(400).json({ error: 'Invalid user role.' });
+    if (!userCanManageTargetRole(req, data.role)) return res.status(403).json({ error: 'Only SuperAdmin can create Admin or SuperAdmin users.' });
+    const passwordHash = await hashPassword(crypto.randomBytes(32).toString('base64url'));
     await pool.query(
       `INSERT INTO user_profiles
        (id,email,password,role,designation,department_id,subsidiary_id,phone_number,first_name,last_name,first_login,is_active)
        VALUES (?,?,?,?,?,?,?,?,?,?,TRUE,TRUE)`,
-      [id,email,password,data.role,data.designation || null,data.department_id || null,data.subsidiary_id || null,data.phone_number || null,data.first_name || null,data.last_name || null],
+      [id,email,passwordHash,data.role,data.designation || null,data.department_id || null,data.subsidiary_id || null,data.phone_number || null,data.first_name || null,data.last_name || null],
     );
-    const loginUrl = process.env.CIMS_LOGIN_URL || `${req.protocol}://${req.hostname}:8090/`;
+    await pool.query(
+      `INSERT INTO user_module_roles (user_id,module_id,role_id,granted_by) VALUES (?,?,?,?)
+       ON DUPLICATE KEY UPDATE role_id=VALUES(role_id),granted_by=VALUES(granted_by),granted_at=CURRENT_TIMESTAMP`,
+      [id, 'cims', `cims:${data.role}`, req.user.id],
+    );
+    if (CRMS_ACCESS_ROLES.has(data.role)) {
+      await pool.query(
+        `INSERT INTO user_module_roles (user_id,module_id,role_id,granted_by) VALUES (?,?,?,?)
+         ON DUPLICATE KEY UPDATE role_id=VALUES(role_id),granted_by=VALUES(granted_by),granted_at=CURRENT_TIMESTAMP`,
+        [id, 'crms', `crms:${data.role}`, req.user.id],
+      );
+    }
+    if (data.module_roles && isSuperAdmin(req)) {
+      await applyModuleRoleAssignments({ userId: id, moduleRoles: data.module_roles, grantedBy: req.user.id });
+    }
+    const loginUrl = canonicalAppUrl(req);
+    const setupToken = crypto.randomBytes(32).toString('hex');
+    const tokenHash = crypto.createHash('sha256').update(setupToken).digest('hex');
+    await pool.query(
+      'INSERT INTO password_reset_tokens (id,user_id,token_hash,expires_at) VALUES (?,?,?,DATE_ADD(NOW(), INTERVAL 30 MINUTE))',
+      [uuidv4(), id, tokenHash],
+    );
+    const setupUrl = `${loginUrl.replace(/\/+$/, '')}/reset-password?token=${encodeURIComponent(setupToken)}`;
     const welcomeDelivery = await sendWelcomeCredentials({
-      email, phoneNumber: data.phone_number, name: `${data.first_name || ''} ${data.last_name || ''}`.trim(), password, loginUrl,
+      email, phoneNumber: data.phone_number, name: `${data.first_name || ''} ${data.last_name || ''}`.trim(), loginUrl, setupUrl,
     });
     const inAppDelivery = await sendUserNotification({
       pool,
       userId: id,
       title: 'Welcome to RIANA CIMS',
-      message: 'Your RIANA CIMS account is ready. Change your temporary password when you first sign in.',
+      message: 'Your RIANA CIMS account is ready. Use the secure setup link sent to you within 30 minutes.',
       type: 'success',
       actionUrl: loginUrl,
       notificationType: 'welcome',
@@ -1295,17 +1569,51 @@ app.post('/api/user_profiles', authMiddleware, async (req, res) => {
 
 app.put('/api/user_profiles/:id', authMiddleware, async (req, res) => {
   try {
-    if (req.user.role !== 'Admin') return res.status(403).json({ error: 'Only Admin can update users.' });
+    if (!isAdminOrSuperAdmin(req)) return res.status(403).json({ error: 'Only Admin or SuperAdmin can update users.' });
+    const [targetRows] = await pool.query('SELECT id,role FROM user_profiles WHERE id = ? LIMIT 1', [req.params.id]);
+    if (!targetRows.length) return res.status(404).json({ error: 'User not found.' });
+    const targetRole = targetRows[0].role;
+    if (!userCanManageTargetRole(req, targetRole)) return res.status(403).json({ error: 'Only SuperAdmin can update Admin or SuperAdmin users.' });
     const allowedFields = new Set(['email','role','designation','department_id','subsidiary_id','phone_number','first_name','last_name','is_active','two_factor_enabled','two_factor_method','two_factor_phone']);
     const updates = Object.entries(req.body).filter(([key]) => allowedFields.has(key));
-    if (!updates.length) return res.status(400).json({ error: 'No valid user fields supplied.' });
+    const moduleRolesUpdate = req.body.module_roles && typeof req.body.module_roles === 'object' ? req.body.module_roles : null;
+    if (moduleRolesUpdate && !isSuperAdmin(req)) return res.status(403).json({ error: 'Only SuperAdmin can assign module roles.' });
+    if (!updates.length && !moduleRolesUpdate) return res.status(400).json({ error: 'No valid user fields supplied.' });
     const emailUpdate = updates.find(([key]) => key === 'email');
     if (emailUpdate) {
       emailUpdate[1] = String(emailUpdate[1] || '').trim().toLowerCase();
       if (!/^[^\s@]+@riana\.co$/i.test(emailUpdate[1])) return res.status(400).json({ error: 'Users must use a @riana.co email address.' });
     }
-    const fields = updates.map(([key]) => `${key} = ?`).join(', ');
-    await pool.query(`UPDATE user_profiles SET ${fields} WHERE id = ?`, [...updates.map(([, value]) => value), req.params.id]);
+    const roleUpdate = updates.find(([key]) => key === 'role');
+    if (roleUpdate && !SYSTEM_ROLES.has(roleUpdate[1])) {
+      return res.status(400).json({ error: 'Invalid user role.' });
+    }
+    if (roleUpdate && !isSuperAdmin(req)) return res.status(403).json({ error: 'Only SuperAdmin can assign or remove system roles.' });
+    if (roleUpdate && !userCanManageTargetRole(req, roleUpdate[1])) return res.status(403).json({ error: 'Only SuperAdmin can assign privileged roles.' });
+    if (updates.length) {
+      const revokesSessions = updates.some(([key]) => key === 'role' || key === 'is_active');
+      const fields = `${updates.map(([key]) => `${key} = ?`).join(', ')}${revokesSessions ? ', session_version = session_version + 1' : ''}`;
+      await pool.query(`UPDATE user_profiles SET ${fields} WHERE id = ?`, [...updates.map(([, value]) => value), req.params.id]);
+    }
+    if (roleUpdate) {
+      await pool.query(
+        `INSERT INTO user_module_roles (user_id,module_id,role_id,granted_by) VALUES (?,?,?,?)
+         ON DUPLICATE KEY UPDATE role_id=VALUES(role_id),granted_by=VALUES(granted_by),granted_at=CURRENT_TIMESTAMP`,
+        [req.params.id, 'cims', `cims:${roleUpdate[1]}`, req.user.id],
+      );
+      if (CRMS_ACCESS_ROLES.has(roleUpdate[1])) {
+        await pool.query(
+          `INSERT INTO user_module_roles (user_id,module_id,role_id,granted_by) VALUES (?,?,?,?)
+           ON DUPLICATE KEY UPDATE role_id=VALUES(role_id),granted_by=VALUES(granted_by),granted_at=CURRENT_TIMESTAMP`,
+          [req.params.id, 'crms', `crms:${roleUpdate[1]}`, req.user.id],
+        );
+      } else {
+        await pool.query("DELETE FROM user_module_roles WHERE user_id = ? AND module_id = 'crms'", [req.params.id]);
+      }
+    }
+    if (moduleRolesUpdate) {
+      await applyModuleRoleAssignments({ userId: req.params.id, moduleRoles: moduleRolesUpdate, grantedBy: req.user.id });
+    }
     res.json({ success: true });
   } catch (err) {
     if (err.code === 'ER_DUP_ENTRY') return res.status(409).json({ error: 'A user with this email already exists.' });
@@ -1315,7 +1623,8 @@ app.put('/api/user_profiles/:id', authMiddleware, async (req, res) => {
 
 app.delete('/api/user_profiles/:id', authMiddleware, async (req, res) => {
   try {
-    if (req.user.role !== 'Admin') return res.status(403).json({ error: 'Only Admin can delete users.' });
+    if (!isSuperAdmin(req)) return res.status(403).json({ error: 'Only SuperAdmin can delete users.' });
+    if (req.params.id === req.user.id) return res.status(400).json({ error: 'SuperAdmin cannot delete their own account.' });
     await pool.query('DELETE FROM user_profiles WHERE id = ?', [req.params.id]);
     res.json({ success: true });
   } catch (err) { res.status(500).json({ error: err.message }); }
@@ -1323,11 +1632,15 @@ app.delete('/api/user_profiles/:id', authMiddleware, async (req, res) => {
 
 app.patch('/api/user_profiles/:id/password', authMiddleware, async (req, res) => {
   try {
-    if (req.user.role !== 'Admin') return res.status(403).json({ error: 'Only Admin can reset user passwords.' });
+    if (!isAdminOrSuperAdmin(req)) return res.status(403).json({ error: 'Only Admin or SuperAdmin can reset user passwords.' });
+    const [targetRows] = await pool.query('SELECT role FROM user_profiles WHERE id = ? LIMIT 1', [req.params.id]);
+    if (!targetRows.length) return res.status(404).json({ error: 'User not found.' });
+    if (!userCanManageTargetRole(req, targetRows[0].role)) return res.status(403).json({ error: 'Only SuperAdmin can reset Admin or SuperAdmin passwords.' });
     const password = String(req.body.password || '');
     if (password.length < 8) return res.status(400).json({ error: 'Password must be at least 8 characters.' });
-    await pool.query('UPDATE user_profiles SET password = ?, first_login = TRUE WHERE id = ?', [password, req.params.id]);
-    const loginUrl = process.env.CIMS_LOGIN_URL || `${req.protocol}://${req.get('host')}/`;
+    const passwordHash = await hashPassword(password);
+    await pool.query('UPDATE user_profiles SET password = ?, first_login = TRUE, session_version = session_version + 1 WHERE id = ?', [passwordHash, req.params.id]);
+    const loginUrl = canonicalAppUrl(req);
     const delivery = await sendUserNotification({
       pool,
       userId: req.params.id,
@@ -1362,7 +1675,7 @@ app.get('/api/subsidiaries', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.post('/api/subsidiaries', async (req, res) => {
+app.post('/api/subsidiaries', requireRole('Admin'), async (req, res) => {
   try {
     const id = uuidv4();
     const { subsidiary_name } = req.body;
@@ -1371,11 +1684,13 @@ app.post('/api/subsidiaries', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.patch('/api/subsidiaries/:id', async (req, res) => {
+app.patch('/api/subsidiaries/:id', requireRole('Admin'), async (req, res) => {
   try {
     const { id } = req.params;
-    const fields = Object.keys(req.body).map(k => `${k} = ?`).join(', ');
-    const values = Object.values(req.body).map(v => typeof v === 'object' ? JSON.stringify(v) : v);
+    const updates = allowedEntries(req.body, SUBSIDIARY_FIELDS);
+    if (!updates.length) return res.status(400).json({ error: 'No valid subsidiary fields supplied.' });
+    const fields = updates.map(([key]) => `${key} = ?`).join(', ');
+    const values = updates.map(([, value]) => sqlValue(value));
     await pool.query(`UPDATE subsidiaries SET ${fields} WHERE id = ?`, [...values, id]);
     res.json({ success: true });
   } catch (err) { res.status(500).json({ error: err.message }); }
@@ -1396,25 +1711,31 @@ app.get('/api/feedback_links', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.post('/api/feedback_links', async (req, res) => {
+app.post('/api/feedback_links', requireRole('SuperAdmin', 'Admin', 'Teamlead'), async (req, res) => {
   try {
     const id = uuidv4();
     const data = req.body;
-    const token = Math.random().toString(36).substr(2, 10);
-    await pool.query('INSERT INTO feedback_links (id, client_id, installation_id, unique_token, expires_at, created_by_user_id) VALUES (?, ?, ?, ?, ?, ?)', [id, data.client_id, data.installation_id, token, data.expires_at, data.created_by_user_id]);
-    res.json({ id, unique_token: token });
+    const token = crypto.randomBytes(32).toString('base64url');
+    await pool.query(
+      'INSERT INTO feedback_links (id, client_id, installation_id, unique_token, expires_at, created_by_user_id) VALUES (?, ?, ?, ?, ?, ?)',
+      [id, data.client_id, data.installation_id || null, token, data.expires_at, req.user.id],
+    );
+    const [rows] = await pool.query('SELECT * FROM feedback_links WHERE id = ? LIMIT 1', [id]);
+    res.status(201).json(rows[0]);
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.patch('/api/feedback_links/:id', async (req, res) => {
+app.patch('/api/feedback_links/:id', requireRole('SuperAdmin', 'Admin', 'Teamlead'), async (req, res) => {
   try {
-    const fields = Object.keys(req.body).map(k => `${k} = ?`).join(', ');
-    await pool.query(`UPDATE feedback_links SET ${fields} WHERE id = ?`, [...Object.values(req.body), req.params.id]);
+    const updates = allowedEntries(req.body, FEEDBACK_LINK_FIELDS);
+    if (!updates.length) return res.status(400).json({ error: 'No valid feedback-link fields supplied.' });
+    const fields = updates.map(([key]) => `${key} = ?`).join(', ');
+    await pool.query(`UPDATE feedback_links SET ${fields} WHERE id = ?`, [...updates.map(([, value]) => sqlValue(value)), req.params.id]);
     res.json({ success: true });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.post('/api/feedback_links/:id/send', authMiddleware, async (req, res) => {
+app.post('/api/feedback_links/:id/send', authMiddleware, requireRole('SuperAdmin', 'Admin', 'Teamlead'), async (req, res) => {
   try {
     const [rows] = await pool.query(
       `SELECT f.id,f.unique_token,f.expires_at,c.client_name,c.contact_person_name,c.contact_email,c.contact_phone
@@ -1426,7 +1747,7 @@ app.post('/api/feedback_links/:id/send', authMiddleware, async (req, res) => {
     if (!feedback.contact_email && !feedback.contact_phone) {
       return res.status(400).json({ error: 'The client has no email address or phone number.' });
     }
-    const baseUrl = (process.env.CIMS_LOGIN_URL || `${req.protocol}://${req.get('host')}/`).replace(/\/+$/, '');
+    const baseUrl = canonicalAppUrl(req).replace(/\/+$/, '');
     const feedbackUrl = `${baseUrl}/feedback/${encodeURIComponent(feedback.unique_token)}`;
     const message = `Please share your feedback about the RIANA installation for ${feedback.client_name}. The link expires on ${new Date(feedback.expires_at).toLocaleDateString('en-KE')}.`;
     const deliveries = [];
@@ -1558,7 +1879,7 @@ app.get('/api/announcements', authMiddleware, async (req, res) => {
 
 app.post('/api/announcements', authMiddleware, async (req, res) => {
   try {
-    if (!['Admin', 'Teamlead'].includes(req.user.role)) return res.status(403).json({ error: 'Insufficient permissions.' });
+    if (!['SuperAdmin', 'Admin', 'Teamlead'].includes(req.user.role)) return res.status(403).json({ error: 'Insufficient permissions.' });
     const { title, content, priority, target_audience, subsidiary_id, expires_at } = req.body;
     const id = uuidv4();
     await pool.query(
@@ -1579,7 +1900,7 @@ app.post('/api/announcements/:id/read', authMiddleware, async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.put('/api/announcements/:id', authMiddleware, async (req, res) => {
+app.put('/api/announcements/:id', authMiddleware, requireRole('Admin', 'Teamlead'), async (req, res) => {
   try {
     const { title, content, priority, target_audience, subsidiary_id, expires_at } = req.body;
     await pool.query(
@@ -1590,7 +1911,7 @@ app.put('/api/announcements/:id', authMiddleware, async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.patch('/api/announcements/:id', async (req, res) => {
+app.patch('/api/announcements/:id', requireRole('Admin', 'Teamlead'), async (req, res) => {
   try {
     const { is_active } = req.body;
     await pool.query('UPDATE announcements SET is_active = ? WHERE id = ?', [is_active, req.params.id]);
@@ -1598,7 +1919,7 @@ app.patch('/api/announcements/:id', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.delete('/api/announcements/:id', async (req, res) => {
+app.delete('/api/announcements/:id', requireRole('Admin', 'Teamlead'), async (req, res) => {
   try {
     await pool.query('DELETE FROM announcements WHERE id = ?', [req.params.id]);
     res.json({ success: true });
@@ -1634,7 +1955,9 @@ app.post('/api/handover_uploads', async (req, res) => {
   try {
     const id = uuidv4();
     const data = req.body;
-    await pool.query('INSERT INTO handover_uploads (id, client_id, installation_id, file_name, file_path, file_size, is_signed, notes, uploaded_by_user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)', [id, data.client_id, data.installation_id, data.file_name, data.file_path, data.file_size, data.is_signed, data.notes, data.uploaded_by_user_id]);
+    const resolved = resolveStoredFile(uploadsDir, data.file_path);
+    if (!resolved || !fs.existsSync(resolved)) return res.status(400).json({ error: 'Uploaded file does not exist.' });
+    await pool.query('INSERT INTO handover_uploads (id, client_id, installation_id, file_name, file_path, file_size, is_signed, notes, uploaded_by_user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)', [id, data.client_id, data.installation_id, data.file_name, path.basename(data.file_path), data.file_size, data.is_signed, data.notes, req.user.id]);
     res.json({ success: true, id });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
@@ -1706,7 +2029,7 @@ app.get('/api/technician_performance_scores', async (req, res) => {
 });
 
 // SYSTEM LOGS
-app.get('/api/system_logs', async (req, res) => {
+app.get('/api/system_logs', requireRole('Admin'), async (req, res) => {
   try {
     const [rows] = await pool.query('SELECT l.*, u.email FROM system_logs l LEFT JOIN user_profiles u ON l.user_id = u.id ORDER BY l.created_at DESC LIMIT 100');
     res.json(rows);
@@ -1717,7 +2040,7 @@ app.post('/api/system_logs', async (req, res) => {
   try {
     const id = uuidv4();
     const data = req.body;
-    await pool.query('INSERT INTO system_logs (id, user_id, action, details) VALUES (?, ?, ?, ?)', [id, data.user_id, data.action, data.details]);
+    await pool.query('INSERT INTO system_logs (id, user_id, action, details) VALUES (?, ?, ?, ?)', [id, req.user.id, data.action, data.details]);
     res.json({ success: true });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
@@ -1730,20 +2053,21 @@ app.get('/api/companies', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.put('/api/companies', async (req, res) => {
+app.put('/api/companies', requireRole('SuperAdmin'), async (req, res) => {
   try {
-    const data = req.body;
+    const updates = allowedEntries(req.body, COMPANY_FIELDS);
+    if (!updates.length) return res.status(400).json({ error: 'No valid company-setting fields supplied.' });
     const [rows] = await pool.query('SELECT id FROM company_settings LIMIT 1');
     if (rows.length) {
       const id = rows[0].id;
-      const fields = Object.keys(data).filter(k => k !== 'id').map(k => `${k} = ?`).join(', ');
-      const values = Object.keys(data).filter(k => k !== 'id').map(k => typeof data[k] === 'object' ? JSON.stringify(data[k]) : data[k]);
+      const fields = updates.map(([key]) => `${key} = ?`).join(', ');
+      const values = updates.map(([, value]) => sqlValue(value));
       await pool.query(`UPDATE company_settings SET ${fields} WHERE id = ?`, [...values, id]);
     } else {
       const id = 1;
-      const fields = ['id', ...Object.keys(data)];
+      const fields = ['id', ...updates.map(([key]) => key)];
       const placeholders = fields.map(() => '?').join(', ');
-      const values = [id, ...Object.values(data).map(v => typeof v === 'object' ? JSON.stringify(v) : v)];
+      const values = [id, ...updates.map(([, value]) => sqlValue(value))];
       await pool.query(`INSERT INTO company_settings (${fields.join(', ')}) VALUES (${placeholders})`, values);
     }
     res.json({ success: true });
@@ -1772,14 +2096,14 @@ app.get('/api/feedback_questions', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.get('/api/admin/feedback_questions', async (req, res) => {
+app.get('/api/admin/feedback_questions', requireRole('Admin'), async (req, res) => {
   try {
     const [rows] = await pool.query('SELECT * FROM feedback_questions ORDER BY order_index ASC');
     res.json(rows);
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.post('/api/feedback_questions', async (req, res) => {
+app.post('/api/feedback_questions', requireRole('Admin'), async (req, res) => {
   try {
     const id = uuidv4();
     const data = req.body;
@@ -1791,7 +2115,7 @@ app.post('/api/feedback_questions', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.put('/api/feedback_questions/:id', async (req, res) => {
+app.put('/api/feedback_questions/:id', requireRole('Admin'), async (req, res) => {
   try {
     const data = req.body;
     await pool.query(
@@ -1802,7 +2126,7 @@ app.put('/api/feedback_questions/:id', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.delete('/api/feedback_questions/:id', async (req, res) => {
+app.delete('/api/feedback_questions/:id', requireRole('Admin'), async (req, res) => {
   try {
     // Soft delete to protect existing feedback relationships
     await pool.query('UPDATE feedback_questions SET is_active = FALSE WHERE id = ?', [req.params.id]);
@@ -1811,12 +2135,34 @@ app.delete('/api/feedback_questions/:id', async (req, res) => {
 });
 
 // PUBLIC ENDPOINTS
+app.get('/api/public/company-branding', async (_req, res) => {
+  try {
+    const [rows] = await pool.query('SELECT name,logo_path,font_color,primary_color,font_type FROM company_settings ORDER BY id LIMIT 1');
+    res.json(rows[0] || { name: 'RIANA CIMS', logo_path: '/Riana_logo.png', primary_color: '#0D8390' });
+  } catch (_err) {
+    res.json({ name: 'RIANA CIMS', logo_path: '/Riana_logo.png', primary_color: '#0D8390' });
+  }
+});
+
 app.get('/api/public/feedback-links/:token', async (req, res) => {
   try {
-    const [rows] = await pool.query('SELECT f.*, c.client_name, c.branch FROM feedback_links f JOIN clients c ON f.client_id = c.id WHERE f.unique_token = ? AND f.is_used = FALSE', [req.params.token]);
+    const [rows] = await pool.query(
+      `SELECT f.*,c.client_name,c.branch FROM feedback_links f
+       JOIN clients c ON f.client_id = c.id
+       WHERE f.unique_token = ? AND f.is_used = FALSE AND f.expires_at > NOW() LIMIT 1`,
+      [req.params.token],
+    );
     if (!rows.length) return res.status(404).json({ error: 'Valid link not found' });
     
     const row = rows[0];
+    const maxAge = Math.max(1, new Date(row.expires_at).getTime() - Date.now());
+    res.cookie('riana_feedback_token', req.params.token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'strict',
+      maxAge,
+      path: '/api/public',
+    });
     res.json({
       ...row,
       client: {
@@ -1828,12 +2174,27 @@ app.get('/api/public/feedback-links/:token', async (req, res) => {
 });
 
 app.post('/api/public/installation-feedback', async (req, res) => {
+  let connection;
   try {
     const id = uuidv4();
     const data = req.body;
-    
-    // Support both old and new data structures
-    await pool.query(
+    const token = parseCookies(req.headers.cookie || '').riana_feedback_token;
+    if (!token) return res.status(401).json({ error: 'A valid feedback session is required.' });
+    connection = await pool.getConnection();
+    await connection.beginTransaction();
+    const [links] = await connection.query(
+      `SELECT id,client_id,installation_id FROM feedback_links
+       WHERE unique_token = ? AND is_used = FALSE AND expires_at > NOW() LIMIT 1 FOR UPDATE`,
+      [token],
+    );
+    const link = links[0];
+    if (!link || String(link.client_id) !== String(data.client_id) || String(link.installation_id || '') !== String(data.installation_id || '')) {
+      await connection.rollback();
+      connection.release();
+      connection = null;
+      return res.status(403).json({ error: 'Feedback link is invalid, expired, or does not match this installation.' });
+    }
+    await connection.query(
       `INSERT INTO installation_feedback (
         id, client_id, installation_id, 
         overall_satisfaction, recommendation_score, 
@@ -1848,17 +2209,36 @@ app.post('/api/public/installation-feedback', async (req, res) => {
         JSON.stringify(data.dynamic_responses || {})
       ]
     );
+    const [used] = await connection.query(
+      'UPDATE feedback_links SET is_used = TRUE, used_at = NOW() WHERE id = ? AND is_used = FALSE',
+      [link.id],
+    );
+    if (used.affectedRows !== 1) throw new Error('Feedback link was already consumed.');
+    await connection.commit();
+    connection.release();
+    connection = null;
     res.json({ success: true });
   } catch (err) { 
+    if (connection) {
+      await connection.rollback().catch(() => {});
+      connection.release();
+    }
     console.error('Feedback submission error:', err);
-    res.status(500).json({ error: err.message }); 
+    res.status(500).json({ error: 'Unable to submit feedback.' });
   }
 });
 
 app.post('/api/public/feedback-links/:token/use', async (req, res) => {
   try {
-    await pool.query('UPDATE feedback_links SET is_used = TRUE, used_at = NOW() WHERE unique_token = ?', [req.params.token]);
-    res.json({ success: true });
+    const cookieToken = parseCookies(req.headers.cookie || '').riana_feedback_token;
+    if (!cookieToken || cookieToken !== req.params.token) return res.status(403).json({ error: 'Feedback session does not match.' });
+    const [rows] = await pool.query(
+      'SELECT id,is_used,used_at FROM feedback_links WHERE unique_token = ? AND expires_at > NOW() LIMIT 1',
+      [req.params.token],
+    );
+    if (!rows.length || !rows[0].is_used) return res.status(409).json({ error: 'Feedback has not been submitted.' });
+    res.clearCookie('riana_feedback_token', { path: '/api/public', sameSite: 'strict', secure: process.env.NODE_ENV === 'production' });
+    res.json({ success: true, used_at: rows[0].used_at });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
@@ -1866,14 +2246,14 @@ app.post('/api/auth/verify-password', authMiddleware, async (req, res) => {
   try {
     const { password } = req.body;
     const [rows] = await pool.query('SELECT password FROM user_profiles WHERE id = ?', [req.user.id]);
-    if (rows.length && rows[0].password === password) {
+    if (rows.length && await verifyPassword(password, rows[0].password)) {
       return res.json({ success: true });
     }
     res.status(401).json({ error: 'Invalid password' });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.get('/api/admin/db-stats', async (req, res) => {
+app.get('/api/admin/db-stats', requireRole('SuperAdmin'), async (req, res) => {
   try {
     const tables = ['clients', 'installations', 'client_assignments', 'installation_feedback', 'feedback_links', 'announcements', 'handover_uploads', 'system_logs', 'user_profiles'];
     const stats = {};
@@ -1905,6 +2285,12 @@ app.post('/api/chat/assistant', async (req, res) => {
 
   if (msg.includes('optimus')) {
     reply = "RIANA OPTIMUS is available from the sidebar under External Systems. It remains an external service, while the Developers workspace opens inside CIMS using your current RIANA session.";
+  } else if (msg.includes('superadmin') || msg.includes('backup') || msg.includes('company setting') || msg.includes('extra role') || msg.includes('module role')) {
+    reply = "SuperAdmin has full system authority: company settings, backups, user deletion, Admin/SuperAdmin account changes, and extra Developers workspace role grants. Admins can manage non-privileged operational users but cannot delete users, change company settings, open backups, or assign privileged roles.";
+  } else if (msg.includes('welcome') || msg.includes('new user') || msg.includes('register') || msg.includes('onboard') || msg.includes('user management')) {
+    reply = "User management is centralized in the main CIMS Users module. SuperAdmin can create Admin/SuperAdmin accounts, delete users, and grant extra Developers workspace roles; Admin users can create and maintain non-privileged operational users. New accounts must use an @riana.co email address and receive setup notifications where delivery channels are configured.";
+  } else if (msg.includes('developer') || msg.includes('sales') || msg.includes('crms')) {
+    reply = "Developers is part of the unified CIMS app. SuperAdmin, Admin, Teamlead, Developer, and Sales roles can enter it with the same account and database session. SuperAdmin can grant extra Developers workspace access from the main CIMS Users module; CRMS no longer manages users directly.";
   } else if (msg.includes('welcome') || msg.includes('new user') || msg.includes('register') || msg.includes('onboard')) {
     reply = "Admins create users with an @riana.co email address and a temporary password. The system sends the username, temporary password, and CIMS login URL by welcome email and—when a phone number is supplied—SMS. The user must replace the temporary password on first login.";
   } else if (msg.includes('developer') || msg.includes('sales') || msg.includes('crms')) {
@@ -2057,21 +2443,86 @@ app.patch('/api/chat/read-all/:senderId', authMiddleware, async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-const developersDist = path.join(__dirname, '../CRMS/dist');
-app.use('/developers', express.static(developersDist));
-app.get('/developers/*', (_req, res) => res.sendFile(path.join(developersDist, 'index.html')));
-
 const cimsDist = path.join(__dirname, '../dist');
-app.use(express.static(cimsDist));
+app.get('/sw.js', (req, res, next) => {
+  const host = String(req.get('host') || '').split(':')[0].toLowerCase();
+  if (!['localhost', '127.0.0.1', '::1'].includes(host)) return next();
+
+  res.setHeader('Content-Type', 'application/javascript; charset=UTF-8');
+  res.setHeader('Service-Worker-Allowed', '/');
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
+  res.send(`
+self.addEventListener('install', (event) => {
+  self.skipWaiting();
+});
+
+self.addEventListener('activate', (event) => {
+  event.waitUntil((async () => {
+    const keys = await caches.keys();
+    await Promise.all(keys.map((key) => caches.delete(key)));
+    await self.registration.unregister();
+    const windows = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+    await Promise.all(windows.map((client) => client.navigate(client.url)));
+  })());
+});
+`);
+});
+app.get('/registerSW.js', (req, res, next) => {
+  const host = String(req.get('host') || '').split(':')[0].toLowerCase();
+  if (!['localhost', '127.0.0.1', '::1'].includes(host)) return next();
+
+  res.setHeader('Content-Type', 'application/javascript; charset=UTF-8');
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
+  res.send('// Local RIANA CIMS: service-worker registration disabled to prevent stale development shells.\n');
+});
+app.use(express.static(cimsDist, {
+  setHeaders: (res, filePath) => {
+    const filename = path.basename(filePath).toLowerCase();
+    if (['index.html', 'sw.js', 'registersw.js', 'manifest.webmanifest'].includes(filename)) {
+      res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+      res.setHeader('Pragma', 'no-cache');
+      res.setHeader('Expires', '0');
+      return;
+    }
+    if (filePath.includes(`${path.sep}assets${path.sep}`)) {
+      res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+    }
+  },
+}));
 app.get('*', (req, res, next) => {
   if (req.path.startsWith('/api/') || req.path.startsWith('/uploads/')) return next();
   const indexPath = path.join(cimsDist, 'index.html');
   if (!fs.existsSync(indexPath)) return res.status(503).json({ error: 'Frontend build is not available. Run npm run build:all.' });
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
   res.sendFile(indexPath);
+});
+app.use((error, _req, res, _next) => {
+  if (error?.message === 'Origin is not allowed by CORS policy.') {
+    return res.status(403).json({ error: 'Origin is not allowed.' });
+  }
+  if (error?.status === 404 || error?.code === 'ENOENT') return res.status(404).json({ error: 'Not found' });
+  console.error('Unhandled request error:', error?.message || error);
+  res.status(500).json({ error: 'Internal server error.' });
 });
 app.use((req, res) => res.status(404).json({ error: 'Not found' }));
 
-app.listen(port, () => {
+const startServer = async () => {
+  await initDb();
+  await new Promise((resolve, reject) => {
+    const server = app.listen(port, resolve);
+    server.once('error', reject);
+  });
   console.log(`Server running on port ${port}`);
   setTimeout(initBackupSchedule, 2000);
+};
+
+startServer().catch((error) => {
+  console.error('Server startup failed:', error);
+  process.exitCode = 1;
 });

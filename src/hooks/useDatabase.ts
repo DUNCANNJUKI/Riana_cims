@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { apiClient } from '@/integrations/apiClient';
 import { useToast } from '@/hooks/use-toast';
+import { calculateSatisfaction } from '@/utils/satisfaction';
 
 export const useDatabase = () => {
   const [loading, setLoading] = useState(false);
@@ -368,16 +369,12 @@ export const useDatabase = () => {
     try {
       const feedbackData = await apiClient.get('/installation_feedback');
       
-      const validRatings = feedbackData
-        .map((feedback: any) => Number(feedback.overall_satisfaction))
-        .filter((rating: number) => Number.isFinite(rating) && rating >= 1 && rating <= 5);
+      const satisfaction = calculateSatisfaction(feedbackData);
       const validNpsResponses = feedbackData
         .map((feedback: any) => Number(feedback.recommendation_score))
         .filter((score: number) => Number.isFinite(score) && score >= 0 && score <= 10);
       const totalFeedback = feedbackData.length;
-      const averageRating = validRatings.length > 0
-        ? validRatings.reduce((sum: number, rating: number) => sum + rating, 0) / validRatings.length
-        : 0;
+      const averageRating = satisfaction.averageRating;
 
       const promoters = validNpsResponses.filter((score: number) => score >= 9).length;
       const passives = validNpsResponses.filter((score: number) => score >= 7 && score <= 8).length;
@@ -387,10 +384,7 @@ export const useDatabase = () => {
         ? Math.round(((promoters - detractors) / validNpsResponses.length) * 100)
         : 0;
 
-      const satisfiedCustomers = validRatings.filter((rating: number) => rating >= 4).length;
-      const csatScore = validRatings.length > 0
-        ? Math.round((satisfiedCustomers / validRatings.length) * 100)
-        : 0;
+      const csatScore = satisfaction.csatScore;
 
       const recentFeedback = feedbackData.slice(0, 10).map(feedback => ({
         ...feedback,
@@ -405,7 +399,7 @@ export const useDatabase = () => {
         promoters,
         passives,
         detractors,
-        ratingResponseCount: validRatings.length,
+        ratingResponseCount: satisfaction.responseCount,
         npsResponseCount: validNpsResponses.length,
         recentFeedback
       };
@@ -419,6 +413,8 @@ export const useDatabase = () => {
         promoters: 0,
         passives: 0,
         detractors: 0,
+        ratingResponseCount: 0,
+        npsResponseCount: 0,
         recentFeedback: []
       };
     }

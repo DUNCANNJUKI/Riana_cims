@@ -10,7 +10,7 @@ fs.cpSync(path.join(root, 'dist'), path.join(release, 'dist'), { recursive: true
 fs.cpSync(path.join(root, 'CRMS', 'dist'), path.join(release, 'CRMS', 'dist'), { recursive: true });
 fs.cpSync(path.join(root, 'server'), path.join(release, 'server'), {
   recursive: true,
-  filter: (source) => !['node_modules', 'backups', 'uploads'].includes(path.basename(source)),
+  filter: (source) => !['node_modules', 'backups', 'uploads', '.runtime'].includes(path.basename(source)),
 });
 for (const file of ['ecosystem.config.cjs', '.env.example', 'README.md']) {
   fs.copyFileSync(path.join(root, file), path.join(release, file));
