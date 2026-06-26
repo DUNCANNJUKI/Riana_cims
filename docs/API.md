@@ -5,12 +5,13 @@ All protected calls use `Authorization: Bearer <token>` and JSON unless uploadin
 ## Public endpoints
 
 - `GET /api/health`
-- `POST /api/login`
-- `POST /api/verify-2fa`
-- Password reset request/completion endpoints
+- `POST /api/auth/login`
+- `POST /api/auth/verify-2fa`
+- `POST /api/auth/forgot-password`
+- `POST /api/auth/reset-password`
 - Feedback link validation and token-bound submission endpoints
 
-All other `/api` endpoints require an active database user. Admin backup endpoints require Admin. CRMS mutations additionally enforce module/action rules and object ownership or assignment.
+All other `/api` endpoints require an active database user. Admin backup endpoints require SuperAdmin. CRMS mutations additionally enforce module/action rules and object ownership or assignment.
 
 ## Errors
 
@@ -25,3 +26,4 @@ Clients must not retry mutating methods automatically. Safe GET/HEAD calls may u
 - `DELETE /api/user_profiles/:id` is SuperAdmin-only.
 - `GET|POST /api/admin/backup*`, `GET /api/admin/db-stats`, and `PUT /api/companies` are SuperAdmin-only.
 - `POST|PATCH|DELETE /api/crms/profiles` and `/api/crms/user_roles` return `403` because CRMS user management is disabled by design.
+- Server startup normalizes intended SuperAdmin account rows and CIMS/CRMS SuperAdmin module grants so a stale designation/role mismatch cannot silently remove platform authority.

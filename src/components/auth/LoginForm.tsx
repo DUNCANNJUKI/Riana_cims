@@ -106,7 +106,7 @@ export const LoginForm = () => {
       
       toast({
         title: "Password Reset Sent",
-        description: "Check your email for password reset instructions",
+        description: "Check your email and SMS for the password reset link.",
       });
     } catch (error) {
       toast({

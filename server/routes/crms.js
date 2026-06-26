@@ -4,6 +4,8 @@ const bcrypt = require('bcrypt');
 const { v4: uuidv4 } = require('uuid');
 const { createChallenge, verifyChallenge } = require('../utils/twoFactor');
 const { getSmsBalance, sendEmail, sendSms } = require('../services/notifications');
+const { sendUserNotification, sendUsersNotification } = require('../services/notificationDispatcher');
+const { canonicalAppUrl } = require('../security/apiSecurity');
 
 const ALLOWED_ROLES = new Set(['SuperAdmin', 'Admin', 'Teamlead', 'Developer', 'Sales']);
 const roleToCrms = (role) => ({ SuperAdmin: 'admin', Admin: 'admin', Teamlead: 'senior_developer', Developer: 'developer', Sales: 'sales' })[role];
@@ -48,9 +50,10 @@ const REQUEST_UPDATE_FIELDS = {
 
 const REQUEST_STATUSES = {
   Sales: new Set(['pending_approval', 'approved', 'rejected', 'waiting_clarification']),
-  Teamlead: new Set(['approved', 'in_progress', 'waiting_clarification', 'completed']),
+  Teamlead: new Set(['approved', 'assigned', 'in_progress', 'waiting_clarification', 'completed']),
   Developer: new Set(['in_progress', 'waiting_clarification', 'completed']),
 };
+const storedRequestStatus = (status) => status === 'waiting_clarification' ? 'waiting' : status;
 
 module.exports = function createCrmsRouter({ pool, jwtSecret }) {
   const router = express.Router();
@@ -62,6 +65,91 @@ module.exports = function createCrmsRouter({ pool, jwtSecret }) {
       { expiresIn: '12h' },
     );
     res.json({ success: true, user: profileShape(user), token });
+  };
+
+  const requestActionUrl = (req, requestId) =>
+    `${canonicalAppUrl(req).replace(/\/+$/, '')}/developers/requests/${encodeURIComponent(requestId)}`;
+
+  const requestSummary = (request) => ({
+    ticketNumber: request.ticket_number,
+    clientName: request.client?.name || 'Unknown Client',
+    requestDescription: request.change_description,
+  });
+
+  const notifySalesApprovalNeeded = async (req, request) => {
+    if (request.status !== 'pending_approval') return;
+    const [salesUsers] = await pool.query(
+      `SELECT u.id
+       FROM user_profiles u
+       LEFT JOIN user_module_roles umr ON umr.user_id = u.id AND umr.module_id = 'crms'
+       LEFT JOIN roles r ON r.id = umr.role_id
+       WHERE u.is_active = TRUE AND COALESCE(r.code,u.role) = 'Sales'`,
+    );
+    const userIds = salesUsers.map((user) => user.id);
+    if (!userIds.length) return;
+    const actionUrl = requestActionUrl(req, request.id);
+    await sendUsersNotification({
+      pool,
+      userIds,
+      title: 'Change request awaiting approval',
+      message: `${request.ticket_number} for ${request.client?.name || 'Unknown Client'} is awaiting Sales approval. Open RIANA CIMS to review it: ${actionUrl}`,
+      type: 'warning',
+      actionUrl,
+      requestId: request.id,
+      notificationType: 'approval_needed',
+      email: true,
+      sms: false,
+      details: requestSummary(request),
+    });
+  };
+
+  const notifyAssignedDeveloper = async (req, request) => {
+    if (!request.assigned_developer_id) return;
+    const actionUrl = requestActionUrl(req, request.id);
+    await sendUserNotification({
+      pool,
+      userId: request.assigned_developer_id,
+      title: 'Change request assigned',
+      message: `You have been assigned ${request.ticket_number} for ${request.client?.name || 'Unknown Client'}. Open RIANA CIMS to review it: ${actionUrl}`,
+      type: 'info',
+      actionUrl,
+      requestId: request.id,
+      notificationType: 'assigned',
+      email: true,
+      sms: true,
+      smsMessage: `RIANA CIMS: ${request.ticket_number} assigned to you. Review: ${actionUrl}`,
+      details: {
+        ...requestSummary(request),
+        developerName: request.assigned_developer?.name,
+      },
+    });
+  };
+
+  const notifySeniorDeveloperStatus = async (req, request, previousStatus) => {
+    if (!request.senior_developer_id || previousStatus === request.status) return;
+    const notificationType = ({
+      approved: 'approved',
+      rejected: 'rejected',
+      waiting_clarification: 'waiting_clarification',
+      waiting: 'waiting_clarification',
+      in_progress: 'commenced',
+      completed: 'completed',
+    })[request.status];
+    if (!notificationType) return;
+    const actionUrl = requestActionUrl(req, request.id);
+    await sendUserNotification({
+      pool,
+      userId: request.senior_developer_id,
+      title: `Change request ${String(request.status).replace(/_/g, ' ')}`,
+      message: `${request.ticket_number} for ${request.client?.name || 'Unknown Client'} changed from ${String(previousStatus).replace(/_/g, ' ')} to ${String(request.status).replace(/_/g, ' ')}. Open RIANA CIMS: ${actionUrl}`,
+      type: request.status === 'rejected' ? 'error' : ['waiting', 'waiting_clarification'].includes(request.status) ? 'warning' : 'success',
+      actionUrl,
+      requestId: request.id,
+      notificationType,
+      email: true,
+      sms: false,
+      details: requestSummary(request),
+    });
   };
 
   router.post('/auth/login', async (req, res) => {
@@ -133,7 +221,7 @@ module.exports = function createCrmsRouter({ pool, jwtSecret }) {
          LEFT JOIN departments d ON d.id = u.department_id
          LEFT JOIN user_module_roles umr ON umr.user_id = u.id AND umr.module_id = 'crms'
          LEFT JOIN roles r ON r.id = umr.role_id
-         WHERE r.code IN ('SuperAdmin','Admin','Teamlead','Developer','Sales') ORDER BY u.first_name,u.last_name`,
+         WHERE COALESCE(r.code,u.role) IN ('SuperAdmin','Admin','Teamlead','Developer','Sales') ORDER BY u.first_name,u.last_name`,
       );
       res.json(rows.map(profileShape));
     } catch (error) { res.status(500).json({ error: error.message }); }
@@ -268,14 +356,16 @@ module.exports = function createCrmsRouter({ pool, jwtSecret }) {
          VALUES (?,?,?,?,CURDATE(),?,?,?,?,?,?,?,?,?,?,?,?)`,
         [id,ticket,r.client_id,r.department,r.source,r.change_description,r.priority,r.status || 'pending_approval',JSON.stringify(r.modules_affected || []),r.estimated_completion_date,r.senior_developer_id,r.assigned_developer_id || null,!!r.is_chargeable,r.sales_remarks || null,r.commencement_date || null,r.completion_date || null],
       );
-      const [rows] = await pool.query('SELECT * FROM crms_change_requests WHERE id = ?', [id]);
-      res.status(201).json(formatRequest(rows[0]));
+      const [rows] = await pool.query(`${requestJoins} WHERE cr.id = ?`, [id]);
+      const created = formatRequest(rows[0]);
+      await notifySalesApprovalNeeded(req, created);
+      res.status(201).json(created);
     } catch (error) { res.status(500).json({ error: error.message }); }
   });
   router.patch('/change_requests/:id', async (req, res) => {
     try {
       const [existingRows] = await pool.query(
-        'SELECT id,assigned_developer_id FROM crms_change_requests WHERE id = ? LIMIT 1',
+        'SELECT id,status,assigned_developer_id FROM crms_change_requests WHERE id = ? LIMIT 1',
         [req.params.id],
       );
       if (!existingRows.length) return res.status(404).json({ error: 'Not found' });
@@ -292,10 +382,18 @@ module.exports = function createCrmsRouter({ pool, jwtSecret }) {
         return res.status(403).json({ error: 'This status transition is not permitted for your role.' });
       }
       const fields = []; const values = [];
-      for (const [key,value] of Object.entries(req.body)) if (allowed.has(key)) { fields.push(`\`${key}\`=?`); values.push(key === 'modules_affected' ? JSON.stringify(value) : value); }
+      for (const [key,value] of Object.entries(req.body)) if (allowed.has(key)) {
+        fields.push(`\`${key}\`=?`);
+        values.push(key === 'modules_affected' ? JSON.stringify(value) : key === 'status' ? storedRequestStatus(value) : value);
+      }
       if (fields.length) await pool.query(`UPDATE crms_change_requests SET ${fields.join(',')} WHERE id=?`, [...values,req.params.id]);
-      const [rows] = await pool.query('SELECT * FROM crms_change_requests WHERE id=?', [req.params.id]);
-      res.json(formatRequest(rows[0]));
+      const [rows] = await pool.query(`${requestJoins} WHERE cr.id=?`, [req.params.id]);
+      const updated = formatRequest(rows[0]);
+      if (updated.assigned_developer_id && updated.assigned_developer_id !== existingRows[0].assigned_developer_id) {
+        await notifyAssignedDeveloper(req, updated);
+      }
+      await notifySeniorDeveloperStatus(req, updated, existingRows[0].status);
+      res.json(updated);
     } catch (error) { res.status(500).json({ error: error.message }); }
   });
 

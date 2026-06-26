@@ -67,8 +67,8 @@ export const FeedbackAnalytics = ({ user, refreshTrigger }: FeedbackAnalyticsPro
   };
 
   const getNPSColor = (score: number) => {
-    if (score >= 70) return 'text-success';
-    if (score >= 0) return 'text-primary';
+    if (score >= 50) return 'text-success';
+    if (score >= 0) return 'text-warning';
     return 'text-destructive';
   };
 
@@ -83,6 +83,13 @@ export const FeedbackAnalytics = ({ user, refreshTrigger }: FeedbackAnalyticsPro
     if (rating >= 4.5) return 'text-success';
     if (rating >= 3.5) return 'text-warning';
     return 'text-destructive';
+  };
+
+  const getNPSBadgeClass = (category: string) => {
+    if (category === 'promoter') return 'bg-success text-success-foreground hover:bg-success/90';
+    if (category === 'passive') return 'bg-warning text-warning-foreground hover:bg-warning/90';
+    if (category === 'detractor') return 'bg-destructive text-destructive-foreground hover:bg-destructive/90';
+    return 'bg-muted text-muted-foreground';
   };
 
   if (isLoading) {
@@ -254,15 +261,9 @@ export const FeedbackAnalytics = ({ user, refreshTrigger }: FeedbackAnalyticsPro
                     </TableCell>
                     <TableCell>
                       <Badge
-                        variant={
-                          feedback.nps_category === 'promoter'
-                            ? 'default'
-                            : feedback.nps_category === 'passive'
-                            ? 'secondary'
-                            : 'destructive'
-                        }
+                        className={getNPSBadgeClass(feedback.nps_category)}
                       >
-                        {feedback.nps_category}
+                        {String(feedback.nps_category || 'unrated').replace(/_/g, ' ')}
                       </Badge>
                     </TableCell>
                     <TableCell className="max-w-xs truncate">

@@ -15,7 +15,7 @@ const priorityConfig: Record<Priority, { label: string; className: string }> = {
 };
 
 export function PriorityBadge({ priority, showLabel = true, className }: PriorityBadgeProps) {
-  const config = priorityConfig[priority];
+  const config = priorityConfig[priority] || { label: String(priority || 'Unknown'), className: 'priority-medium' };
 
   return (
     <div className={cn('flex items-center gap-2', className)}>

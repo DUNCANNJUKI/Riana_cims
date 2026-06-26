@@ -3,14 +3,81 @@ import autoTable from 'jspdf-autotable';
 import { format } from 'date-fns';
 import { ChangeRequestWithRelations } from '@crms/hooks/useSupabaseData';
 
-import logoImage from '@crms/assets/riana-group-logo.jpg';
-
 // Shared RIANA palette: teal for identity, restrained green only for status.
 const BRAND_PRIMARY: [number, number, number] = [13, 131, 144];
 const BRAND_DARK: [number, number, number] = [6, 78, 87];
 const BRAND_LIGHT: [number, number, number] = [239, 248, 249];
 const GREEN_PRIMARY: [number, number, number] = [22, 138, 85];
 const GREEN_LIGHT: [number, number, number] = [239, 249, 244];
+
+const assetUrl = (src: string) => {
+  if (/^(https?:|data:|blob:)/i.test(src)) return src;
+  if (typeof window === 'undefined') return src;
+  return `${window.location.origin}${src.startsWith('/') ? '' : '/'}${src}`;
+};
+
+const fetchAssetAsBase64 = async (src: string): Promise<string | null> => {
+  if (typeof fetch !== 'function' || typeof FileReader === 'undefined') return null;
+  try {
+    const response = await fetch(assetUrl(src));
+    if (!response.ok) return null;
+    const blob = await response.blob();
+    return await new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onloadend = () => resolve(String(reader.result || ''));
+      reader.onerror = () => resolve(null);
+      reader.readAsDataURL(blob);
+    });
+  } catch {
+    return null;
+  }
+};
+
+const addCimsLetterheadBranding = async (doc: jsPDF) => {
+  const [logoBase64, watermarkBase64, footerBase64] = await Promise.all([
+    fetchAssetAsBase64('/Riana_logo.png'),
+    fetchAssetAsBase64('/report_watermark.png'),
+    fetchAssetAsBase64('/report_footer.png'),
+  ]);
+  const pageCount = doc.getNumberOfPages();
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
+
+  for (let page = 1; page <= pageCount; page += 1) {
+    doc.setPage(page);
+    if (watermarkBase64) {
+      try {
+        doc.saveGraphicsState();
+        (doc as any).setGState(new (doc as any).GState({ opacity: 0.1 }));
+        const width = pageWidth - 48;
+        const height = width * 0.32;
+        doc.addImage(watermarkBase64, 'PNG', (pageWidth - width) / 2, (pageHeight - height) / 2, width, height);
+        doc.restoreGraphicsState();
+      } catch {
+        try { doc.restoreGraphicsState(); } catch {}
+      }
+    }
+    if (page === 1 && logoBase64) {
+      try {
+        doc.addImage(logoBase64, 'PNG', 14, 9, 32, 22);
+      } catch {
+        // Existing text header remains the fallback.
+      }
+    }
+    if (footerBase64) {
+      try {
+        const footerWidth = pageWidth - 20;
+        const footerHeight = (footerWidth / 800) * 100;
+        doc.addImage(footerBase64, 'PNG', 10, pageHeight - footerHeight - 12, footerWidth, footerHeight);
+        doc.setFontSize(7);
+        doc.setTextColor(100, 100, 100);
+        doc.text(`Page ${page} of ${pageCount}`, pageWidth - 15, pageHeight - 10, { align: 'right' });
+      } catch {
+        // Existing text footer remains the fallback.
+      }
+    }
+  }
+};
 
 const addProfessionalFooters = (doc: jsPDF) => {
   const pageCount = doc.getNumberOfPages();
@@ -36,10 +103,10 @@ interface AuditLogEntry {
   profiles?: { name: string } | null;
 }
 
-export const generateChangeRequestPDF = (
+export const generateChangeRequestPDF = async (
   request: ChangeRequestWithRelations,
   auditLogs: AuditLogEntry[] = []
-): jsPDF => {
+): Promise<jsPDF> => {
   const doc = new jsPDF();
 
   // Header with Riana Group branding
@@ -248,13 +315,14 @@ export const generateChangeRequestPDF = (
   doc.text(`© ${new Date().getFullYear()} Riana Group. All rights reserved.`, 105, 288, { align: 'center' });
 
   addProfessionalFooters(doc);
+  await addCimsLetterheadBranding(doc);
   return doc;
 };
 
-export const generateCompletionReportPDF = (
+export const generateCompletionReportPDF = async (
   request: ChangeRequestWithRelations,
   auditLogs: AuditLogEntry[] = []
-): jsPDF => {
+): Promise<jsPDF> => {
   const doc = new jsPDF();
 
   // Keep the shared RIANA header; green remains a semantic completion accent.
@@ -461,6 +529,7 @@ export const generateCompletionReportPDF = (
   doc.text(`© ${new Date().getFullYear()} Riana Group. All rights reserved.`, 105, 288, { align: 'center' });
 
   addProfessionalFooters(doc);
+  await addCimsLetterheadBranding(doc);
   return doc;
 };
 

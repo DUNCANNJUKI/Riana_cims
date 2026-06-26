@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { apiClient } from '@/integrations/apiClient';
 import { useToast } from '@/hooks/use-toast';
-import { calculateSatisfaction } from '@/utils/satisfaction';
+import { calculateNps, calculateSatisfaction, classifyNpsScore } from '@/utils/satisfaction';
 
 export const useDatabase = () => {
   const [loading, setLoading] = useState(false);
@@ -370,37 +370,43 @@ export const useDatabase = () => {
       const feedbackData = await apiClient.get('/installation_feedback');
       
       const satisfaction = calculateSatisfaction(feedbackData);
-      const validNpsResponses = feedbackData
-        .map((feedback: any) => Number(feedback.recommendation_score))
-        .filter((score: number) => Number.isFinite(score) && score >= 0 && score <= 10);
+      const getRecommendationScore = (feedback: any) => {
+        const directScore = Number(feedback.recommendation_score);
+        if (Number.isFinite(directScore) && directScore >= 0 && directScore <= 10) return directScore;
+        const responses = feedback.dynamic_responses && typeof feedback.dynamic_responses === 'object'
+          ? Object.values(feedback.dynamic_responses)
+          : [];
+        const dynamicScore = responses
+          .map((value: any) => Number(value))
+          .find((score: number) => Number.isFinite(score) && score >= 0 && score <= 10);
+        return dynamicScore;
+      };
+      const feedbackWithNps = feedbackData.map((feedback: any) => ({
+        ...feedback,
+        recommendation_score: getRecommendationScore(feedback),
+      }));
+      const nps = calculateNps(feedbackWithNps);
       const totalFeedback = feedbackData.length;
       const averageRating = satisfaction.averageRating;
 
-      const promoters = validNpsResponses.filter((score: number) => score >= 9).length;
-      const passives = validNpsResponses.filter((score: number) => score >= 7 && score <= 8).length;
-      const detractors = validNpsResponses.filter((score: number) => score <= 6).length;
-      
-      const npsScore = validNpsResponses.length > 0
-        ? Math.round(((promoters - detractors) / validNpsResponses.length) * 100)
-        : 0;
-
       const csatScore = satisfaction.csatScore;
 
-      const recentFeedback = feedbackData.slice(0, 10).map(feedback => ({
+      const recentFeedback = feedbackWithNps.slice(0, 10).map((feedback: any) => ({
         ...feedback,
-        client_name: feedback.clients?.client_name || 'Unknown Client'
+        client_name: feedback.clients?.client_name || 'Unknown Client',
+        nps_category: classifyNpsScore(feedback.recommendation_score) || 'unrated',
       }));
 
       return {
         totalFeedback,
         averageRating,
-        npsScore,
+        npsScore: nps.npsScore,
         csatScore,
-        promoters,
-        passives,
-        detractors,
+        promoters: nps.promoters,
+        passives: nps.passives,
+        detractors: nps.detractors,
         ratingResponseCount: satisfaction.responseCount,
-        npsResponseCount: validNpsResponses.length,
+        npsResponseCount: nps.responseCount,
         recentFeedback
       };
     } catch (error) {

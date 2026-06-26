@@ -79,8 +79,8 @@ export default function Reports() {
     },
   });
 
-  const handleDownloadChangeRequest = (request: typeof changeRequests[number]) => {
-    const doc = generateChangeRequestPDF(toDocumentRequest(request) as any);
+  const handleDownloadChangeRequest = async (request: typeof changeRequests[number]) => {
+    const doc = await generateChangeRequestPDF(toDocumentRequest(request) as any);
     downloadPDF(doc, `${request.ticket_number}-change-request.pdf`);
     toast({
       title: 'Document Downloaded',
@@ -88,8 +88,8 @@ export default function Reports() {
     });
   };
 
-  const handleDownloadCompletionReport = (request: typeof changeRequests[number]) => {
-    const doc = generateCompletionReportPDF(toDocumentRequest(request) as any);
+  const handleDownloadCompletionReport = async (request: typeof changeRequests[number]) => {
+    const doc = await generateCompletionReportPDF(toDocumentRequest(request) as any);
     downloadPDF(doc, `${request.ticket_number}-completion-report.pdf`);
     toast({
       title: 'Document Downloaded',

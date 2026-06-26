@@ -22,12 +22,12 @@ const sampleRequest = {
 } as any;
 
 describe('professional PDF branding', () => {
-  it('generates branded request and completion documents with footers', () => {
+  it('generates branded request and completion documents with footers', async () => {
     const directory = resolve(__dirname, '../../../tmp/pdfs');
     mkdirSync(directory, { recursive: true });
     const documents = [
-      ['change-request.pdf', generateChangeRequestPDF(sampleRequest)],
-      ['completion-report.pdf', generateCompletionReportPDF(sampleRequest)],
+      ['change-request.pdf', await generateChangeRequestPDF(sampleRequest)],
+      ['completion-report.pdf', await generateCompletionReportPDF(sampleRequest)],
     ] as const;
 
     for (const [filename, document] of documents) {

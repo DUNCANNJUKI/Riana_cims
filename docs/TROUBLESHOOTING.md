@@ -10,7 +10,15 @@ Verify server time, `JWT_SECRET`, database connectivity, account `is_active`, an
 
 ## Email or SMS failure
 
-Run the mock provider verification, confirm `BREVO_FROM_EMAIL=info@riana.co`, authorized Brevo IP/domain, SMS balance, normalized Kenyan phone number, and provider response. Never print API keys to logs.
+Run the mock provider verification, confirm `BREVO_FROM_EMAIL=info@riana.co`, authorized Brevo IP/domain, SMS balance, normalized Kenyan phone number, and provider response. Developers request lifecycle emails/SMS are sent by the backend route after create, approval, assignment, and status updates; messages should include a `/developers/requests/{id}` system URL. Never print API keys to logs.
+
+## Developers access or crash
+
+Confirm the user has an active base role or CRMS module role of `SuperAdmin`, `Admin`, `Teamlead`, `Developer`, or `Sales`. Sales users no longer require a duplicate `module_roles.crms` grant to see Developers. If the page crashes on request lists, inspect request status values; unknown statuses should render with a fallback badge instead of breaking the workspace.
+
+## Password reset failure
+
+For an existing active user, `/api/auth/forgot-password` creates a 30-minute reset token and sends the reset link by email and SMS when the profile has a phone number. For a missing or inactive account, the API returns `404` with `User does not exist.` Verify `CIMS_LOGIN_URL` is an absolute HTTP/HTTPS URL so reset links point to the correct system.
 
 ## Backup failure
 

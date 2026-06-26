@@ -5,6 +5,7 @@ export type RequestStatus =
   | 'approved'
   | 'rejected'
   | 'waiting'
+  | 'waiting_clarification'
   | 'assigned'
   | 'in_progress'
   | 'completed';

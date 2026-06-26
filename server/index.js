@@ -38,6 +38,14 @@ const normalizedScore = (value, minimum, maximum, fallback) => {
   const score = Number(value);
   return Number.isFinite(score) && score >= minimum && score <= maximum ? score : fallback;
 };
+const normalizeFeedbackResponses = (dynamicResponses) => (
+  dynamicResponses && typeof dynamicResponses === 'object' && !Array.isArray(dynamicResponses)
+    ? dynamicResponses
+    : {}
+);
+const textFeedbackFromResponses = (dynamicResponses) => Object.values(normalizeFeedbackResponses(dynamicResponses))
+  .map((value) => String(value || '').trim())
+  .filter(Boolean);
 
 const allowedEntries = (body, allowedFields) => Object.entries(body || {}).filter(([key]) => allowedFields.has(key));
 const sqlValue = (value) => typeof value === 'object' && value !== null ? JSON.stringify(value) : value;
@@ -106,6 +114,38 @@ const applyModuleRoleAssignments = async ({ userId, moduleRoles, grantedBy }) =>
     );
   }
   await pool.query('UPDATE user_profiles SET session_version=session_version+1 WHERE id=?', [userId]);
+};
+
+const superAdminBootstrapEmail = () => String(process.env.SUPERADMIN_EMAIL || 'superadmin@riana.co').trim().toLowerCase();
+
+const repairSuperAdminAccounts = async () => {
+  const bootstrapEmail = superAdminBootstrapEmail();
+  const [rows] = await pool.query(
+    `SELECT id,email,role,designation,is_active
+     FROM user_profiles
+     WHERE LOWER(email)=LOWER(?) OR LOWER(COALESCE(designation,''))='superadmin' OR role='SuperAdmin'`,
+    [bootstrapEmail],
+  );
+  let repaired = 0;
+
+  for (const row of rows) {
+    const assignments = [];
+    const intendedBootstrapAccount = String(row.email || '').toLowerCase() === bootstrapEmail
+      || String(row.designation || '').toLowerCase() === 'superadmin';
+
+    if (row.role !== 'SuperAdmin') assignments.push("role='SuperAdmin'");
+    if (intendedBootstrapAccount && row.designation !== 'SuperAdmin') assignments.push("designation='SuperAdmin'");
+    if (intendedBootstrapAccount && !row.is_active) assignments.push('is_active=TRUE');
+    if (!assignments.length) continue;
+
+    await pool.query(
+      `UPDATE user_profiles SET ${assignments.join(', ')}, session_version=session_version+1 WHERE id=?`,
+      [row.id],
+    );
+    repaired += 1;
+  }
+
+  return repaired;
 };
 
 const authMiddleware = createSessionAuthenticator({ pool, jwtSecret: JWT_SECRET });
@@ -700,6 +740,10 @@ const initDb = async () => {
     }
 
     try {
+      const repairedSuperAdmins = await repairSuperAdminAccounts();
+      if (repairedSuperAdmins) {
+        console.log(`Repaired ${repairedSuperAdmins} SuperAdmin account record(s).`);
+      }
       const [superAdminRows] = await pool.query("SELECT id FROM user_profiles WHERE role='SuperAdmin' LIMIT 1");
       if (!superAdminRows.length) {
         const [adminRows] = await pool.query("SELECT id,email FROM user_profiles WHERE role='Admin' AND is_active = TRUE ORDER BY created_at ASC LIMIT 1");
@@ -717,7 +761,7 @@ const initDb = async () => {
           ('crms:SuperAdmin','crms','SuperAdmin','Super Administrator')
       `);
       if (process.env.SUPERADMIN_PASSWORD) {
-        const superAdminEmail = String(process.env.SUPERADMIN_EMAIL || 'superadmin@riana.co').trim().toLowerCase();
+        const superAdminEmail = superAdminBootstrapEmail();
         const superAdminPasswordHash = await hashPassword(String(process.env.SUPERADMIN_PASSWORD));
         const [existingSuperAdmins] = await pool.query('SELECT id FROM user_profiles WHERE LOWER(email)=LOWER(?) LIMIT 1', [superAdminEmail]);
         const superAdminId = existingSuperAdmins[0]?.id || uuidv4();
@@ -1068,7 +1112,7 @@ app.patch('/api/auth/2fa-settings', authMiddleware, async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.get('/api/auth/me', async (req, res) => {
+app.get('/api/auth/me', authMiddleware, async (req, res) => {
   try {
     const [rows] = await pool.query(`
       SELECT u.*, d.department_name, s.subsidiary_name, ${USER_MODULE_ROLES_SQL}
@@ -1423,31 +1467,31 @@ app.post('/api/auth/forgot-password', async (req, res) => {
   try {
     const email = String(req.body.email || '').trim().toLowerCase();
     const [users] = await pool.query('SELECT id FROM user_profiles WHERE LOWER(email) = ? AND is_active = TRUE LIMIT 1', [email]);
-    if (users.length) {
-      const token = crypto.randomBytes(32).toString('hex');
-      const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
-      await pool.query('UPDATE password_reset_tokens SET used_at = NOW() WHERE user_id = ? AND used_at IS NULL', [users[0].id]);
-      await pool.query(
-        'INSERT INTO password_reset_tokens (id,user_id,token_hash,expires_at) VALUES (?,?,?,DATE_ADD(NOW(), INTERVAL 30 MINUTE))',
-        [uuidv4(), users[0].id, tokenHash],
-      );
-      const loginUrl = canonicalAppUrl(req);
-      const resetUrl = `${loginUrl}reset-password?token=${encodeURIComponent(token)}`;
-      await sendUserNotification({
-        pool,
-        userId: users[0].id,
-        title: 'Password reset requested',
-        message: 'A password reset was requested for your account. The secure reset link expires in 30 minutes.',
-        type: 'warning',
-        actionUrl: loginUrl,
-        emailActionUrl: resetUrl,
-        notificationType: 'password_reset',
-        email: true,
-        sms: true,
-        smsMessage: `RIANA CIMS password reset requested. Open the link sent to your email. It expires in 30 minutes.`,
-      });
-    }
-    res.json({ success: true, message: 'If the account exists, password reset instructions have been sent.' });
+    if (!users.length) return res.status(404).json({ error: 'User does not exist.' });
+
+    const token = crypto.randomBytes(32).toString('hex');
+    const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+    await pool.query('UPDATE password_reset_tokens SET used_at = NOW() WHERE user_id = ? AND used_at IS NULL', [users[0].id]);
+    await pool.query(
+      'INSERT INTO password_reset_tokens (id,user_id,token_hash,expires_at) VALUES (?,?,?,DATE_ADD(NOW(), INTERVAL 30 MINUTE))',
+      [uuidv4(), users[0].id, tokenHash],
+    );
+    const loginUrl = canonicalAppUrl(req);
+    const resetUrl = `${loginUrl}reset-password?token=${encodeURIComponent(token)}`;
+    await sendUserNotification({
+      pool,
+      userId: users[0].id,
+      title: 'Password reset requested',
+      message: 'A password reset was requested for your account. The secure reset link expires in 30 minutes.',
+      type: 'warning',
+      actionUrl: loginUrl,
+      emailActionUrl: resetUrl,
+      notificationType: 'password_reset',
+      email: true,
+      sms: true,
+      smsMessage: `RIANA CIMS password reset requested. Reset within 30 minutes: ${resetUrl}`,
+    });
+    res.json({ success: true, message: 'Password reset instructions have been sent by email and SMS where a phone number is available.' });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
@@ -1801,6 +1845,9 @@ app.get('/api/installation_feedback', async (req, res) => {
     `);
     res.json(rows.map(row => ({
       ...row,
+      dynamic_responses: typeof row.dynamic_responses === 'string'
+        ? (() => { try { return JSON.parse(row.dynamic_responses); } catch { return {}; } })()
+        : row.dynamic_responses,
       clients: { client_name: row.client_name },
       installations: { installation_name: row.installation_name }
     })));
@@ -1811,6 +1858,9 @@ app.post('/api/feedback', async (req, res) => {
   try {
     const { installation_id, client_id, submitted_by, dynamic_responses, ...feedbackData } = req.body;
     const id = uuidv4();
+    const textResponses = textFeedbackFromResponses(dynamic_responses);
+    const positiveFeedback = feedbackData.positive_feedback || feedbackData.comments || textResponses[0] || '';
+    const improvementSuggestions = feedbackData.improvement_suggestions || textResponses.slice(1).join('\n\n') || '';
     
     // Support both direct column passing and nested data
     await pool.query(
@@ -1834,9 +1884,9 @@ app.post('/api/feedback', async (req, res) => {
         feedbackData.technician_helpfulness_rating || 5,
         normalizedScore(feedbackData.recommendation_score ?? feedbackData.recommend_to_others, 0, 10, 10),
         normalizedScore(feedbackData.overall_satisfaction, 1, 5, 5),
-        feedbackData.positive_feedback || feedbackData.comments || '', 
-        feedbackData.improvement_suggestions || '',
-        JSON.stringify(dynamic_responses || {})
+        positiveFeedback, 
+        improvementSuggestions,
+        JSON.stringify(normalizeFeedbackResponses(dynamic_responses))
       ]
     );
     res.status(201).json({ id, success: true });
@@ -2206,15 +2256,17 @@ app.post('/api/public/installation-feedback', async (req, res) => {
       `INSERT INTO installation_feedback (
         id, client_id, installation_id, 
         overall_satisfaction, recommendation_score, 
-        dynamic_responses
-      ) VALUES (?, ?, ?, ?, ?, ?)`, 
+        positive_feedback, improvement_suggestions, dynamic_responses
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, 
       [
         id, 
         data.client_id, 
         data.installation_id, 
         normalizedScore(data.overall_satisfaction, 1, 5, 5),
         normalizedScore(data.recommendation_score, 0, 10, 10),
-        JSON.stringify(data.dynamic_responses || {})
+        textFeedbackFromResponses(data.dynamic_responses)[0] || '',
+        textFeedbackFromResponses(data.dynamic_responses).slice(1).join('\n\n') || '',
+        JSON.stringify(normalizeFeedbackResponses(data.dynamic_responses))
       ]
     );
     const [used] = await connection.query(
@@ -2294,17 +2346,13 @@ app.post('/api/chat/assistant', async (req, res) => {
   if (msg.includes('optimus')) {
     reply = "RIANA OPTIMUS is available from the sidebar under External Systems. It remains an external service, while the Developers workspace opens inside CIMS using your current RIANA session.";
   } else if (msg.includes('superadmin') || msg.includes('backup') || msg.includes('company setting') || msg.includes('extra role') || msg.includes('module role')) {
-    reply = "SuperAdmin has full system authority: company settings, backups, user deletion, Admin/SuperAdmin account changes, and extra Developers workspace role grants. Admins can manage non-privileged operational users but cannot delete users, change company settings, open backups, or assign privileged roles.";
+    reply = "SuperAdmin is the platform-wide RIANA CIMS authority across CIMS and Developers/CRMS. The system self-repairs intended SuperAdmin account records on startup, keeps CIMS and CRMS SuperAdmin module grants aligned, and restricts backups, company settings, user deletion, Admin/SuperAdmin changes, and extra Developers workspace grants to SuperAdmin.";
   } else if (msg.includes('welcome') || msg.includes('new user') || msg.includes('register') || msg.includes('onboard') || msg.includes('user management')) {
-    reply = "User management is centralized in the main CIMS Users module. SuperAdmin can create Admin/SuperAdmin accounts, delete users, and grant extra Developers workspace roles; Admin users can create and maintain non-privileged operational users. New accounts must use an @riana.co email address and receive setup notifications where delivery channels are configured.";
+    reply = "User management is centralized in the main CIMS Users module. SuperAdmin can create Admin/SuperAdmin accounts, delete users, and grant extra Developers workspace roles; Admin users can create and maintain non-privileged operational users. New accounts must use an @riana.co email address and receive setup email/SMS notifications with the system URL where delivery channels are configured.";
   } else if (msg.includes('developer') || msg.includes('sales') || msg.includes('crms')) {
-    reply = "Developers is part of the unified CIMS app. SuperAdmin, Admin, Teamlead, Developer, and Sales roles can enter it with the same account and database session. SuperAdmin can grant extra Developers workspace access from the main CIMS Users module; CRMS no longer manages users directly.";
-  } else if (msg.includes('welcome') || msg.includes('new user') || msg.includes('register') || msg.includes('onboard')) {
-    reply = "Admins create users with an @riana.co email address and a temporary password. The system sends the username, temporary password, and CIMS login URL by welcome email and—when a phone number is supplied—SMS. The user must replace the temporary password on first login.";
-  } else if (msg.includes('developer') || msg.includes('sales') || msg.includes('crms')) {
-    reply = "Developers is part of the unified CIMS app. Admin, Teamlead, Developer, and Sales users enter it with the same account and database session. Sales users can review and approve change requests; Developers work on assigned requests.";
+    reply = "Developers is part of the unified CIMS app. SuperAdmin, Admin, Teamlead, Developer, and Sales roles can enter it with the same account and database session. Sales can create requests and receive approval-awaiting email alerts; assigned developers receive in-app, email, and SMS notifications with the request link and system URL.";
   } else if (msg.includes('notification') || msg.includes('announcement') || msg.includes('sound')) {
-    reply = "New assignments and notifications play a chime, while new announcements use a distinct announcement sound. Opening the notification bell can also enable system notifications when your browser supports them.";
+    reply = "New assignments, approval requests, password resets, and workflow updates create in-app notifications and can dispatch email/SMS with the relevant system URL. New assignments and notifications play a chime, while announcements use a distinct announcement sound.";
   } else if (msg.includes('pwa') || msg.includes('offline') || msg.includes('install app')) {
     reply = "RIANA CIMS is installable as a PWA. App assets are cached for faster repeat visits, online/offline status is detected automatically, and authenticated API data always stays network-only to prevent one user’s data being exposed to another user on a shared device.";
   } else if (msg.includes('report') || msg.includes('logo') || msg.includes('branding')) {
@@ -2316,7 +2364,7 @@ app.post('/api/chat/assistant', async (req, res) => {
   } else if (msg.includes('calendar') || msg.includes('workload')) {
     reply = "The 'Workload Calendar' allows Admins and Teamleads to see technician assignments across a timeline, helping to manage team capacity and installation schedules effectively.";
   } else if (msg.includes('password') || msg.includes('login') || msg.includes('security')) {
-    reply = "New accounts must use an @riana.co email address. Welcome email and SMS include the username, temporary password, and login URL, and the user is forced to set a new password on first login. Password changes require at least 8 characters.";
+    reply = "New accounts must use an @riana.co email address. Welcome messages and password reset requests send secure setup/reset links by email and SMS where configured. If a reset request uses an unknown active email, the system returns a user-not-found error instead of issuing a token.";
   } else if (msg.includes('hi') || msg.includes('hello') || msg.includes('hey')) {
     reply = "Hello! I'm your RIANA CIMS Assistant. Ask me about onboarding, Developers or Sales access, notifications, announcements, PWA installation, clients, installations, reports, or OPTIMUS.";
   } else if (msg.includes('help') || msg.includes('support')) {

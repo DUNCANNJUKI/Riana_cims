@@ -8,8 +8,11 @@ Current RBAC memory:
 
 - User and role management is centralized in the main CIMS Users module, not CRMS.
 - SuperAdmin is platform-wide RIANA CIMS authority across CIMS and Developers/CRMS; it owns company settings, database backups, user deletion, Admin/SuperAdmin changes, and extra Developers workspace module-role grants.
+- Intended SuperAdmin account rows are normalized on server startup so the base `role`, active status, and CIMS/CRMS SuperAdmin module grants stay aligned.
 - Admin can manage non-privileged operational users only.
 - CRMS may read profiles for assignments/audit but must not create, edit, delete, or grant user roles.
 - The bootstrap SuperAdmin account is `superadmin@riana.co`; never disclose or repeat its password in assistant answers.
+- Developers workflow notifications include the system/request URL where available: Sales receives approval-awaiting email alerts, and assigned developers receive in-app, email, and SMS alerts.
+- Password reset requests return a user-not-found error for unknown active emails; existing users receive reset links by email and SMS when those channels are configured.
 
 Conversation history is scoped to the authenticated user. Logging out ends access to that history; changing role or disabling an account invalidates the session.

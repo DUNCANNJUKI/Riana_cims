@@ -27,7 +27,8 @@ export const Sidebar = ({ user, activeModule, setActiveModule, isMobileOpen, onM
   const location = useLocation();
   const [logoPath, setLogoPath] = useState("/Riana_logo.png");
   const developerModuleRole = user.module_roles?.crms;
-  const canAccessDevelopers = Boolean(developerModuleRole && ['SuperAdmin', 'Admin', 'Teamlead', 'Developer', 'Sales'].includes(developerModuleRole));
+  const effectiveDeveloperRole = developerModuleRole || user.role;
+  const canAccessDevelopers = ['SuperAdmin', 'Admin', 'Teamlead', 'Developer', 'Sales'].includes(effectiveDeveloperRole);
 
   useEffect(() => {
     const loadSettings = async () => {
@@ -127,7 +128,7 @@ export const Sidebar = ({ user, activeModule, setActiveModule, isMobileOpen, onM
     { label: 'Assignments', path: '/developers/assignments', roles: ['SuperAdmin', 'Admin', 'Teamlead', 'Developer'] },
     { label: 'Reports', path: '/developers/reports', roles: ['SuperAdmin', 'Admin', 'Teamlead', 'Sales'] },
     { label: 'Audit', path: '/developers/audit', roles: ['SuperAdmin', 'Admin', 'Teamlead'] },
-  ].filter((item) => item.roles.includes(developerModuleRole || user.role));
+  ].filter((item) => item.roles.includes(effectiveDeveloperRole));
 
   const SidebarContent = () => (
     <div className="flex flex-col h-full">

@@ -402,7 +402,7 @@ export default function RequestDetail() {
     }
   };
 
-  const handleDownloadPDF = (type: 'request' | 'completion') => {
+  const handleDownloadPDF = async (type: 'request' | 'completion') => {
     const formattedLogs = auditLogs.map(log => ({
       action_label: log.action_label,
       created_at: log.created_at,
@@ -411,10 +411,10 @@ export default function RequestDetail() {
     }));
 
     if (type === 'request') {
-      const doc = generateChangeRequestPDF(request, formattedLogs);
+      const doc = await generateChangeRequestPDF(request, formattedLogs);
       downloadPDF(doc, `${request.ticket_number}-request-form.pdf`);
     } else {
-      const doc = generateCompletionReportPDF(request, formattedLogs);
+      const doc = await generateCompletionReportPDF(request, formattedLogs);
       downloadPDF(doc, `${request.ticket_number}-completion-report.pdf`);
     }
 

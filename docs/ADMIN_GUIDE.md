@@ -23,6 +23,8 @@ Back up, apply migrations, build both clients, restart the managed API process, 
 
 SuperAdmin is the platform-wide RIANA CIMS authority across CIMS and Developers/CRMS. It is the only role allowed to manage company settings, open/create database backups, delete users, change Admin/SuperAdmin accounts, and grant extra Developers workspace roles from the main CIMS Users module.
 
+On server startup, intended SuperAdmin records are normalized so the base role, active status for the bootstrap account, and CIMS/CRMS SuperAdmin module grants remain aligned. This protects the platform from stale role/designation drift after imports or restores.
+
 Admins may create and maintain non-privileged operational users, but they cannot create Admin/SuperAdmin accounts, delete users, manage company settings, open backups, or grant privileged/module roles.
 
 CRMS/Developers no longer manages users. It can read active profiles for assignments, audit filters, and workflow context, while all role changes remain in CIMS.
