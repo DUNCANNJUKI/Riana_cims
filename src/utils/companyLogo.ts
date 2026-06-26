@@ -22,8 +22,8 @@ const LOGO_PATHS = {
 
 // Logo dimensions (in mm)
 const LOGO_DIMENSIONS = {
-  headerWidth: 45,
-  headerHeight: 15,
+  headerWidth: 36,
+  headerHeight: 22,
   headerLeftMargin: 12,
   headerTopMargin: 10,
   headerBgWidth: 50,
@@ -36,7 +36,7 @@ const LOGO_DIMENSIONS = {
 
 // Company brand colors
 export const COMPANY_COLORS = {
-  primary: [13, 131, 144] as [number, number, number],       // RIANA Teal
+  primary: [29, 130, 151] as [number, number, number],       // RIANA document teal
   secondary: [16, 185, 129] as [number, number, number],      // Green
   accent: [0, 160, 175] as [number, number, number],          // Teal (Matches Logo)
   text: [51, 51, 51] as [number, number, number],             // Dark Gray
@@ -132,8 +132,16 @@ export const addHeaderLogo = async (
 /* doc.setFillColor(...bgColor);
     doc.roundedRect(x - 1, y, bgWidth, bgHeight, borderRadius, borderRadius, 'F'); */
     
-    // Add logo image
-    doc.addImage(logoImg, 'PNG', x, y + 1, logoWidth, logoHeight);
+    const aspectRatio = logoImg.naturalWidth && logoImg.naturalHeight
+      ? logoImg.naturalWidth / logoImg.naturalHeight
+      : logoWidth / logoHeight;
+    let width = logoWidth;
+    let height = width / aspectRatio;
+    if (height > logoHeight) {
+      height = logoHeight;
+      width = height * aspectRatio;
+    }
+    doc.addImage(logoImg, 'PNG', x + (logoWidth - width) / 2, y + (logoHeight - height) / 2, width, height);
   } catch (error) {
     console.warn('Could not add header logo:', error);
   }
@@ -218,13 +226,8 @@ export const applyCompanyBranding = async (
   const addWatermark = options?.addWatermark ?? true;
   
   // Load logo images as base64
-  const logoBase64 = await fetchImageAsBase64(logoPath);
   const watermarkBase64 = await fetchImageAsGrayscaleBase64('/report_watermark.png');
   const footerBase64 = await fetchImageAsBase64('/report_footer.png');
-  
-  if (!logoBase64) {
-    return null;
-  }
   
   // Header Logo Box is usually already handled by the caller or addOfficialHeader
   // But we can add the logo image if needed
@@ -235,20 +238,6 @@ export const applyCompanyBranding = async (
   // Apply to all pages
   for (let i = 1; i <= pageCount; i++) {
     doc.setPage(i);
-    
-    // Header Logo (only on first page for standard reports, but usually standard)
-    if (i === 1) {
-      try {
-        // Position it similarly to addHeaderLogo
-        const lx = LOGO_DIMENSIONS.headerLeftMargin;
-        const ly = LOGO_DIMENSIONS.headerTopMargin;
-        const lw = LOGO_DIMENSIONS.headerWidth;
-        const lh = LOGO_DIMENSIONS.headerHeight;
-        doc.addImage(logoBase64, 'PNG', lx, ly + 1, lw, lh);
-      } catch (e) {
-        console.warn('Could not add header logo in applyCompanyBranding:', e);
-      }
-    }
     
     // Watermark
     if (addWatermark) {

@@ -1,7 +1,7 @@
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { apiClient } from '@/integrations/apiClient';
-import { getPDFAsBlob, generateReportSerial } from './pdfWatermark';
+import { addCimsDocumentHeader, getPDFAsBlob, generateReportSerial, RIANA_DOCUMENT_TEAL } from './pdfWatermark';
 import { applyCompanyBranding } from './companyLogo';
 
 
@@ -14,7 +14,7 @@ interface ReportData {
 
 // Company branding colors (RIANA colors)
 const COLORS = {
-  primary: [13, 131, 144] as [number, number, number], // Brand Teal (#0D8390)
+  primary: RIANA_DOCUMENT_TEAL, // Matches the official RIANA logo edge tone
   secondary: [16, 185, 129] as [number, number, number], // Green
   text: [51, 51, 51] as [number, number, number], // Dark gray
   lightGray: [243, 244, 246] as [number, number, number],
@@ -35,23 +35,10 @@ export const generatePDFReport = async (
   const pageHeight = doc.internal.pageSize.getHeight();
   const margin = 14;
   
-  // Header background FIRST
-  doc.setFillColor(...COLORS.primary);
-  doc.rect(0, 0, pageWidth, 45, 'F');
-  
-  doc.setTextColor(...COLORS.white);
-  doc.setFontSize(22);
-  doc.setFont('helvetica', 'bold');
-  doc.text('RIANA CIMS', pageWidth / 2, 22, { align: 'center' });
-  
-  doc.setFontSize(10);
-  doc.setFont('helvetica', 'normal');
-  doc.text('Client Installation Management System', pageWidth / 2, 32, { align: 'center' });
-  
-  // Accent line under header
-  doc.setDrawColor(0, 160, 175); // RIANA teal
-  doc.setLineWidth(1.5);
-  doc.line(0, 45, pageWidth, 45);
+  await addCimsDocumentHeader(doc, {
+    subtitle: 'Client Installation Management System',
+    documentTitle: getReportTitle(reportType),
+  });
 
   // Report Title
   doc.setTextColor(...COLORS.text);

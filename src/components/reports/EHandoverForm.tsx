@@ -10,7 +10,7 @@ import { Client, Installation, User as UserType } from "@/types";
 import { useDatabase } from "@/hooks/useDatabase";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
-import { addLetterheadToDocument, getPDFAsBlob, generateReportSerial } from "@/utils/pdfWatermark";
+import { addCimsDocumentHeader, addLetterheadToDocument, getPDFAsBlob, generateReportSerial } from "@/utils/pdfWatermark";
 import { PDFPreviewModal } from "@/components/common/PDFPreviewModal";
 import { apiClient } from "@/integrations/apiClient";
 import { toast } from "sonner";
@@ -243,70 +243,15 @@ export const EHandoverForm = ({ client, installation, user }: EHandoverFormProps
         doc.text(text, x, y, { align: options.align || 'left' });
       };
 
-      // ========== PROFESSIONAL HEADER ==========
-      // Blue header background
-      doc.setFillColor(...primaryColor);
-      doc.rect(0, 0, pageWidth, 48, 'F');
-      
-      // Try to add RIANA logo with multiple fallback sources
-      let logoLoaded = false;
-      const logoSources = [
-        '/Riana_logo.png',
-        `${window.location.origin}/Riana_logo.png`,
-        companyLogo || '/Riana_logo.png',
-        '/rianacims-uploads/5fe53914-47f9-4dab-ac6a-15b2a4002f36.png'
-      ];
-
-      for (const logoSrc of logoSources) {
-        if (logoLoaded) break;
-        try {
-          const logoImg = new Image();
-          logoImg.crossOrigin = 'anonymous';
-          const loaded = await new Promise<boolean>((resolve) => {
-            const timeout = setTimeout(() => resolve(false), 3000);
-            logoImg.onload = () => {
-              clearTimeout(timeout);
-              resolve(logoImg.complete && logoImg.naturalWidth > 0);
-            };
-            logoImg.onerror = () => {
-              clearTimeout(timeout);
-              resolve(false);
-            };
-            logoImg.src = logoSrc;
-          });
-          if (loaded) {
-            /* doc.setFillColor(255, 255, 255);
-            doc.roundedRect(margin - 1, 6, 34, 32, 3, 3, 'F'); */
-            doc.addImage(logoImg, 'PNG', margin, 8, 30, 28);
-            logoLoaded = true;
-          }
-        } catch (e) {
-          console.log('Logo source failed:', logoSrc);
-        }
-      }
-      
-      // Certificate title
-      doc.setTextColor(255, 255, 255);
-      doc.setFontSize(22);
-      doc.setFont('helvetica', 'bold');
-      doc.text('RIANA CIMS', pageWidth / 2, 18, { align: 'center' });
-      
-      doc.setFontSize(14);
-      doc.setFont('helvetica', 'bold');
-      doc.text('E-HANDOVER CERTIFICATE', pageWidth / 2, 30, { align: 'center' });
-      
-      doc.setFontSize(10);
-      doc.setFont('helvetica', 'normal');
-      doc.text('Official Installation Completion Document', pageWidth / 2, 38, { align: 'center' });
-      
       const serial = generateReportSerial('EH');
-      doc.setFontSize(8);
-      doc.text(`Serial: ${serial}`, pageWidth - margin, 44, { align: 'right' });
-      
-      // Teal accent line
-      doc.setDrawColor(...tealColor);
-      doc.setLineWidth(2);
-      doc.line(0, 48, pageWidth, 48);
+      await addCimsDocumentHeader(doc, {
+        subtitle: 'E-HANDOVER CERTIFICATE',
+        documentTitle: 'Official Installation Completion Document',
+        logoPath: companyLogo || '/Riana_logo.png',
+        metaRight: `Serial: ${serial}`,
+        headerHeight: 48,
+        accentColor: tealColor,
+      });
       
       yPos = 58;
 

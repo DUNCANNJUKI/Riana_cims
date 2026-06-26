@@ -2356,7 +2356,7 @@ app.post('/api/chat/assistant', async (req, res) => {
   } else if (msg.includes('pwa') || msg.includes('offline') || msg.includes('install app')) {
     reply = "RIANA CIMS is installable as a PWA. App assets are cached for faster repeat visits, online/offline status is detected automatically, and authenticated API data always stays network-only to prevent one user’s data being exposed to another user on a shared device.";
   } else if (msg.includes('report') || msg.includes('logo') || msg.includes('branding')) {
-    reply = "You can generate PDF and CSV reports in the 'Reports' section. We've recently fixed the logo visibility, so the RIANA logo now appears clearly on the blue headers of all reports (Performance, Budget, E-Handover, etc.).";
+    reply = "You can generate PDF and CSV reports in the Reports section. Document headers use a logo-matched teal brand color, keep the RIANA logo inside a reserved aspect-ratio-safe slot, and avoid duplicate or floating logo images across Budget, Performance, E-Handover, and Developers documents.";
   } else if (msg.includes('client')) {
     reply = "In the 'Clients' module, you can manage client profiles, contact information, and branches. You can also generate unique feedback links for clients to rate installation quality.";
   } else if (msg.includes('installation') || msg.includes('assign')) {

@@ -10,6 +10,10 @@ const BRAND_LIGHT: [number, number, number] = [239, 248, 249];
 const GREEN_PRIMARY: [number, number, number] = [22, 138, 85];
 const GREEN_LIGHT: [number, number, number] = [239, 249, 244];
 
+const imageFormat = (dataUrl: string): 'PNG' | 'JPEG' => (
+  /^data:image\/jpe?g/i.test(dataUrl) ? 'JPEG' : 'PNG'
+);
+
 const assetUrl = (src: string) => {
   if (/^(https?:|data:|blob:)/i.test(src)) return src;
   if (typeof window === 'undefined') return src;
@@ -33,9 +37,80 @@ const fetchAssetAsBase64 = async (src: string): Promise<string | null> => {
   }
 };
 
+const addImageContained = (
+  doc: jsPDF,
+  imageData: string,
+  x: number,
+  y: number,
+  maxWidth: number,
+  maxHeight: number,
+) => {
+  const props = doc.getImageProperties(imageData);
+  const aspectRatio = props.width && props.height ? props.width / props.height : maxWidth / maxHeight;
+  let width = maxWidth;
+  let height = width / aspectRatio;
+  if (height > maxHeight) {
+    height = maxHeight;
+    width = height * aspectRatio;
+  }
+  doc.addImage(
+    imageData,
+    imageFormat(imageData),
+    x + (maxWidth - width) / 2,
+    y + (maxHeight - height) / 2,
+    width,
+    height,
+  );
+};
+
+const addCimsHeader = async (
+  doc: jsPDF,
+  options: {
+    subtitle: string;
+    documentTitle: string;
+    accentColor?: [number, number, number];
+    headerHeight?: number;
+  },
+) => {
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const headerHeight = options.headerHeight ?? 45;
+  const logoSlot = { x: 14, y: 11, width: 36, height: 22 };
+
+  doc.setFillColor(...BRAND_PRIMARY);
+  doc.rect(0, 0, pageWidth, headerHeight, 'F');
+  doc.setFillColor(...(options.accentColor || BRAND_DARK));
+  doc.rect(0, headerHeight - 3, pageWidth, 3, 'F');
+
+  const logoBase64 = await fetchAssetAsBase64('/Riana_logo.png');
+  let logoLoaded = false;
+  if (logoBase64) {
+    try {
+      addImageContained(doc, logoBase64, logoSlot.x, logoSlot.y, logoSlot.width, logoSlot.height);
+      logoLoaded = true;
+    } catch {
+      logoLoaded = false;
+    }
+  }
+
+  const textLeft = logoLoaded ? logoSlot.x + logoSlot.width + 12 : 14;
+  const textRight = pageWidth - 14;
+  const centerX = logoLoaded ? textLeft + (textRight - textLeft) / 2 : pageWidth / 2;
+
+  doc.setTextColor(255, 255, 255);
+  doc.setFontSize(21);
+  doc.setFont('helvetica', 'bold');
+  doc.text('RIANA CIMS', centerX, 17, { align: 'center' });
+
+  doc.setFontSize(13);
+  doc.setFont('helvetica', 'normal');
+  doc.text(options.subtitle, centerX, 28, { align: 'center' });
+
+  doc.setFontSize(10.5);
+  doc.text(options.documentTitle, centerX, 37, { align: 'center' });
+};
+
 const addCimsLetterheadBranding = async (doc: jsPDF) => {
-  const [logoBase64, watermarkBase64, footerBase64] = await Promise.all([
-    fetchAssetAsBase64('/Riana_logo.png'),
+  const [watermarkBase64, footerBase64] = await Promise.all([
     fetchAssetAsBase64('/report_watermark.png'),
     fetchAssetAsBase64('/report_footer.png'),
   ]);
@@ -55,13 +130,6 @@ const addCimsLetterheadBranding = async (doc: jsPDF) => {
         doc.restoreGraphicsState();
       } catch {
         try { doc.restoreGraphicsState(); } catch {}
-      }
-    }
-    if (page === 1 && logoBase64) {
-      try {
-        doc.addImage(logoBase64, 'PNG', 14, 9, 32, 22);
-      } catch {
-        // Existing text header remains the fallback.
       }
     }
     if (footerBase64) {
@@ -109,35 +177,10 @@ export const generateChangeRequestPDF = async (
 ): Promise<jsPDF> => {
   const doc = new jsPDF();
 
-  // Header with Riana Group branding
-  doc.setFillColor(BRAND_PRIMARY[0], BRAND_PRIMARY[1], BRAND_PRIMARY[2]);
-  doc.rect(0, 0, 210, 45, 'F');
-
-  // Header accent line
-  doc.setFillColor(BRAND_DARK[0], BRAND_DARK[1], BRAND_DARK[2]);
-  doc.rect(0, 42, 210, 3, 'F');
-
-  // Add Company Logo
-  try {
-    // We'll use a placeholder for the logo in the PDF if the asset isn't easily embeddable 
-    // as a base64 string directly from imports in this environment, 
-    // but the standard way is to use doc.addImage
-    // Since we are in a browser-like env, we might need to load it first or pass as base64
-    // For now, I'll add the placeholder text and the user can confirm if they want the actual image embedded
-    doc.setTextColor(255, 255, 255);
-    doc.setFontSize(22);
-    doc.setFont('helvetica', 'bold');
-    doc.text('RIANA GROUP', 105, 16, { align: 'center' });
-  } catch (e) {
-    console.error('Error adding logo to PDF', e);
-  }
-
-  doc.setFontSize(14);
-  doc.setFont('helvetica', 'normal');
-  doc.text('CHANGE REQUEST FORM', 105, 26, { align: 'center' });
-
-  doc.setFontSize(11);
-  doc.text(`Ticket: ${request.ticket_number}`, 105, 36, { align: 'center' });
+  await addCimsHeader(doc, {
+    subtitle: 'CHANGE REQUEST FORM',
+    documentTitle: `Ticket: ${request.ticket_number}`,
+  });
 
   // Reset text color
   doc.setTextColor(0, 0, 0);
@@ -326,24 +369,11 @@ export const generateCompletionReportPDF = async (
   const doc = new jsPDF();
 
   // Keep the shared RIANA header; green remains a semantic completion accent.
-  doc.setFillColor(BRAND_PRIMARY[0], BRAND_PRIMARY[1], BRAND_PRIMARY[2]);
-  doc.rect(0, 0, 210, 45, 'F');
-
-  // Header accent line
-  doc.setFillColor(GREEN_PRIMARY[0], GREEN_PRIMARY[1], GREEN_PRIMARY[2]);
-  doc.rect(0, 42, 210, 3, 'F');
-
-  doc.setTextColor(255, 255, 255);
-  doc.setFontSize(22);
-  doc.setFont('helvetica', 'bold');
-  doc.text('RIANA GROUP', 105, 16, { align: 'center' });
-
-  doc.setFontSize(14);
-  doc.setFont('helvetica', 'normal');
-  doc.text('COMPLETION REPORT', 105, 26, { align: 'center' });
-
-  doc.setFontSize(11);
-  doc.text(`Ticket: ${request.ticket_number}`, 105, 36, { align: 'center' });
+  await addCimsHeader(doc, {
+    subtitle: 'COMPLETION REPORT',
+    documentTitle: `Ticket: ${request.ticket_number}`,
+    accentColor: GREEN_PRIMARY,
+  });
 
   // Reset text color
   doc.setTextColor(0, 0, 0);

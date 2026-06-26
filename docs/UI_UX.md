@@ -17,6 +17,6 @@ CRMS/Developers navigation must not expose separate Settings, Notifications, or 
 
 ## Generated documents
 
-PDFs use a restrained teal header, white header text, dark body text, light neutral table stripes, serial number, generation time, page number, confidentiality label, subsidiary/company identity, and reserved footer space. Watermarks must remain subtle enough that body text stays readable. Status colors never replace status text.
+PDFs use a restrained teal header matched to the official RIANA logo edge tone, white header text, dark body text, light neutral table stripes, serial number, generation time, page number, confidentiality label, subsidiary/company identity, and reserved footer space. Header logos must be aspect-ratio contained inside the reserved logo slot and must not be stretched, boxed, duplicated, or overlaid as an extra floating image. Watermarks must remain subtle enough that body text stays readable. Status colors never replace status text.
 
 Preview and download must use the same protected source file so users cannot review one version and save another.

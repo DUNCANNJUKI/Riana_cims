@@ -159,7 +159,7 @@ const helpArticles: HelpArticle[] = [
     id: '15',
     title: 'Custom System Branding',
     category: 'Branding',
-    content: 'The system automatically applies RIANA brand colors (#0D8390) to all UI elements and reports. The company logo is dynamically fetched and displayed in the header, sidebar, and login page for a unified experience.',
+    content: 'The system applies RIANA brand colors to the interface and generated reports. PDF headers use a logo-matched teal header and place the company logo inside a reserved aspect-ratio-safe slot so it does not appear as a stretched, duplicate, or floating image.',
     helpful: 5
   },
   {

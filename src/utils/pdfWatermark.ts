@@ -15,8 +15,103 @@ const SUBSIDIARIES = [
 ];
 
 // RIANA brand colors (Matching #0D8390)
-const RIANA_TEAL = [13, 131, 144];
-const RIANA_BLUE = [13, 131, 144]; // Unified with brand teal
+const RIANA_TEAL = [29, 130, 151];
+const RIANA_BLUE = [29, 130, 151]; // Matched to the edge tone of the official logo
+export const RIANA_DOCUMENT_TEAL = RIANA_TEAL as [number, number, number];
+
+const imageFormat = (dataUrl: string): 'PNG' | 'JPEG' => (
+  /^data:image\/jpe?g/i.test(dataUrl) ? 'JPEG' : 'PNG'
+);
+
+export const addImageContained = (
+  doc: jsPDF,
+  imageData: string,
+  x: number,
+  y: number,
+  maxWidth: number,
+  maxHeight: number,
+): void => {
+  const props = doc.getImageProperties(imageData);
+  const aspectRatio = props.width && props.height ? props.width / props.height : maxWidth / maxHeight;
+  let width = maxWidth;
+  let height = width / aspectRatio;
+  if (height > maxHeight) {
+    height = maxHeight;
+    width = height * aspectRatio;
+  }
+  const drawX = x + (maxWidth - width) / 2;
+  const drawY = y + (maxHeight - height) / 2;
+  doc.addImage(imageData, imageFormat(imageData), drawX, drawY, width, height);
+};
+
+export const addCimsDocumentHeader = async (
+  doc: jsPDF,
+  options: {
+    title?: string;
+    subtitle?: string;
+    documentTitle?: string;
+    logoPath?: string;
+    primaryColor?: [number, number, number];
+    accentColor?: [number, number, number];
+    metaLeft?: string;
+    metaRight?: string;
+    headerHeight?: number;
+  } = {},
+): Promise<number> => {
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const headerHeight = options.headerHeight ?? 45;
+  const primaryColor = options.primaryColor ?? RIANA_DOCUMENT_TEAL;
+  const accentColor = options.accentColor ?? RIANA_DOCUMENT_TEAL;
+  const margin = 14;
+  const logoSlot = { x: margin, y: 11, width: 36, height: 22 };
+
+  doc.setFillColor(...primaryColor);
+  doc.rect(0, 0, pageWidth, headerHeight, 'F');
+
+  doc.setTextColor(255, 255, 255);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(8.5);
+  if (options.metaLeft) doc.text(options.metaLeft, margin, 7.5);
+  if (options.metaRight) doc.text(options.metaRight, pageWidth - margin, 7.5, { align: 'right' });
+
+  let logoLoaded = false;
+  const logoBase64 = await fetchImageAsBase64(options.logoPath || '/Riana_logo.png');
+  if (logoBase64) {
+    try {
+      addImageContained(doc, logoBase64, logoSlot.x, logoSlot.y, logoSlot.width, logoSlot.height);
+      logoLoaded = true;
+    } catch {
+      logoLoaded = false;
+    }
+  }
+
+  const textLeft = logoLoaded ? logoSlot.x + logoSlot.width + 12 : margin;
+  const textRight = pageWidth - margin;
+  const textCenter = logoLoaded ? textLeft + (textRight - textLeft) / 2 : pageWidth / 2;
+
+  doc.setTextColor(255, 255, 255);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(21);
+  doc.text(options.title || 'RIANA CIMS', textCenter, 17, { align: 'center' });
+
+  if (options.subtitle) {
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(11.5);
+    doc.text(options.subtitle, textCenter, 28, { align: 'center' });
+  }
+
+  if (options.documentTitle) {
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(13);
+    doc.text(options.documentTitle, textCenter, 38, { align: 'center' });
+  }
+
+  doc.setDrawColor(...accentColor);
+  doc.setLineWidth(1.5);
+  doc.line(0, headerHeight, pageWidth, headerHeight);
+
+  return headerHeight + 10;
+};
 
 /**
  * Loads an image and returns it, or null if loading fails
@@ -417,43 +512,11 @@ export const addOfficialHeader = async (
   doc: jsPDF,
   logoPath: string = '/Riana_logo.png'
 ): Promise<number> => {
-  const pageWidth = doc.internal.pageSize.getWidth();
-  const margin = 15;
-  
-  // Header background
-  doc.setFillColor(RIANA_BLUE[0], RIANA_BLUE[1], RIANA_BLUE[2]);
-  doc.rect(0, 0, pageWidth, 42, 'F');
-  
-  // Try to add logo on the left side
-  const logoBase64 = await fetchImageAsBase64(logoPath);
-  if (logoBase64) {
-    try {
-      // Add white background circle/square behind logo for visibility
-/* doc.setFillColor(255, 255, 255);
-      doc.roundedRect(margin - 2, 6, 32, 30, 3, 3, 'F'); */
-      doc.addImage(logoBase64, 'PNG', margin, 8, 28, 26);
-    } catch (e) {
-      console.log('Logo could not be added to header');
-    }
-  }
-  
-  // Company name - centered but offset for logo
-  doc.setTextColor(255, 255, 255);
-  doc.setFontSize(20);
-  doc.setFont('helvetica', 'bold');
-  doc.text('RIANA CIMS', pageWidth / 2, 20, { align: 'center' });
-  
-  // Tagline
-  doc.setFontSize(10);
-  doc.setFont('helvetica', 'normal');
-  doc.text('Client Installation Management System', pageWidth / 2, 30, { align: 'center' });
-  
-  // Thin accent line under header
-  doc.setDrawColor(RIANA_TEAL[0], RIANA_TEAL[1], RIANA_TEAL[2]);
-  doc.setLineWidth(1.5);
-  doc.line(0, 42, pageWidth, 42);
-  
-  return 50; // Return Y position after header
+  return addCimsDocumentHeader(doc, {
+    logoPath,
+    subtitle: 'Client Installation Management System',
+    headerHeight: 42,
+  });
 };
 
 /**

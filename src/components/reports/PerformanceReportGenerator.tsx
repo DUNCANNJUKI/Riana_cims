@@ -12,6 +12,7 @@ import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import { format, subMonths, subQuarters, subYears } from "date-fns";
 import { applyCompanyBranding } from "@/utils/companyLogo";
+import { addCimsDocumentHeader } from "@/utils/pdfWatermark";
 
 interface PerformanceReportGeneratorProps {
   user: User;
@@ -114,26 +115,10 @@ export const PerformanceReportGenerator = ({ user }: PerformanceReportGeneratorP
       const pageWidth = doc.internal.pageSize.getWidth();
       const margin = 14;
 
-      // Header background FIRST
-      doc.setFillColor(13, 131, 144);
-      doc.rect(0, 0, pageWidth, 45, 'F');
-      
-      doc.setTextColor(255, 255, 255);
-      doc.setFontSize(22);
-      doc.setFont('helvetica', 'bold');
-      doc.text('RIANA CIMS', pageWidth / 2, 20, { align: 'center' });
-      
-      doc.setFontSize(12);
-      doc.setFont('helvetica', 'normal');
-      doc.text(`${periodLabel} Performance Report`, pageWidth / 2, 32, { align: 'center' });
-      
-      doc.setFontSize(10);
-      doc.text(`Period: ${format(startDate, 'MMM d, yyyy')} - ${format(endDate, 'MMM d, yyyy')}`, pageWidth / 2, 40, { align: 'center' });
-      
-      // Accent line under header
-      doc.setDrawColor(0, 160, 175);
-      doc.setLineWidth(1.5);
-      doc.line(0, 45, pageWidth, 45);
+      await addCimsDocumentHeader(doc, {
+        subtitle: `${periodLabel} Performance Report`,
+        documentTitle: `Period: ${format(startDate, 'MMM d, yyyy')} - ${format(endDate, 'MMM d, yyyy')}`,
+      });
 
       // Report metadata
       doc.setTextColor(51, 51, 51);

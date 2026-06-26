@@ -14,7 +14,7 @@ import { apiClient } from "@/integrations/apiClient";
 import { User, Installation, Client } from "@/types";
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import { addLetterheadToDocument } from '@/utils/pdfWatermark';
+import { addCimsDocumentHeader, addLetterheadToDocument } from '@/utils/pdfWatermark';
 
 interface FinancesModuleProps {
   user: User;
@@ -286,18 +286,6 @@ export const FinancesModule = ({ user }: FinancesModuleProps) => {
     };
     const primaryColor = parseHex(primaryColorHex);
     
-    doc.setFillColor(...primaryColor);
-    doc.rect(0, 0, pageWidth, 45, 'F');
-    
-    // Add Serial Number
-    doc.setTextColor(255, 255, 255);
-    doc.setFontSize(9);
-    doc.setFont('helvetica', 'bold');
-    doc.text(`Ref: ${serialNumber}`, 14, 8);
-    doc.text(`Date: ${formattedDate}`, pageWidth - 14, 8, { align: 'right' });
-
-    // Add company logo
-    let logoLoaded = false;
     const logoSrc = companySettings?.logo_path 
       ? (companySettings.logo_path.startsWith('http') 
           ? companySettings.logo_path 
@@ -305,36 +293,14 @@ export const FinancesModule = ({ user }: FinancesModuleProps) => {
               ? `${window.location.protocol}//${window.location.hostname}:8090${companySettings.logo_path}`
               : `http://${window.location.hostname}:8081/uploads/${companySettings.logo_path}`))
       : `${window.location.protocol}//${window.location.hostname}:8090/Riana_logo.png`;
-
-    try {
-      const img = new Image();
-      img.crossOrigin = 'anonymous';
-      img.src = logoSrc;
-      await new Promise((resolve) => {
-        img.onload = resolve;
-        img.onerror = resolve;
-        setTimeout(resolve, 2000);
-      });
-      if (img.complete && img.naturalWidth > 0) {
-        doc.addImage(img, 'PNG', 14, 12, 25, 25);
-        logoLoaded = true;
-      }
-    } catch (error) {
-      console.log('Logo not loaded');
-    }
-    
-    const textStartX = logoLoaded ? 45 : 0;
-    const centerOffset = logoLoaded ? (pageWidth - 45 - 14) / 2 + 45 : pageWidth / 2;
-
-    doc.setTextColor(255, 255, 255);
-    doc.setFontSize(22);
-    doc.setFont('helvetica', 'bold');
-    doc.text(companySettings?.name || 'RIANA CIMS', centerOffset, 18, { align: 'center' });
-    doc.setFontSize(12);
-    doc.setFont('helvetica', 'normal');
-    doc.text('Client Installation Management System', centerOffset, 28, { align: 'center' });
-    doc.setFontSize(14);
-    doc.text('Installation Budget Report', centerOffset, 38, { align: 'center' });
+    await addCimsDocumentHeader(doc, {
+      title: companySettings?.name || 'RIANA CIMS',
+      subtitle: 'Client Installation Management System',
+      documentTitle: 'Installation Budget Report',
+      logoPath: logoSrc,
+      metaLeft: `Ref: ${serialNumber}`,
+      metaRight: `Date: ${formattedDate}`,
+    });
     
     // Reset text color
     doc.setTextColor(0, 0, 0);

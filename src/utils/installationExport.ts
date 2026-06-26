@@ -1,16 +1,7 @@
 import { Installation, Client, Company, Subsidiary, EscalationMatrix } from "@/types";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
-import { addLetterheadToDocument } from "./pdfWatermark";
-
-const loadImageAsBase64 = (src: string): Promise<HTMLImageElement> =>
-  new Promise((resolve, reject) => {
-    const img = new Image();
-    img.crossOrigin = "anonymous";
-    img.onload = () => resolve(img);
-    img.onerror = () => reject(new Error(`Could not load image: ${src}`));
-    img.src = src;
-  });
+import { addCimsDocumentHeader, addLetterheadToDocument } from "./pdfWatermark";
 
 const parseHexColor = (hex: string): [number, number, number] => {
   const clean = hex.replace('#', '');
@@ -84,22 +75,7 @@ export const generateInstallationReport = async (
   };
 
   // ─── HEADER ─────────────────────────────────────────────────────────────
-  // Draw header background
-  doc.setFillColor(...companyPrimaryColor);
-  doc.rect(0, 0, pageWidth, 50, 'F');
-
-  // Serial Number top-left
-  doc.setTextColor(255, 255, 255);
-  doc.setFontSize(8);
-  doc.setFont('helvetica', 'bold');
-  doc.text(`Ref: ${clientCode}`, 5, 6);
-
-  // Date top-right
-  doc.setFontSize(8);
-  doc.text(`Exported: ${formattedExportDate}`, pageWidth - 5, 6, { align: 'right' });
-
   // Company Logo (left side)
-  let logoLoaded = false;
   const logoSrc = (company as any).logo_path
     ? ((company as any).logo_path.startsWith('http')
         ? (company as any).logo_path
@@ -108,36 +84,15 @@ export const generateInstallationReport = async (
             : `http://${window.location.hostname}:8081/uploads/${(company as any).logo_path}`))
     : `${window.location.protocol}//${window.location.hostname}:8090/Riana_logo.png`;
 
-  try {
-    const logoImg = await loadImageAsBase64(logoSrc);
-    doc.addImage(logoImg, 'PNG', margin, 12, 25, 25);
-    logoLoaded = true;
-  } catch {
-    try {
-      const logoImg = await loadImageAsBase64('/Riana_logo.png');
-      doc.addImage(logoImg, 'PNG', margin, 12, 25, 25);
-      logoLoaded = true;
-    } catch {
-      console.log('Could not load company logo');
-    }
-  }
-
-  // Company Name & Title — centred in the space AFTER the logo area
-  const textStartX = logoLoaded ? margin + 35 : pageWidth / 2;
-  const textWidth = logoLoaded ? pageWidth - textStartX - margin : pageWidth;
-  const titleCenterX = logoLoaded ? textStartX + textWidth / 2 : pageWidth / 2;
-
-  doc.setTextColor(255, 255, 255);
-  doc.setFontSize(18);
-  doc.setFont('helvetica', 'bold');
-  doc.text((company as any).company_name || company.name || 'RIANA Technologies', titleCenterX, 22, { align: 'center' });
-
-  doc.setFontSize(12);
-  doc.setFont('helvetica', 'normal');
-  doc.text('E-HANDOVER FORM', titleCenterX, 31, { align: 'center' });
-
-  doc.setFontSize(9);
-  doc.text('Installation Completion & Handover Certificate', titleCenterX, 39, { align: 'center' });
+  await addCimsDocumentHeader(doc, {
+    title: (company as any).company_name || company.name || 'RIANA CIMS',
+    subtitle: 'E-HANDOVER FORM',
+    documentTitle: 'Installation Completion & Handover Certificate',
+    logoPath: logoSrc,
+    metaLeft: `Ref: ${clientCode}`,
+    metaRight: `Exported: ${formattedExportDate}`,
+    headerHeight: 50,
+  });
 
   yPos = 58;
 
