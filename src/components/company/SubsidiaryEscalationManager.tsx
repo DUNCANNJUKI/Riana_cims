@@ -7,7 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { Building2, Users, Phone, Mail, Edit, Save, Loader2, AlertTriangle, Plus } from "lucide-react";
+import { Building2, Users, Edit, Save, Loader2, AlertTriangle, Plus, Trash2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { EscalationMatrix, EscalationTier } from "@/types";
 import { apiClient } from "@/integrations/apiClient";
@@ -25,6 +25,7 @@ export const SubsidiaryEscalationManager = () => {
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [newSubsidiaryName, setNewSubsidiaryName] = useState('');
+  const [editingSubsidiaryName, setEditingSubsidiaryName] = useState('');
   const [editingMatrix, setEditingMatrix] = useState<EscalationMatrix>({
     tier1: { name: '', role: '', phone_number: '', email: '' },
     tier2: { name: '', role: '', phone_number: '', email: '' },
@@ -55,6 +56,7 @@ export const SubsidiaryEscalationManager = () => {
 
   const handleEditSubsidiary = (subsidiary: Subsidiary) => {
     setSelectedSubsidiary(subsidiary);
+    setEditingSubsidiaryName(subsidiary.subsidiary_name);
     setEditingMatrix(subsidiary.default_escalation_matrix || {
       tier1: { name: '', role: '', phone_number: '', email: '' },
       tier2: { name: '', role: '', phone_number: '', email: '' },
@@ -68,6 +70,7 @@ export const SubsidiaryEscalationManager = () => {
 
     try {
       await apiClient.patch(`/subsidiaries/${selectedSubsidiary.id}`, {
+        subsidiary_name: editingSubsidiaryName.trim(),
         default_escalation_matrix: editingMatrix
       });
 
@@ -83,6 +86,21 @@ export const SubsidiaryEscalationManager = () => {
         title: "Error",
         description: "Failed to save escalation matrix locally",
         variant: "destructive",
+      });
+    }
+  };
+
+  const handleDeleteSubsidiary = async (subsidiary: Subsidiary) => {
+    if (!window.confirm(`Delete ${subsidiary.subsidiary_name}? This is only allowed when no users are attached.`)) return;
+    try {
+      await apiClient.delete(`/subsidiaries/${subsidiary.id}`);
+      setSubsidiaries((current) => current.filter((item) => item.id !== subsidiary.id));
+      toast({ title: 'Subsidiary deleted', description: `${subsidiary.subsidiary_name} was removed successfully.` });
+    } catch (error) {
+      toast({
+        title: 'Unable to delete subsidiary',
+        description: error instanceof Error ? error.message : 'Reassign attached users and try again.',
+        variant: 'destructive',
       });
     }
   };
@@ -229,9 +247,14 @@ export const SubsidiaryEscalationManager = () => {
                     ) : <Badge variant="outline" className="text-muted-foreground">Not set</Badge>}
                   </TableCell>
                   <TableCell>
-                    <Button variant="outline" size="sm" onClick={() => handleEditSubsidiary(sub)}>
-                      <Edit className="h-3 w-3 mr-1" /> Configure
-                    </Button>
+                    <div className="flex gap-2">
+                      <Button variant="outline" size="sm" onClick={() => handleEditSubsidiary(sub)}>
+                        <Edit className="h-3 w-3 mr-1" /> Edit
+                      </Button>
+                      <Button variant="outline" size="sm" className="text-destructive hover:text-destructive" onClick={() => handleDeleteSubsidiary(sub)}>
+                        <Trash2 className="h-3 w-3 mr-1" /> Delete
+                      </Button>
+                    </div>
                   </TableCell>
                 </TableRow>
               ))}
@@ -247,6 +270,10 @@ export const SubsidiaryEscalationManager = () => {
             <DialogDescription>{selectedSubsidiary && `Set default escalation contacts for ${selectedSubsidiary.subsidiary_name}`}</DialogDescription>
           </DialogHeader>
           <div className="space-y-4 max-h-[60vh] overflow-y-auto">
+            <div className="space-y-2">
+              <Label htmlFor="edit_subsidiary_name">Subsidiary Name</Label>
+              <Input id="edit_subsidiary_name" value={editingSubsidiaryName} onChange={(event) => setEditingSubsidiaryName(event.target.value)} maxLength={50} />
+            </div>
             <TierFields tier="tier1" tierNum={1} />
             <TierFields tier="tier2" tierNum={2} />
             <TierFields tier="tier3" tierNum={3} />

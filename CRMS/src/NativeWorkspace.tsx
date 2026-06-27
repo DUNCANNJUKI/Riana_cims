@@ -7,6 +7,7 @@ import {
   FolderKanban,
   History,
   LayoutDashboard,
+  Clock3,
   PlusCircle,
 } from "lucide-react";
 import { cn } from "@crms/lib/utils";
@@ -21,6 +22,7 @@ const preloadApprovals = () => import("@crms/pages/Approvals");
 const preloadReports = () => import("@crms/pages/Reports");
 const preloadAuditLog = () => import("@crms/pages/AuditLog");
 const preloadAssignments = () => import("@crms/pages/Assignments");
+const preloadPending = () => import("@crms/pages/Pending");
 const preloadNotFound = () => import("@crms/pages/NotFound");
 
 const Dashboard = lazy(preloadDashboard);
@@ -31,6 +33,7 @@ const Approvals = lazy(preloadApprovals);
 const Reports = lazy(preloadReports);
 const AuditLog = lazy(preloadAuditLog);
 const Assignments = lazy(preloadAssignments);
+const Pending = lazy(preloadPending);
 const NotFound = lazy(preloadNotFound);
 
 const routePreloaders = [
@@ -41,12 +44,13 @@ const routePreloaders = [
   preloadReports,
   preloadAuditLog,
   preloadAssignments,
+  preloadPending,
   preloadNotFound,
 ] as const;
 
 installAuthenticatedFetch();
 
-type CimsRole = "SuperAdmin" | "Admin" | "Teamlead" | "Developer" | "Sales";
+type CimsRole = "SuperAdmin" | "Admin" | "Management" | "Teamlead" | "Developer" | "Sales";
 
 interface NativeDevelopersWorkspaceProps {
   userId: string;
@@ -54,13 +58,14 @@ interface NativeDevelopersWorkspaceProps {
 }
 
 const navigation = [
-  { label: "Overview", to: "/developers", icon: LayoutDashboard, roles: ["SuperAdmin", "Admin", "Teamlead", "Developer", "Sales"] },
-  { label: "Requests", to: "/developers/requests", icon: FileText, roles: ["SuperAdmin", "Admin", "Teamlead", "Developer", "Sales"] },
-  { label: "New Request", to: "/developers/requests/new", icon: PlusCircle, roles: ["SuperAdmin", "Admin", "Teamlead", "Sales"] },
-  { label: "Approvals", to: "/developers/approvals", icon: ClipboardCheck, roles: ["SuperAdmin", "Admin", "Sales"] },
-  { label: "Assignments", to: "/developers/assignments", icon: FolderKanban, roles: ["SuperAdmin", "Admin", "Teamlead", "Developer"] },
-  { label: "Reports", to: "/developers/reports", icon: BarChart3, roles: ["SuperAdmin", "Admin", "Teamlead", "Sales"] },
-  { label: "Audit", to: "/developers/audit", icon: History, roles: ["SuperAdmin", "Admin", "Teamlead"] },
+  { label: "Overview", to: "/developers", icon: LayoutDashboard, roles: ["SuperAdmin", "Admin", "Management", "Teamlead", "Developer", "Sales"] },
+  { label: "Pending", to: "/developers/pending", icon: Clock3, roles: ["SuperAdmin", "Admin", "Management", "Teamlead", "Developer", "Sales"] },
+  { label: "Requests", to: "/developers/requests", icon: FileText, roles: ["SuperAdmin", "Admin", "Management", "Teamlead", "Developer", "Sales"] },
+  { label: "New Request", to: "/developers/requests/new", icon: PlusCircle, roles: ["SuperAdmin", "Admin", "Management", "Teamlead", "Sales"] },
+  { label: "Approvals", to: "/developers/approvals", icon: ClipboardCheck, roles: ["SuperAdmin", "Admin", "Management", "Sales"] },
+  { label: "Assignments", to: "/developers/assignments", icon: FolderKanban, roles: ["SuperAdmin", "Admin", "Management", "Teamlead", "Developer"] },
+  { label: "Reports", to: "/developers/reports", icon: BarChart3, roles: ["SuperAdmin", "Admin", "Management", "Teamlead", "Sales"] },
+  { label: "Audit", to: "/developers/audit", icon: History, roles: ["SuperAdmin", "Admin", "Management", "Teamlead"] },
 ] as const;
 
 export function NativeDevelopersWorkspace({ userId, role }: NativeDevelopersWorkspaceProps) {
@@ -109,12 +114,13 @@ export function NativeDevelopersWorkspace({ userId, role }: NativeDevelopersWork
         <Suspense fallback={<div className="flex min-h-[360px] items-center justify-center text-sm text-muted-foreground">Loading Developers workspace…</div>}>
         <Routes>
           <Route path="/developers" element={<Dashboard />} />
+          <Route path="/developers/pending" element={<Pending />} />
           <Route path="/developers/requests" element={<RequestList />} />
-          <Route path="/developers/requests/new" element={role === "SuperAdmin" || role === "Admin" || role === "Teamlead" || role === "Sales" ? <NewRequest /> : <Navigate to="/developers/requests" replace />} />
+          <Route path="/developers/requests/new" element={role === "SuperAdmin" || role === "Admin" || role === "Management" || role === "Teamlead" || role === "Sales" ? <NewRequest /> : <Navigate to="/developers/requests" replace />} />
           <Route path="/developers/requests/:id" element={<RequestDetail />} />
-          <Route path="/developers/approvals" element={role === "SuperAdmin" || role === "Admin" || role === "Sales" ? <Approvals /> : <Navigate to="/developers" replace />} />
+          <Route path="/developers/approvals" element={role === "SuperAdmin" || role === "Admin" || role === "Management" || role === "Sales" ? <Approvals /> : <Navigate to="/developers" replace />} />
           <Route path="/developers/reports" element={role !== "Developer" ? <Reports /> : <Navigate to="/developers" replace />} />
-          <Route path="/developers/audit" element={role === "SuperAdmin" || role === "Admin" || role === "Teamlead" ? <AuditLog /> : <Navigate to="/developers" replace />} />
+          <Route path="/developers/audit" element={role === "SuperAdmin" || role === "Admin" || role === "Management" || role === "Teamlead" ? <AuditLog /> : <Navigate to="/developers" replace />} />
           <Route path="/developers/assignments" element={<Assignments />} />
           <Route path="/developers/users" element={<Navigate to="/" replace />} />
           <Route path="/developers/settings" element={<Navigate to="/" replace />} />

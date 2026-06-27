@@ -9,6 +9,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Database, Trash2, RefreshCw, Shield, AlertTriangle, Lock, Save, Clock } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { User } from "@/types";
+import { can } from "@/security/accessControl";
 import { apiClient } from "@/integrations/apiClient";
 
 interface DataManagementPanelProps {
@@ -28,7 +29,7 @@ export const DataManagementPanel = ({ user }: DataManagementPanelProps) => {
   const [backupTime, setBackupTime] = useState("02:00");
   const [isSavingSchedule, setIsSavingSchedule] = useState(false);
   const { toast } = useToast();
-  const isSuperAdmin = user.role === 'SuperAdmin';
+  const isSuperAdmin = can(user, 'backup.manage');
 
   useEffect(() => {
     if (!isSuperAdmin) return;
@@ -103,7 +104,7 @@ export const DataManagementPanel = ({ user }: DataManagementPanelProps) => {
       <div className="flex items-center justify-center h-64">
         <div className="text-center">
           <Shield className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-          <p className="text-muted-foreground">Access denied. SuperAdmin privileges required.</p>
+          <p className="text-muted-foreground">Access denied. Backup management permission is required.</p>
         </div>
       </div>
     );

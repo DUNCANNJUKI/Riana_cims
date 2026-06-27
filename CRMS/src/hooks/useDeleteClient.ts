@@ -12,8 +12,9 @@ export function useDeleteClient() {
       }
       return { id };
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['clients'] });
+    onSuccess: (_data, id) => {
+      queryClient.setQueryData<Array<{ id: string }>>(['clients'], (current = []) => current.filter((client) => client.id !== id));
+      queryClient.invalidateQueries({ queryKey: ['clients'], refetchType: 'active' });
     },
   });
 }

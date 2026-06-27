@@ -6,11 +6,8 @@
 
 import jsPDF from 'jspdf';
 import { 
-  fetchImageAsBase64, 
-  fetchImageAsGrayscaleBase64, 
-  addBrandedFooter, 
-  addProfessionalFooter,
-  addWatermarkToAllPages
+  addLetterheadToDocument,
+  DocumentBrandingOptions,
 } from './pdfWatermark';
 
 // Logo asset paths with fallbacks
@@ -220,44 +217,20 @@ export const applyCompanyBranding = async (
     addWatermark?: boolean;
     addFooterLogo?: boolean;
     headerBgColor?: [number, number, number];
+    subsidiaryName?: string | null;
+    documentTitle?: string;
   }
 ): Promise<HTMLImageElement | null> => {
-  const logoPath = options?.headerLogoPath ?? LOGO_PATHS.primary;
-  const addWatermark = options?.addWatermark ?? true;
-  
-  // Load logo images as base64
-  const watermarkBase64 = await fetchImageAsGrayscaleBase64('/report_watermark.png');
-  const footerBase64 = await fetchImageAsBase64('/report_footer.png');
-  
-  // Header Logo Box is usually already handled by the caller or addOfficialHeader
-  // But we can add the logo image if needed
-  const pageWidth = doc.internal.pageSize.getWidth();
-  const pageHeight = doc.internal.pageSize.getHeight();
-  const pageCount = doc.getNumberOfPages();
-
-  // Apply to all pages
-  for (let i = 1; i <= pageCount; i++) {
-    doc.setPage(i);
-    
-    // Watermark
-    if (addWatermark) {
-      if (watermarkBase64) {
-        doc.saveGraphicsState();
-        (doc as any).setGState(new (doc as any).GState({ opacity: 0.12 }));
-        const w = pageWidth - 40;
-        const h = (w / 210) * 297 * 0.4;
-        doc.addImage(watermarkBase64, 'PNG', (pageWidth - w) / 2, (pageHeight - h) / 2, w, h);
-        doc.restoreGraphicsState();
-      }
-    }
-    
-    // Footer
-    if (footerBase64) {
-      addBrandedFooter(doc, footerBase64, pageWidth, pageHeight, i, pageCount);
-    } else {
-      addProfessionalFooter(doc, pageWidth, pageHeight, i, pageCount);
-    }
-  }
+  const brandingOptions: DocumentBrandingOptions = {
+    subsidiaryName: options?.subsidiaryName,
+    documentTitle: options?.documentTitle,
+  };
+  await addLetterheadToDocument(
+    doc,
+    options?.headerLogoPath ?? LOGO_PATHS.primary,
+    '/letterhead-new.jpg',
+    brandingOptions,
+  );
   
   return {} as HTMLImageElement; // Mock return for compatibility
 };

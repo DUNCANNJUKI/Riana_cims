@@ -42,6 +42,7 @@ export const apiFetch = async (endpoint: string, options: RequestInit = {}, retr
   try {
     const response = await fetch(`${API_URL}${endpoint}`, {
       ...options,
+      cache: options.cache || 'no-store',
       credentials: options.credentials || 'include',
       headers
     });

@@ -26,7 +26,7 @@ export default defineConfig(({ mode }) => ({
     react(),
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['favicon.ico', 'Riana_logo.png', 'pwa-icon.svg', 'pwa-maskable.svg', 'letterhead.jpg', 'letterhead-full.jpg', 'letterhead-new.jpg'],
+      includeAssets: ['Riana_logo.png', 'Riana_mark_transparent.png', 'marezi-letterhead.png', 'pwa-icon.svg', 'pwa-maskable.svg', 'letterhead.jpg', 'letterhead-full.jpg', 'letterhead-new.jpg'],
       manifest: {
         id: '/',
         name: 'RIANA CIMS - Client Installation Management System',

@@ -9,6 +9,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Upload, FileSpreadsheet, CheckCircle, AlertCircle, Download, Eye, Loader2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { User } from "@/types";
+import { can } from "@/security/accessControl";
 import { apiClient } from "@/integrations/apiClient";
 
 interface ImportModuleProps {
@@ -34,8 +35,7 @@ export const ImportModule = ({ user }: ImportModuleProps) => {
   const [uploadProgress, setUploadProgress] = useState(0);
   const { toast } = useToast();
 
-  // Only Admin and Teamlead can access this module
-  if (user.role !== 'SuperAdmin' && user.role !== 'Admin' && user.role !== 'Teamlead') {
+  if (!can(user, 'import.manage')) {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="text-center">

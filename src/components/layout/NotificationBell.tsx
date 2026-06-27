@@ -12,6 +12,7 @@ import { apiClient } from "@/integrations/apiClient";
 import { User } from "@/types";
 import { format, isToday, isYesterday, differenceInDays } from "date-fns";
 import { playNotificationSound, playAnnouncementSound, playAssignmentSound } from "@/utils/notificationSound";
+import { cn } from "@/lib/utils";
 
 interface Notification {
   id: string;
@@ -28,9 +29,10 @@ interface Notification {
 interface NotificationBellProps {
   user: User;
   onNavigate?: (module: string) => void;
+  triggerClassName?: string;
 }
 
-export const NotificationBell = ({ user, onNavigate }: NotificationBellProps) => {
+export const NotificationBell = ({ user, onNavigate, triggerClassName }: NotificationBellProps) => {
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [isOpen, setIsOpen] = useState(false);
   const [pendingCounts, setPendingCounts] = useState({
@@ -273,7 +275,10 @@ export const NotificationBell = ({ user, onNavigate }: NotificationBellProps) =>
         <Button 
           variant="ghost" 
           size="icon" 
-          className="relative h-9 w-9 sm:h-10 sm:w-10 text-foreground hover:bg-accent hover:text-accent-foreground dark:text-foreground"
+          className={cn(
+            "relative h-9 w-9 sm:h-10 sm:w-10 text-foreground hover:bg-accent hover:text-accent-foreground dark:text-foreground",
+            triggerClassName,
+          )}
         >
           <Bell className="h-4 w-4 sm:h-5 sm:w-5" />
           {totalCount > 0 && (

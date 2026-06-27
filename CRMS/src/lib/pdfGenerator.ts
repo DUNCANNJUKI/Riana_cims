@@ -2,167 +2,19 @@ import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { format } from 'date-fns';
 import { ChangeRequestWithRelations } from '@crms/hooks/useSupabaseData';
+import {
+  addCimsDocumentHeader,
+  addLetterheadToDocument,
+  DOCUMENT_LAYOUT,
+  resolveDocumentBrand,
+} from '../../../src/utils/pdfWatermark';
+import { resolveDocumentSubsidiaryName } from '../../../src/utils/brandIdentity';
+import { getCimsUser } from './cimsSession';
 
-// Shared RIANA palette: teal for identity, restrained green only for status.
-const BRAND_PRIMARY: [number, number, number] = [13, 131, 144];
-const BRAND_DARK: [number, number, number] = [6, 78, 87];
+// Neutral fills and semantic completion colors; identity colors come from the shared brand resolver.
 const BRAND_LIGHT: [number, number, number] = [239, 248, 249];
 const GREEN_PRIMARY: [number, number, number] = [22, 138, 85];
 const GREEN_LIGHT: [number, number, number] = [239, 249, 244];
-
-const imageFormat = (dataUrl: string): 'PNG' | 'JPEG' => (
-  /^data:image\/jpe?g/i.test(dataUrl) ? 'JPEG' : 'PNG'
-);
-
-const assetUrl = (src: string) => {
-  if (/^(https?:|data:|blob:)/i.test(src)) return src;
-  if (typeof window === 'undefined') return src;
-  return `${window.location.origin}${src.startsWith('/') ? '' : '/'}${src}`;
-};
-
-const fetchAssetAsBase64 = async (src: string): Promise<string | null> => {
-  if (typeof fetch !== 'function' || typeof FileReader === 'undefined') return null;
-  try {
-    const response = await fetch(assetUrl(src));
-    if (!response.ok) return null;
-    const blob = await response.blob();
-    return await new Promise((resolve) => {
-      const reader = new FileReader();
-      reader.onloadend = () => resolve(String(reader.result || ''));
-      reader.onerror = () => resolve(null);
-      reader.readAsDataURL(blob);
-    });
-  } catch {
-    return null;
-  }
-};
-
-const addImageContained = (
-  doc: jsPDF,
-  imageData: string,
-  x: number,
-  y: number,
-  maxWidth: number,
-  maxHeight: number,
-) => {
-  const props = doc.getImageProperties(imageData);
-  const aspectRatio = props.width && props.height ? props.width / props.height : maxWidth / maxHeight;
-  let width = maxWidth;
-  let height = width / aspectRatio;
-  if (height > maxHeight) {
-    height = maxHeight;
-    width = height * aspectRatio;
-  }
-  doc.addImage(
-    imageData,
-    imageFormat(imageData),
-    x + (maxWidth - width) / 2,
-    y + (maxHeight - height) / 2,
-    width,
-    height,
-  );
-};
-
-const addCimsHeader = async (
-  doc: jsPDF,
-  options: {
-    subtitle: string;
-    documentTitle: string;
-    accentColor?: [number, number, number];
-    headerHeight?: number;
-  },
-) => {
-  const pageWidth = doc.internal.pageSize.getWidth();
-  const headerHeight = options.headerHeight ?? 45;
-  const logoSlot = { x: 14, y: 11, width: 36, height: 22 };
-
-  doc.setFillColor(...BRAND_PRIMARY);
-  doc.rect(0, 0, pageWidth, headerHeight, 'F');
-  doc.setFillColor(...(options.accentColor || BRAND_DARK));
-  doc.rect(0, headerHeight - 3, pageWidth, 3, 'F');
-
-  const logoBase64 = await fetchAssetAsBase64('/Riana_logo.png');
-  let logoLoaded = false;
-  if (logoBase64) {
-    try {
-      addImageContained(doc, logoBase64, logoSlot.x, logoSlot.y, logoSlot.width, logoSlot.height);
-      logoLoaded = true;
-    } catch {
-      logoLoaded = false;
-    }
-  }
-
-  const textLeft = logoLoaded ? logoSlot.x + logoSlot.width + 12 : 14;
-  const textRight = pageWidth - 14;
-  const centerX = logoLoaded ? textLeft + (textRight - textLeft) / 2 : pageWidth / 2;
-
-  doc.setTextColor(255, 255, 255);
-  doc.setFontSize(21);
-  doc.setFont('helvetica', 'bold');
-  doc.text('RIANA CIMS', centerX, 17, { align: 'center' });
-
-  doc.setFontSize(13);
-  doc.setFont('helvetica', 'normal');
-  doc.text(options.subtitle, centerX, 28, { align: 'center' });
-
-  doc.setFontSize(10.5);
-  doc.text(options.documentTitle, centerX, 37, { align: 'center' });
-};
-
-const addCimsLetterheadBranding = async (doc: jsPDF) => {
-  const [watermarkBase64, footerBase64] = await Promise.all([
-    fetchAssetAsBase64('/report_watermark.png'),
-    fetchAssetAsBase64('/report_footer.png'),
-  ]);
-  const pageCount = doc.getNumberOfPages();
-  const pageWidth = doc.internal.pageSize.getWidth();
-  const pageHeight = doc.internal.pageSize.getHeight();
-
-  for (let page = 1; page <= pageCount; page += 1) {
-    doc.setPage(page);
-    if (watermarkBase64) {
-      try {
-        doc.saveGraphicsState();
-        (doc as any).setGState(new (doc as any).GState({ opacity: 0.1 }));
-        const width = pageWidth - 48;
-        const height = width * 0.32;
-        doc.addImage(watermarkBase64, 'PNG', (pageWidth - width) / 2, (pageHeight - height) / 2, width, height);
-        doc.restoreGraphicsState();
-      } catch {
-        try { doc.restoreGraphicsState(); } catch {}
-      }
-    }
-    if (footerBase64) {
-      try {
-        const footerWidth = pageWidth - 20;
-        const footerHeight = (footerWidth / 800) * 100;
-        doc.addImage(footerBase64, 'PNG', 10, pageHeight - footerHeight - 12, footerWidth, footerHeight);
-        doc.setFontSize(7);
-        doc.setTextColor(100, 100, 100);
-        doc.text(`Page ${page} of ${pageCount}`, pageWidth - 15, pageHeight - 10, { align: 'right' });
-      } catch {
-        // Existing text footer remains the fallback.
-      }
-    }
-  }
-};
-
-const addProfessionalFooters = (doc: jsPDF) => {
-  const pageCount = doc.getNumberOfPages();
-  for (let page = 1; page <= pageCount; page += 1) {
-    doc.setPage(page);
-    doc.setFillColor(255, 255, 255);
-    doc.rect(0, 275, 210, 22, 'F');
-    doc.setDrawColor(...BRAND_PRIMARY);
-    doc.setLineWidth(0.35);
-    doc.line(14, 279, 196, 279);
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(7.5);
-    doc.setTextColor(...BRAND_DARK);
-    doc.text(`RIANA CIMS | Confidential | Page ${page} of ${pageCount}`, 14, 286);
-    doc.text(`Generated ${format(new Date(), 'MMM d, yyyy h:mm a')}`, 196, 286, { align: 'right' });
-  }
-};
 
 interface AuditLogEntry {
   action_label: string;
@@ -176,23 +28,29 @@ export const generateChangeRequestPDF = async (
   auditLogs: AuditLogEntry[] = []
 ): Promise<jsPDF> => {
   const doc = new jsPDF();
+  const subsidiaryName = resolveDocumentSubsidiaryName(
+    request.client?.subsidiary_name,
+    getCimsUser()?.subsidiary_name,
+  );
+  const brand = resolveDocumentBrand(subsidiaryName);
 
-  await addCimsHeader(doc, {
+  await addCimsDocumentHeader(doc, {
     subtitle: 'CHANGE REQUEST FORM',
     documentTitle: `Ticket: ${request.ticket_number}`,
+    subsidiaryName,
   });
 
   // Reset text color
   doc.setTextColor(0, 0, 0);
 
   // Client Information Section
-  let yPos = 55;
+  const yPos = 55;
   doc.setFontSize(12);
   doc.setFont('helvetica', 'bold');
-  doc.setTextColor(BRAND_PRIMARY[0], BRAND_PRIMARY[1], BRAND_PRIMARY[2]);
+  doc.setTextColor(...brand.primary);
   doc.text('CLIENT INFORMATION', 14, yPos);
 
-  doc.setDrawColor(BRAND_PRIMARY[0], BRAND_PRIMARY[1], BRAND_PRIMARY[2]);
+  doc.setDrawColor(...brand.primary);
   doc.setLineWidth(0.8);
   doc.line(14, yPos + 3, 196, yPos + 3);
 
@@ -211,7 +69,7 @@ export const generateChangeRequestPDF = async (
     styles: { fontSize: 9, cellPadding: 3, textColor: [30, 30, 30] },
     columnStyles: {
       0: { fontStyle: 'bold', cellWidth: 45, fillColor: BRAND_LIGHT },
-      1: { cellWidth: 135 },
+      1: { cellWidth: 136.779 },
     },
     alternateRowStyles: { fillColor: [255, 255, 255] },
   });
@@ -221,7 +79,7 @@ export const generateChangeRequestPDF = async (
 
   doc.setFontSize(12);
   doc.setFont('helvetica', 'bold');
-  doc.setTextColor(BRAND_PRIMARY[0], BRAND_PRIMARY[1], BRAND_PRIMARY[2]);
+  doc.setTextColor(...brand.primary);
   doc.text('REQUEST DETAILS', 14, currentY);
   doc.line(14, currentY + 3, 196, currentY + 3);
 
@@ -240,7 +98,7 @@ export const generateChangeRequestPDF = async (
     styles: { fontSize: 9, cellPadding: 3, textColor: [30, 30, 30] },
     columnStyles: {
       0: { fontStyle: 'bold', cellWidth: 45, fillColor: BRAND_LIGHT },
-      1: { cellWidth: 135 },
+      1: { cellWidth: 136.779 },
     },
   });
 
@@ -249,7 +107,7 @@ export const generateChangeRequestPDF = async (
 
   doc.setFontSize(12);
   doc.setFont('helvetica', 'bold');
-  doc.setTextColor(BRAND_PRIMARY[0], BRAND_PRIMARY[1], BRAND_PRIMARY[2]);
+  doc.setTextColor(...brand.primary);
   doc.text('CHANGE DESCRIPTION', 14, descY);
   doc.line(14, descY + 3, 196, descY + 3);
 
@@ -264,7 +122,7 @@ export const generateChangeRequestPDF = async (
 
   doc.setFontSize(12);
   doc.setFont('helvetica', 'bold');
-  doc.setTextColor(BRAND_PRIMARY[0], BRAND_PRIMARY[1], BRAND_PRIMARY[2]);
+  doc.setTextColor(...brand.primary);
   doc.text('MODULES AFFECTED', 14, modulesY);
   doc.line(14, modulesY + 3, 196, modulesY + 3);
 
@@ -280,7 +138,7 @@ export const generateChangeRequestPDF = async (
   if (auditLogs.length > 0) {
     doc.setFontSize(12);
     doc.setFont('helvetica', 'bold');
-    doc.setTextColor(BRAND_PRIMARY[0], BRAND_PRIMARY[1], BRAND_PRIMARY[2]);
+    doc.setTextColor(...brand.primary);
     doc.text('ACTIVITY TIMELINE', 14, sigY);
     doc.line(14, sigY + 3, 196, sigY + 3);
 
@@ -296,10 +154,11 @@ export const generateChangeRequestPDF = async (
       body: timelineData,
       theme: 'striped',
       styles: { fontSize: 8, cellPadding: 2 },
-      headStyles: { fillColor: BRAND_PRIMARY, textColor: [255, 255, 255] },
+      headStyles: { fillColor: brand.primary, textColor: [255, 255, 255] },
+      margin: { top: DOCUMENT_LAYOUT.continuationContentTop, bottom: DOCUMENT_LAYOUT.autoTableBottomMargin },
       columnStyles: {
         0: { cellWidth: 45 },
-        1: { cellWidth: 95 },
+        1: { cellWidth: 96.779 },
         2: { cellWidth: 40 },
       },
     });
@@ -310,13 +169,13 @@ export const generateChangeRequestPDF = async (
   // Check if we need a new page for signatures
   if (sigY > 220) {
     doc.addPage();
-    sigY = 20;
+    sigY = DOCUMENT_LAYOUT.continuationContentTop;
   }
 
   // Signature Section
   doc.setFontSize(12);
   doc.setFont('helvetica', 'bold');
-  doc.setTextColor(BRAND_PRIMARY[0], BRAND_PRIMARY[1], BRAND_PRIMARY[2]);
+  doc.setTextColor(...brand.primary);
   doc.text('SIGNATURES & AUTHORIZATION', 14, sigY);
   doc.line(14, sigY + 3, 196, sigY + 3);
 
@@ -351,14 +210,10 @@ export const generateChangeRequestPDF = async (
   doc.text('Date:', 105, sigY + 71);
   doc.line(120, sigY + 71, 160, sigY + 71);
 
-  // Footer
-  doc.setFontSize(8);
-  doc.setTextColor(100, 100, 100);
-  doc.text(`Generated on ${format(new Date(), 'MMMM d, yyyy h:mm a')}`, 105, 282, { align: 'center' });
-  doc.text(`© ${new Date().getFullYear()} Riana Group. All rights reserved.`, 105, 288, { align: 'center' });
-
-  addProfessionalFooters(doc);
-  await addCimsLetterheadBranding(doc);
+  await addLetterheadToDocument(doc, '/Riana_logo.png', '/letterhead-new.jpg', {
+    subsidiaryName,
+    documentTitle: 'Change Request Form',
+  });
   return doc;
 };
 
@@ -367,12 +222,18 @@ export const generateCompletionReportPDF = async (
   auditLogs: AuditLogEntry[] = []
 ): Promise<jsPDF> => {
   const doc = new jsPDF();
+  const subsidiaryName = resolveDocumentSubsidiaryName(
+    request.client?.subsidiary_name,
+    getCimsUser()?.subsidiary_name,
+  );
+  const brand = resolveDocumentBrand(subsidiaryName);
 
   // Keep the shared RIANA header; green remains a semantic completion accent.
-  await addCimsHeader(doc, {
+  await addCimsDocumentHeader(doc, {
     subtitle: 'COMPLETION REPORT',
     documentTitle: `Ticket: ${request.ticket_number}`,
     accentColor: GREEN_PRIMARY,
+    subsidiaryName,
   });
 
   // Reset text color
@@ -388,12 +249,12 @@ export const generateCompletionReportPDF = async (
   doc.setTextColor(0, 0, 0);
 
   // Summary Section
-  let yPos = 70;
+  const yPos = 70;
   doc.setFontSize(12);
   doc.setFont('helvetica', 'bold');
-  doc.setTextColor(BRAND_PRIMARY[0], BRAND_PRIMARY[1], BRAND_PRIMARY[2]);
+  doc.setTextColor(...brand.primary);
   doc.text('SUMMARY', 14, yPos);
-  doc.setDrawColor(BRAND_PRIMARY[0], BRAND_PRIMARY[1], BRAND_PRIMARY[2]);
+  doc.setDrawColor(...brand.primary);
   doc.setLineWidth(0.8);
   doc.line(14, yPos + 3, 196, yPos + 3);
 
@@ -415,7 +276,7 @@ export const generateCompletionReportPDF = async (
     styles: { fontSize: 9, cellPadding: 3, textColor: [30, 30, 30] },
     columnStyles: {
       0: { fontStyle: 'bold', cellWidth: 45, fillColor: GREEN_LIGHT },
-      1: { cellWidth: 135 },
+      1: { cellWidth: 136.779 },
     },
   });
 
@@ -474,9 +335,10 @@ export const generateCompletionReportPDF = async (
       theme: 'striped',
       styles: { fontSize: 7, cellPadding: 2 },
       headStyles: { fillColor: GREEN_PRIMARY, textColor: [255, 255, 255] },
+      margin: { top: DOCUMENT_LAYOUT.continuationContentTop, bottom: DOCUMENT_LAYOUT.autoTableBottomMargin },
       columnStyles: {
         0: { cellWidth: 35 },
-        1: { cellWidth: 45 },
+        1: { cellWidth: 46.779 },
         2: { cellWidth: 30 },
         3: { cellWidth: 70 },
       },
@@ -489,7 +351,7 @@ export const generateCompletionReportPDF = async (
   if (request.approval_comment) {
     if (timelineY > 220) {
       doc.addPage();
-      timelineY = 20;
+      timelineY = DOCUMENT_LAYOUT.continuationContentTop;
     }
 
     doc.setFontSize(12);
@@ -516,7 +378,7 @@ export const generateCompletionReportPDF = async (
   // Sign-off Section
   if (timelineY > 200) {
     doc.addPage();
-    timelineY = 20;
+    timelineY = DOCUMENT_LAYOUT.continuationContentTop;
   }
 
   doc.setFontSize(12);
@@ -552,14 +414,10 @@ export const generateCompletionReportPDF = async (
   doc.text('Date:', 105, timelineY + 68);
   doc.line(120, timelineY + 68, 160, timelineY + 68);
 
-  // Footer
-  doc.setFontSize(8);
-  doc.setTextColor(100, 100, 100);
-  doc.text(`Generated on ${format(new Date(), 'MMMM d, yyyy h:mm a')}`, 105, 282, { align: 'center' });
-  doc.text(`© ${new Date().getFullYear()} Riana Group. All rights reserved.`, 105, 288, { align: 'center' });
-
-  addProfessionalFooters(doc);
-  await addCimsLetterheadBranding(doc);
+  await addLetterheadToDocument(doc, '/Riana_logo.png', '/letterhead-new.jpg', {
+    subsidiaryName,
+    documentTitle: 'Completion Report',
+  });
   return doc;
 };
 

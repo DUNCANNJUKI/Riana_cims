@@ -38,8 +38,9 @@ const createSessionAuthenticator = ({ pool, jwtSecret }) => async (req, res, nex
   try {
     const decoded = jwt.verify(token, jwtSecret, { algorithms: ['HS256'] });
     const [rows] = await pool.query(
-      `SELECT id,email,role,is_active,first_login,session_version
-       FROM user_profiles WHERE id = ? LIMIT 1`,
+      `SELECT u.id,u.email,u.role,u.is_active,u.first_login,u.session_version,
+         COALESCE((SELECT GROUP_CONCAT(up.permission_id SEPARATOR ',') FROM user_permissions up WHERE up.user_id=u.id),'') AS extra_permissions
+       FROM user_profiles u WHERE u.id = ? LIMIT 1`,
       [decoded.id],
     );
     const user = rows[0];
@@ -47,7 +48,13 @@ const createSessionAuthenticator = ({ pool, jwtSecret }) => async (req, res, nex
     if (Number(decoded.sv || 0) !== Number(user.session_version || 0)) {
       return res.status(401).json({ error: 'Session has been revoked. Please sign in again.' });
     }
-    req.user = { id: user.id, email: user.email, role: user.role, sv: Number(user.session_version || 0) };
+    req.user = {
+      id: user.id,
+      email: user.email,
+      role: user.role,
+      sv: Number(user.session_version || 0),
+      extra_permissions: String(user.extra_permissions || '').split(',').filter(Boolean),
+    };
     req.currentUser = user;
     next();
   } catch {

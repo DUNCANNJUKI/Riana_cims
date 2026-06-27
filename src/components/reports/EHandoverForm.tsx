@@ -10,10 +10,13 @@ import { Client, Installation, User as UserType } from "@/types";
 import { useDatabase } from "@/hooks/useDatabase";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
-import { addCimsDocumentHeader, addLetterheadToDocument, getPDFAsBlob, generateReportSerial } from "@/utils/pdfWatermark";
+import { addCimsDocumentHeader, addLetterheadToDocument, DOCUMENT_LAYOUT, getPDFAsBlob, generateReportSerial, resolveDocumentBrand } from "@/utils/pdfWatermark";
 import { PDFPreviewModal } from "@/components/common/PDFPreviewModal";
 import { apiClient } from "@/integrations/apiClient";
 import { toast } from "sonner";
+import { resolveDocumentSubsidiaryName } from "@/utils/brandIdentity";
+import { equipmentInstallationStatus } from "@/utils/equipmentStatus";
+import { can } from "@/security/accessControl";
 
 interface EHandoverFormProps {
   client: Client;
@@ -35,6 +38,7 @@ interface ParsedEscalationMatrix {
 }
 
 export const EHandoverForm = ({ client, installation, user }: EHandoverFormProps) => {
+  const canManageInstallations = can(user, 'installations.manage');
   const [companyLogo, setCompanyLogo] = useState<string>("");
   const [companyName, setCompanyName] = useState<string>("RIANA Technologies");
   const [escalationMatrix, setEscalationMatrix] = useState<ParsedEscalationMatrix | null>(null);
@@ -50,6 +54,11 @@ export const EHandoverForm = ({ client, installation, user }: EHandoverFormProps
   const [isSavingLeds, setIsSavingLeds] = useState(false);
   const [liveInstallation, setLiveInstallation] = useState<Installation>(installation);
   const { getCompanySettings, getUsers } = useDatabase();
+  const subsidiaryName = resolveDocumentSubsidiaryName(
+    client.subsidiary_name,
+    client.subsidiaries?.subsidiary_name,
+    user.subsidiary_name,
+  );
 
   // Load installation data
   const loadInstallationData = useCallback(async () => {
@@ -214,13 +223,14 @@ export const EHandoverForm = ({ client, installation, user }: EHandoverFormProps
       const pageWidth = doc.internal.pageSize.getWidth();
       const pageHeight = doc.internal.pageSize.getHeight();
       const margin = 15;
-      const contentBottom = pageHeight - 38; // Reserve less space for compact footer
+      const contentBottom = DOCUMENT_LAYOUT.contentBottom;
       let yPos = margin;
       const clientCode = generateClientCode();
+      const brand = resolveDocumentBrand(subsidiaryName);
 
       // Colors
-      const primaryColor: [number, number, number] = [13, 131, 144]; // Brand Teal (#0D8390)
-      const tealColor: [number, number, number] = [13, 131, 144]; // Unified with brand teal
+      const primaryColor: [number, number, number] = brand.primary;
+      const tealColor: [number, number, number] = brand.accent;
       const textColor: [number, number, number] = [31, 41, 55];
       const mutedColor: [number, number, number] = [107, 114, 128];
 
@@ -228,7 +238,7 @@ export const EHandoverForm = ({ client, installation, user }: EHandoverFormProps
       const checkPageBreak = (neededHeight: number) => {
         if (yPos + neededHeight > contentBottom) {
           doc.addPage();
-          yPos = margin;
+          yPos = DOCUMENT_LAYOUT.continuationContentTop;
           return true;
         }
         return false;
@@ -249,8 +259,9 @@ export const EHandoverForm = ({ client, installation, user }: EHandoverFormProps
         documentTitle: 'Official Installation Completion Document',
         logoPath: companyLogo || '/Riana_logo.png',
         metaRight: `Serial: ${serial}`,
-        headerHeight: 48,
+        headerHeight: brand.id === 'marezi' ? 52 : 48,
         accentColor: tealColor,
+        subsidiaryName,
       });
       
       yPos = 58;
@@ -333,34 +344,40 @@ export const EHandoverForm = ({ client, installation, user }: EHandoverFormProps
 
       const equipmentData = [
         ['Kiosk Type', liveInstallation.kiosk_type || 'N/A', 'Configured'],
-        ['Kiosk Count', String(liveInstallation.kiosk_count || 0), 'Installed'],
-        ['Tripleplay/Counters', String(liveInstallation.counter_count || 0), 'Installed'],
-        ['LED Displays', String(liveInstallation.led_count || 0), 'Installed'],
+        ['Kiosk Count', String(liveInstallation.kiosk_count || 0), equipmentInstallationStatus(liveInstallation.kiosk_count, 'Installed')],
+        ['Tripleplay/Counters', String(liveInstallation.counter_count || 0), equipmentInstallationStatus(liveInstallation.counter_count, 'Installed')],
+        ['LED Displays', String(liveInstallation.led_count || 0), equipmentInstallationStatus(liveInstallation.led_count, 'Installed')],
         ['Screen Size', liveInstallation.screen_with_size || 'N/A', 'Configured'],
-        ['Service Points', String(liveInstallation.service_points || 0), 'Active'],
-        ['UPS Units', String(liveInstallation.ups_count || 0), 'Installed'],
-        ['Speakers', String(liveInstallation.speakers || 0), 'Installed'],
-        ['Amplifiers', String(liveInstallation.amplifiers || 0), 'Configured'],
-        ['Media Controllers', String(liveInstallation.media_controllers || 0), 'Configured'],
-        ['Tablets', String(liveInstallation.tablets || 0), 'Setup Complete'],
-        ['Digital Signage', String(liveInstallation.digital_signage_system || 0), 'Operational'],
-        ['HDMI Cables', String(liveInstallation.hdmis || 0), 'Connected'],
-        ['Splitters', String(liveInstallation.splitters || 0), 'Installed'],
-        ['Staff Trained', `${liveInstallation.staff_trained || 0} personnel`, 'Completed'],
+        ['Service Points', String(liveInstallation.service_points || 0), equipmentInstallationStatus(liveInstallation.service_points, 'Active')],
+        ['UPS Units', String(liveInstallation.ups_count || 0), equipmentInstallationStatus(liveInstallation.ups_count, 'Installed')],
+        ['Speakers', String(liveInstallation.speakers || 0), equipmentInstallationStatus(liveInstallation.speakers, 'Installed')],
+        ['Amplifiers', String(liveInstallation.amplifiers || 0), equipmentInstallationStatus(liveInstallation.amplifiers, 'Configured')],
+        ['Media Controllers', String(liveInstallation.media_controllers || 0), equipmentInstallationStatus(liveInstallation.media_controllers, 'Configured')],
+        ['Tablets', String(liveInstallation.tablets || 0), equipmentInstallationStatus(liveInstallation.tablets, 'Setup Complete')],
+        ['Digital Signage', String(liveInstallation.digital_signage_system || 0), equipmentInstallationStatus(liveInstallation.digital_signage_system, 'Operational')],
+        ['HDMI Cables', String(liveInstallation.hdmis || 0), equipmentInstallationStatus(liveInstallation.hdmis, 'Connected')],
+        ['Splitters', String(liveInstallation.splitters || 0), equipmentInstallationStatus(liveInstallation.splitters, 'Installed')],
+        ['Staff Trained', `${liveInstallation.staff_trained || 0} personnel`, equipmentInstallationStatus(liveInstallation.staff_trained, 'Completed')],
       ];
 
       autoTable(doc, {
         startY: yPos,
         head: [['Equipment Type', 'Quantity/Details', 'Status']],
         body: equipmentData,
-        margin: { left: margin, right: margin },
+        margin: { left: margin, right: margin, top: DOCUMENT_LAYOUT.continuationContentTop, bottom: DOCUMENT_LAYOUT.autoTableBottomMargin },
         styles: { fontSize: 8, cellPadding: 2 },
         headStyles: { fillColor: primaryColor, textColor: [255, 255, 255], fontStyle: 'bold' },
         alternateRowStyles: { fillColor: [249, 250, 251] },
         columnStyles: {
           0: { fontStyle: 'bold' },
           2: { textColor: [22, 101, 52] }
-        }
+        },
+        didParseCell: (data) => {
+          if (data.section === 'body' && data.column.index === 2 && data.cell.raw === 'Not installed') {
+            data.cell.styles.textColor = [185, 28, 28];
+            data.cell.styles.fontStyle = 'bold';
+          }
+        },
       });
 
       yPos = (doc as any).lastAutoTable.finalY + 10;
@@ -387,7 +404,7 @@ export const EHandoverForm = ({ client, installation, user }: EHandoverFormProps
         ledChunks.forEach((chunk, chunkIndex) => {
           if (chunkIndex > 0) {
             doc.addPage();
-            yPos = margin;
+            yPos = DOCUMENT_LAYOUT.continuationContentTop;
             // Add continuation header
             doc.setFillColor(240, 247, 255);
             doc.rect(margin, yPos - 2, pageWidth - 2 * margin, 7, 'F');
@@ -407,7 +424,7 @@ export const EHandoverForm = ({ client, installation, user }: EHandoverFormProps
             startY: yPos,
             head: [['LED #', 'Display Name/Location', 'Status']],
             body: ledData,
-            margin: { left: margin, right: margin },
+            margin: { left: margin, right: margin, top: DOCUMENT_LAYOUT.continuationContentTop, bottom: DOCUMENT_LAYOUT.autoTableBottomMargin },
             styles: { fontSize: 8, cellPadding: 2.5 },
             headStyles: { fillColor: primaryColor, textColor: [255, 255, 255], fontStyle: 'bold' },
             alternateRowStyles: { fillColor: [249, 250, 251] },
@@ -451,7 +468,7 @@ export const EHandoverForm = ({ client, installation, user }: EHandoverFormProps
             startY: yPos,
             head: [['Level', 'Contact Person', 'Role', 'Phone', 'Email']],
             body: escalationData,
-            margin: { left: margin, right: margin },
+            margin: { left: margin, right: margin, top: DOCUMENT_LAYOUT.continuationContentTop, bottom: DOCUMENT_LAYOUT.autoTableBottomMargin },
           styles: { fontSize: 8, cellPadding: 2.5 },
             headStyles: { fillColor: primaryColor, textColor: [255, 255, 255], fontStyle: 'bold' },
             alternateRowStyles: { fillColor: [240, 247, 255] },
@@ -481,7 +498,7 @@ export const EHandoverForm = ({ client, installation, user }: EHandoverFormProps
       // Signature Section
       if (yPos > pageHeight - 45) {
         doc.addPage();
-        yPos = margin;
+        yPos = DOCUMENT_LAYOUT.continuationContentTop;
       }
 
       const sigBoxWidth = (pageWidth - 2 * margin - 10) / 2;
@@ -501,7 +518,7 @@ export const EHandoverForm = ({ client, installation, user }: EHandoverFormProps
       doc.setFillColor(250, 250, 250);
       doc.rect(margin + sigBoxWidth + 10, yPos, sigBoxWidth, sigBoxHeight, 'F');
       doc.rect(margin + sigBoxWidth + 10, yPos, sigBoxWidth, sigBoxHeight);
-      addText(companyName, margin + sigBoxWidth + 10 + sigBoxWidth / 2, yPos + 4, { fontSize: 9, color: primaryColor, fontStyle: 'bold', align: 'center' });
+      addText(brand.id === 'marezi' ? brand.name : companyName, margin + sigBoxWidth + 10 + sigBoxWidth / 2, yPos + 4, { fontSize: 9, color: primaryColor, fontStyle: 'bold', align: 'center' });
       doc.line(margin + sigBoxWidth + 20, yPos + 22, margin + 2 * sigBoxWidth, yPos + 22);
       addText('Technician Signature', margin + sigBoxWidth + 10 + sigBoxWidth / 2, yPos + 26, { fontSize: 7, color: mutedColor, align: 'center' });
       addText('Date: ________________', margin + sigBoxWidth + 10 + sigBoxWidth / 2, yPos + 30, { fontSize: 7, color: mutedColor, align: 'center' });
@@ -511,7 +528,10 @@ export const EHandoverForm = ({ client, installation, user }: EHandoverFormProps
 
       // Add letterhead and watermarks to all pages for authenticity
       try {
-        await addLetterheadToDocument(doc, companyLogo || '/Riana_logo.png', '/letterhead-new.jpg');
+        await addLetterheadToDocument(doc, companyLogo || '/Riana_logo.png', '/letterhead-new.jpg', {
+          subsidiaryName,
+          documentTitle: 'E-Handover Certificate',
+        });
       } catch (error) {
         console.log('Letterhead could not be added:', error);
       }
@@ -623,41 +643,23 @@ export const EHandoverForm = ({ client, installation, user }: EHandoverFormProps
                 </TableRow>
               </TableHeader>
               <TableBody>
-                <TableRow>
-                  <TableCell>Kiosks ({liveInstallation.kiosk_type})</TableCell>
-                  <TableCell>{liveInstallation.kiosk_count}</TableCell>
-                  <TableCell><Badge variant="outline">Installed</Badge></TableCell>
-                </TableRow>
-                <TableRow>
-                  <TableCell>LED Displays</TableCell>
-                  <TableCell>{liveInstallation.led_count}</TableCell>
-                  <TableCell><Badge variant="outline">Installed</Badge></TableCell>
-                </TableRow>
-                <TableRow>
-                  <TableCell>Service Points</TableCell>
-                  <TableCell>{liveInstallation.service_points}</TableCell>
-                  <TableCell><Badge variant="outline">Active</Badge></TableCell>
-                </TableRow>
-                <TableRow>
-                  <TableCell>Speakers</TableCell>
-                  <TableCell>{liveInstallation.speakers}</TableCell>
-                  <TableCell><Badge variant="outline">Installed</Badge></TableCell>
-                </TableRow>
-                <TableRow>
-                  <TableCell>Speakers</TableCell>
-                  <TableCell>{liveInstallation.speakers}</TableCell>
-                  <TableCell><Badge variant="outline">Installed</Badge></TableCell>
-                </TableRow>
-                <TableRow>
-                  <TableCell>UPS Units</TableCell>
-                  <TableCell>{liveInstallation.ups_count}</TableCell>
-                  <TableCell><Badge variant="outline">Installed</Badge></TableCell>
-                </TableRow>
-                <TableRow>
-                  <TableCell>Digital Signage</TableCell>
-                  <TableCell>{liveInstallation.digital_signage_system}</TableCell>
-                  <TableCell><Badge variant="outline">Operational</Badge></TableCell>
-                </TableRow>
+                {[
+                  ['Kiosks', liveInstallation.kiosk_count, 'Installed'],
+                  ['Tripleplay Devices', liveInstallation.counter_count, 'Installed'],
+                  ['LED Displays', liveInstallation.led_count, 'Installed'],
+                  ['Service Points', liveInstallation.service_points, 'Active'],
+                  ['UPS Units', liveInstallation.ups_count, 'Installed'],
+                  ['Speakers', liveInstallation.speakers, 'Installed'],
+                  ['Tablets', liveInstallation.tablets, 'Setup Complete'],
+                  ['Digital Signage', liveInstallation.digital_signage_system, 'Operational'],
+                  ['Splitters', liveInstallation.splitters, 'Installed'],
+                ].map(([label, quantity, status]) => (
+                  <TableRow key={String(label)}>
+                    <TableCell>{label}</TableCell>
+                    <TableCell>{quantity}</TableCell>
+                    <TableCell><Badge variant="outline">{equipmentInstallationStatus(quantity, String(status))}</Badge></TableCell>
+                  </TableRow>
+                ))}
               </TableBody>
             </Table>
           </CardContent>
@@ -668,7 +670,7 @@ export const EHandoverForm = ({ client, installation, user }: EHandoverFormProps
           <CardHeader className="pb-3">
             <CardTitle className="text-lg flex items-center justify-between">
               <span>LED Display Names</span>
-              <Button 
+              {canManageInstallations && <Button
                 variant="outline" 
                 size="sm" 
                 onClick={addLedName}
@@ -676,7 +678,7 @@ export const EHandoverForm = ({ client, installation, user }: EHandoverFormProps
               >
                 <Plus className="h-4 w-4 mr-1" />
                 Add LED Display
-              </Button>
+              </Button>}
             </CardTitle>
             <CardDescription>
               Enter the names/identifiers for each installed LED display

@@ -14,7 +14,9 @@ import { apiClient } from "@/integrations/apiClient";
 import { User, Installation, Client } from "@/types";
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import { addCimsDocumentHeader, addLetterheadToDocument } from '@/utils/pdfWatermark';
+import { addCimsDocumentHeader, addLetterheadToDocument, DOCUMENT_LAYOUT, resolveDocumentBrand } from '@/utils/pdfWatermark';
+import { resolveDocumentSubsidiaryName } from '@/utils/brandIdentity';
+import { can } from '@/security/accessControl';
 
 interface FinancesModuleProps {
   user: User;
@@ -35,11 +37,13 @@ interface Budget {
   updated_at: string;
   currency?: string;
   branch?: string;
+  subsidiary_name?: string;
 }
 
 type Currency = 'KES' | 'USD';
 
 export const FinancesModule = ({ user }: FinancesModuleProps) => {
+  const canManageFinances = can(user, 'finances.manage');
   const [budgets, setBudgets] = useState<Budget[]>([]);
   const [installations, setInstallations] = useState<Installation[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
@@ -72,9 +76,10 @@ export const FinancesModule = ({ user }: FinancesModuleProps) => {
     return budgets.filter(budget => {
       const budgetDate = new Date(budget.created_at);
       switch (filterPeriod) {
-        case 'week':
+        case 'week': {
           const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
           return budgetDate >= weekAgo;
+        }
         case 'month':
           return budgetDate.getMonth() === now.getMonth() && budgetDate.getFullYear() === now.getFullYear();
         case 'year':
@@ -123,7 +128,8 @@ export const FinancesModule = ({ user }: FinancesModuleProps) => {
         const client = installation ? clientsData.find(c => c.id === installation.client_id) : null;
         return {
           ...budget,
-          client_name: client ? `${client.client_name}${client.branch ? ` - ${client.branch}` : ''}` : 'Unknown'
+          client_name: client ? `${client.client_name}${client.branch ? ` - ${client.branch}` : ''}` : 'Unknown',
+          subsidiary_name: client?.subsidiary_name || client?.subsidiaries?.subsidiary_name,
         };
       });
       
@@ -277,6 +283,8 @@ export const FinancesModule = ({ user }: FinancesModuleProps) => {
     const dateCode = new Date().toISOString().slice(2, 10).replace(/-/g, '');
     const uniqueId = budget.id?.substring(0, 4).toUpperCase() || "0000";
     const serialNumber = `FIN-${clientInitials}-${dateCode}-${uniqueId}`;
+    const subsidiaryName = resolveDocumentSubsidiaryName(budget.subsidiary_name, user.subsidiary_name);
+    const brand = resolveDocumentBrand(subsidiaryName);
 
     // Add header with company branding
     const primaryColorHex = companySettings?.primary_color || '#0D8390';
@@ -284,7 +292,7 @@ export const FinancesModule = ({ user }: FinancesModuleProps) => {
       const c = hex.replace('#', '');
       return [parseInt(c.substring(0, 2), 16), parseInt(c.substring(2, 4), 16), parseInt(c.substring(4, 6), 16)];
     };
-    const primaryColor = parseHex(primaryColorHex);
+    const primaryColor = brand.id === 'marezi' ? brand.primary : parseHex(primaryColorHex);
     
     const logoSrc = companySettings?.logo_path 
       ? (companySettings.logo_path.startsWith('http') 
@@ -300,6 +308,7 @@ export const FinancesModule = ({ user }: FinancesModuleProps) => {
       logoPath: logoSrc,
       metaLeft: `Ref: ${serialNumber}`,
       metaRight: `Date: ${formattedDate}`,
+      subsidiaryName,
     });
     
     // Reset text color
@@ -330,7 +339,10 @@ export const FinancesModule = ({ user }: FinancesModuleProps) => {
       alternateRowStyles: { fillColor: [243, 244, 246] },
       foot: [['TOTAL BUDGET', `${currencySymbol} ${budget.total_budget.toLocaleString()}`]],
       footStyles: { fillColor: primaryColor, textColor: [255, 255, 255], fontStyle: 'bold' },
-      margin: { bottom: 50 }
+      margin: {
+        top: DOCUMENT_LAYOUT.continuationContentTop,
+        bottom: DOCUMENT_LAYOUT.autoTableBottomMargin,
+      }
     });
     
     // Add notes if present
@@ -345,7 +357,11 @@ export const FinancesModule = ({ user }: FinancesModuleProps) => {
     
     // Add letterhead with watermark and footer
     try {
-      await addLetterheadToDocument(doc, '/Riana_logo.png', '/letterhead-new.jpg');
+      await addLetterheadToDocument(doc, '/Riana_logo.png', '/letterhead-new.jpg', {
+        subsidiaryName,
+        documentTitle: 'Installation Budget Report',
+        generatedAt: currentDate,
+      });
     } catch (error) {
       console.log('Letterhead could not be added:', error);
     }
@@ -417,7 +433,7 @@ export const FinancesModule = ({ user }: FinancesModuleProps) => {
               <SelectItem value="week">This Week</SelectItem>
             </SelectContent>
           </Select>
-          <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
+          {canManageFinances && <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
             <DialogTrigger asChild>
               <Button className="gradient-primary btn-click-effect">
                 <Plus className="h-4 w-4 mr-2" />
@@ -544,7 +560,7 @@ export const FinancesModule = ({ user }: FinancesModuleProps) => {
               </div>
             </div>
           </DialogContent>
-        </Dialog>
+        </Dialog>}
         </div>
       </div>
 
@@ -591,14 +607,14 @@ export const FinancesModule = ({ user }: FinancesModuleProps) => {
                     <TableCell>{new Date(budget.created_at).toLocaleDateString()}</TableCell>
                     <TableCell>
                       <div className="flex gap-2">
-                        <Button
+                        {canManageFinances && <Button
                           size="sm"
                           variant="outline"
                           onClick={() => handleEditClick(budget)}
                           className="transition-all hover:scale-105"
                         >
                           <Edit className="h-3 w-3" />
-                        </Button>
+                        </Button>}
                         <Button
                           size="sm"
                           variant="outline"
@@ -607,14 +623,14 @@ export const FinancesModule = ({ user }: FinancesModuleProps) => {
                         >
                           <Download className="h-3 w-3" />
                         </Button>
-                        <Button
+                        {canManageFinances && <Button
                           size="sm"
                           variant="outline"
                           onClick={() => handleDeleteBudget(budget.id)}
                           className="transition-all hover:scale-105 text-destructive"
                         >
                           <Trash2 className="h-3 w-3" />
-                        </Button>
+                        </Button>}
                       </div>
                     </TableCell>
                   </TableRow>

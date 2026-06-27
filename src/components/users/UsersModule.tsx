@@ -12,6 +12,9 @@ import { useToast } from "@/hooks/use-toast";
 import { useDatabase } from "@/hooks/useDatabase";
 import { User } from "@/types";
 import { apiClient } from "@/integrations/apiClient";
+import { Checkbox } from "@/components/ui/checkbox";
+import { baseCapabilitiesForRole, can, CAPABILITY_DEFINITIONS, isCapabilityDeniedForRole } from "@/security/accessControl";
+import { formatRoleLabel } from "@/utils/roleLabel";
 
 interface UsersModuleProps {
   user: User;
@@ -41,14 +44,27 @@ export const UsersModule = ({ user }: UsersModuleProps) => {
     loading 
   } = useDatabase();
   const isSuperAdmin = user.role === 'SuperAdmin';
-  const canManageUsers = isSuperAdmin || user.role === 'Admin';
-  const privilegedRoles = new Set<User['role']>(['SuperAdmin', 'Admin']);
+  const canManageUsers = can(user, 'users.manage');
+  const privilegedRoles = new Set<User['role']>(['SuperAdmin', 'Admin', 'Management']);
   const canManageTarget = (targetUser: User) => isSuperAdmin || !privilegedRoles.has(targetUser.role);
   const canDeleteTarget = (targetUser: User) => isSuperAdmin && targetUser.id !== user.id;
   const assignableRoles: User['role'][] = isSuperAdmin
-    ? ['SuperAdmin', 'Admin', 'Developer', 'Sales', 'Teamlead', 'User']
-    : ['Developer', 'Sales', 'Teamlead', 'User'];
-  const crmsAssignableRoles: Exclude<User['role'], 'User'>[] = ['SuperAdmin', 'Admin', 'Developer', 'Sales', 'Teamlead'];
+    ? ['SuperAdmin', 'Admin', 'Management', 'Finance', 'Developer', 'Sales', 'Teamlead', 'User']
+    : ['Finance', 'Developer', 'Sales', 'Teamlead', 'User'];
+  const crmsAssignableRoles: Array<'SuperAdmin' | 'Admin' | 'Management' | 'Developer' | 'Sales' | 'Teamlead'> = ['SuperAdmin', 'Admin', 'Management', 'Developer', 'Sales', 'Teamlead'];
+
+  const generalDesignations: NonNullable<User['designation']>[] = [
+    'Admin', 'Developer', 'Teamlead', 'Sales', 'Field specialist', 'Product Specialist',
+    'Customer success', 'Intern', 'Manager', 'Support', 'Hardware Engineer',
+  ];
+  const financeDesignations: NonNullable<User['designation']>[] = ['Chief Accounts', 'Payables', 'Receivables', 'HR', 'Operations', 'Accounts'];
+  const managementDesignations: NonNullable<User['designation']>[] = ['CEO', 'MD', 'Head of Sales'];
+  const designationOptions = (role?: User['role']) => {
+    if (role === 'SuperAdmin') return ['SuperAdmin'] as NonNullable<User['designation']>[];
+    if (role === 'Finance') return financeDesignations;
+    if (role === 'Management') return managementDesignations;
+    return generalDesignations;
+  };
 
   useEffect(() => {
     loadInitialData();
@@ -233,9 +249,18 @@ export const UsersModule = ({ user }: UsersModuleProps) => {
         last_name: editingUser.last_name,
         email: editingUser.email,
         phone_number: editingUser.phone_number,
+        designation: editingUser.designation,
+        department_id: editingUser.department_id || null,
+        subsidiary_id: editingUser.subsidiary_id || null,
         ...(isSuperAdmin ? { role: editingUser.role } : {}),
         ...(isSuperAdmin ? { module_roles: editingUser.module_roles || {} } : {}),
       });
+
+      if (isSuperAdmin) {
+        await apiClient.put(`/user_profiles/${editingUser.id}/permissions`, {
+          permissions: editingUser.extra_permissions || [],
+        });
+      }
 
       await loadInitialData();
       setIsEditDialogOpen(false);
@@ -250,6 +275,8 @@ export const UsersModule = ({ user }: UsersModuleProps) => {
     switch (role) {
       case 'SuperAdmin': return 'bg-purple-600 text-white';
       case 'Admin': return 'bg-red-500 text-white';
+      case 'Management': return 'bg-indigo-600 text-white';
+      case 'Finance': return 'bg-emerald-700 text-white';
       case 'Developer': return 'bg-violet-500 text-white';
       case 'Sales': return 'bg-amber-500 text-white';
       case 'Teamlead': return 'bg-blue-500 text-white';
@@ -338,14 +365,14 @@ export const UsersModule = ({ user }: UsersModuleProps) => {
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="role">Role *</Label>
-                  <Select value={newUser.role || ''} onValueChange={(value) => setNewUser({...newUser, role: value as User['role']})}>
+                  <Select value={newUser.role || ''} onValueChange={(value) => setNewUser({ ...newUser, role: value as User['role'], designation: undefined })}>
                     <SelectTrigger>
                       <SelectValue placeholder="Select user role" />
                     </SelectTrigger>
                     <SelectContent>
                       {assignableRoles.map((role) => (
                         <SelectItem key={role} value={role}>
-                          {role === 'Teamlead' ? 'Team Lead' : role}
+                          {formatRoleLabel(role)}
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -358,18 +385,9 @@ export const UsersModule = ({ user }: UsersModuleProps) => {
                        <SelectValue placeholder="Select user designation" />
                      </SelectTrigger>
                      <SelectContent>
-                       {isSuperAdmin && <SelectItem value="SuperAdmin">SuperAdmin</SelectItem>}
-                       <SelectItem value="Admin">Admin</SelectItem>
-                       <SelectItem value="Developer">Developer</SelectItem>
-                       <SelectItem value="Teamlead">Teamlead</SelectItem>
-                       <SelectItem value="Sales">Sales</SelectItem>
-                       <SelectItem value="Field specialist">Field specialist</SelectItem>
-                       <SelectItem value="Product Specialist">Product Specialist</SelectItem>
-                       <SelectItem value="Customer success">Customer success</SelectItem>
-                       <SelectItem value="Intern">Intern</SelectItem>
-                       <SelectItem value="Manager">Manager</SelectItem>
-                       <SelectItem value="Support">Support</SelectItem>
-                       <SelectItem value="Hardware Engineer">Hardware Engineer</SelectItem>
+                       {designationOptions(newUser.role).map((designation) => (
+                         <SelectItem key={designation} value={designation}>{designation}</SelectItem>
+                       ))}
                      </SelectContent>
                    </Select>
                  </div>
@@ -516,7 +534,7 @@ export const UsersModule = ({ user }: UsersModuleProps) => {
                   </TableCell>
                   <TableCell>
                     <Badge className={getRoleColor(u.role)}>
-                      {u.role}
+                      {formatRoleLabel(u.role)}
                     </Badge>
                   </TableCell>
                   <TableCell>
@@ -605,7 +623,7 @@ export const UsersModule = ({ user }: UsersModuleProps) => {
 
       {/* Edit User Dialog */}
       <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
-        <DialogContent>
+        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Edit className="h-5 w-5" />
@@ -659,20 +677,53 @@ export const UsersModule = ({ user }: UsersModuleProps) => {
               {isSuperAdmin && (
                 <div className="space-y-2">
                   <Label htmlFor="edit_role">Role</Label>
-                  <Select value={editingUser.role} onValueChange={(value) => setEditingUser({ ...editingUser, role: value as User['role'] })}>
+                  <Select value={editingUser.role} onValueChange={(value) => setEditingUser({ ...editingUser, role: value as User['role'], designation: undefined })}>
                     <SelectTrigger id="edit_role">
                       <SelectValue placeholder="Select user role" />
                     </SelectTrigger>
                     <SelectContent>
                       {assignableRoles.map((role) => (
                         <SelectItem key={role} value={role}>
-                          {role === 'Teamlead' ? 'Team Lead' : role}
+                          {formatRoleLabel(role)}
                         </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
                 </div>
               )}
+              <div className="space-y-2">
+                <Label htmlFor="edit_designation">Designation</Label>
+                <Select value={editingUser.designation || ''} onValueChange={(value) => setEditingUser({ ...editingUser, designation: value as User['designation'] })}>
+                  <SelectTrigger id="edit_designation"><SelectValue placeholder="Select designation" /></SelectTrigger>
+                  <SelectContent>
+                    {designationOptions(editingUser.role).map((designation) => (
+                      <SelectItem key={designation} value={designation}>{designation}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div className="space-y-2">
+                  <Label htmlFor="edit_department">Department</Label>
+                  <Select value={editingUser.department_id || 'none'} onValueChange={(value) => setEditingUser({ ...editingUser, department_id: value === 'none' ? null : value })}>
+                    <SelectTrigger id="edit_department"><SelectValue placeholder="Select department" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">No department</SelectItem>
+                      {departments.map((department) => <SelectItem key={department.id} value={department.id}>{department.department_name}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="edit_subsidiary">Subsidiary</Label>
+                  <Select value={editingUser.subsidiary_id || 'none'} onValueChange={(value) => setEditingUser({ ...editingUser, subsidiary_id: value === 'none' ? null : value })}>
+                    <SelectTrigger id="edit_subsidiary"><SelectValue placeholder="Select subsidiary" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">No subsidiary</SelectItem>
+                      {subsidiaries.map((subsidiary) => <SelectItem key={subsidiary.id} value={subsidiary.id}>{subsidiary.subsidiary_name}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
               {isSuperAdmin && (
                 <div className="space-y-2">
                   <Label htmlFor="edit_crms_role">Extra Developers Workspace Role</Label>
@@ -693,7 +744,7 @@ export const UsersModule = ({ user }: UsersModuleProps) => {
                       <SelectItem value="none">No extra Developers access</SelectItem>
                       {crmsAssignableRoles.map((role) => (
                         <SelectItem key={role} value={role}>
-                          {role === 'Teamlead' ? 'Team Lead' : role}
+                          {formatRoleLabel(role)}
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -701,6 +752,37 @@ export const UsersModule = ({ user }: UsersModuleProps) => {
                   <p className="text-xs text-muted-foreground">
                     Optional Developers/CRMS access supplement. SuperAdmin remains a platform-wide CIMS authority, not a CRMS-only role.
                   </p>
+                </div>
+              )}
+              {isSuperAdmin && (
+                <div className="space-y-3 rounded-lg border p-4">
+                  <div>
+                    <Label>Individual Extra Privileges</Label>
+                    <p className="text-xs text-muted-foreground">Tick additional access for this user. Access already included with the selected role is shown as locked.</p>
+                  </div>
+                  <div className="grid max-h-64 gap-2 overflow-y-auto pr-2 sm:grid-cols-2">
+                    {CAPABILITY_DEFINITIONS.map((permission) => {
+                      const inherited = baseCapabilitiesForRole(editingUser.role).includes(permission.code);
+                      const denied = isCapabilityDeniedForRole(editingUser.role, permission.code);
+                      const checked = !denied && (inherited || (editingUser.extra_permissions || []).includes(permission.code));
+                      return (
+                        <label key={permission.code} className="flex items-start gap-2 rounded-md border p-2 text-sm">
+                          <Checkbox
+                            checked={checked}
+                            disabled={inherited || denied}
+                            onCheckedChange={(value) => {
+                              const current = new Set(editingUser.extra_permissions || []);
+                              if (value) current.add(permission.code);
+                              else current.delete(permission.code);
+                              setEditingUser({ ...editingUser, extra_permissions: Array.from(current) });
+                            }}
+                            aria-label={permission.label}
+                          />
+                          <span><span className="block font-medium">{permission.label}</span><span className="text-xs text-muted-foreground">{permission.group}{inherited ? ' - included by role' : denied ? ' - restricted for this role' : ''}</span></span>
+                        </label>
+                      );
+                    })}
+                  </div>
                 </div>
               )}
               <div className="flex justify-end gap-2 mt-4">

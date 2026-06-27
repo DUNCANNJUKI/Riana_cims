@@ -1,10 +1,13 @@
 export interface CimsSessionUser {
   id: string;
   email?: string;
-  role?: "SuperAdmin" | "Admin" | "Teamlead" | "Developer" | "Sales" | "User";
-  module_roles?: Partial<Record<"cims" | "crms", "SuperAdmin" | "Admin" | "Teamlead" | "Developer" | "Sales" | "User" | null>>;
+  role?: "SuperAdmin" | "Admin" | "Management" | "Finance" | "Teamlead" | "Developer" | "Sales" | "User";
+  module_roles?: Partial<Record<"cims" | "crms", "SuperAdmin" | "Admin" | "Management" | "Finance" | "Teamlead" | "Developer" | "Sales" | "User" | null>>;
+  permissions?: string[];
+  extra_permissions?: string[];
   first_name?: string;
   last_name?: string;
+  subsidiary_name?: string | null;
 }
 
 export const getCimsToken = () => localStorage.getItem("riana-auth-token");

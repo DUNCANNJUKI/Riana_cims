@@ -9,6 +9,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { MoreVertical, Eye, Download, MessageSquarePlus, Upload, Edit, Users, FileText } from "lucide-react";
 import { Installation, User } from "@/types";
+import { can } from "@/security/accessControl";
 
 interface InstallationActionsMenuProps {
   installation: Installation;
@@ -31,6 +32,8 @@ export const InstallationActionsMenu = ({
   onEdit,
   onEscalation,
 }: InstallationActionsMenuProps) => {
+  const canManageInstallations = can(user, 'installations.manage');
+  const canExport = can(user, 'reports.view');
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -49,26 +52,26 @@ export const InstallationActionsMenu = ({
           View Details
         </DropdownMenuItem>
         
-        <DropdownMenuItem onClick={() => onExport(installation)}>
+        {canExport && <DropdownMenuItem onClick={() => onExport(installation)}>
           <Download className="mr-2 h-4 w-4" />
           Export Report
-        </DropdownMenuItem>
+        </DropdownMenuItem>}
         
         <DropdownMenuSeparator />
         
-        <DropdownMenuItem onClick={() => onFeedback(installation)}>
+        {canManageInstallations && <DropdownMenuItem onClick={() => onFeedback(installation)}>
           <MessageSquarePlus className="mr-2 h-4 w-4" />
           Generate Feedback
-        </DropdownMenuItem>
+        </DropdownMenuItem>}
         
-        <DropdownMenuItem onClick={() => onUpload(installation)}>
+        {canManageInstallations && <DropdownMenuItem onClick={() => onUpload(installation)}>
           <Upload className="mr-2 h-4 w-4" />
           Upload Handover
-        </DropdownMenuItem>
+        </DropdownMenuItem>}
 
 
         
-        {onEdit && (user.role === 'SuperAdmin' || user.role === 'Admin') && (
+        {onEdit && canManageInstallations && (
           <>
             <DropdownMenuSeparator />
             <DropdownMenuItem onClick={() => onEdit(installation)}>

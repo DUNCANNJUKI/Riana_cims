@@ -25,9 +25,9 @@ export const SiteLoader = ({ isLoading, minDuration = 800 }: SiteLoaderProps) =>
         {/* Company Logo */}
         <div className="relative">
           <img 
-            src="/rianacims-uploads/5fe53914-47f9-4dab-ac6a-15b2a4002f36.png" 
+            src="/Riana_mark_transparent.png"
             alt="RIANA Group" 
-            className="h-20 w-auto animate-pulse"
+            className="h-20 w-20 object-contain animate-pulse"
           />
           {/* Glow effect */}
           <div className="absolute inset-0 blur-xl opacity-30 bg-primary rounded-full"></div>

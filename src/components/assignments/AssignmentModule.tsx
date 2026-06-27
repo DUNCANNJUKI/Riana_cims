@@ -13,6 +13,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useDatabase } from "@/hooks/useDatabase";
 import { User, Client } from "@/types";
 import { apiClient } from "@/integrations/apiClient";
+import { can } from "@/security/accessControl";
 
 interface AssignmentModuleProps {
   user: User;
@@ -36,6 +37,8 @@ interface ClientAssignment {
 // Remove mock data - we'll use real data from the database
 
 export const AssignmentModule = ({ user }: AssignmentModuleProps) => {
+  const canViewAssignments = can(user, 'assignments.view');
+  const canManageAssignments = can(user, 'assignments.manage');
   const [assignments, setAssignments] = useState<ClientAssignment[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
   const [technicians, setTechnicians] = useState<User[]>([]);
@@ -75,13 +78,12 @@ export const AssignmentModule = ({ user }: AssignmentModuleProps) => {
     }
   };
 
-  // Only Admin and Teamlead can access this module
-  if (user.role !== 'SuperAdmin' && user.role !== 'Admin' && user.role !== 'Teamlead') {
+  if (!canViewAssignments) {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="text-center">
           <Shield className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-          <p className="text-muted-foreground">Access denied. Admin or Team Lead privileges required.</p>
+          <p className="text-muted-foreground">Access denied. Assignment viewing permission is required.</p>
         </div>
       </div>
     );
@@ -253,7 +255,7 @@ export const AssignmentModule = ({ user }: AssignmentModuleProps) => {
   console.log('Available technicians for assignment:', {
     total: availableTechnicians.length,
     userRole: user.role,
-    canAssignAny: user.role === 'SuperAdmin' || user.role === 'Admin' || user.role === 'Teamlead'
+    canAssignAny: canManageAssignments
   });
 
   return (
@@ -263,7 +265,7 @@ export const AssignmentModule = ({ user }: AssignmentModuleProps) => {
           <h1 className="text-3xl font-bold text-primary">Assign</h1>
           <p className="text-muted-foreground">Assign hardware and software technicians to client installations</p>
         </div>
-        <Dialog open={isAssignDialogOpen} onOpenChange={setIsAssignDialogOpen}>
+        {canManageAssignments && <Dialog open={isAssignDialogOpen} onOpenChange={setIsAssignDialogOpen}>
           <DialogTrigger asChild>
             <Button className="gradient-primary">
               <UserPlus className="h-4 w-4 mr-2" />
@@ -401,7 +403,7 @@ export const AssignmentModule = ({ user }: AssignmentModuleProps) => {
               </Button>
             </div>
           </DialogContent>
-        </Dialog>
+        </Dialog>}
       </div>
 
       <Card className="shadow-riana">
@@ -436,7 +438,7 @@ export const AssignmentModule = ({ user }: AssignmentModuleProps) => {
                 <TableHead>Start Date</TableHead>
                 <TableHead>End Date</TableHead>
                 <TableHead>Status</TableHead>
-                <TableHead>Actions</TableHead>
+                {canManageAssignments && <TableHead>Actions</TableHead>}
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -481,7 +483,7 @@ export const AssignmentModule = ({ user }: AssignmentModuleProps) => {
                   <TableCell>
                     {getStatusBadge(assignment.status)}
                   </TableCell>
-                  <TableCell>
+                  {canManageAssignments && <TableCell>
                     <div className="flex gap-2">
                       <Select
                         value={assignment.status}
@@ -497,7 +499,7 @@ export const AssignmentModule = ({ user }: AssignmentModuleProps) => {
                         </SelectContent>
                       </Select>
                     </div>
-                  </TableCell>
+                  </TableCell>}
                 </TableRow>
               ))}
             </TableBody>

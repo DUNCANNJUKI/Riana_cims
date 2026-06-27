@@ -18,14 +18,14 @@ async function verify() {
       FROM information_schema.COLUMNS
       WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'user_profiles' AND COLUMN_NAME = 'role'
     `);
-    if (!roleColumn?.column_type?.includes("'Sales'")) {
-      throw new Error('Unified user role enum does not include Sales');
+    if (!roleColumn?.column_type?.includes("'Sales'") || !roleColumn?.column_type?.includes("'Finance'") || !roleColumn?.column_type?.includes("'Management'")) {
+      throw new Error('Unified user role enum does not include Sales, Finance, and Management');
     }
     const [tables] = await connection.query(`
       SELECT TABLE_NAME
       FROM information_schema.TABLES
       WHERE TABLE_SCHEMA = DATABASE()
-        AND (TABLE_NAME IN ('clients','user_profiles','modules','roles','permissions','role_permissions','user_module_roles','security_settings','security_audit_events') OR TABLE_NAME LIKE 'crms\\_%')
+        AND (TABLE_NAME IN ('clients','user_profiles','modules','roles','permissions','role_permissions','user_module_roles','user_permissions','security_settings','security_audit_events') OR TABLE_NAME LIKE 'crms\\_%')
       ORDER BY TABLE_NAME
     `);
     const requiredTables = [
@@ -42,6 +42,7 @@ async function verify() {
       'permissions',
       'role_permissions',
       'user_module_roles',
+      'user_permissions',
       'security_settings',
       'security_audit_events',
     ];

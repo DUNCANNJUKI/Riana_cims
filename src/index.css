@@ -178,6 +178,11 @@ All colors MUST be HSL.
   .gradient-header {
     background: linear-gradient(90deg, hsl(var(--primary-dark)), hsl(var(--primary)));
   }
+
+  .enterprise-header {
+    background: linear-gradient(90deg, #0f6c75 0%, #157f87 52%, #138896 100%);
+    box-shadow: 0 2px 10px rgb(3 45 51 / 0.18);
+  }
   
   .shadow-riana {
     box-shadow: 0 4px 20px -4px hsl(var(--primary) / 0.3);

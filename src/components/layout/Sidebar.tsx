@@ -10,6 +10,8 @@ import { useEffect } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { useLocation, useNavigate } from "react-router-dom";
 import { getCompanyBrandingEventDetail, resolveCompanyLogoUrl } from "@/utils/logoUrl";
+import { can, type Capability } from "@/security/accessControl";
+import { formatRoleLabel } from "@/utils/roleLabel";
 
 interface SidebarProps {
   user: User;
@@ -28,7 +30,7 @@ export const Sidebar = ({ user, activeModule, setActiveModule, isMobileOpen, onM
   const [logoPath, setLogoPath] = useState("/Riana_logo.png");
   const developerModuleRole = user.module_roles?.crms;
   const effectiveDeveloperRole = developerModuleRole || user.role;
-  const canAccessDevelopers = ['SuperAdmin', 'Admin', 'Teamlead', 'Developer', 'Sales'].includes(effectiveDeveloperRole);
+  const canAccessDevelopers = ['SuperAdmin', 'Admin', 'Management', 'Teamlead', 'Developer', 'Sales'].includes(effectiveDeveloperRole);
 
   useEffect(() => {
     const loadSettings = async () => {
@@ -53,28 +55,30 @@ export const Sidebar = ({ user, activeModule, setActiveModule, isMobileOpen, onM
   }, []);
   
   const menuItems = [
-    { key: 'dashboard', label: 'Dashboard', icon: Home, roles: ['SuperAdmin', 'Admin', 'Teamlead', 'Developer', 'Sales', 'User'], category: 'main' },
+    { key: 'dashboard', label: 'Dashboard', icon: Home, roles: ['SuperAdmin', 'Admin', 'Management', 'Finance', 'Teamlead', 'Developer', 'Sales', 'User'], category: 'main' },
     { key: 'technician-dashboard', label: 'My Tasks', icon: Wrench, roles: ['User'], mobileOnly: true, category: 'main' },
     { key: 'technician-profile', label: 'My Profile', icon: UserCircle, roles: ['User'], category: 'main' },
-    { key: 'clients', label: 'Clients', icon: Building2, roles: ['SuperAdmin', 'Admin', 'Teamlead', 'User'], category: 'management' },
-    { key: 'assignments', label: 'Assign', icon: Users, roles: ['SuperAdmin', 'Admin', 'Teamlead'], category: 'management' },
-    { key: 'calendar', label: 'Workload Calendar', icon: CalendarDays, roles: ['SuperAdmin', 'Admin', 'Teamlead'], category: 'management' },
-    { key: 'installations', label: 'Installations', icon: Package, roles: ['SuperAdmin', 'Admin', 'Teamlead', 'User'], category: 'operations' },
-    { key: 'progress', label: 'Installation Progress', icon: TrendingUp, roles: ['SuperAdmin', 'Admin', 'Teamlead'], category: 'operations' },
-    { key: 'users', label: 'Users', icon: Users, roles: ['SuperAdmin', 'Admin'], category: 'admin' },
-    { key: 'finances', label: 'Finances', icon: DollarSign, roles: ['SuperAdmin', 'Admin', 'Teamlead'], category: 'admin' },
-    { key: 'announcements-management', label: 'Announcements', icon: Megaphone, roles: ['SuperAdmin', 'Admin', 'Teamlead'], category: 'admin' },
-    { key: 'company', label: 'Company Settings', icon: History, roles: ['SuperAdmin'], category: 'admin' },
-    { key: 'import', label: 'Import Data', icon: Upload, roles: ['SuperAdmin', 'Admin', 'Teamlead'], category: 'data' },
-    { key: 'reports', label: 'Reports', icon: FileText, roles: ['SuperAdmin', 'Admin', 'Teamlead'], category: 'data' },
-    { key: 'analytics', label: 'Analytics', icon: BarChart3, roles: ['SuperAdmin', 'Admin', 'Teamlead'], category: 'data' },
-    { key: 'optimus', label: 'RIANA OPTIMUS', icon: Globe, roles: ['SuperAdmin', 'Admin', 'Teamlead', 'User'], category: 'external' },
-    { key: 'developers', label: 'Developers', icon: Code2, roles: ['SuperAdmin', 'Admin', 'Teamlead', 'Developer', 'Sales'], category: 'developers' },
-    { key: 'help', label: 'Help & Support', icon: HelpCircle, roles: ['SuperAdmin', 'Admin', 'Teamlead', 'Developer', 'Sales', 'User'], category: 'support' },
+    { key: 'clients', label: 'Clients', icon: Building2, roles: [], capability: 'clients.view' as Capability, category: 'management' },
+    { key: 'assignments', label: 'Assigned Technicians', icon: Users, roles: [], capability: 'assignments.view' as Capability, category: 'management' },
+    { key: 'calendar', label: 'Workload Calendar', icon: CalendarDays, roles: ['SuperAdmin', 'Admin', 'Management', 'Teamlead'], category: 'management' },
+    { key: 'installations', label: 'Installations', icon: Package, roles: [], capability: 'installations.view' as Capability, category: 'operations' },
+    { key: 'progress', label: 'Installation Progress', icon: TrendingUp, roles: [], capability: 'progress.view' as Capability, category: 'operations' },
+    { key: 'users', label: 'Users', icon: Users, roles: [], capability: 'users.manage' as Capability, category: 'admin' },
+    { key: 'finances', label: 'Finances', icon: DollarSign, roles: [], capability: 'finances.view' as Capability, category: 'admin' },
+    { key: 'announcements-management', label: 'Announcements', icon: Megaphone, roles: [], capability: 'announcements.manage' as Capability, category: 'admin' },
+    { key: 'company', label: 'Company Settings', icon: History, roles: [], capability: 'company.manage' as Capability, category: 'admin' },
+    { key: 'import', label: 'Import Data', icon: Upload, roles: [], capability: 'import.manage' as Capability, category: 'data' },
+    { key: 'reports', label: 'Reports', icon: FileText, roles: [], capability: 'reports.view' as Capability, category: 'data' },
+    { key: 'analytics', label: 'Analytics', icon: BarChart3, roles: [], capability: 'analytics.view' as Capability, category: 'data' },
+    { key: 'optimus', label: 'RIANA OPTIMUS', icon: Globe, roles: ['SuperAdmin', 'Admin', 'Management', 'Teamlead', 'User'], category: 'external' },
+    { key: 'developers', label: 'Developers', icon: Code2, roles: ['SuperAdmin', 'Admin', 'Management', 'Teamlead', 'Developer', 'Sales'], category: 'developers' },
+    { key: 'help', label: 'Help & Support', icon: HelpCircle, roles: ['SuperAdmin', 'Admin', 'Management', 'Finance', 'Teamlead', 'Developer', 'Sales', 'User'], category: 'support' },
   ];
 
   const filteredMenuItems = menuItems.filter(item => 
-    item.roles.includes(user.role) || (item.key === 'developers' && canAccessDevelopers)
+    item.roles.includes(user.role)
+      || ('capability' in item && item.capability && can(user, item.capability))
+      || (item.key === 'developers' && canAccessDevelopers)
   );
 
   const handleModuleClick = (key: string) => {
@@ -121,13 +125,14 @@ export const Sidebar = ({ user, activeModule, setActiveModule, isMobileOpen, onM
   };
 
   const developerSubItems = [
-    { label: 'Overview', path: '/developers', roles: ['SuperAdmin', 'Admin', 'Teamlead', 'Developer', 'Sales'] },
-    { label: 'Requests', path: '/developers/requests', roles: ['SuperAdmin', 'Admin', 'Teamlead', 'Developer', 'Sales'] },
-    { label: 'New Request', path: '/developers/requests/new', roles: ['SuperAdmin', 'Admin', 'Teamlead', 'Sales'] },
-    { label: 'Approvals', path: '/developers/approvals', roles: ['SuperAdmin', 'Admin', 'Sales'] },
-    { label: 'Assignments', path: '/developers/assignments', roles: ['SuperAdmin', 'Admin', 'Teamlead', 'Developer'] },
-    { label: 'Reports', path: '/developers/reports', roles: ['SuperAdmin', 'Admin', 'Teamlead', 'Sales'] },
-    { label: 'Audit', path: '/developers/audit', roles: ['SuperAdmin', 'Admin', 'Teamlead'] },
+    { label: 'Overview', path: '/developers', roles: ['SuperAdmin', 'Admin', 'Management', 'Teamlead', 'Developer', 'Sales'] },
+    { label: 'Pending', path: '/developers/pending', roles: ['SuperAdmin', 'Admin', 'Management', 'Teamlead', 'Developer', 'Sales'] },
+    { label: 'Requests', path: '/developers/requests', roles: ['SuperAdmin', 'Admin', 'Management', 'Teamlead', 'Developer', 'Sales'] },
+    { label: 'New Request', path: '/developers/requests/new', roles: ['SuperAdmin', 'Admin', 'Management', 'Teamlead', 'Sales'] },
+    { label: 'Approvals', path: '/developers/approvals', roles: ['SuperAdmin', 'Admin', 'Management', 'Sales'] },
+    { label: 'Assignments', path: '/developers/assignments', roles: ['SuperAdmin', 'Admin', 'Management', 'Teamlead', 'Developer'] },
+    { label: 'Reports', path: '/developers/reports', roles: ['SuperAdmin', 'Admin', 'Management', 'Teamlead', 'Sales'] },
+    { label: 'Audit', path: '/developers/audit', roles: ['SuperAdmin', 'Admin', 'Management', 'Teamlead'] },
   ].filter((item) => item.roles.includes(effectiveDeveloperRole));
 
   const SidebarContent = () => (
@@ -214,7 +219,7 @@ export const Sidebar = ({ user, activeModule, setActiveModule, isMobileOpen, onM
               <p className="text-sm font-medium text-foreground truncate">
                 {user.first_name ? `${user.first_name} ${user.last_name || ''}`.trim() : user.email}
               </p>
-              <p className="text-xs text-muted-foreground">{user.role}</p>
+              <p className="text-xs text-muted-foreground">{formatRoleLabel(user.role)}</p>
             </div>
           </div>
         </div>

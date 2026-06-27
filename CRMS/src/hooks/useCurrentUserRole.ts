@@ -32,6 +32,7 @@ export function useCurrentUserRole(): UserRoleState {
     const roleMap: Record<string, AppRole> = {
       SuperAdmin: 'admin',
       Admin: 'admin',
+      Management: 'admin',
       Teamlead: 'senior_developer',
       Developer: 'developer',
       Sales: 'sales',

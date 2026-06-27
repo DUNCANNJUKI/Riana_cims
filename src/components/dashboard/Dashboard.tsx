@@ -5,6 +5,9 @@ import { Users, Building2, Package, Activity, Loader2 } from "lucide-react";
 import { User, DashboardStats } from "@/types";
 import { apiClient } from "@/integrations/apiClient";
 import { NoticeBoard } from "@/components/noticeboard/NoticeBoard";
+import { Button } from "@/components/ui/button";
+import { can } from "@/security/accessControl";
+import { formatRoleLabel } from "@/utils/roleLabel";
 
 interface DashboardProps {
   user: User;
@@ -19,6 +22,7 @@ export const Dashboard = ({ user, stats }: DashboardProps) => {
     recentLogs: []
   });
   const [isLoading, setIsLoading] = useState(true);
+  const [showRecents, setShowRecents] = useState(false);
 
   useEffect(() => {
     loadDashboardData();
@@ -78,13 +82,13 @@ export const Dashboard = ({ user, stats }: DashboardProps) => {
       color: "text-blue-600",
       bgColor: "bg-blue-100"
     },
-    {
+    ...(showRecents ? [{
       title: "Recent Activities",
       value: dashboardStats.recentLogs.length,
       icon: Activity,
       color: "text-orange-600",
       bgColor: "bg-orange-100"
-    }
+    }] : [])
   ];
 
   if (isLoading) {
@@ -107,7 +111,7 @@ export const Dashboard = ({ user, stats }: DashboardProps) => {
         </p>
         <div className="mt-4 flex gap-2">
           <Badge variant="outline" className="text-white border-white/30">
-            {user.role}
+            {formatRoleLabel(user.role)}
           </Badge>
           <Badge variant="outline" className="text-white border-white/30">
             Department Access
@@ -116,7 +120,7 @@ export const Dashboard = ({ user, stats }: DashboardProps) => {
       </div>
 
       {/* Stats Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+      <div className={`grid grid-cols-1 gap-6 md:grid-cols-2 ${showRecents ? 'lg:grid-cols-4' : 'lg:grid-cols-3'}`}>
         {statCards.map((stat, index) => {
           const Icon = stat.icon;
           return (
@@ -137,13 +141,19 @@ export const Dashboard = ({ user, stats }: DashboardProps) => {
         })}
       </div>
 
-      {(user.role === 'SuperAdmin' || user.role === 'Admin' || user.role === 'Teamlead') && (
+      {can(user, 'announcements.manage') && (
         <NoticeBoard />
       )}
 
-      {/* Recent Activity */}
+      <div className="flex justify-end">
+        <Button variant="outline" onClick={() => setShowRecents((current) => !current)} aria-expanded={showRecents}>
+          <Activity className="mr-2 h-4 w-4" />
+          {showRecents ? 'Hide Recents' : 'Recents'}
+        </Button>
+      </div>
+
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <Card className="shadow-riana">
+        {showRecents && <Card className="shadow-riana">
           <CardHeader>
             <CardTitle>Recent System Activity</CardTitle>
             <CardDescription>
@@ -170,9 +180,9 @@ export const Dashboard = ({ user, stats }: DashboardProps) => {
               )}
             </div>
           </CardContent>
-        </Card>
+        </Card>}
 
-        <Card className="shadow-riana">
+        <Card className={`shadow-riana ${showRecents ? '' : 'lg:col-span-2'}`}>
           <CardHeader>
             <CardTitle>Quick Actions</CardTitle>
             <CardDescription>

@@ -37,8 +37,6 @@ import { getCimsUser } from '@crms/lib/cimsSession';
 import { Label } from '@crms/components/ui/label';
 import { useChangeRequest, useProfiles, useUpdateChangeRequest, useCreateAuditLog, useAuditLogs } from '@crms/hooks/useSupabaseData';
 import { generateChangeRequestPDF, generateCompletionReportPDF, downloadPDF } from '@crms/lib/pdfGenerator';
-import { sendNotificationEmail, createInAppNotification } from '@crms/lib/notifications';
-import { notifyStatusChangeSMS } from '@crms/lib/smsNotifications';
 import { useCurrentUserRole } from '@crms/hooks/useCurrentUserRole';
 import { useLocation } from 'react-router-dom';
 
@@ -133,52 +131,6 @@ export default function RequestDetail() {
 
       const developer = developers.find(d => d.id === selectedDeveloperId);
 
-      // Create audit log
-      await createAuditLog.mutateAsync({
-        request_id: request.id,
-        action: 'assigned',
-        action_label: `Assigned to ${developer?.name || 'developer'}`,
-        details: `Request assigned to ${developer?.name}`,
-        user_id: getCimsUser()?.id,
-      });
-
-      // Send email notification to assigned developer
-      if (developer?.email) {
-        await sendNotificationEmail({
-          recipientEmail: developer.email,
-          recipientName: developer.name,
-          notificationType: 'assigned',
-          ticketNumber: request.ticket_number,
-          clientName: request.client?.name || 'Unknown Client',
-          requestDescription: request.change_description,
-          actionUrl: `${window.location.origin}/developers/requests/${request.id}`,
-          developerName: developer.name,
-        });
-      }
-
-      // Send SMS for assignment
-      if (request.client?.contact_phone) {
-        await notifyStatusChangeSMS(
-          request.ticket_number,
-          request.client.name,
-          'assigned',
-          request.client.contact_phone,
-          request.priority as any
-        );
-      }
-
-      // Create in-app notification
-      if (developer) {
-        await createInAppNotification(
-          developer.id,
-          'New Assignment',
-          `You have been assigned to ${request.ticket_number} for ${request.client?.name}`,
-          'info',
-          `/developers/requests/${request.id}`,
-          request.id
-        );
-      }
-
       toast({
         title: 'Developer Assigned',
         description: `${developer?.name} has been assigned and notified.`,
@@ -226,43 +178,6 @@ export default function RequestDetail() {
         user_id: getCimsUser()?.id,
       });
 
-      // Send email to senior developer
-      if (request.senior_developer?.email) {
-        await sendNotificationEmail({
-          recipientEmail: request.senior_developer.email,
-          recipientName: request.senior_developer.name,
-          notificationType: newStatus === 'approved' ? 'approved' : newStatus === 'rejected' ? 'rejected' : 'waiting_clarification',
-          ticketNumber: request.ticket_number,
-          clientName: request.client?.name || 'Unknown Client',
-          requestDescription: request.change_description,
-          actionUrl: `${window.location.origin}/developers/requests/${request.id}`,
-          comment: approvalComment || undefined,
-        });
-      }
-
-      // Send SMS for critical statuses
-      if (request.client?.contact_phone) {
-        await notifyStatusChangeSMS(
-          request.ticket_number,
-          request.client.name,
-          newStatus,
-          request.client.contact_phone,
-          request.priority as any
-        );
-      }
-
-      // Create in-app notification for the senior developer
-      if (request.senior_developer) {
-        await createInAppNotification(
-          request.senior_developer.id,
-          action === 'approve' ? 'Request Approved' : action === 'reject' ? 'Request Rejected' : 'Request On Hold',
-          `${request.ticket_number} has been ${newStatus.replace('_', ' ')}`,
-          action === 'approve' ? 'success' : action === 'reject' ? 'error' : 'warning',
-          `/developers/requests/${request.id}`,
-          request.id
-        );
-      }
-
       const messages = {
         approve: 'Request approved. Notifications sent.',
         reject: 'Request rejected. Notifications sent.',
@@ -303,20 +218,6 @@ export default function RequestDetail() {
         user_id: getCimsUser()?.id,
       });
 
-      // Notify senior developer
-      if (request.senior_developer?.email) {
-        await sendNotificationEmail({
-          recipientEmail: request.senior_developer.email,
-          recipientName: request.senior_developer.name,
-          notificationType: 'commenced',
-          ticketNumber: request.ticket_number,
-          clientName: request.client?.name || 'Unknown Client',
-          requestDescription: request.change_description,
-          actionUrl: `${window.location.origin}/developers/requests/${request.id}`,
-          developerName: request.assigned_developer?.name,
-        });
-      }
-
       toast({ title: 'Work Started', description: 'Status updated to In Progress. Notifications sent.' });
     } catch (err: any) {
       toast({ title: 'Error', description: err.message, variant: 'destructive' });
@@ -343,31 +244,6 @@ export default function RequestDetail() {
         new_value: 'completed',
         user_id: getCimsUser()?.id,
       });
-
-      // Notify senior developer
-      if (request.senior_developer?.email) {
-        await sendNotificationEmail({
-          recipientEmail: request.senior_developer.email,
-          recipientName: request.senior_developer.name,
-          notificationType: 'completed',
-          ticketNumber: request.ticket_number,
-          clientName: request.client?.name || 'Unknown Client',
-          requestDescription: request.change_description,
-          actionUrl: `${window.location.origin}/developers/requests/${request.id}`,
-          developerName: request.assigned_developer?.name,
-        });
-      }
-
-      // SMS for completion
-      if (request.client?.contact_phone) {
-        await notifyStatusChangeSMS(
-          request.ticket_number,
-          request.client.name,
-          'completed',
-          request.client.contact_phone,
-          request.priority as any
-        );
-      }
 
       toast({ title: 'Request Completed', description: 'Marked as completed. All parties notified.' });
     } catch (err: any) {

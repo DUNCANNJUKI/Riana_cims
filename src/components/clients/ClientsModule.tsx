@@ -13,6 +13,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useDatabase } from "@/hooks/useDatabase";
 import { User, Client } from "@/types";
 import { apiClient } from "@/integrations/apiClient";
+import { can } from "@/security/accessControl";
 import { ClientDetailsDialog } from "@/components/dialogs/ClientDetailsDialog";
 
 interface ClientsModuleProps {
@@ -20,6 +21,7 @@ interface ClientsModuleProps {
 }
 
 export const ClientsModule = ({ user }: ClientsModuleProps) => {
+  const canManageClients = can(user, 'clients.manage');
   const [clients, setClients] = useState<Client[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
@@ -220,7 +222,7 @@ export const ClientsModule = ({ user }: ClientsModuleProps) => {
           <h1 className="text-3xl font-bold text-primary">Clients Management</h1>
           <p className="text-muted-foreground">Manage your client database and information</p>
         </div>
-        {(user.role === 'SuperAdmin' || user.role === 'Admin' || user.role === 'Teamlead') && (
+        {canManageClients && (
           <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
             <DialogTrigger asChild>
               <Button className="gradient-primary">
@@ -454,7 +456,7 @@ export const ClientsModule = ({ user }: ClientsModuleProps) => {
                         <Eye className="h-3 w-3 mr-1" />
                         View
                       </Button>
-                      {(user.role === 'SuperAdmin' || user.role === 'Admin') && (
+                      {canManageClients && (
                         <>
                           <Button variant="outline" size="sm" onClick={() => handleEditClient(client)}>
                             <Edit className="h-3 w-3 mr-1" />

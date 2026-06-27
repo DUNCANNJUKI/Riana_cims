@@ -6,9 +6,10 @@ const { createChallenge, verifyChallenge } = require('../utils/twoFactor');
 const { getSmsBalance, sendEmail, sendSms } = require('../services/notifications');
 const { sendUserNotification, sendUsersNotification } = require('../services/notificationDispatcher');
 const { canonicalAppUrl } = require('../security/apiSecurity');
+const { deliveryForCrmsEvent, resolveCompletionRecipientId } = require('./crmsNotificationPolicy');
 
-const ALLOWED_ROLES = new Set(['SuperAdmin', 'Admin', 'Teamlead', 'Developer', 'Sales']);
-const roleToCrms = (role) => ({ SuperAdmin: 'admin', Admin: 'admin', Teamlead: 'senior_developer', Developer: 'developer', Sales: 'sales' })[role];
+const ALLOWED_ROLES = new Set(['SuperAdmin', 'Admin', 'Management', 'Teamlead', 'Developer', 'Sales']);
+const roleToCrms = (role) => ({ SuperAdmin: 'admin', Admin: 'admin', Management: 'admin', Teamlead: 'senior_developer', Developer: 'developer', Sales: 'sales' })[role];
 const roleFromCrms = (role) => ({ admin: 'Admin', senior_developer: 'Teamlead', developer: 'Developer', sales: 'Sales' })[role];
 const fullName = (user) => `${user.first_name || ''} ${user.last_name || ''}`.trim() || user.email;
 const profileShape = (user) => ({
@@ -33,7 +34,7 @@ const passwordMatches = async (password, storedPassword) => {
     : String(password || '') === String(storedPassword);
 };
 
-const hasRole = (req, ...roles) => req.user.role === 'SuperAdmin' || roles.includes(req.user.role);
+const hasRole = (req, ...roles) => ['SuperAdmin', 'Management'].includes(req.user.role) || roles.includes(req.user.role);
 const denyUnlessRole = (req, res, ...roles) => {
   if (hasRole(req, ...roles)) return false;
   res.status(403).json({ error: 'You do not have permission to perform this action.' });
@@ -43,6 +44,7 @@ const denyUnlessRole = (req, res, ...roles) => {
 const REQUEST_UPDATE_FIELDS = {
   SuperAdmin: new Set(['client_id','department','source','change_description','priority','status','modules_affected','estimated_completion_date','senior_developer_id','assigned_developer_id','approval_comment','is_chargeable','sales_remarks','commencement_date','completion_date']),
   Admin: new Set(['client_id','department','source','change_description','priority','status','modules_affected','estimated_completion_date','senior_developer_id','assigned_developer_id','approval_comment','is_chargeable','sales_remarks','commencement_date','completion_date']),
+  Management: new Set(['client_id','department','source','change_description','priority','status','modules_affected','estimated_completion_date','senior_developer_id','assigned_developer_id','approval_comment','is_chargeable','sales_remarks','commencement_date','completion_date']),
   Sales: new Set(['status','approval_comment','is_chargeable','sales_remarks']),
   Teamlead: new Set(['priority','status','estimated_completion_date','senior_developer_id','assigned_developer_id','commencement_date','completion_date']),
   Developer: new Set(['status','commencement_date','completion_date']),
@@ -88,6 +90,7 @@ module.exports = function createCrmsRouter({ pool, jwtSecret }) {
     const userIds = salesUsers.map((user) => user.id);
     if (!userIds.length) return;
     const actionUrl = requestActionUrl(req, request.id);
+    const delivery = deliveryForCrmsEvent('approval_needed');
     await sendUsersNotification({
       pool,
       userIds,
@@ -97,8 +100,8 @@ module.exports = function createCrmsRouter({ pool, jwtSecret }) {
       actionUrl,
       requestId: request.id,
       notificationType: 'approval_needed',
-      email: true,
-      sms: false,
+      ...delivery,
+      smsMessage: `RIANA CIMS: ${request.ticket_number} is awaiting Sales approval. Review: ${actionUrl}`,
       details: requestSummary(request),
     });
   };
@@ -106,6 +109,7 @@ module.exports = function createCrmsRouter({ pool, jwtSecret }) {
   const notifyAssignedDeveloper = async (req, request) => {
     if (!request.assigned_developer_id) return;
     const actionUrl = requestActionUrl(req, request.id);
+    const delivery = deliveryForCrmsEvent('assigned');
     await sendUserNotification({
       pool,
       userId: request.assigned_developer_id,
@@ -115,8 +119,7 @@ module.exports = function createCrmsRouter({ pool, jwtSecret }) {
       actionUrl,
       requestId: request.id,
       notificationType: 'assigned',
-      email: true,
-      sms: true,
+      ...delivery,
       smsMessage: `RIANA CIMS: ${request.ticket_number} assigned to you. Review: ${actionUrl}`,
       details: {
         ...requestSummary(request),
@@ -133,7 +136,6 @@ module.exports = function createCrmsRouter({ pool, jwtSecret }) {
       waiting_clarification: 'waiting_clarification',
       waiting: 'waiting_clarification',
       in_progress: 'commenced',
-      completed: 'completed',
     })[request.status];
     if (!notificationType) return;
     const actionUrl = requestActionUrl(req, request.id);
@@ -152,6 +154,60 @@ module.exports = function createCrmsRouter({ pool, jwtSecret }) {
     });
   };
 
+  const recordAssignmentActor = async (req, request, previousAssigneeId) => {
+    await pool.query(
+      `INSERT INTO crms_audit_logs
+        (id,request_id,action,action_label,details,previous_value,new_value,user_id)
+       VALUES (?,?,?,?,?,?,?,?)`,
+      [
+        uuidv4(),
+        request.id,
+        'assigned',
+        `Assigned to ${request.assigned_developer?.name || 'developer'}`,
+        `Request assigned to ${request.assigned_developer?.name || 'developer'}`,
+        previousAssigneeId || null,
+        request.assigned_developer_id,
+        req.user.id,
+      ],
+    );
+  };
+
+  const notifyAssignerOnCompletion = async (req, request) => {
+    const [assignmentEvents] = await pool.query(
+      `SELECT user_id
+       FROM crms_audit_logs
+       WHERE request_id = ? AND action = 'assigned' AND user_id IS NOT NULL
+       ORDER BY created_at DESC
+       LIMIT 1`,
+      [request.id],
+    );
+    const recipientId = resolveCompletionRecipientId({
+      assignedByUserId: assignmentEvents[0]?.user_id,
+      seniorDeveloperId: request.senior_developer_id,
+      completedByUserId: req.user.id,
+    });
+    if (!recipientId) return;
+
+    const actionUrl = requestActionUrl(req, request.id);
+    const delivery = deliveryForCrmsEvent('completed');
+    await sendUserNotification({
+      pool,
+      userId: recipientId,
+      title: 'Assigned change request completed',
+      message: `${request.ticket_number} for ${request.client?.name || 'Unknown Client'} has been marked complete by ${request.assigned_developer?.name || 'the assigned developer'}. Open RIANA CIMS to verify it: ${actionUrl}`,
+      type: 'success',
+      actionUrl,
+      requestId: request.id,
+      notificationType: 'completed',
+      ...delivery,
+      smsMessage: `RIANA CIMS: ${request.ticket_number} has been marked complete. Verify: ${actionUrl}`,
+      details: {
+        ...requestSummary(request),
+        developerName: request.assigned_developer?.name,
+      },
+    });
+  };
+
   router.post('/auth/login', async (req, res) => {
     try {
       const { email, password } = req.body;
@@ -164,7 +220,7 @@ module.exports = function createCrmsRouter({ pool, jwtSecret }) {
       if (!rows.length || !(await passwordMatches(password, rows[0].password))) return res.status(401).json({ error: 'Invalid email or password' });
       const user = rows[0];
       if (!user.is_active) return res.status(403).json({ error: 'Your account is suspended.' });
-      if (!ALLOWED_ROLES.has(user.role)) return res.status(403).json({ error: 'Developers access requires SuperAdmin, Admin, Teamlead, Developer, or Sales role.' });
+      if (!ALLOWED_ROLES.has(user.role)) return res.status(403).json({ error: 'Developers access requires an authorized Developers workspace role.' });
       if (!isBcryptHash(user.password)) {
         const passwordHash = await bcrypt.hash(String(password), 12);
         await pool.query('UPDATE user_profiles SET password = ? WHERE id = ? AND password = ?', [passwordHash, user.id, user.password]);
@@ -221,7 +277,7 @@ module.exports = function createCrmsRouter({ pool, jwtSecret }) {
          LEFT JOIN departments d ON d.id = u.department_id
          LEFT JOIN user_module_roles umr ON umr.user_id = u.id AND umr.module_id = 'crms'
          LEFT JOIN roles r ON r.id = umr.role_id
-         WHERE COALESCE(r.code,u.role) IN ('SuperAdmin','Admin','Teamlead','Developer','Sales') ORDER BY u.first_name,u.last_name`,
+         WHERE COALESCE(r.code,u.role) IN ('SuperAdmin','Admin','Management','Teamlead','Developer','Sales') ORDER BY u.first_name,u.last_name`,
       );
       res.json(rows.map(profileShape));
     } catch (error) { res.status(500).json({ error: error.message }); }
@@ -250,8 +306,10 @@ module.exports = function createCrmsRouter({ pool, jwtSecret }) {
 
   router.delete('/user_roles/:id', denyCrmsUserManagement);
 
-  const clientSelect = `SELECT id,client_name AS name,branch,LOWER(contract_type) AS contract_type,
-    contact_person_name AS contact_person,contact_email,contact_phone,created_at,updated_at FROM clients`;
+  const clientSelect = `SELECT c.id,c.client_name AS name,c.branch,LOWER(c.contract_type) AS contract_type,
+    c.contact_person_name AS contact_person,c.contact_email,c.contact_phone,c.subsidiary_id,
+    s.subsidiary_name,c.created_at,c.updated_at FROM clients c
+    LEFT JOIN subsidiaries s ON s.id = c.subsidiary_id`;
   router.get('/clients', async (_req, res) => {
     try { const [rows] = await pool.query(`${clientSelect} ORDER BY client_name`); res.json(rows); }
     catch (error) { res.status(500).json({ error: error.message }); }
@@ -266,7 +324,7 @@ module.exports = function createCrmsRouter({ pool, jwtSecret }) {
          VALUES (?,?,?,?,?,?,?,CURDATE(),?)`,
         [id,c.name,c.branch,c.contract_type,c.contact_person,c.contact_email,c.contact_phone,req.user.id],
       );
-      const [rows] = await pool.query(`${clientSelect} WHERE id = ?`, [id]);
+      const [rows] = await pool.query(`${clientSelect} WHERE c.id = ?`, [id]);
       res.status(201).json(rows[0]);
     } catch (error) { res.status(500).json({ error: error.message }); }
   });
@@ -278,7 +336,7 @@ module.exports = function createCrmsRouter({ pool, jwtSecret }) {
         `UPDATE clients SET client_name=?,branch=?,contract_type=?,contact_person_name=?,contact_email=?,contact_phone=? WHERE id=?`,
         [c.name,c.branch,c.contract_type,c.contact_person,c.contact_email,c.contact_phone,req.params.id],
       );
-      const [rows] = await pool.query(`${clientSelect} WHERE id = ?`, [req.params.id]);
+      const [rows] = await pool.query(`${clientSelect} WHERE c.id = ?`, [req.params.id]);
       res.json(rows[0]);
     } catch (error) { res.status(500).json({ error: error.message }); }
   });
@@ -299,11 +357,12 @@ module.exports = function createCrmsRouter({ pool, jwtSecret }) {
   });
 
   const requestJoins = `SELECT cr.*,
-    IF(c.id IS NULL,NULL,JSON_OBJECT('id',c.id,'name',c.client_name,'branch',c.branch,'contact_person',c.contact_person_name,'contact_email',c.contact_email,'contact_phone',c.contact_phone,'contract_type',LOWER(c.contract_type))) client,
+    IF(c.id IS NULL,NULL,JSON_OBJECT('id',c.id,'name',c.client_name,'branch',c.branch,'contact_person',c.contact_person_name,'contact_email',c.contact_email,'contact_phone',c.contact_phone,'contract_type',LOWER(c.contract_type),'subsidiary_id',c.subsidiary_id,'subsidiary_name',s.subsidiary_name)) client,
     IF(ad.id IS NULL,NULL,JSON_OBJECT('id',ad.id,'name',CONCAT_WS(' ',ad.first_name,ad.last_name))) assigned_developer,
     IF(sd.id IS NULL,NULL,JSON_OBJECT('id',sd.id,'name',CONCAT_WS(' ',sd.first_name,sd.last_name))) senior_developer
     FROM crms_change_requests cr
     LEFT JOIN clients c ON c.id COLLATE utf8mb4_general_ci=cr.client_id
+    LEFT JOIN subsidiaries s ON s.id COLLATE utf8mb4_general_ci=c.subsidiary_id
     LEFT JOIN user_profiles ad ON ad.id COLLATE utf8mb4_general_ci=cr.assigned_developer_id
     LEFT JOIN user_profiles sd ON sd.id COLLATE utf8mb4_general_ci=cr.senior_developer_id`;
   const formatRequest = (row) => ({
@@ -359,6 +418,10 @@ module.exports = function createCrmsRouter({ pool, jwtSecret }) {
       const [rows] = await pool.query(`${requestJoins} WHERE cr.id = ?`, [id]);
       const created = formatRequest(rows[0]);
       await notifySalesApprovalNeeded(req, created);
+      if (created.assigned_developer_id) {
+        await recordAssignmentActor(req, created, null);
+        await notifyAssignedDeveloper(req, created);
+      }
       res.status(201).json(created);
     } catch (error) { res.status(500).json({ error: error.message }); }
   });
@@ -389,10 +452,16 @@ module.exports = function createCrmsRouter({ pool, jwtSecret }) {
       if (fields.length) await pool.query(`UPDATE crms_change_requests SET ${fields.join(',')} WHERE id=?`, [...values,req.params.id]);
       const [rows] = await pool.query(`${requestJoins} WHERE cr.id=?`, [req.params.id]);
       const updated = formatRequest(rows[0]);
-      if (updated.assigned_developer_id && updated.assigned_developer_id !== existingRows[0].assigned_developer_id) {
+      const assignmentChanged = updated.assigned_developer_id
+        && updated.assigned_developer_id !== existingRows[0].assigned_developer_id;
+      if (assignmentChanged) {
+        await recordAssignmentActor(req, updated, existingRows[0].assigned_developer_id);
         await notifyAssignedDeveloper(req, updated);
       }
       await notifySeniorDeveloperStatus(req, updated, existingRows[0].status);
+      if (updated.status === 'completed' && existingRows[0].status !== updated.status) {
+        await notifyAssignerOnCompletion(req, updated);
+      }
       res.json(updated);
     } catch (error) { res.status(500).json({ error: error.message }); }
   });

@@ -18,12 +18,14 @@ import { FeedbackLinkGenerator } from "@/components/feedback/FeedbackLinkGenerat
 import { EHandoverUpload } from "@/components/handover/EHandoverUpload";
 import { generateInstallationReport } from "@/utils/installationExport";
 import { InstallationActionsMenu } from "./InstallationActionsMenu";
+import { can } from "@/security/accessControl";
 
 interface InstallationsModuleProps {
   user: User;
 }
 
 export const InstallationsModule = ({ user }: InstallationsModuleProps) => {
+  const canManageInstallations = can(user, 'installations.manage');
   const [installations, setInstallations] = useState<Installation[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
   const [users, setUsers] = useState<User[]>([]);
@@ -272,7 +274,7 @@ export const InstallationsModule = ({ user }: InstallationsModuleProps) => {
       }
 
       const subsidiary = subsidiaries.find(s => s.id === client.subsidiary_id);
-      await generateInstallationReport(installation, client, company, subsidiary);
+      await generateInstallationReport(installation, client, company, subsidiary, user.subsidiary_name);
 
       // Auto-mark installation as complete on export
       if (installation.status !== 'completed') {
@@ -375,7 +377,7 @@ export const InstallationsModule = ({ user }: InstallationsModuleProps) => {
           <h1 className="text-3xl font-bold text-primary">Installations Management</h1>
           <p className="text-muted-foreground">Track and manage client installations and equipment</p>
         </div>
-        <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
+        {canManageInstallations && <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
           <DialogTrigger asChild>
             <Button className="gradient-primary">
               <Plus className="h-4 w-4 mr-2" />
@@ -681,7 +683,7 @@ export const InstallationsModule = ({ user }: InstallationsModuleProps) => {
               </Button>
             </div>
           </DialogContent>
-        </Dialog>
+        </Dialog>}
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
@@ -806,7 +808,7 @@ export const InstallationsModule = ({ user }: InstallationsModuleProps) => {
                     </div>
                   </TableCell>
                   <TableCell>
-                    {user.role === 'SuperAdmin' || user.role === 'Teamlead' || user.role === 'Admin' ? (
+                    {canManageInstallations ? (
                       <Select 
                         value={installation.status} 
                         onValueChange={(value) => handleStatusChange(installation.id, value)}

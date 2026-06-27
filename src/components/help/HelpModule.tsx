@@ -82,7 +82,7 @@ const helpArticles: HelpArticle[] = [
     id: '4',
     title: 'Managing user permissions',
     category: 'Users',
-    content: 'User management is centralized in the main CIMS Users module. SuperAdmin can create Admin/SuperAdmin accounts, delete users, assign primary roles, and grant extra Developers workspace roles. Admin users can manage non-privileged operational users only.',
+    content: 'User management is centralized in CIMS. Super Admin assigns roles, role-specific designations, subsidiaries, Developers workspace roles, and individual extra privileges using the checkboxes in Edit User. Finance is read-only by default. Management has broad administration access but cannot add, edit, or update installations.',
     helpful: 12
   },
   {
@@ -138,14 +138,14 @@ const helpArticles: HelpArticle[] = [
     id: '12',
     title: 'Report watermarks and logos',
     category: 'Reports',
-    content: 'All PDF reports include company watermarks and professional letterheads. The company logo appears as a subtle watermark on all pages with subsidiary branding in the footer.',
+    content: 'All PDF reports use the standard aligned header, watermark, page number, and footer. A MAREZI client or generating user automatically selects the approved MAREZI letterhead; other subsidiaries retain RIANA branding.',
     helpful: 9
   },
   {
     id: '13',
     title: 'User-specific Recent Reports',
     category: 'Reports',
-    content: 'Normal users can only view reports and recent activities related to their own work. Admins and Teamleads have access to all system reports and user activities.',
+    content: 'Sales, Finance, Management, Team Leads, Admins, and Super Admin can open reports allowed by their role. Recent dashboard activity stays hidden until the Recents button is selected.',
     helpful: 7
   },
   {
@@ -159,7 +159,7 @@ const helpArticles: HelpArticle[] = [
     id: '15',
     title: 'Custom System Branding',
     category: 'Branding',
-    content: 'The system applies RIANA brand colors to the interface and generated reports. PDF headers use a logo-matched teal header and place the company logo inside a reserved aspect-ratio-safe slot so it does not appear as a stretched, duplicate, or floating image.',
+    content: 'The system interface always uses RIANA branding. Generated documents use the approved MAREZI letterhead when either the client or the generating user belongs to MAREZI; all other documents retain RIANA branding. PDF logos remain aspect-ratio safe and every page uses the standard aligned footer.',
     helpful: 5
   },
   {
@@ -196,6 +196,27 @@ const helpArticles: HelpArticle[] = [
     category: 'Security',
     content: 'The system warns shortly before the ten-minute inactivity limit. Continuing resets the timer; otherwise CIMS and Developers sign out together. Password or privilege changes invalidate older sessions.',
     helpful: 0
+  },
+  {
+    id: '21',
+    title: 'Developers Pending work',
+    category: 'Developers',
+    content: 'Open Developers and select Pending to see work waiting from your end. Sales sees approval items, developers see assigned or clarification work, and team leads see requests waiting for assignment or follow-up.',
+    helpful: 0
+  },
+  {
+    id: '22',
+    title: 'E-Handover zero quantities',
+    category: 'Handover',
+    content: 'Equipment with a quantity of zero is marked Not installed in the E-Handover preview and exported PDF. Non-zero items retain their normal installed, configured, active, or operational status.',
+    helpful: 0
+  },
+  {
+    id: '23',
+    title: 'Managing subsidiaries safely',
+    category: 'Branding',
+    content: 'Authorized company administrators can add, rename, configure, and delete subsidiaries from Company Settings. Deletion is blocked while any user is attached; reassign those users first.',
+    helpful: 0
   }
 ];
 
@@ -205,7 +226,7 @@ const botResponses = [
   "For client management, you can add, edit, and search clients in the Clients section. Would you like specific instructions?",
   "To generate reports, go to the Reports section and select from our available templates. I can guide you through the process.",
   "For Excel imports, make sure to download the template first and follow the column format. Do you need help with a specific import issue?",
-  "User management is centralized in the main CIMS Users section. SuperAdmin controls Admin/SuperAdmin accounts, deletions, company settings, backups, and extra Developers workspace roles.",
+  "User management is centralized in CIMS. Super Admin can assign roles, designations, subsidiaries, Developers access, and individual extra privileges.",
   "Installation tracking includes equipment details, service points, and handover documentation. What information do you need?",
   "System logs are available for Admins to monitor all user activities and system events. Would you like to know how to access them?"
 ];

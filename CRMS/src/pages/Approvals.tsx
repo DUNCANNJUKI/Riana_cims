@@ -26,9 +26,7 @@ import {
   DialogTitle,
 } from '@crms/components/ui/dialog';
 import { useToast } from '@crms/hooks/use-toast';
-import { useChangeRequests, useUpdateChangeRequest, useProfiles } from '@crms/hooks/useSupabaseData';
-import { sendNotificationEmail } from '@crms/lib/notifications';
-import { notifyStatusChangeSMS } from '@crms/lib/smsNotifications';
+import { useChangeRequests, useUpdateChangeRequest } from '@crms/hooks/useSupabaseData';
 import type { Database } from '@crms/integrations/supabase/types';
 
 type RequestStatus = Database['public']['Enums']['request_status'];
@@ -37,7 +35,6 @@ type PriorityLevel = Database['public']['Enums']['priority_level'];
 export default function Approvals() {
   const { toast } = useToast();
   const { data: changeRequests, isLoading } = useChangeRequests();
-  const { data: profiles } = useProfiles();
   const updateRequest = useUpdateChangeRequest();
 
   // Hold comment dialog state
@@ -67,58 +64,6 @@ export default function Approvals() {
       }
 
       await updateRequest.mutateAsync(updateData);
-
-      // Find the request to get details for notifications
-      const request = changeRequests?.find(r => r.id === requestId);
-
-      if (request) {
-        // Send email notification to senior developer
-        const seniorDev = profiles?.find(p => p.id === request.senior_developer_id);
-        if (seniorDev?.email) {
-          await sendNotificationEmail({
-            recipientEmail: seniorDev.email,
-            recipientName: seniorDev.name,
-            notificationType: action === 'approve' ? 'approved' : action === 'reject' ? 'rejected' : 'approval_needed',
-            ticketNumber,
-            clientName: request.client?.name || 'Unknown Client',
-            requestDescription: action === 'waiting' && comment
-              ? `Hold Comment: ${comment}\n\n${request.change_description}`
-              : request.change_description,
-            actionUrl: `${window.location.origin}/developers/requests/${requestId}`,
-          });
-
-          // Send SMS for critical/high priority
-          if (seniorDev.department) {
-            // Get phone from profile if available
-            const phoneField = (seniorDev as any).phone;
-            if (phoneField) {
-              await notifyStatusChangeSMS(
-                ticketNumber,
-                request.client?.name || 'Unknown Client',
-                statusMap[action],
-                phoneField,
-                request.priority as PriorityLevel
-              );
-            }
-          }
-        }
-
-        // If approved and assigned developer exists, notify them too
-        if (action === 'approve' && request.assigned_developer_id) {
-          const assignedDev = profiles?.find(p => p.id === request.assigned_developer_id);
-          if (assignedDev?.email) {
-            await sendNotificationEmail({
-              recipientEmail: assignedDev.email,
-              recipientName: assignedDev.name,
-              notificationType: 'assigned',
-              ticketNumber,
-              clientName: request.client?.name || 'Unknown Client',
-              requestDescription: request.change_description,
-              actionUrl: `${window.location.origin}/developers/requests/${requestId}`,
-            });
-          }
-        }
-      }
 
       const messages = {
         approve: `${ticketNumber} has been approved`,

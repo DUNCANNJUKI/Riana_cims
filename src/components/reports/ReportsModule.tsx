@@ -143,7 +143,7 @@ export const ReportsModule = ({ user }: ReportsModuleProps) => {
       const dateRangeFilter = dateFrom && dateTo ? { from: dateFrom, to: dateTo } : undefined;
       
       if (format === 'pdf') {
-        await generatePDFReport(reportId, dateRangeFilter);
+        await generatePDFReport(reportId, dateRangeFilter, { subsidiaryName: user.subsidiary_name });
       } else {
         await generateCSVReport(reportId, dateRangeFilter);
       }
@@ -169,7 +169,10 @@ export const ReportsModule = ({ user }: ReportsModuleProps) => {
     
     try {
       const dateRangeFilter = dateFrom && dateTo ? { from: dateFrom, to: dateTo } : undefined;
-      const blob = await generatePDFReport(reportId, dateRangeFilter, { preview: true });
+      const blob = await generatePDFReport(reportId, dateRangeFilter, {
+        preview: true,
+        subsidiaryName: user.subsidiary_name,
+      });
       
       if (blob) {
         setPreviewBlob(blob);

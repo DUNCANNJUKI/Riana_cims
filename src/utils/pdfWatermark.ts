@@ -1,4 +1,5 @@
 import jsPDF from "jspdf";
+import { BrandIdentity, isMareziSubsidiary, resolveBrandIdentity } from './brandIdentity';
 
 // Company address and website from letterhead
 const COMPANY_ADDRESS = "6th Floor, Allianz Plaza, 96 Riverside Drive, Nairobi, Kenya";
@@ -14,10 +15,30 @@ const SUBSIDIARIES = [
   { name: "USS", color: [183, 28, 28] as [number, number, number] }
 ];
 
-// RIANA brand colors (Matching #0D8390)
+// Measured from the official raster assets so header backgrounds and logos blend.
 const RIANA_TEAL = [29, 130, 151];
 const RIANA_BLUE = [29, 130, 151]; // Matched to the edge tone of the official logo
 export const RIANA_DOCUMENT_TEAL = RIANA_TEAL as [number, number, number];
+
+export interface DocumentBrandingOptions {
+  subsidiaryName?: string | null;
+  documentTitle?: string;
+  generatedAt?: Date;
+}
+
+export const DOCUMENT_LAYOUT = {
+  firstPageContentTop: 55,
+  continuationContentTop: 40,
+  contentBottom: 252,
+  autoTableBottomMargin: 45,
+} as const;
+
+export { isMareziSubsidiary };
+export const resolveDocumentBrand = (
+  ...subsidiaryNames: Array<string | null | undefined>
+): BrandIdentity => (
+  resolveBrandIdentity(...subsidiaryNames)
+);
 
 const imageFormat = (dataUrl: string): 'PNG' | 'JPEG' => (
   /^data:image\/jpe?g/i.test(dataUrl) ? 'JPEG' : 'PNG'
@@ -56,14 +77,50 @@ export const addCimsDocumentHeader = async (
     metaLeft?: string;
     metaRight?: string;
     headerHeight?: number;
+    subsidiaryName?: string | null;
   } = {},
 ): Promise<number> => {
   const pageWidth = doc.internal.pageSize.getWidth();
-  const headerHeight = options.headerHeight ?? 45;
-  const primaryColor = options.primaryColor ?? RIANA_DOCUMENT_TEAL;
-  const accentColor = options.accentColor ?? RIANA_DOCUMENT_TEAL;
+  const pageHeight = doc.internal.pageSize.getHeight();
+  const brand = resolveDocumentBrand(options.subsidiaryName);
+  const headerHeight = options.headerHeight ?? (brand.id === 'marezi' ? 52 : 45);
+  const primaryColor = options.primaryColor ?? brand.primary;
+  const accentColor = options.accentColor ?? brand.accent;
   const margin = 14;
   const logoSlot = { x: margin, y: 11, width: 36, height: 22 };
+
+  if (brand.id === 'marezi') {
+    const letterhead = await fetchImageAsBase64(brand.letterheadPath!);
+    if (letterhead) {
+      doc.addImage(letterhead, 'PNG', 0, 0, pageWidth, pageHeight);
+    } else {
+      doc.setDrawColor(...brand.primary);
+      doc.setLineWidth(0.6);
+      doc.line(8, 27.5, pageWidth - 47, 27.5);
+      doc.setDrawColor(...brand.accent);
+      doc.line(pageWidth - 47, 27.5, pageWidth - 8, 27.5);
+    }
+
+    doc.setTextColor(...brand.primary);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8);
+    if (options.metaLeft) doc.text(options.metaLeft, margin, 32);
+    if (options.metaRight) doc.text(options.metaRight, pageWidth - margin, 32, { align: 'right' });
+
+    doc.setFontSize(14);
+    doc.text(options.title || 'RIANA CIMS', pageWidth / 2, 38, { align: 'center' });
+    if (options.subtitle) {
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(9.5);
+      doc.text(options.subtitle, pageWidth / 2, 44, { align: 'center' });
+    }
+    if (options.documentTitle) {
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(10.5);
+      doc.text(options.documentTitle, pageWidth / 2, 50, { align: 'center' });
+    }
+    return headerHeight + 3;
+  }
 
   doc.setFillColor(...primaryColor);
   doc.rect(0, 0, pageWidth, headerHeight, 'F');
@@ -121,6 +178,7 @@ export const addCimsDocumentHeader = async (
  */
 export const fetchImageAsBase64 = async (src: string): Promise<string | null> => {
   try {
+    if (/^data:image\//i.test(src)) return src;
     const isAbsolute = src.startsWith('http://') || src.startsWith('https://');
     const url = isAbsolute ? src : `${window.location.origin}${src.startsWith('/') ? '' : '/'}${src}`;
     
@@ -137,6 +195,7 @@ export const fetchImageAsBase64 = async (src: string): Promise<string | null> =>
     if (!response || !response.ok) return null;
     
     const blob = await response.blob();
+    if (!/^image\//i.test(blob.type || '')) return null;
     return new Promise((resolve) => {
       const reader = new FileReader();
       reader.onloadend = () => resolve(reader.result as string);
@@ -166,6 +225,7 @@ export const fetchImageAsGrayscaleBase64 = async (src: string): Promise<string |
     if (!response || !response.ok) return null;
     
     const blob = await response.blob();
+    if (!/^image\//i.test(blob.type || '')) return null;
     const objectUrl = URL.createObjectURL(blob);
     
     return new Promise((resolve) => {
@@ -221,14 +281,37 @@ export const generateReportSerial = (abbreviation: string = 'GEN'): string => {
 export const addLetterheadToDocument = async (
   doc: jsPDF,
   logoPath: string = '/Riana_logo.png',
-  letterheadPath: string = '/letterhead-new.jpg'
+  letterheadPath: string = '/letterhead-new.jpg',
+  options: DocumentBrandingOptions = {},
 ): Promise<void> => {
   const pageCount = doc.getNumberOfPages();
   const pageWidth = doc.internal.pageSize.getWidth();
   const pageHeight = doc.internal.pageSize.getHeight();
+  const brand = resolveDocumentBrand(options.subsidiaryName);
+
+  if (brand.id === 'marezi') {
+    const mareziLetterhead = await fetchImageAsBase64(brand.letterheadPath!);
+    const generatedAt = options.generatedAt || new Date();
+
+    for (let page = 1; page <= pageCount; page += 1) {
+      doc.setPage(page);
+      if (mareziLetterhead) {
+        doc.addImage(mareziLetterhead, 'PNG', 0, 0, pageWidth, pageHeight);
+      }
+      if (page > 1 && options.documentTitle) {
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(8.5);
+        doc.setTextColor(...brand.primary);
+        doc.text(options.documentTitle, pageWidth / 2, 32.5, { align: 'center' });
+      }
+      addMareziFooterMetadata(doc, pageWidth, pageHeight, page, pageCount, generatedAt);
+    }
+    return;
+  }
 
   // Try to load logo for watermark and new branding assets
   const logoBase64 = await fetchImageAsGrayscaleBase64(logoPath);
+  const headerLogoBase64 = await fetchImageAsBase64(logoPath);
   const watermarkBase64 = await fetchImageAsGrayscaleBase64('/report_watermark.png');
   const footerBase64 = await fetchImageAsBase64('/report_footer.png');
   const letterheadBase64 = await fetchImageAsBase64(letterheadPath) || await fetchImageAsBase64('/letterhead.jpg');
@@ -236,6 +319,10 @@ export const addLetterheadToDocument = async (
   // Apply to each page
   for (let i = 1; i <= pageCount; i++) {
     doc.setPage(i);
+
+    if (i > 1) {
+      addRianaContinuationHeader(doc, headerLogoBase64, pageWidth, options.documentTitle);
+    }
 
     // Add NEW FULL-PAGE watermark (Visible B/W)
     if (watermarkBase64) {
@@ -296,6 +383,53 @@ export const addLetterheadToDocument = async (
       addProfessionalFooter(doc, pageWidth, pageHeight, i, pageCount);
     }
   }
+};
+
+const addRianaContinuationHeader = (
+  doc: jsPDF,
+  logoBase64: string | null,
+  pageWidth: number,
+  documentTitle?: string,
+): void => {
+  doc.setFillColor(...RIANA_DOCUMENT_TEAL);
+  doc.rect(0, 0, pageWidth, 22, 'F');
+  if (logoBase64) {
+    try {
+      addImageContained(doc, logoBase64, 10, 3.5, 28, 15);
+    } catch {
+      // Text identity below remains the deterministic fallback.
+    }
+  }
+  doc.setTextColor(255, 255, 255);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(10);
+  doc.text('RIANA CIMS', pageWidth / 2, 9, { align: 'center' });
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8);
+  doc.text(documentTitle || 'Official System Document', pageWidth / 2, 15, { align: 'center' });
+};
+
+const addMareziFooterMetadata = (
+  doc: jsPDF,
+  pageWidth: number,
+  pageHeight: number,
+  currentPage: number,
+  totalPages: number,
+  generatedAt: Date,
+): void => {
+  doc.setFillColor(255, 255, 255);
+  doc.rect(10, pageHeight - 23, pageWidth - 20, 6.5, 'F');
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(6.5);
+  doc.setTextColor(70, 70, 70);
+  doc.text('MAREZI | Official & Confidential', 14, pageHeight - 19);
+  doc.text(
+    `Generated ${generatedAt.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}`,
+    pageWidth / 2,
+    pageHeight - 19,
+    { align: 'center' },
+  );
+  doc.text(`Page ${currentPage} of ${totalPages}`, pageWidth - 14, pageHeight - 19, { align: 'right' });
 };
 
 /**

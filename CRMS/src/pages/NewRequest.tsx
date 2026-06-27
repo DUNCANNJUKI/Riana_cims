@@ -15,8 +15,7 @@ import {
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@crms/components/ui/card';
 import { Checkbox } from '@crms/components/ui/checkbox';
 import { useToast } from '@crms/hooks/use-toast';
-import { useClients, useProfiles, useCreateChangeRequest, useUsersWithRoles } from '@crms/hooks/useSupabaseData';
-import { sendNotificationEmail } from '@crms/lib/notifications';
+import { useClients, useProfiles, useCreateChangeRequest } from '@crms/hooks/useSupabaseData';
 import { Skeleton } from '@crms/components/ui/skeleton';
 type RequestSource = 'email' | 'phone' | 'whatsapp' | 'meeting';
 type PriorityLevel = 'low' | 'medium' | 'high' | 'critical';
@@ -55,7 +54,6 @@ export default function NewRequest() {
   const { toast } = useToast();
   const { data: clients, isLoading: clientsLoading } = useClients();
   const { data: profiles } = useProfiles();
-  const { data: usersWithRoles } = useUsersWithRoles();
   const createRequest = useCreateChangeRequest();
 
   const [selectedModules, setSelectedModules] = useState<string[]>([]);
@@ -109,7 +107,7 @@ export default function NewRequest() {
         throw new Error('No senior developer available');
       }
 
-      const newRequest = await createRequest.mutateAsync({
+      await createRequest.mutateAsync({
         client_id: formData.clientId,
         department: formData.department,
         source: formData.source as RequestSource,
@@ -121,30 +119,6 @@ export default function NewRequest() {
         senior_developer_id: seniorDevId,
         status: sendForApproval ? 'pending_approval' : 'waiting',
       });
-
-      // Send email notification if submitting for approval
-      if (sendForApproval && newRequest) {
-        const client = clients?.find(c => c.id === formData.clientId);
-
-        // Notify all users with sales role
-        const salesUsers = (usersWithRoles || []).filter(u =>
-          u.roles.some(r => r.role === 'sales')
-        );
-
-        for (const salesPerson of salesUsers) {
-          if (salesPerson.email) {
-            await sendNotificationEmail({
-              recipientEmail: salesPerson.email,
-              recipientName: salesPerson.name,
-              notificationType: 'approval_needed',
-              ticketNumber: newRequest.ticket_number,
-              clientName: client?.name || 'Unknown Client',
-              requestDescription: formData.description,
-              actionUrl: `${window.location.origin}/developers/requests/${newRequest.id}`,
-            });
-          }
-        }
-      }
 
       toast({
         title: sendForApproval ? 'Request Sent for Approval' : 'Draft Saved',

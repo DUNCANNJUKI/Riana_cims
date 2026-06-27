@@ -20,7 +20,7 @@ async function deliverUserNotification({
   sms = false,
   smsMessage,
   details = {},
-}) {
+}, providers = { sendEmail, sendSms }) {
   const [users] = await pool.query(
     'SELECT id,email,phone_number,first_name,last_name FROM user_profiles WHERE id = ? LIMIT 1',
     [userId],
@@ -48,7 +48,7 @@ async function deliverUserNotification({
   if (email && user.email) {
     deliveries.push({
       channel: 'email',
-      promise: sendEmail({
+      promise: providers.sendEmail({
         recipientEmail: user.email,
         recipientName: userName(user),
         notificationType,
@@ -61,7 +61,7 @@ async function deliverUserNotification({
   if (sms && user.phone_number) {
     deliveries.push({
       channel: 'sms',
-      promise: sendSms({ phoneNumber: user.phone_number, message: smsMessage || message }),
+      promise: providers.sendSms({ phoneNumber: user.phone_number, message: smsMessage || message }),
     });
   }
 
@@ -101,4 +101,4 @@ async function sendUsersNotification(options) {
   return Promise.all(userIds.map(userId => sendUserNotification({ ...options, userId })));
 }
 
-module.exports = { sendUserNotification, sendUsersNotification };
+module.exports = { deliverUserNotification, sendUserNotification, sendUsersNotification };

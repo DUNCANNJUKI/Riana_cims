@@ -13,6 +13,7 @@ export const useAuth = () => {
     try {
       const data = await apiClient.get('/auth/me');
       if (data && data.user) {
+        localStorage.setItem('riana_user', JSON.stringify(data.user));
         setAuthState({
           user: data.user,
           isAuthenticated: true,

@@ -20,6 +20,16 @@ import { useDatabase } from "@/hooks/useDatabase";
 import { useChat } from "@/hooks/useChat";
 import { ChatModule } from "@/components/chat/ChatModule";
 import { getCompanyBrandingEventDetail, resolveCompanyLogoUrl } from "@/utils/logoUrl";
+import { formatRoleLabel } from "@/utils/roleLabel";
+
+const TRANSPARENT_RIANA_LOGO = "/Riana_mark_transparent.png";
+
+const resolveHeaderLogoUrl = (logoPath?: string | null, version?: string | number | null) => {
+  if (!logoPath || /(?:^|\/)Riana_logo\.png(?:$|\?)/i.test(logoPath)) {
+    return TRANSPARENT_RIANA_LOGO;
+  }
+  return resolveCompanyLogoUrl(logoPath, version);
+};
 
 interface HeaderProps {
   user: UserType;
@@ -30,7 +40,7 @@ interface HeaderProps {
 export const Header = ({ user, className, setActiveModule }: HeaderProps) => {
   const { logout } = useAuth();
   const { getCompanySettings } = useDatabase();
-  const [logoPath, setLogoPath] = useState("/Riana_logo.png");
+  const [logoPath, setLogoPath] = useState(TRANSPARENT_RIANA_LOGO);
   const [isRedirectDialogOpen, setIsRedirectDialogOpen] = useState(false);
   const [isProfileSettingsOpen, setIsProfileSettingsOpen] = useState(false);
   const [isChatOpen, setIsChatOpen] = useState(false);
@@ -53,7 +63,7 @@ export const Header = ({ user, className, setActiveModule }: HeaderProps) => {
       try {
         const settings = await getCompanySettings();
         if (settings?.logo_path) {
-          setLogoPath(resolveCompanyLogoUrl(settings.logo_path, settings.updated_at || settings.id));
+          setLogoPath(resolveHeaderLogoUrl(settings.logo_path, settings.updated_at || settings.id));
         }
       } catch (error) {
         console.error("Error loading logo settings:", error);
@@ -63,7 +73,7 @@ export const Header = ({ user, className, setActiveModule }: HeaderProps) => {
 
     const handleBrandingUpdate = (event: Event) => {
       const { logoPath, version } = getCompanyBrandingEventDetail(event);
-      setLogoPath(resolveCompanyLogoUrl(logoPath, version));
+      setLogoPath(resolveHeaderLogoUrl(logoPath, version));
     };
 
     window.addEventListener('riana-company-branding-updated', handleBrandingUpdate);
@@ -122,8 +132,14 @@ export const Header = ({ user, className, setActiveModule }: HeaderProps) => {
   
   const getRoleColor = (role: string) => {
     switch (role) {
+      case 'SuperAdmin':
+        return 'border-red-300 bg-red-600 text-white hover:bg-red-600';
       case 'Admin':
-        return 'bg-destructive';
+        return 'border-rose-300 bg-rose-600 text-white hover:bg-rose-600';
+      case 'Management':
+        return 'border-indigo-300 bg-indigo-600 text-white hover:bg-indigo-600';
+      case 'Finance':
+        return 'border-emerald-300 bg-emerald-700 text-white hover:bg-emerald-700';
       case 'Teamlead':
         return 'bg-primary';
       case 'Developer':
@@ -152,55 +168,58 @@ export const Header = ({ user, className, setActiveModule }: HeaderProps) => {
   };
 
   return (
-    <header className={cn("gradient-header text-white shadow-riana", className)}>
-      <div className="container mx-auto px-2 sm:px-4 py-2 sm:py-4">
-        <div className="flex items-center justify-between gap-2">
+    <header className={cn("enterprise-header text-white", className)}>
+      <div className="flex h-[64px] w-full items-center justify-between px-3 sm:h-[72px] sm:px-6">
+        <div className="flex w-full items-center justify-between gap-3">
           {/* Logo and Title - Responsive */}
-          <div className="flex items-center space-x-2 sm:space-x-4 min-w-0">
-            <div className="flex-shrink-0 w-20 sm:w-28 h-10 sm:h-12 flex items-center justify-start overflow-hidden">
+          <div className="flex min-w-0 items-center gap-2.5 sm:gap-4">
+            <div className="flex h-11 w-11 flex-shrink-0 items-center justify-center overflow-hidden sm:h-14 sm:w-14">
               <img 
                 src={logoPath} 
                 alt="RIANA Group" 
-                className="h-full w-auto object-contain drop-shadow-lg"
+                className="max-h-10 max-w-11 object-contain sm:max-h-[46px] sm:max-w-[54px]"
                 onError={(e) => {
-                  // Fallback to local asset if DB path fails
-                  if (e.currentTarget.src.includes(logoPath) && logoPath !== "/Riana_logo.png") {
-                    setLogoPath("/Riana_logo.png");
+                  if (e.currentTarget.src.includes(logoPath) && logoPath !== TRANSPARENT_RIANA_LOGO) {
+                    setLogoPath(TRANSPARENT_RIANA_LOGO);
                   }
                 }}
               />
             </div>
-            <div className="min-w-0">
-              <h1 className="text-base sm:text-xl font-bold truncate">RIANA CIMS</h1>
-              <p className="text-xs sm:text-sm opacity-90 hidden sm:block">Client Installation Management</p>
+            <div className="min-w-0 leading-none">
+              <h1 className="truncate text-lg font-bold leading-[1.1] tracking-normal sm:text-2xl xl:text-[29px]">RIANA CIMS</h1>
+              <p className="mt-1 truncate text-xs font-normal leading-tight text-white/85 sm:text-[15px] xl:text-base">Client Installation Management</p>
             </div>
           </div>
 
           {/* Action Buttons - Responsive */}
-          <div className="flex items-center gap-1 sm:gap-3 flex-shrink-0">
+          <div className="ml-auto flex flex-shrink-0 items-center gap-1.5 sm:gap-3 xl:gap-[22px]">
             {/* Optimus Button - Hidden on very small screens */}
             <Button 
               variant="default"
               size="sm"
               onClick={() => setIsRedirectDialogOpen(true)}
-              className="hidden xs:flex bg-white text-primary hover:bg-white/90 font-semibold shadow-lg transition-all hover:scale-105 active:scale-95 text-xs sm:text-sm px-2 sm:px-3"
+              className="hidden h-10 bg-white px-3 text-xs font-semibold text-primary shadow-sm transition-colors hover:bg-white/90 focus-visible:ring-white sm:flex sm:text-sm"
             >
-              <ExternalLink className="h-3 w-3 sm:h-4 sm:w-4 sm:mr-2" />
+              <ExternalLink className="h-[18px] w-[18px] sm:mr-2" />
               <span className="hidden sm:inline">Optimus</span>
             </Button>
 
             {/* Notification Bell - Always visible */}
-            <NotificationBell user={user} onNavigate={setActiveModule} />
+            <NotificationBell
+              user={user}
+              onNavigate={setActiveModule}
+              triggerClassName="h-10 w-10 text-white hover:bg-white/10 hover:text-white focus-visible:ring-white dark:text-white"
+            />
 
             {/* Chat Button */}
             <Button
               variant="ghost"
               size="icon"
               onClick={() => setIsChatOpen(!isChatOpen)}
-              className="relative h-8 w-8 sm:h-9 sm:w-9 text-white hover:bg-white/10 transition-all duration-300"
+              className="relative h-10 w-10 text-white transition-colors duration-200 hover:bg-white/10 focus-visible:ring-white"
               title="Open Chat"
             >
-              <MessageSquare className="h-4 w-4 sm:h-5 sm:w-5" />
+              <MessageSquare className="h-5 w-5" />
               {totalUnread > 0 && (
                 <Badge className="absolute -top-1 -right-1 h-4 w-4 flex items-center justify-center p-0 bg-red-500 text-[10px] animate-pulse border-white border">
                   {totalUnread}
@@ -213,27 +232,27 @@ export const Header = ({ user, className, setActiveModule }: HeaderProps) => {
               variant="ghost"
               size="icon"
               onClick={toggleDarkMode}
-              className="h-8 w-8 sm:h-9 sm:w-9 text-white hover:bg-white/10 transition-all duration-300"
+              className="h-10 w-10 text-white transition-colors duration-200 hover:bg-white/10 focus-visible:ring-white"
               title={isDarkMode ? "Switch to light mode" : "Switch to dark mode"}
             >
               {isDarkMode ? (
-                <Sun className="h-4 w-4 sm:h-5 sm:w-5 transition-transform duration-300 rotate-0" />
+                <Sun className="h-5 w-5 transition-transform duration-300 rotate-0" />
               ) : (
-                <Moon className="h-4 w-4 sm:h-5 sm:w-5 transition-transform duration-300 rotate-0" />
+                <Moon className="h-5 w-5 transition-transform duration-300 rotate-0" />
               )}
             </Button>
             
             {/* Role Badge - Hidden on mobile */}
-            <Badge variant="outline" className={`hidden sm:inline-flex text-white border-white/30 font-medium text-xs ${getRoleColor(user.role)}`}>
-              {user.role}
+            <Badge className={`hidden h-[30px] rounded-full border px-3.5 text-xs font-semibold shadow-sm sm:inline-flex ${getRoleColor(user.role)}`}>
+              {formatRoleLabel(user.role)}
             </Badge>
             
             {/* User Menu Dropdown */}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="ghost" className="relative h-9 w-9 sm:h-11 sm:w-11 rounded-full text-white hover:bg-white/10 p-0 overflow-hidden ring-2 ring-white/30 hover:ring-white/50 transition-all">
-                  <Avatar className="h-9 w-9 sm:h-11 sm:w-11">
-                    <AvatarFallback className="bg-gradient-to-br from-primary-foreground to-white text-primary font-bold text-sm sm:text-lg">
+                <Button variant="ghost" className="relative h-10 w-10 overflow-hidden rounded-full border-2 border-white/35 p-0 text-white shadow-[0_3px_10px_rgba(0,0,0,0.16)] transition-colors hover:bg-white/10 focus-visible:ring-white sm:h-12 sm:w-12">
+                  <Avatar className="h-full w-full">
+                    <AvatarFallback className="bg-gradient-to-br from-primary-foreground to-white text-sm font-bold text-primary sm:text-lg">
                       {getUserInitials()}
                     </AvatarFallback>
                   </Avatar>
@@ -247,7 +266,7 @@ export const Header = ({ user, className, setActiveModule }: HeaderProps) => {
                       {user.email}
                     </p>
                     <p className="text-xs text-muted-foreground">
-                      {user.role} • {user.designation || 'No designation'}
+                      {formatRoleLabel(user.role)} • {user.designation || 'No designation'}
                     </p>
                   </div>
                 </div>

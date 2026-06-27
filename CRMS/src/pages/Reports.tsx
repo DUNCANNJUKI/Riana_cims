@@ -44,6 +44,7 @@ export default function Reports() {
   const [dateTo, setDateTo] = useState('');
   const [clientFilter, setClientFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
+  const [developerFilter, setDeveloperFilter] = useState('all');
   const { data: changeRequests = [], isLoading: requestsLoading } = useChangeRequests();
   const { data: clients = [], isLoading: clientsLoading } = useClients();
 
@@ -53,8 +54,15 @@ export default function Reports() {
     const matchesDateTo = !dateTo || requestedAt <= new Date(`${dateTo}T23:59:59`);
     const matchesClient = clientFilter === 'all' || request.client_id === clientFilter;
     const matchesStatus = statusFilter === 'all' || request.status === statusFilter;
-    return matchesDateFrom && matchesDateTo && matchesClient && matchesStatus;
+    const matchesDeveloper = developerFilter === 'all' || request.assigned_developer_id === developerFilter;
+    return matchesDateFrom && matchesDateTo && matchesClient && matchesStatus && matchesDeveloper;
   });
+
+  const developers = Array.from(new Map(
+    changeRequests
+      .filter((request) => request.assigned_developer_id && request.assigned_developer?.name)
+      .map((request) => [request.assigned_developer_id, request.assigned_developer]),
+  ).entries());
 
   // Calculate summary stats
   const summary = {
@@ -157,7 +165,7 @@ export default function Reports() {
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
                 <div className="space-y-2">
                   <Label>Date From</Label>
                   <Input
@@ -203,6 +211,18 @@ export default function Reports() {
                       <SelectItem value="in_progress">In Progress</SelectItem>
                       <SelectItem value="completed">Completed</SelectItem>
                       <SelectItem value="rejected">Rejected</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>Developer</Label>
+                  <Select value={developerFilter} onValueChange={setDeveloperFilter}>
+                    <SelectTrigger><SelectValue placeholder="All developers" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Developers</SelectItem>
+                      {developers.map(([id, developer]) => (
+                        <SelectItem key={id} value={id}>{developer?.name}</SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                 </div>
@@ -369,7 +389,7 @@ export default function Reports() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {changeRequests.map((request) => (
+                  {filteredRequests.map((request) => (
                     <TableRow key={request.id}>
                       <TableCell className="font-medium">{request.ticket_number}</TableCell>
                       <TableCell>{request.client?.name || 'Unknown client'}</TableCell>
@@ -404,7 +424,7 @@ export default function Reports() {
                       </TableCell>
                     </TableRow>
                   ))}
-                  {changeRequests.length === 0 && (
+                  {filteredRequests.length === 0 && (
                     <TableRow>
                       <TableCell colSpan={5} className="py-10 text-center text-muted-foreground">
                         No live request documents are available yet.

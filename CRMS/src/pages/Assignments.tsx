@@ -35,12 +35,10 @@ import { Textarea } from '@crms/components/ui/textarea';
 import { Label } from '@crms/components/ui/label';
 import { StatusBadge } from '@crms/components/common/StatusBadge';
 import { PriorityBadge } from '@crms/components/common/PriorityBadge';
-import { useChangeRequests, useUpdateChangeRequest, useCreateAuditLog, useProfiles } from '@crms/hooks/useSupabaseData';
+import { useChangeRequests, useUpdateChangeRequest, useCreateAuditLog } from '@crms/hooks/useSupabaseData';
 import { Skeleton } from '@crms/components/ui/skeleton';
 import { useToast } from '@crms/hooks/use-toast';
 import { Database } from '@crms/integrations/supabase/types';
-import { sendNotificationEmail, createInAppNotification } from '@crms/lib/notifications';
-import { notifyStatusChangeSMS } from '@crms/lib/smsNotifications';
 import { useCurrentUserRole } from '@crms/hooks/useCurrentUserRole';
 
 type RequestStatus = Database['public']['Enums']['request_status'];
@@ -55,7 +53,6 @@ export default function Assignments() {
 
   const { profileId, isAdmin } = useCurrentUserRole();
   const { data: allRequests, isLoading, error } = useChangeRequests();
-  const { data: profiles } = useProfiles();
   const updateRequest = useUpdateChangeRequest();
   const createAuditLog = useCreateAuditLog();
   const { toast } = useToast();
@@ -129,54 +126,6 @@ export default function Assignments() {
         previous_value: request.status,
         new_value: newStatus,
       });
-
-      // Send notifications for waiting_clarification or completed status
-      if (newStatus === 'waiting_clarification' || newStatus === 'completed') {
-        const seniorDev = profiles?.find(p => p.id === request.senior_developer_id);
-        const clientName = request.client?.name || 'Unknown Client';
-        const clientPhone = request.client?.contact_phone;
-
-        // Send email to senior developer
-        if (seniorDev?.email) {
-          await sendNotificationEmail({
-            recipientEmail: seniorDev.email,
-            recipientName: seniorDev.name,
-            notificationType: newStatus === 'waiting_clarification' ? 'waiting_clarification' : 'completed',
-            ticketNumber: request.ticket_number,
-            clientName,
-            requestDescription: request.change_description,
-            actionUrl: `${window.location.origin}/developers/requests/${request.id}`,
-            comment: statusComment,
-          });
-        }
-
-        // Create in-app notification for senior developer
-        if (seniorDev?.user_id) {
-          await createInAppNotification(
-            seniorDev.user_id,
-            newStatus === 'waiting_clarification'
-              ? `Clarification Needed: ${request.ticket_number}`
-              : `Request Completed: ${request.ticket_number}`,
-            newStatus === 'waiting_clarification'
-              ? `Developer needs clarification on ${clientName} request: ${statusComment}`
-              : `${clientName} request has been completed. Please verify.`,
-            newStatus === 'waiting_clarification' ? 'warning' : 'success',
-            `/developers/requests/${request.id}`,
-            request.id
-          );
-        }
-
-        // Send SMS for critical/high priority or completed status
-        if (clientPhone && (request.priority === 'critical' || request.priority === 'high' || newStatus === 'completed')) {
-          await notifyStatusChangeSMS(
-            request.ticket_number,
-            clientName,
-            newStatus,
-            clientPhone,
-            request.priority
-          );
-        }
-      }
 
       toast({
         title: 'Status Updated',

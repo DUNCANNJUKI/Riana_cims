@@ -12,7 +12,7 @@ import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import { format, subMonths, subQuarters, subYears } from "date-fns";
 import { applyCompanyBranding } from "@/utils/companyLogo";
-import { addCimsDocumentHeader } from "@/utils/pdfWatermark";
+import { addCimsDocumentHeader, DOCUMENT_LAYOUT, resolveDocumentBrand } from "@/utils/pdfWatermark";
 
 interface PerformanceReportGeneratorProps {
   user: User;
@@ -112,12 +112,14 @@ export const PerformanceReportGenerator = ({ user }: PerformanceReportGeneratorP
 
       // Generate PDF
       const doc = new jsPDF();
-      const pageWidth = doc.internal.pageSize.getWidth();
       const margin = 14;
+      const documentTitle = `${periodLabel} Performance Report`;
+      const brand = resolveDocumentBrand(user.subsidiary_name);
 
       await addCimsDocumentHeader(doc, {
-        subtitle: `${periodLabel} Performance Report`,
+        subtitle: documentTitle,
         documentTitle: `Period: ${format(startDate, 'MMM d, yyyy')} - ${format(endDate, 'MMM d, yyyy')}`,
+        subsidiaryName: user.subsidiary_name,
       });
 
       // Report metadata
@@ -179,7 +181,7 @@ export const PerformanceReportGenerator = ({ user }: PerformanceReportGeneratorP
         }),
         theme: 'grid',
         headStyles: {
-          fillColor: [13, 131, 144],
+          fillColor: brand.primary,
           textColor: [255, 255, 255],
           fontSize: 9,
           fontStyle: 'bold'
@@ -190,7 +192,12 @@ export const PerformanceReportGenerator = ({ user }: PerformanceReportGeneratorP
         alternateRowStyles: {
           fillColor: [243, 244, 246]
         },
-        margin: { left: margin, right: margin }
+        margin: {
+          left: margin,
+          right: margin,
+          top: DOCUMENT_LAYOUT.continuationContentTop,
+          bottom: DOCUMENT_LAYOUT.autoTableBottomMargin,
+        }
       });
 
       // Get the final Y position after the table
@@ -217,7 +224,10 @@ export const PerformanceReportGenerator = ({ user }: PerformanceReportGeneratorP
 
       // Add company logo watermark and letterhead to all pages
       try {
-        await applyCompanyBranding(doc);
+        await applyCompanyBranding(doc, {
+          subsidiaryName: user.subsidiary_name,
+          documentTitle,
+        });
       } catch (error) {
         console.log('Branding could not be added:', error);
       }

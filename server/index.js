@@ -12,8 +12,17 @@ const createCrmsRouter = require('./routes/crms');
 const { createChallenge, verifyChallenge } = require('./utils/twoFactor');
 const { sendEmail, sendSms, sendWelcomeCredentials } = require('./services/notifications');
 const { sendUserNotification, sendUsersNotification } = require('./services/notificationDispatcher');
+const { isSensitiveTechnicalRequest } = require('./services/chatbotPolicy');
 const { createDatabaseBackup, listBackups, pruneBackups, getLastRun } = require('./services/databaseBackup');
 const { hashPassword, verifyPassword, verifyAndUpgradePassword } = require('./security/passwords');
+const {
+  CAPABILITY_DEFINITIONS,
+  getEffectiveCapabilities,
+  hasCapability,
+  normalizePermissions,
+  requireAnyCapability,
+  requireCapability,
+} = require('./security/accessControl');
 const {
   auditSecurityEvent,
   buildCorsOptions,
@@ -54,12 +63,12 @@ const INSTALLATION_FIELDS = new Set(['client_id','branch','kiosk_type','kiosk_co
 const ASSIGNMENT_FIELDS = new Set(['client_id','installation_id','hardware_technician_id','software_technician_id','installation_start_date','scheduled_end_date','status','progress_percentage','notes','branch']);
 const SUBSIDIARY_FIELDS = new Set(['subsidiary_name','default_escalation_matrix']);
 const FEEDBACK_LINK_FIELDS = new Set(['client_id','installation_id','expires_at','is_used']);
-const COMPANY_FIELDS = new Set(['name','logo_path','contract_types','font_color','primary_color','backup_schedule','backup_day','backup_time']);
-const SYSTEM_ROLES = new Set(['SuperAdmin', 'Admin', 'Developer', 'Teamlead', 'Sales', 'User']);
-const PRIVILEGED_ROLES = new Set(['SuperAdmin', 'Admin']);
-const CRMS_ACCESS_ROLES = new Set(['SuperAdmin', 'Admin', 'Teamlead', 'Developer', 'Sales']);
+const COMPANY_FIELDS = new Set(['name','logo_path','tagline','website','email','phone','address','contract_types','contract_durations','font_color','primary_color','secondary_color','accent_color','font_type','timezone','date_format','enable_email_notifications','enable_sms_notifications','enable_push_notifications','auto_reminder_days','backup_schedule','backup_day','backup_time']);
+const SYSTEM_ROLES = new Set(['SuperAdmin', 'Admin', 'Management', 'Finance', 'Developer', 'Teamlead', 'Sales', 'User']);
+const PRIVILEGED_ROLES = new Set(['SuperAdmin', 'Admin', 'Management']);
+const CRMS_ACCESS_ROLES = new Set(['SuperAdmin', 'Admin', 'Management', 'Teamlead', 'Developer', 'Sales']);
 const isSuperAdmin = (req) => req.user?.role === 'SuperAdmin';
-const isAdminOrSuperAdmin = (req) => req.user?.role === 'SuperAdmin' || req.user?.role === 'Admin';
+const isAdminOrSuperAdmin = (req) => ['SuperAdmin', 'Admin', 'Management'].includes(req.user?.role);
 const userCanManageTargetRole = (req, targetRole) => isSuperAdmin(req) || !PRIVILEGED_ROLES.has(targetRole);
 const USER_MODULE_ROLES_SQL = `
   COALESCE((
@@ -69,6 +78,19 @@ const USER_MODULE_ROLES_SQL = `
     WHERE umr.user_id = u.id
   ), '') AS module_roles
 `;
+const USER_PERMISSIONS_SQL = `
+  COALESCE((
+    SELECT GROUP_CONCAT(up.permission_id ORDER BY up.permission_id SEPARATOR ',')
+    FROM user_permissions up
+    WHERE up.user_id = u.id
+  ), '') AS extra_permissions
+`;
+
+const withEffectivePermissions = (user) => ({
+  ...user,
+  extra_permissions: normalizePermissions(user.extra_permissions),
+  permissions: getEffectiveCapabilities(user.role, user.extra_permissions),
+});
 
 const normalizeModuleRoles = (moduleRoles) => {
   if (!moduleRoles) return {};
@@ -211,13 +233,24 @@ app.use('/uploads', authMiddleware, authorizeStoredFile, express.static(uploadsD
 app.use('/api/crms', createCrmsRouter({ pool, jwtSecret: JWT_SECRET }));
 
 // File Upload & Handover Metadata
-app.post('/api/upload', async (req, res) => {
+app.post('/api/upload', requireAnyCapability('installations.manage', 'company.manage'), async (req, res) => {
   try {
-    const { fileName, base64Data, client_id, installation_id, is_signed, notes } = req.body;
+    const { fileName, base64Data, client_id, installation_id, is_signed, notes, purpose } = req.body;
+    if (purpose === 'company-logo' && !hasCapability(req.user, 'company.manage')) {
+      return res.status(403).json({ error: 'Company branding permission is required.' });
+    }
+    if (purpose !== 'company-logo' && !hasCapability(req.user, 'installations.manage')) {
+      return res.status(403).json({ error: 'Installation management permission is required.' });
+    }
     if (!fileName || !base64Data) return res.status(400).json({ error: 'Missing file data' });
     const { buffer, storedName: finalFileName } = safeUpload({ fileName, base64Data });
     const filePath = resolveStoredFile(uploadsDir, finalFileName);
     await fsp.writeFile(filePath, buffer, { flag: 'wx', mode: 0o640 });
+
+    if (purpose === 'company-logo') {
+      await pool.query('UPDATE company_settings SET logo_path = ? WHERE id = 1', [finalFileName]);
+      await auditSecurityEvent(pool, req, 'company_logo_uploaded', { fileName: finalFileName });
+    }
     
     // If metadata provided, also save to DB
     let handoverId = null;
@@ -265,7 +298,7 @@ const initDb = async () => {
       id VARCHAR(36) PRIMARY KEY,
       email VARCHAR(255) NOT NULL UNIQUE,
       password VARCHAR(255) NOT NULL,
-      role ENUM('SuperAdmin', 'Admin', 'Developer', 'Teamlead', 'Sales', 'User') NOT NULL,
+      role ENUM('SuperAdmin', 'Admin', 'Management', 'Finance', 'Developer', 'Teamlead', 'Sales', 'User') NOT NULL,
       designation VARCHAR(100),
       department_id VARCHAR(36),
       subsidiary_id VARCHAR(36),
@@ -283,12 +316,50 @@ const initDb = async () => {
       FOREIGN KEY (subsidiary_id) REFERENCES subsidiaries(id) ON DELETE SET NULL
     )`);
 
-    await pool.query("ALTER TABLE user_profiles MODIFY role ENUM('SuperAdmin','Admin','Developer','Teamlead','Sales','User') NOT NULL");
+    await pool.query("ALTER TABLE user_profiles MODIFY role ENUM('SuperAdmin','Admin','Management','Finance','Developer','Teamlead','Sales','User') NOT NULL");
     await pool.query(`ALTER TABLE user_profiles
       ADD COLUMN IF NOT EXISTS two_factor_enabled BOOLEAN NOT NULL DEFAULT FALSE,
       ADD COLUMN IF NOT EXISTS two_factor_method ENUM('email','sms','call') NOT NULL DEFAULT 'email',
       ADD COLUMN IF NOT EXISTS two_factor_phone VARCHAR(30) NULL,
       ADD COLUMN IF NOT EXISTS session_version INT UNSIGNED NOT NULL DEFAULT 0`);
+
+    await pool.query(`CREATE TABLE IF NOT EXISTS user_permissions (
+      user_id VARCHAR(36) NOT NULL,
+      permission_id VARCHAR(100) NOT NULL,
+      granted_by VARCHAR(36),
+      granted_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (user_id, permission_id),
+      INDEX idx_user_permissions_permission (permission_id),
+      CONSTRAINT fk_user_permissions_user FOREIGN KEY (user_id) REFERENCES user_profiles(id) ON DELETE CASCADE,
+      CONSTRAINT fk_user_permissions_permission FOREIGN KEY (permission_id) REFERENCES permissions(id) ON DELETE CASCADE,
+      CONSTRAINT fk_user_permissions_grantor FOREIGN KEY (granted_by) REFERENCES user_profiles(id) ON DELETE SET NULL
+    )`);
+
+    for (const capability of CAPABILITY_DEFINITIONS) {
+      await pool.query(
+        `INSERT INTO permissions (id,module_id,code,description) VALUES (?,?,?,?)
+         ON DUPLICATE KEY UPDATE description=VALUES(description)`,
+        [capability.code, 'cims', capability.code, capability.label],
+      );
+    }
+
+    await pool.query(`
+      INSERT INTO roles (id,module_id,code,name) VALUES
+        ('cims:Management','cims','Management','Management'),
+        ('cims:Finance','cims','Finance','Finance'),
+        ('crms:Management','crms','Management','Management')
+      ON DUPLICATE KEY UPDATE name=VALUES(name)
+    `);
+    await pool.query(`
+      INSERT INTO user_module_roles (user_id,module_id,role_id)
+      SELECT id,'cims',CONCAT('cims:',role) FROM user_profiles WHERE role IN ('Management','Finance')
+      ON DUPLICATE KEY UPDATE role_id=VALUES(role_id)
+    `);
+    await pool.query(`
+      INSERT INTO user_module_roles (user_id,module_id,role_id)
+      SELECT id,'crms','crms:Management' FROM user_profiles WHERE role='Management'
+      ON DUPLICATE KEY UPDATE role_id=VALUES(role_id)
+    `);
     await pool.query(`CREATE TABLE IF NOT EXISTS auth_two_factor_challenges (
       id CHAR(36) PRIMARY KEY,
       user_id VARCHAR(36) NOT NULL,
@@ -676,6 +747,22 @@ const initDb = async () => {
       if (!columnNames.includes('primary_color')) {
         await pool.query('ALTER TABLE company_settings ADD COLUMN primary_color VARCHAR(20) DEFAULT "#1e3a8a" AFTER font_color');
       }
+      await pool.query(`ALTER TABLE company_settings
+        ADD COLUMN IF NOT EXISTS tagline VARCHAR(255) NULL,
+        ADD COLUMN IF NOT EXISTS website VARCHAR(255) NULL,
+        ADD COLUMN IF NOT EXISTS email VARCHAR(255) NULL,
+        ADD COLUMN IF NOT EXISTS phone VARCHAR(50) NULL,
+        ADD COLUMN IF NOT EXISTS address TEXT NULL,
+        ADD COLUMN IF NOT EXISTS contract_durations JSON NULL,
+        ADD COLUMN IF NOT EXISTS secondary_color VARCHAR(20) NULL,
+        ADD COLUMN IF NOT EXISTS accent_color VARCHAR(20) NULL,
+        ADD COLUMN IF NOT EXISTS font_type VARCHAR(50) DEFAULT 'Inter',
+        ADD COLUMN IF NOT EXISTS timezone VARCHAR(100) DEFAULT 'Africa/Nairobi',
+        ADD COLUMN IF NOT EXISTS date_format VARCHAR(30) DEFAULT 'DD/MM/YYYY',
+        ADD COLUMN IF NOT EXISTS enable_email_notifications BOOLEAN DEFAULT TRUE,
+        ADD COLUMN IF NOT EXISTS enable_sms_notifications BOOLEAN DEFAULT TRUE,
+        ADD COLUMN IF NOT EXISTS enable_push_notifications BOOLEAN DEFAULT TRUE,
+        ADD COLUMN IF NOT EXISTS auto_reminder_days SMALLINT UNSIGNED DEFAULT 3`);
     } catch (err) {
       console.warn('Error patching company_settings table:', err.message);
     }
@@ -924,7 +1011,7 @@ const initBackupSchedule = async () => {
   }
 };
 
-app.get('/api/admin/backup-schedule', requireRole('SuperAdmin'), async (req, res) => {
+app.get('/api/admin/backup-schedule', requireCapability('backup.manage'), async (req, res) => {
   try {
     const [rows] = await pool.query('SELECT backup_schedule, backup_day, backup_time FROM company_settings WHERE id = 1');
     if (rows.length) {
@@ -939,7 +1026,7 @@ app.get('/api/admin/backup-schedule', requireRole('SuperAdmin'), async (req, res
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.post('/api/admin/backup-schedule', requireRole('SuperAdmin'), async (req, res) => {
+app.post('/api/admin/backup-schedule', requireCapability('backup.manage'), async (req, res) => {
   try {
     const { schedule, day, time } = req.body;
     let finalSchedule = schedule;
@@ -975,13 +1062,13 @@ app.post('/api/admin/backup-schedule', requireRole('SuperAdmin'), async (req, re
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.get('/api/admin/backups', requireRole('SuperAdmin'), async (req, res) => {
+app.get('/api/admin/backups', requireCapability('backup.manage'), async (req, res) => {
   try {
     res.json(listBackups());
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.get('/api/admin/backup-status', requireRole('SuperAdmin'), async (_req, res) => {
+app.get('/api/admin/backup-status', requireCapability('backup.manage'), async (_req, res) => {
   try {
     const [rows] = await pool.query('SELECT backup_schedule, backup_day, backup_time FROM company_settings WHERE id = 1');
     res.json({
@@ -996,7 +1083,7 @@ app.get('/api/admin/backup-status', requireRole('SuperAdmin'), async (_req, res)
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.post('/api/admin/backup', requireRole('SuperAdmin'), async (req, res) => {
+app.post('/api/admin/backup', requireCapability('backup.manage'), async (req, res) => {
   try {
     const result = await createDatabaseBackup(pool);
     pruneBackups();
@@ -1008,7 +1095,8 @@ app.post('/api/admin/backup', requireRole('SuperAdmin'), async (req, res) => {
 // DASHBOARD STATS
 app.get('/api/dashboard/stats', async (req, res) => {
   try {
-    const { userId, role } = req.query;
+    const userId = req.user.id;
+    const role = req.user.role;
     const isRegularUser = role !== 'SuperAdmin' && role !== 'Admin' && role !== 'Teamlead';
 
     const [[{ count: totalClients }]] = await pool.query('SELECT COUNT(*) as count FROM clients');
@@ -1036,7 +1124,7 @@ app.get('/api/dashboard/stats', async (req, res) => {
 const safeUser = (user) => {
   const { password, ...result } = user;
   result.module_roles = normalizeModuleRoles(result.module_roles);
-  return result;
+  return withEffectivePermissions(result);
 };
 
 const issueCimsSession = (res, user) => {
@@ -1057,7 +1145,12 @@ app.post('/api/auth/login', async (req, res) => {
     const email = String(req.body.email || '').trim().toLowerCase();
     const password = String(req.body.password || '');
     if (!email || !password) return res.status(400).json({ error: 'Email and password are required.' });
-    const [rows] = await pool.query(`SELECT u.*, ${USER_MODULE_ROLES_SQL} FROM user_profiles u WHERE LOWER(u.email) = ?`, [email]);
+    const [rows] = await pool.query(`
+      SELECT u.*, s.subsidiary_name, ${USER_MODULE_ROLES_SQL}, ${USER_PERMISSIONS_SQL}
+      FROM user_profiles u
+      LEFT JOIN subsidiaries s ON s.id = u.subsidiary_id
+      WHERE LOWER(u.email) = ?
+    `, [email]);
     if (!rows.length) return res.status(401).json({ error: 'Invalid credentials' });
     
     const user = rows[0];
@@ -1079,7 +1172,12 @@ app.post('/api/auth/verify-2fa', async (req, res) => {
   try {
     const challenge = await verifyChallenge(pool, req.body.challengeId, req.body.code, JWT_SECRET);
     if (!challenge) return res.status(401).json({ error: 'Invalid or expired verification code.' });
-    const [rows] = await pool.query(`SELECT u.*, ${USER_MODULE_ROLES_SQL} FROM user_profiles u WHERE u.id = ? AND u.is_active = TRUE`, [challenge.user_id]);
+    const [rows] = await pool.query(`
+      SELECT u.*, s.subsidiary_name, ${USER_MODULE_ROLES_SQL}, ${USER_PERMISSIONS_SQL}
+      FROM user_profiles u
+      LEFT JOIN subsidiaries s ON s.id = u.subsidiary_id
+      WHERE u.id = ? AND u.is_active = TRUE
+    `, [challenge.user_id]);
     if (!rows.length) return res.status(403).json({ error: 'User account is unavailable.' });
     issueCimsSession(res, rows[0]);
   } catch (err) { res.status(500).json({ error: err.message }); }
@@ -1115,7 +1213,7 @@ app.patch('/api/auth/2fa-settings', authMiddleware, async (req, res) => {
 app.get('/api/auth/me', authMiddleware, async (req, res) => {
   try {
     const [rows] = await pool.query(`
-      SELECT u.*, d.department_name, s.subsidiary_name, ${USER_MODULE_ROLES_SQL}
+      SELECT u.*, d.department_name, s.subsidiary_name, ${USER_MODULE_ROLES_SQL}, ${USER_PERMISSIONS_SQL}
       FROM user_profiles u
       LEFT JOIN departments d ON u.department_id = d.id
       LEFT JOIN subsidiaries s ON u.subsidiary_id = s.id
@@ -1132,13 +1230,13 @@ app.get('/api/user_profiles', authMiddleware, async (req, res) => {
     const [rows] = await pool.query(`
       SELECT u.id,u.email,u.role,u.designation,u.department_id,u.subsidiary_id,u.phone_number,
         u.first_name,u.last_name,u.first_login,u.is_active,u.two_factor_enabled,u.two_factor_method,
-        u.two_factor_phone,u.created_at,d.department_name,s.subsidiary_name, ${USER_MODULE_ROLES_SQL}
+        u.two_factor_phone,u.created_at,d.department_name,s.subsidiary_name, ${USER_MODULE_ROLES_SQL}, ${USER_PERMISSIONS_SQL}
       FROM user_profiles u
       LEFT JOIN departments d ON u.department_id = d.id
       LEFT JOIN subsidiaries s ON u.subsidiary_id = s.id
       ORDER BY u.created_at DESC
     `);
-    res.json(rows.map((row) => ({ ...row, module_roles: normalizeModuleRoles(row.module_roles) })));
+    res.json(rows.map((row) => withEffectivePermissions({ ...row, module_roles: normalizeModuleRoles(row.module_roles) })));
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
@@ -1218,7 +1316,7 @@ app.get('/api/clients/:id', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.post('/api/clients', async (req, res) => {
+app.post('/api/clients', requireCapability('clients.manage'), async (req, res) => {
   try {
     const id = uuidv4();
     const data = req.body;
@@ -1244,7 +1342,7 @@ app.post('/api/clients', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.put('/api/clients/:id', async (req, res) => {
+app.put('/api/clients/:id', requireCapability('clients.manage'), async (req, res) => {
   try {
     const { id } = req.params;
     const updates = allowedEntries(req.body, CLIENT_FIELDS);
@@ -1256,7 +1354,7 @@ app.put('/api/clients/:id', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.delete('/api/clients/:id', async (req, res) => {
+app.delete('/api/clients/:id', requireCapability('clients.manage'), async (req, res) => {
   try {
     await pool.query('DELETE FROM clients WHERE id = ?', [req.params.id]);
     res.json({ success: true });
@@ -1300,7 +1398,7 @@ app.get('/api/installations/:id', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.post('/api/installations', async (req, res) => {
+app.post('/api/installations', requireCapability('installations.manage'), async (req, res) => {
   try {
     const id = uuidv4();
     const updates = allowedEntries(req.body, INSTALLATION_FIELDS);
@@ -1313,7 +1411,7 @@ app.post('/api/installations', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.patch('/api/installations/:id', async (req, res) => {
+app.patch('/api/installations/:id', requireCapability('installations.manage'), async (req, res) => {
   try {
     const { id } = req.params;
     const updates = allowedEntries(req.body, INSTALLATION_FIELDS);
@@ -1379,7 +1477,7 @@ app.get('/api/client_assignments/:id', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.post('/api/client_assignments', async (req, res) => {
+app.post('/api/client_assignments', requireCapability('assignments.manage'), async (req, res) => {
   try {
     const id = uuidv4();
     const data = { ...req.body, assigned_by_user_id: req.user.id };
@@ -1409,7 +1507,7 @@ app.post('/api/client_assignments', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.patch('/api/client_assignments/:id', async (req, res) => {
+app.patch('/api/client_assignments/:id', requireCapability('assignments.manage'), async (req, res) => {
   try {
     const [beforeRows] = await pool.query('SELECT * FROM client_assignments WHERE id = ? LIMIT 1', [req.params.id]);
     if (!beforeRows.length) return res.status(404).json({ error: 'Assignment not found' });
@@ -1548,14 +1646,14 @@ app.get('/api/user_profiles/:id', authMiddleware, async (req, res) => {
     const [rows] = await pool.query(`
       SELECT u.id,u.email,u.role,u.designation,u.department_id,u.subsidiary_id,u.phone_number,
         u.first_name,u.last_name,u.first_login,u.is_active,u.two_factor_enabled,u.two_factor_method,
-        u.two_factor_phone,u.created_at,d.department_name,s.subsidiary_name, ${USER_MODULE_ROLES_SQL}
+        u.two_factor_phone,u.created_at,d.department_name,s.subsidiary_name, ${USER_MODULE_ROLES_SQL}, ${USER_PERMISSIONS_SQL}
       FROM user_profiles u
       LEFT JOIN departments d ON u.department_id = d.id
       LEFT JOIN subsidiaries s ON u.subsidiary_id = s.id
       WHERE u.id = ?
     `, [req.params.id]);
     if (rows.length === 0) return res.status(404).json({ error: 'User not found' });
-    res.json({ ...rows[0], module_roles: normalizeModuleRoles(rows[0].module_roles) });
+    res.json(withEffectivePermissions({ ...rows[0], module_roles: normalizeModuleRoles(rows[0].module_roles) }));
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
@@ -1673,9 +1771,53 @@ app.put('/api/user_profiles/:id', authMiddleware, async (req, res) => {
   }
 });
 
-app.delete('/api/user_profiles/:id', authMiddleware, async (req, res) => {
+app.get('/api/access/permissions', requireRole('SuperAdmin'), (_req, res) => {
+  res.json(CAPABILITY_DEFINITIONS);
+});
+
+app.put('/api/user_profiles/:id/permissions', requireRole('SuperAdmin'), async (req, res) => {
+  let connection;
   try {
-    if (!isSuperAdmin(req)) return res.status(403).json({ error: 'Only SuperAdmin can delete users.' });
+    const requested = Array.isArray(req.body.permissions) ? req.body.permissions : [];
+    const normalized = normalizePermissions(requested);
+    if (normalized.length !== new Set(requested).size) {
+      return res.status(400).json({ error: 'One or more permissions are invalid.' });
+    }
+    const [targets] = await pool.query('SELECT id FROM user_profiles WHERE id = ? LIMIT 1', [req.params.id]);
+    if (!targets.length) return res.status(404).json({ error: 'User not found.' });
+
+    connection = await pool.getConnection();
+    await connection.beginTransaction();
+    await connection.query('DELETE FROM user_permissions WHERE user_id = ?', [req.params.id]);
+    for (const permissionId of normalized) {
+      await connection.query(
+        'INSERT INTO user_permissions (user_id,permission_id,granted_by) VALUES (?,?,?)',
+        [req.params.id, permissionId, req.user.id],
+      );
+    }
+    await connection.query('UPDATE user_profiles SET session_version=session_version+1 WHERE id=?', [req.params.id]);
+    await connection.commit();
+    connection.release();
+    connection = null;
+    await auditSecurityEvent(pool, req, 'user_permissions_updated', {
+      targetUserId: req.params.id,
+      permissions: normalized,
+    });
+    res.json({ success: true, extra_permissions: normalized });
+  } catch (err) {
+    if (connection) {
+      await connection.rollback().catch(() => {});
+      connection.release();
+    }
+    res.status(500).json({ error: 'Unable to update user permissions.' });
+  }
+});
+
+app.delete('/api/user_profiles/:id', authMiddleware, requireCapability('users.manage'), async (req, res) => {
+  try {
+    const [targets] = await pool.query('SELECT role FROM user_profiles WHERE id=? LIMIT 1', [req.params.id]);
+    if (!targets.length) return res.status(404).json({ error: 'User not found.' });
+    if (!userCanManageTargetRole(req, targets[0].role)) return res.status(403).json({ error: 'Only SuperAdmin can delete privileged users.' });
     if (req.params.id === req.user.id) return res.status(400).json({ error: 'SuperAdmin cannot delete their own account.' });
     await pool.query('DELETE FROM user_profiles WHERE id = ?', [req.params.id]);
     res.json({ success: true });
@@ -1727,23 +1869,65 @@ app.get('/api/subsidiaries', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.post('/api/subsidiaries', requireRole('Admin'), async (req, res) => {
+app.get('/api/subsidiaries/:id', async (req, res) => {
   try {
-    const id = uuidv4();
-    const { subsidiary_name } = req.body;
-    await pool.query('INSERT INTO subsidiaries (id, subsidiary_name) VALUES (?, ?)', [id, subsidiary_name]);
-    res.status(201).json({ id, subsidiary_name });
+    const [rows] = await pool.query('SELECT * FROM subsidiaries WHERE id = ? LIMIT 1', [req.params.id]);
+    if (!rows.length) return res.status(404).json({ error: 'Subsidiary not found.' });
+    const row = rows[0];
+    res.json({
+      ...row,
+      default_escalation_matrix: typeof row.default_escalation_matrix === 'string'
+        ? JSON.parse(row.default_escalation_matrix)
+        : row.default_escalation_matrix,
+    });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.patch('/api/subsidiaries/:id', requireRole('Admin'), async (req, res) => {
+app.post('/api/subsidiaries', requireCapability('subsidiaries.manage'), async (req, res) => {
+  try {
+    const id = uuidv4();
+    const subsidiaryName = String(req.body.subsidiary_name || '').trim();
+    if (!subsidiaryName || subsidiaryName.length > 50) return res.status(400).json({ error: 'A valid subsidiary name is required.' });
+    await pool.query('INSERT INTO subsidiaries (id, subsidiary_name) VALUES (?, ?)', [id, subsidiaryName]);
+    res.status(201).json({ id, subsidiary_name: subsidiaryName });
+  } catch (err) {
+    if (err.code === 'ER_DUP_ENTRY') return res.status(409).json({ error: 'A subsidiary with this name already exists.' });
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.patch('/api/subsidiaries/:id', requireCapability('subsidiaries.manage'), async (req, res) => {
   try {
     const { id } = req.params;
     const updates = allowedEntries(req.body, SUBSIDIARY_FIELDS);
     if (!updates.length) return res.status(400).json({ error: 'No valid subsidiary fields supplied.' });
+    const nameUpdate = updates.find(([key]) => key === 'subsidiary_name');
+    if (nameUpdate) {
+      nameUpdate[1] = String(nameUpdate[1] || '').trim();
+      if (!nameUpdate[1] || nameUpdate[1].length > 50) return res.status(400).json({ error: 'A valid subsidiary name is required.' });
+    }
     const fields = updates.map(([key]) => `${key} = ?`).join(', ');
     const values = updates.map(([, value]) => sqlValue(value));
-    await pool.query(`UPDATE subsidiaries SET ${fields} WHERE id = ?`, [...values, id]);
+    const [result] = await pool.query(`UPDATE subsidiaries SET ${fields} WHERE id = ?`, [...values, id]);
+    if (!result.affectedRows) return res.status(404).json({ error: 'Subsidiary not found.' });
+    res.json({ success: true });
+  } catch (err) {
+    if (err.code === 'ER_DUP_ENTRY') return res.status(409).json({ error: 'A subsidiary with this name already exists.' });
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete('/api/subsidiaries/:id', requireCapability('subsidiaries.manage'), async (req, res) => {
+  try {
+    const [[usage]] = await pool.query('SELECT COUNT(*) AS user_count FROM user_profiles WHERE subsidiary_id = ?', [req.params.id]);
+    if (Number(usage.user_count) > 0) {
+      return res.status(409).json({
+        error: `This subsidiary has ${usage.user_count} attached user${Number(usage.user_count) === 1 ? '' : 's'}. Reassign them before deleting it.`,
+      });
+    }
+    const [result] = await pool.query('DELETE FROM subsidiaries WHERE id = ?', [req.params.id]);
+    if (!result.affectedRows) return res.status(404).json({ error: 'Subsidiary not found.' });
+    await auditSecurityEvent(pool, req, 'subsidiary_deleted', { subsidiaryId: req.params.id });
     res.json({ success: true });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
@@ -1763,7 +1947,7 @@ app.get('/api/feedback_links', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.post('/api/feedback_links', requireRole('SuperAdmin', 'Admin', 'Teamlead'), async (req, res) => {
+app.post('/api/feedback_links', requireAnyCapability('clients.manage', 'installations.manage'), async (req, res) => {
   try {
     const id = uuidv4();
     const data = req.body;
@@ -1777,7 +1961,7 @@ app.post('/api/feedback_links', requireRole('SuperAdmin', 'Admin', 'Teamlead'), 
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.patch('/api/feedback_links/:id', requireRole('SuperAdmin', 'Admin', 'Teamlead'), async (req, res) => {
+app.patch('/api/feedback_links/:id', requireAnyCapability('clients.manage', 'installations.manage'), async (req, res) => {
   try {
     const updates = allowedEntries(req.body, FEEDBACK_LINK_FIELDS);
     if (!updates.length) return res.status(400).json({ error: 'No valid feedback-link fields supplied.' });
@@ -1787,7 +1971,7 @@ app.patch('/api/feedback_links/:id', requireRole('SuperAdmin', 'Admin', 'Teamlea
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.post('/api/feedback_links/:id/send', authMiddleware, requireRole('SuperAdmin', 'Admin', 'Teamlead'), async (req, res) => {
+app.post('/api/feedback_links/:id/send', authMiddleware, requireAnyCapability('clients.manage', 'installations.manage'), async (req, res) => {
   try {
     const [rows] = await pool.query(
       `SELECT f.id,f.unique_token,f.expires_at,c.client_name,c.contact_person_name,c.contact_email,c.contact_phone
@@ -1935,9 +2119,8 @@ app.get('/api/announcements', authMiddleware, async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.post('/api/announcements', authMiddleware, async (req, res) => {
+app.post('/api/announcements', authMiddleware, requireCapability('announcements.manage'), async (req, res) => {
   try {
-    if (!['SuperAdmin', 'Admin', 'Teamlead'].includes(req.user.role)) return res.status(403).json({ error: 'Insufficient permissions.' });
     const { title, content, priority, target_audience, subsidiary_id, expires_at } = req.body;
     const id = uuidv4();
     await pool.query(
@@ -1958,7 +2141,7 @@ app.post('/api/announcements/:id/read', authMiddleware, async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.put('/api/announcements/:id', authMiddleware, requireRole('Admin', 'Teamlead'), async (req, res) => {
+app.put('/api/announcements/:id', authMiddleware, requireCapability('announcements.manage'), async (req, res) => {
   try {
     const { title, content, priority, target_audience, subsidiary_id, expires_at } = req.body;
     await pool.query(
@@ -1969,7 +2152,7 @@ app.put('/api/announcements/:id', authMiddleware, requireRole('Admin', 'Teamlead
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.patch('/api/announcements/:id', requireRole('Admin', 'Teamlead'), async (req, res) => {
+app.patch('/api/announcements/:id', requireCapability('announcements.manage'), async (req, res) => {
   try {
     const { is_active } = req.body;
     await pool.query('UPDATE announcements SET is_active = ? WHERE id = ?', [is_active, req.params.id]);
@@ -1977,7 +2160,7 @@ app.patch('/api/announcements/:id', requireRole('Admin', 'Teamlead'), async (req
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.delete('/api/announcements/:id', requireRole('Admin', 'Teamlead'), async (req, res) => {
+app.delete('/api/announcements/:id', requireCapability('announcements.manage'), async (req, res) => {
   try {
     await pool.query('DELETE FROM announcements WHERE id = ?', [req.params.id]);
     res.json({ success: true });
@@ -2028,7 +2211,7 @@ app.get('/api/budgets', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.post('/api/budgets', async (req, res) => {
+app.post('/api/budgets', requireCapability('finances.manage'), async (req, res) => {
   try {
     const { installation_id, total_budget, labor_cost, equipment_cost, transport_cost, miscellaneous_cost, notes, created_by, currency, branch } = req.body;
     const id = uuidv4();
@@ -2040,7 +2223,7 @@ app.post('/api/budgets', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.put('/api/budgets/:id', async (req, res) => {
+app.put('/api/budgets/:id', requireCapability('finances.manage'), async (req, res) => {
   try {
     const { labor_cost, equipment_cost, transport_cost, miscellaneous_cost, total_budget, notes, currency } = req.body;
     await pool.query(
@@ -2051,7 +2234,7 @@ app.put('/api/budgets/:id', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.delete('/api/budgets/:id', async (req, res) => {
+app.delete('/api/budgets/:id', requireCapability('finances.manage'), async (req, res) => {
   try {
     await pool.query('DELETE FROM installation_budgets WHERE id = ?', [req.params.id]);
     res.json({ success: true });
@@ -2087,7 +2270,7 @@ app.get('/api/technician_performance_scores', async (req, res) => {
 });
 
 // SYSTEM LOGS
-app.get('/api/system_logs', requireRole('Admin'), async (req, res) => {
+app.get('/api/system_logs', requireCapability('reports.view'), async (req, res) => {
   try {
     const [rows] = await pool.query('SELECT l.*, u.email FROM system_logs l LEFT JOIN user_profiles u ON l.user_id = u.id ORDER BY l.created_at DESC LIMIT 100');
     res.json(rows);
@@ -2111,7 +2294,7 @@ app.get('/api/companies', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.put('/api/companies', requireRole('SuperAdmin'), async (req, res) => {
+app.put('/api/companies', requireCapability('company.manage'), async (req, res) => {
   try {
     const updates = allowedEntries(req.body, COMPANY_FIELDS);
     if (!updates.length) return res.status(400).json({ error: 'No valid company-setting fields supplied.' });
@@ -2154,14 +2337,14 @@ app.get('/api/feedback_questions', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.get('/api/admin/feedback_questions', requireRole('Admin'), async (req, res) => {
+app.get('/api/admin/feedback_questions', requireCapability('company.manage'), async (req, res) => {
   try {
     const [rows] = await pool.query('SELECT * FROM feedback_questions ORDER BY order_index ASC');
     res.json(rows);
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.post('/api/feedback_questions', requireRole('Admin'), async (req, res) => {
+app.post('/api/feedback_questions', requireCapability('company.manage'), async (req, res) => {
   try {
     const id = uuidv4();
     const data = req.body;
@@ -2173,7 +2356,7 @@ app.post('/api/feedback_questions', requireRole('Admin'), async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.put('/api/feedback_questions/:id', requireRole('Admin'), async (req, res) => {
+app.put('/api/feedback_questions/:id', requireCapability('company.manage'), async (req, res) => {
   try {
     const data = req.body;
     await pool.query(
@@ -2184,7 +2367,7 @@ app.put('/api/feedback_questions/:id', requireRole('Admin'), async (req, res) =>
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.delete('/api/feedback_questions/:id', requireRole('Admin'), async (req, res) => {
+app.delete('/api/feedback_questions/:id', requireCapability('company.manage'), async (req, res) => {
   try {
     // Soft delete to protect existing feedback relationships
     await pool.query('UPDATE feedback_questions SET is_active = FALSE WHERE id = ?', [req.params.id]);
@@ -2313,7 +2496,7 @@ app.post('/api/auth/verify-password', authMiddleware, async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.get('/api/admin/db-stats', requireRole('SuperAdmin'), async (req, res) => {
+app.get('/api/admin/db-stats', requireCapability('backup.manage'), async (req, res) => {
   try {
     const tables = ['clients', 'installations', 'client_assignments', 'installation_feedback', 'feedback_links', 'announcements', 'handover_uploads', 'system_logs', 'user_profiles'];
     const stats = {};
@@ -2338,25 +2521,29 @@ app.post('/api/help/send-documentation', async (req, res) => {
 });
 
 app.post('/api/chat/assistant', async (req, res) => {
-  const { message } = req.body;
-  const msg = (message || '').toLowerCase();
+  const message = String(req.body.message || '').trim();
+  if (!message || message.length > 1000) return res.status(400).json({ error: 'Please enter a message between 1 and 1000 characters.' });
+  const msg = message.toLowerCase();
+  const requestsInternalDetails = isSensitiveTechnicalRequest(message);
   
   let reply = "I'm the RIANA CIMS Assistant. I can help with onboarding, Developers and Sales workflows, clients, installations, announcements, notifications, PWA installation, reports, or system navigation. What would you like to do?";
 
-  if (msg.includes('optimus')) {
+  if (requestsInternalDetails) {
+    reply = "I can't provide source code, credentials, internal infrastructure, database details, private endpoints, or deployment configuration. I can help with safe user guidance such as navigation, roles, reports, installations, and support procedures.";
+  } else if (msg.includes('optimus')) {
     reply = "RIANA OPTIMUS is available from the sidebar under External Systems. It remains an external service, while the Developers workspace opens inside CIMS using your current RIANA session.";
   } else if (msg.includes('superadmin') || msg.includes('backup') || msg.includes('company setting') || msg.includes('extra role') || msg.includes('module role')) {
-    reply = "SuperAdmin is the platform-wide RIANA CIMS authority across CIMS and Developers/CRMS. The system self-repairs intended SuperAdmin account records on startup, keeps CIMS and CRMS SuperAdmin module grants aligned, and restricts backups, company settings, user deletion, Admin/SuperAdmin changes, and extra Developers workspace grants to SuperAdmin.";
+    reply = "Super Admin manages company settings, branding, subsidiaries, user access, backups, and individual extra privileges. Management users have broad administrative access but cannot add, edit, or update installations.";
   } else if (msg.includes('welcome') || msg.includes('new user') || msg.includes('register') || msg.includes('onboard') || msg.includes('user management')) {
-    reply = "User management is centralized in the main CIMS Users module. SuperAdmin can create Admin/SuperAdmin accounts, delete users, and grant extra Developers workspace roles; Admin users can create and maintain non-privileged operational users. New accounts must use an @riana.co email address and receive setup email/SMS notifications with the system URL where delivery channels are configured.";
+    reply = "Authorized administrators manage accounts from the Users module. Select the correct role, designation, department, and subsidiary, then save. Super Admin can also tick individual extra privileges.";
   } else if (msg.includes('developer') || msg.includes('sales') || msg.includes('crms')) {
-    reply = "Developers is part of the unified CIMS app. SuperAdmin, Admin, Teamlead, Developer, and Sales roles can enter it with the same account and database session. Sales can create requests and receive approval-awaiting email alerts; assigned developers receive in-app, email, and SMS notifications with the request link and system URL.";
+    reply = "The Developers workspace tracks requests, approvals, assignments, pending work, and completion. Notifications are sent when approval or action is required, and assigned developers can track their work from Pending.";
   } else if (msg.includes('notification') || msg.includes('announcement') || msg.includes('sound')) {
     reply = "New assignments, approval requests, password resets, and workflow updates create in-app notifications and can dispatch email/SMS with the relevant system URL. New assignments and notifications play a chime, while announcements use a distinct announcement sound.";
   } else if (msg.includes('pwa') || msg.includes('offline') || msg.includes('install app')) {
-    reply = "RIANA CIMS is installable as a PWA. App assets are cached for faster repeat visits, online/offline status is detected automatically, and authenticated API data always stays network-only to prevent one user’s data being exposed to another user on a shared device.";
+    reply = "RIANA CIMS can be installed from a supported browser for convenient access. If the install option is unavailable, use the browser menu or contact support.";
   } else if (msg.includes('report') || msg.includes('logo') || msg.includes('branding')) {
-    reply = "You can generate PDF and CSV reports in the Reports section. Document headers use a logo-matched teal brand color, keep the RIANA logo inside a reserved aspect-ratio-safe slot, and avoid duplicate or floating logo images across Budget, Performance, E-Handover, and Developers documents.";
+    reply = "Open Reports to preview or download the reports available to your role. RIANA documents use the standard company header, while documents for MAREZI users or clients use the approved MAREZI letterhead.";
   } else if (msg.includes('client')) {
     reply = "In the 'Clients' module, you can manage client profiles, contact information, and branches. You can also generate unique feedback links for clients to rate installation quality.";
   } else if (msg.includes('installation') || msg.includes('assign')) {
@@ -2364,7 +2551,7 @@ app.post('/api/chat/assistant', async (req, res) => {
   } else if (msg.includes('calendar') || msg.includes('workload')) {
     reply = "The 'Workload Calendar' allows Admins and Teamleads to see technician assignments across a timeline, helping to manage team capacity and installation schedules effectively.";
   } else if (msg.includes('password') || msg.includes('login') || msg.includes('security')) {
-    reply = "New accounts must use an @riana.co email address. Welcome messages and password reset requests send secure setup/reset links by email and SMS where configured. If a reset request uses an unknown active email, the system returns a user-not-found error instead of issuing a token.";
+    reply = "Use your approved work email to sign in. If you cannot access your account, use password reset or contact an authorized administrator. Never share your password or verification code.";
   } else if (msg.includes('hi') || msg.includes('hello') || msg.includes('hey')) {
     reply = "Hello! I'm your RIANA CIMS Assistant. Ask me about onboarding, Developers or Sales access, notifications, announcements, PWA installation, clients, installations, reports, or OPTIMUS.";
   } else if (msg.includes('help') || msg.includes('support')) {

@@ -1,7 +1,9 @@
 import { Installation, Client, Company, Subsidiary, EscalationMatrix } from "@/types";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
-import { addCimsDocumentHeader, addLetterheadToDocument } from "./pdfWatermark";
+import { addCimsDocumentHeader, addLetterheadToDocument, DOCUMENT_LAYOUT, resolveDocumentBrand } from "./pdfWatermark";
+import { resolveDocumentSubsidiaryName } from "./brandIdentity";
+import { equipmentInstallationStatus } from "./equipmentStatus";
 
 const parseHexColor = (hex: string): [number, number, number] => {
   const clean = hex.replace('#', '');
@@ -17,14 +19,21 @@ export const generateInstallationReport = async (
   installation: Installation,
   client: Client,
   company: Company,
-  subsidiary?: Subsidiary
+  subsidiary?: Subsidiary,
+  generatedBySubsidiaryName?: string | null,
 ): Promise<void> => {
   const doc = new jsPDF('p', 'mm', 'a4');
   const pageWidth = doc.internal.pageSize.getWidth();
   const pageHeight = doc.internal.pageSize.getHeight();
   const margin = 15;
-  const bottomMargin = 30; // space for footer
+  const bottomMargin = DOCUMENT_LAYOUT.autoTableBottomMargin;
   let yPos = margin;
+  const subsidiaryName = resolveDocumentSubsidiaryName(
+    subsidiary?.subsidiary_name,
+    client.subsidiary_name,
+    generatedBySubsidiaryName,
+  );
+  const brand = resolveDocumentBrand(subsidiaryName);
 
   // Export date = today
   const exportDate = new Date();
@@ -38,9 +47,11 @@ export const generateInstallationReport = async (
   const clientCode = `EHO-${clientInitials}-${dateCode}-${uniqueId}`;
 
   // Derive primary color from company settings (primary_color field) or default to Riana deep blue
-  const companyPrimaryColor: [number, number, number] = (company as any).primary_color
-    ? parseHexColor((company as any).primary_color)
-    : [13, 131, 144];
+  const companyPrimaryColor: [number, number, number] = brand.id === 'marezi'
+    ? brand.primary
+    : (company as any).primary_color
+      ? parseHexColor((company as any).primary_color)
+      : [13, 131, 144];
 
   const textColor: [number, number, number] = [31, 41, 55];
   const mutedColor: [number, number, number] = [107, 114, 128];
@@ -70,7 +81,7 @@ export const generateInstallationReport = async (
   const ensureSpace = (needed: number) => {
     if (yPos + needed > pageHeight - bottomMargin) {
       doc.addPage();
-      yPos = margin;
+      yPos = DOCUMENT_LAYOUT.continuationContentTop;
     }
   };
 
@@ -91,7 +102,8 @@ export const generateInstallationReport = async (
     logoPath: logoSrc,
     metaLeft: `Ref: ${clientCode}`,
     metaRight: `Exported: ${formattedExportDate}`,
-    headerHeight: 50,
+    headerHeight: brand.id === 'marezi' ? 52 : 50,
+    subsidiaryName,
   });
 
   yPos = 58;
@@ -158,34 +170,40 @@ export const generateInstallationReport = async (
 
   const equipmentData = [
     ['Kiosk Type', installation.kiosk_type || 'N/A', 'Configured'],
-    ['Kiosk Count', String(installation.kiosk_count || 0), 'Installed'],
-    ['LED Displays', String(installation.led_count || 0), 'Installed'],
-    ['Tripleplay Devices', String(installation.counter_count || 0), 'Installed'],
+    ['Kiosk Count', String(installation.kiosk_count || 0), equipmentInstallationStatus(installation.kiosk_count, 'Installed')],
+    ['LED Displays', String(installation.led_count || 0), equipmentInstallationStatus(installation.led_count, 'Installed')],
+    ['Tripleplay Devices', String(installation.counter_count || 0), equipmentInstallationStatus(installation.counter_count, 'Installed')],
     ['Screen Size', installation.screen_with_size || 'N/A', 'Configured'],
-    ['Service Points', String(installation.service_points || 0), 'Active'],
-    ['UPS Units', String(installation.ups_count || 0), 'Installed'],
-    ['Speakers', String(installation.speakers || 0), 'Installed'],
-    ['Amplifiers', String(installation.amplifiers || 0), 'Configured'],
-    ['Media Controllers', String(installation.media_controllers || 0), 'Configured'],
-    ['Tablets', String(installation.tablets || 0), 'Setup Complete'],
-    ['Digital Signage', String(installation.digital_signage_system || 0), 'Operational'],
-    ['HDMI Cables', String(installation.hdmis || 0), 'Connected'],
-    ['Splitters', String(installation.splitters || 0), 'Installed'],
-    ['Staff Trained', `${installation.staff_trained || 0} personnel`, 'Completed'],
+    ['Service Points', String(installation.service_points || 0), equipmentInstallationStatus(installation.service_points, 'Active')],
+    ['UPS Units', String(installation.ups_count || 0), equipmentInstallationStatus(installation.ups_count, 'Installed')],
+    ['Speakers', String(installation.speakers || 0), equipmentInstallationStatus(installation.speakers, 'Installed')],
+    ['Amplifiers', String(installation.amplifiers || 0), equipmentInstallationStatus(installation.amplifiers, 'Configured')],
+    ['Media Controllers', String(installation.media_controllers || 0), equipmentInstallationStatus(installation.media_controllers, 'Configured')],
+    ['Tablets', String(installation.tablets || 0), equipmentInstallationStatus(installation.tablets, 'Setup Complete')],
+    ['Digital Signage', String(installation.digital_signage_system || 0), equipmentInstallationStatus(installation.digital_signage_system, 'Operational')],
+    ['HDMI Cables', String(installation.hdmis || 0), equipmentInstallationStatus(installation.hdmis, 'Connected')],
+    ['Splitters', String(installation.splitters || 0), equipmentInstallationStatus(installation.splitters, 'Installed')],
+    ['Staff Trained', `${installation.staff_trained || 0} personnel`, equipmentInstallationStatus(installation.staff_trained, 'Completed')],
   ];
 
   autoTable(doc, {
     startY: yPos,
     head: [['Equipment Type', 'Quantity/Details', 'Status']],
     body: equipmentData,
-    margin: { left: margin, right: margin },
+    margin: { left: margin, right: margin, top: DOCUMENT_LAYOUT.continuationContentTop, bottom: bottomMargin },
     styles: { fontSize: 8, cellPadding: 2 },
     headStyles: { fillColor: companyPrimaryColor, textColor: [255, 255, 255], fontStyle: 'bold' },
     alternateRowStyles: { fillColor: [249, 250, 251] },
     columnStyles: {
       0: { fontStyle: 'bold' },
       2: { textColor: [22, 101, 52] }
-    }
+    },
+    didParseCell: (data) => {
+      if (data.section === 'body' && data.column.index === 2 && data.cell.raw === 'Not installed') {
+        data.cell.styles.textColor = [185, 28, 28];
+        data.cell.styles.fontStyle = 'bold';
+      }
+    },
   });
 
   yPos = (doc as any).lastAutoTable.finalY + 8;
@@ -213,7 +231,7 @@ export const generateInstallationReport = async (
       startY: yPos,
       head: [['LED #', 'Display Name', 'Status']],
       body: ledData,
-      margin: { left: margin, right: margin, bottom: bottomMargin },
+      margin: { left: margin, right: margin, top: DOCUMENT_LAYOUT.continuationContentTop, bottom: bottomMargin },
       styles: { fontSize: 8, cellPadding: 2 },
       headStyles: { fillColor: companyPrimaryColor, textColor: [255, 255, 255], fontStyle: 'bold' },
       alternateRowStyles: { fillColor: [249, 250, 251] },
@@ -281,7 +299,7 @@ export const generateInstallationReport = async (
       startY: yPos,
       head: [['Level', 'Contact Person', 'Role/Title', 'Email Address', 'Phone Number']],
       body: matrixData,
-      margin: { left: margin, right: margin },
+      margin: { left: margin, right: margin, top: DOCUMENT_LAYOUT.continuationContentTop, bottom: bottomMargin },
       styles: { fontSize: 8, cellPadding: 2 },
       headStyles: { fillColor: companyPrimaryColor, textColor: [255, 255, 255], fontStyle: 'bold' },
       alternateRowStyles: { fillColor: [249, 250, 251] },
@@ -310,7 +328,9 @@ export const generateInstallationReport = async (
   addText(`Date: ${formattedExportDate}`, margin + sigBoxWidth / 2, yPos + 33, { fontSize: 8, color: mutedColor, align: 'center' });
 
   // Company signature box
-  const compName = (company as any).company_name || company.name || 'RIANA Technologies';
+  const compName = brand.id === 'marezi'
+    ? brand.name
+    : ((company as any).company_name || company.name || 'RIANA Technologies');
   doc.setFillColor(250, 250, 250);
   doc.rect(margin + sigBoxWidth + 10, yPos, sigBoxWidth, sigBoxHeight, 'F');
   doc.rect(margin + sigBoxWidth + 10, yPos, sigBoxWidth, sigBoxHeight);
@@ -321,7 +341,11 @@ export const generateInstallationReport = async (
 
   // ─── LETTERHEAD / WATERMARK ───────────────────────────────────────────────
   try {
-    await addLetterheadToDocument(doc, logoSrc, '/letterhead-new.jpg');
+    await addLetterheadToDocument(doc, logoSrc, '/letterhead-new.jpg', {
+      subsidiaryName,
+      documentTitle: 'Installation Completion & Handover Certificate',
+      generatedAt: exportDate,
+    });
   } catch (error) {
     console.log('Letterhead could not be added:', error);
   }

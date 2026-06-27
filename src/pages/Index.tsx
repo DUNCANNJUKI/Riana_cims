@@ -40,6 +40,8 @@ import { NotificationBell } from "@/components/layout/NotificationBell";
 import { DevelopersWorkspace } from "@/components/developers/DevelopersWorkspace";
 import { InactivityGuard } from "@/components/auth/InactivityGuard";
 import { useLocation } from "react-router-dom";
+import { can } from "@/security/accessControl";
+import { formatRoleLabel } from "@/utils/roleLabel";
 
 const Index = () => {
   const { user, isAuthenticated, isLoading, logout } = useAuth();
@@ -114,7 +116,7 @@ const Index = () => {
       case 'announcements-management':
         return <AnnouncementsManagementModule user={user} />;
       case 'developers':
-        if (developerWorkspaceRole === 'SuperAdmin' || developerWorkspaceRole === 'Admin' || developerWorkspaceRole === 'Teamlead' || developerWorkspaceRole === 'Developer' || developerWorkspaceRole === 'Sales') {
+        if (developerWorkspaceRole === 'SuperAdmin' || developerWorkspaceRole === 'Admin' || developerWorkspaceRole === 'Management' || developerWorkspaceRole === 'Teamlead' || developerWorkspaceRole === 'Developer' || developerWorkspaceRole === 'Sales') {
           return <DevelopersWorkspace userId={user.id} role={developerWorkspaceRole} />;
         }
         return <Dashboard user={user} />;
@@ -153,28 +155,44 @@ const Index = () => {
         />
         <div className="flex-1 flex flex-col min-w-0">
           {/* Mobile Header with Menu Button and User Menu */}
-          <div className="lg:hidden flex items-center justify-between gap-2 p-2 bg-background border-b">
-            <div className="flex items-center gap-2">
+          <div className="enterprise-header flex h-16 items-center justify-between gap-2 px-2 text-white lg:hidden">
+            <div className="flex min-w-0 items-center gap-1.5">
               <Button
                 variant="ghost"
                 size="icon"
                 onClick={() => setIsMobileSidebarOpen(true)}
-                className="shrink-0"
+                className="shrink-0 text-white hover:bg-white/10 hover:text-white focus-visible:ring-white"
               >
                 <Menu className="h-5 w-5" />
               </Button>
-              <span className="font-semibold text-sm truncate">RIANA CIMS</span>
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden">
+                <img
+                  src="/Riana_mark_transparent.png"
+                  alt="RIANA Group"
+                  className="max-h-8 max-w-10 object-contain"
+                />
+              </div>
+              <div className="min-w-0 leading-none">
+                <span className="block truncate text-sm font-bold leading-tight">RIANA CIMS</span>
+                <span className="mt-0.5 hidden truncate text-[10px] font-normal leading-tight text-white/85 min-[360px]:block">
+                  Client Installation Management
+                </span>
+              </div>
             </div>
             <div className="flex items-center gap-1">
               {!isOnline && (
                 <span className="text-xs text-warning bg-warning/10 px-2 py-1 rounded">Offline</span>
               )}
-              <NotificationBell user={user} onNavigate={setActiveModule} />
+              <NotificationBell
+                user={user}
+                onNavigate={setActiveModule}
+                triggerClassName="text-white hover:bg-white/10 hover:text-white focus-visible:ring-white dark:text-white"
+              />
               
               {/* Mobile User Menu with Logout */}
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <Button variant="ghost" className="h-8 w-8 rounded-full p-0">
+                  <Button variant="ghost" className="h-9 w-9 rounded-full border-2 border-white/35 p-0 text-white shadow-sm hover:bg-white/10 focus-visible:ring-white">
                     <Avatar className="h-8 w-8">
                       <AvatarFallback className="bg-primary text-primary-foreground text-xs font-bold">
                         {getUserInitials()}
@@ -185,14 +203,14 @@ const Index = () => {
                 <DropdownMenuContent align="end" className="w-48">
                   <div className="px-2 py-1.5">
                     <p className="text-sm font-medium truncate">{getUserDisplayName()}</p>
-                    <p className="text-xs text-muted-foreground truncate">{user.role}</p>
+                    <p className="text-xs text-muted-foreground truncate">{formatRoleLabel(user.role)}</p>
                   </div>
                   <DropdownMenuSeparator />
                   <DropdownMenuItem onClick={() => setActiveModule('help')}>
                     <User className="mr-2 h-4 w-4" />
                     Profile
                   </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => setActiveModule('company')}>
+                  <DropdownMenuItem onClick={() => setActiveModule(can(user, 'company.manage') ? 'company' : 'help')}>
                     <Settings className="mr-2 h-4 w-4" />
                     Settings
                   </DropdownMenuItem>

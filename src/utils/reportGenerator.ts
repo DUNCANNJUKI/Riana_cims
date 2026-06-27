@@ -1,7 +1,7 @@
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { apiClient } from '@/integrations/apiClient';
-import { addCimsDocumentHeader, getPDFAsBlob, generateReportSerial, RIANA_DOCUMENT_TEAL } from './pdfWatermark';
+import { addCimsDocumentHeader, DOCUMENT_LAYOUT, getPDFAsBlob, generateReportSerial, RIANA_DOCUMENT_TEAL, resolveDocumentBrand } from './pdfWatermark';
 import { applyCompanyBranding } from './companyLogo';
 
 
@@ -23,6 +23,7 @@ const COLORS = {
 
 export interface GeneratePDFOptions {
   preview?: boolean; // If true, returns Blob instead of downloading
+  subsidiaryName?: string | null;
 }
 
 export const generatePDFReport = async (
@@ -32,23 +33,20 @@ export const generatePDFReport = async (
 ): Promise<Blob | void> => {
   const doc = new jsPDF();
   const pageWidth = doc.internal.pageSize.getWidth();
-  const pageHeight = doc.internal.pageSize.getHeight();
   const margin = 14;
+  const documentTitle = getReportTitle(reportType);
+  const brand = resolveDocumentBrand(options?.subsidiaryName);
   
   await addCimsDocumentHeader(doc, {
     subtitle: 'Client Installation Management System',
-    documentTitle: getReportTitle(reportType),
+    documentTitle,
+    subsidiaryName: options?.subsidiaryName,
   });
 
-  // Report Title
-  doc.setTextColor(...COLORS.text);
-  doc.setFontSize(16);
-  doc.setFont('helvetica', 'bold');
+  // The report name is already rendered in the branded header.
   let yPosition = 55;
-  doc.text(getReportTitle(reportType), margin, yPosition);
-  
+
   // Date range and metadata
-  yPosition += 8;
   doc.setFontSize(9);
   doc.setFont('helvetica', 'normal');
   doc.setTextColor(128, 128, 128);
@@ -82,7 +80,7 @@ export const generatePDFReport = async (
       body: formatTableData(reportType, reportData),
       theme: 'grid',
       headStyles: {
-        fillColor: COLORS.primary,
+        fillColor: brand.primary,
         textColor: COLORS.white,
         fontSize: 9,
         fontStyle: 'bold',
@@ -97,7 +95,7 @@ export const generatePDFReport = async (
       alternateRowStyles: {
         fillColor: COLORS.lightGray
       },
-      margin: { left: margin, right: margin, bottom: 45 },
+      margin: { left: margin, right: margin, top: DOCUMENT_LAYOUT.continuationContentTop, bottom: DOCUMENT_LAYOUT.autoTableBottomMargin },
       styles: {
         cellPadding: 3,
         lineColor: [200, 200, 200],
@@ -111,7 +109,10 @@ export const generatePDFReport = async (
 
   // Add letterhead and watermarks to all pages for authenticity
   try {
-    await applyCompanyBranding(doc);
+    await applyCompanyBranding(doc, {
+      subsidiaryName: options?.subsidiaryName,
+      documentTitle,
+    });
   } catch (error) {
     console.log('Branding could not be added:', error);
   }

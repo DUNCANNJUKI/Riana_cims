@@ -6,7 +6,7 @@ const DEFAULT_STALE_TIME = 60_000;
 const DEFAULT_GC_TIME = 5 * 60_000;
 
 async function fetchJson<T>(url: string, message: string): Promise<T> {
-  const res = await fetch(url);
+  const res = await fetch(url, { cache: 'no-store' });
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
     throw new Error(body.error || message);
@@ -25,7 +25,7 @@ type Notification = Database['public']['Tables']['notifications']['Row'];
 type UserRole = Database['public']['Tables']['user_roles']['Row'];
 
 export interface ChangeRequestWithRelations extends ChangeRequest {
-  client?: Client;
+  client?: Client & { subsidiary_id?: string | null; subsidiary_name?: string | null };
   assigned_developer?: Profile;
   senior_developer?: Profile;
 }

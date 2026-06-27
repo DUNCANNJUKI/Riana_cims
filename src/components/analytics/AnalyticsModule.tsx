@@ -6,6 +6,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line } from 'recharts';
 import { TrendingUp, TrendingDown, BarChart3, PieChart as PieChartIcon, Activity, Calendar, MessageSquare, Loader2 } from "lucide-react";
 import { User } from "@/types";
+import { can } from "@/security/accessControl";
 import { FeedbackAnalytics } from "@/components/analytics/FeedbackAnalytics";
 import { Button } from "@/components/ui/button";
 import { apiClient } from "@/integrations/apiClient";
@@ -158,8 +159,7 @@ export const AnalyticsModule = ({ user }: AnalyticsModuleProps) => {
       setIsLoading(false);
     }
   };
-  // Only Admin and Teamlead can access this module
-  if (user.role !== 'SuperAdmin' && user.role !== 'Admin' && user.role !== 'Teamlead') {
+  if (!can(user, 'analytics.view')) {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="text-center">

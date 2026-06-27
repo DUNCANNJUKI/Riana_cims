@@ -3,9 +3,11 @@
 export interface User {
   id: string;
   email: string;
-  role: 'SuperAdmin' | 'Admin' | 'Developer' | 'Teamlead' | 'Sales' | 'User';
-  module_roles?: Partial<Record<'cims' | 'crms', 'SuperAdmin' | 'Admin' | 'Developer' | 'Teamlead' | 'Sales' | 'User' | null>>;
-  designation?: 'SuperAdmin' | 'Admin' | 'Developer' | 'Teamlead' | 'Sales' | 'Field specialist' | 'Product Specialist' | 'Customer success' | 'Intern' | 'Manager' | 'Support' | 'Hardware Engineer';
+  role: 'SuperAdmin' | 'Admin' | 'Management' | 'Finance' | 'Developer' | 'Teamlead' | 'Sales' | 'User';
+  module_roles?: Partial<Record<'cims' | 'crms', 'SuperAdmin' | 'Admin' | 'Management' | 'Finance' | 'Developer' | 'Teamlead' | 'Sales' | 'User' | null>>;
+  designation?: 'SuperAdmin' | 'Admin' | 'Developer' | 'Teamlead' | 'Sales' | 'Field specialist' | 'Product Specialist' | 'Customer success' | 'Intern' | 'Manager' | 'Support' | 'Hardware Engineer' | 'Chief Accounts' | 'Payables' | 'Receivables' | 'HR' | 'Operations' | 'Accounts' | 'CEO' | 'MD' | 'Head of Sales';
+  permissions?: string[];
+  extra_permissions?: string[];
   department_id: string | null;
   subsidiary_id: string | null;
   department_name?: string;
@@ -57,6 +59,8 @@ export interface Client {
   industry_classification: string;
   added_by_user_id: string;
   created_at: string;
+  subsidiary_name?: string;
+  subsidiaries?: { subsidiary_name?: string } | null;
 }
 
 export interface Installation {

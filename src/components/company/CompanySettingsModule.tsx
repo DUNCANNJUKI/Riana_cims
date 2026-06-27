@@ -20,6 +20,7 @@ import { FeedbackSettingsPanel } from "@/components/feedback/FeedbackSettingsPan
 import { useDatabase } from "@/hooks/useDatabase";
 import { apiClient } from "@/integrations/apiClient";
 import { dispatchCompanyBrandingUpdated, resolveCompanyLogoUrl } from "@/utils/logoUrl";
+import { can } from "@/security/accessControl";
 
 interface CompanySettingsModuleProps {
   user: User;
@@ -104,8 +105,17 @@ export const CompanySettingsModule = ({ user }: CompanySettingsModuleProps) => {
           company_name: data.name || prev.company_name,
           logo_path: data.logo_path || prev.logo_path,
           font_type: data.font_type || prev.font_type,
-          primary_color: data.font_color || prev.primary_color,
-          contract_types: data.contract_types || prev.contract_types,
+          tagline: data.tagline || prev.tagline,
+          website: data.website || prev.website,
+          email: data.email || prev.email,
+          phone: data.phone || prev.phone,
+          address: data.address || prev.address,
+          primary_color: data.primary_color || prev.primary_color,
+          secondary_color: data.secondary_color || prev.secondary_color,
+          accent_color: data.accent_color || prev.accent_color,
+          font_color: data.font_color || prev.font_color,
+          contract_types: typeof data.contract_types === 'string' ? JSON.parse(data.contract_types) : (data.contract_types || prev.contract_types),
+          contract_durations: typeof data.contract_durations === 'string' ? JSON.parse(data.contract_durations) : (data.contract_durations || prev.contract_durations),
         }));
         
         if (data.logo_path) {
@@ -140,7 +150,8 @@ export const CompanySettingsModule = ({ user }: CompanySettingsModuleProps) => {
         try {
           const response = await apiClient.post('/upload', {
             fileName: `logo-${Date.now()}-${file.name}`,
-            base64Data: base64Data
+            base64Data: base64Data,
+            purpose: 'company-logo',
           });
           
           if (response.success) {
@@ -165,10 +176,18 @@ export const CompanySettingsModule = ({ user }: CompanySettingsModuleProps) => {
       const companyData = {
         name: settings.company_name,
         logo_path: settings.logo_path,
+        tagline: settings.tagline,
+        website: settings.website,
+        email: settings.email,
+        phone: settings.phone,
+        address: settings.address,
         font_type: settings.font_type,
         font_color: settings.font_color,
         primary_color: settings.primary_color,
+        secondary_color: settings.secondary_color,
+        accent_color: settings.accent_color,
         contract_types: settings.contract_types,
+        contract_durations: settings.contract_durations,
       };
 
       await updateCompanySettings(companyData);
@@ -233,12 +252,12 @@ export const CompanySettingsModule = ({ user }: CompanySettingsModuleProps) => {
     });
   };
 
-  if (user.role !== 'SuperAdmin') {
+  if (!can(user, 'company.manage')) {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="text-center">
           <Shield className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-          <p className="text-muted-foreground">Access denied. SuperAdmin privileges required.</p>
+          <p className="text-muted-foreground">Access denied. Company settings permission is required.</p>
         </div>
       </div>
     );
@@ -261,7 +280,7 @@ export const CompanySettingsModule = ({ user }: CompanySettingsModuleProps) => {
         </div>
         <Badge variant="outline" className="text-lg px-4 py-2">
           <Building2 className="h-4 w-4 mr-2" />
-          SuperAdmin Panel
+          Company Administration
         </Badge>
       </div>
 

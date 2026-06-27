@@ -5,6 +5,7 @@
   "scripts": {
     "start": "node index.js",
     "dev": "nodemon index.js",
+    "test": "node --test security/*.test.js routes/*.test.js services/*.test.js",
     "test:security": "node --test security/security.test.js",
     "security:init": "node scripts/ensure-runtime-secret.cjs"
   },

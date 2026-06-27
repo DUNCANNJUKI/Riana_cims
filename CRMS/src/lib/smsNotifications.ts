@@ -67,7 +67,7 @@ export async function notifyStatusChangeSMS(
 // Validate Kenyan phone number format
 export function validateKenyanPhone(phone: string): { valid: boolean; formatted: string; error?: string } {
   // Remove all spaces and special characters except +
-  let cleaned = phone.replace(/[\s\-\(\)]/g, '');
+  const cleaned = phone.replace(/[-\s()]/g, '');
 
   // Check different formats and standardize
   if (cleaned.startsWith('+254')) {
