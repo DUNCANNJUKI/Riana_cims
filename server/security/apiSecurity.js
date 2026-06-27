@@ -84,6 +84,7 @@ const SENSITIVE_PATHS = [
   /^\/api\/upload$/,
   /^\/api\/public\//,
   /^\/api\/admin\/backup/,
+  /^\/api\/(?:chat\/assistant|help\/send-documentation)$/,
 ];
 
 const createSensitiveRateLimiter = ({ limit = 20, windowMs = 5 * 60 * 1000 } = {}) => {

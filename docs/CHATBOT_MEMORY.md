@@ -22,3 +22,7 @@ Current RBAC memory:
 - Password reset requests return a user-not-found error for unknown active emails; existing users receive reset links by email and SMS when those channels are configured.
 
 Conversation history is scoped to the authenticated user. Logging out ends access to that history; changing role or disabling an account invalidates the session.
+
+The assistant uses deterministic topic guidance and returns up to three safe follow-up suggestions. Supported topics include Pending work, Developers approvals and assignments, reports and branding, E-Handover, notifications, roles, clients, installations, subsidiaries, security, PWA installation, and support. Unknown questions receive a bounded user-guidance response rather than fabricated system behavior.
+
+Assistant and support-guide requests are authenticated and rate limited. The support guide can only be sent to the signed-in account email; the client cannot redirect delivery to another address.

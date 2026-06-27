@@ -31,6 +31,12 @@ Clients must not retry mutating methods automatically. Safe GET/HEAD calls may u
 - `POST|PATCH|DELETE /api/crms/profiles` and `/api/crms/user_roles` return `403` because CRMS user management is disabled by design.
 - Server startup normalizes intended SuperAdmin account rows and CIMS/CRMS SuperAdmin module grants so a stale designation/role mismatch cannot silently remove platform authority.
 
+## Help and assistant endpoints
+
+- `POST /api/chat/assistant` accepts a non-empty `message` of at most 1,000 characters and returns `topic`, `reply`, and up to three `suggestions`. The response is deterministic user guidance and sensitive implementation requests are refused before topic matching.
+- `POST /api/help/send-documentation` sends the support guide only to the authenticated user's database-owned email. A different requested destination returns `403`.
+- Both endpoints require an active session, use the sensitive-route rate limiter, return generic provider errors, and do not expose configuration or delivery secrets.
+
 ## Subsidiary identity in document payloads
 
 - Authentication responses include `subsidiary_name` so generated documents can apply the approved user/client subsidiary rule without changing the RIANA application shell.

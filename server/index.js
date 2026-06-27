@@ -13,6 +13,7 @@ const { createChallenge, verifyChallenge } = require('./utils/twoFactor');
 const { sendEmail, sendSms, sendWelcomeCredentials } = require('./services/notifications');
 const { sendUserNotification, sendUsersNotification } = require('./services/notificationDispatcher');
 const { isSensitiveTechnicalRequest } = require('./services/chatbotPolicy');
+const { getAssistantResponse } = require('./services/chatbotKnowledge');
 const { createDatabaseBackup, listBackups, pruneBackups, getLastRun } = require('./services/databaseBackup');
 const { hashPassword, verifyPassword, verifyAndUpgradePassword } = require('./security/passwords');
 const {
@@ -2515,50 +2516,41 @@ app.post('/api/admin/clean-db', (req, res) => {
 
 // HELP & CHAT
 app.post('/api/help/send-documentation', async (req, res) => {
-  const { email, user_name } = req.body;
-  console.log(`Mocking sending documentation to ${email} for ${user_name}`);
-  res.json({ success: true, message: 'Documentation sent successfully (mock)' });
+  const requestedEmail = String(req.body.email || req.user.email || '').trim().toLowerCase();
+  const accountEmail = String(req.user.email || '').trim().toLowerCase();
+  if (!accountEmail || requestedEmail !== accountEmail) {
+    return res.status(403).json({ error: 'The support guide can only be sent to your signed-in work email.' });
+  }
+
+  try {
+    const delivery = await sendEmail({
+      recipientEmail: accountEmail,
+      recipientName: String(req.body.user_name || accountEmail).slice(0, 120),
+      notificationType: 'support_guide',
+      requestDescription: 'Your RIANA CIMS support guide is ready. Open Help & Support for role guidance, searchable articles, Developers workflows, report instructions, system requirements, and approved support channels.',
+      actionUrl: canonicalAppUrl(req),
+    });
+    return res.json({ success: true, message: 'Support guide sent to your work email.', provider: delivery.provider });
+  } catch (error) {
+    console.error(`Support guide delivery failed for user ${req.user.id}: ${error.message}`);
+    return res.status(502).json({ error: 'The support guide could not be delivered. Please try again later.' });
+  }
 });
 
 app.post('/api/chat/assistant', async (req, res) => {
   const message = String(req.body.message || '').trim();
   if (!message || message.length > 1000) return res.status(400).json({ error: 'Please enter a message between 1 and 1000 characters.' });
-  const msg = message.toLowerCase();
   const requestsInternalDetails = isSensitiveTechnicalRequest(message);
-  
-  let reply = "I'm the RIANA CIMS Assistant. I can help with onboarding, Developers and Sales workflows, clients, installations, announcements, notifications, PWA installation, reports, or system navigation. What would you like to do?";
 
   if (requestsInternalDetails) {
-    reply = "I can't provide source code, credentials, internal infrastructure, database details, private endpoints, or deployment configuration. I can help with safe user guidance such as navigation, roles, reports, installations, and support procedures.";
-  } else if (msg.includes('optimus')) {
-    reply = "RIANA OPTIMUS is available from the sidebar under External Systems. It remains an external service, while the Developers workspace opens inside CIMS using your current RIANA session.";
-  } else if (msg.includes('superadmin') || msg.includes('backup') || msg.includes('company setting') || msg.includes('extra role') || msg.includes('module role')) {
-    reply = "Super Admin manages company settings, branding, subsidiaries, user access, backups, and individual extra privileges. Management users have broad administrative access but cannot add, edit, or update installations.";
-  } else if (msg.includes('welcome') || msg.includes('new user') || msg.includes('register') || msg.includes('onboard') || msg.includes('user management')) {
-    reply = "Authorized administrators manage accounts from the Users module. Select the correct role, designation, department, and subsidiary, then save. Super Admin can also tick individual extra privileges.";
-  } else if (msg.includes('developer') || msg.includes('sales') || msg.includes('crms')) {
-    reply = "The Developers workspace tracks requests, approvals, assignments, pending work, and completion. Notifications are sent when approval or action is required, and assigned developers can track their work from Pending.";
-  } else if (msg.includes('notification') || msg.includes('announcement') || msg.includes('sound')) {
-    reply = "New assignments, approval requests, password resets, and workflow updates create in-app notifications and can dispatch email/SMS with the relevant system URL. New assignments and notifications play a chime, while announcements use a distinct announcement sound.";
-  } else if (msg.includes('pwa') || msg.includes('offline') || msg.includes('install app')) {
-    reply = "RIANA CIMS can be installed from a supported browser for convenient access. If the install option is unavailable, use the browser menu or contact support.";
-  } else if (msg.includes('report') || msg.includes('logo') || msg.includes('branding')) {
-    reply = "Open Reports to preview or download the reports available to your role. RIANA documents use the standard company header, while documents for MAREZI users or clients use the approved MAREZI letterhead.";
-  } else if (msg.includes('client')) {
-    reply = "In the 'Clients' module, you can manage client profiles, contact information, and branches. You can also generate unique feedback links for clients to rate installation quality.";
-  } else if (msg.includes('installation') || msg.includes('assign')) {
-    reply = "Installations can be tracked and assigned to technicians in the 'Assign' and 'Installations' modules. You can monitor progress, add equipment details, and upload handover documents.";
-  } else if (msg.includes('calendar') || msg.includes('workload')) {
-    reply = "The 'Workload Calendar' allows Admins and Teamleads to see technician assignments across a timeline, helping to manage team capacity and installation schedules effectively.";
-  } else if (msg.includes('password') || msg.includes('login') || msg.includes('security')) {
-    reply = "Use your approved work email to sign in. If you cannot access your account, use password reset or contact an authorized administrator. Never share your password or verification code.";
-  } else if (msg.includes('hi') || msg.includes('hello') || msg.includes('hey')) {
-    reply = "Hello! I'm your RIANA CIMS Assistant. Ask me about onboarding, Developers or Sales access, notifications, announcements, PWA installation, clients, installations, reports, or OPTIMUS.";
-  } else if (msg.includes('help') || msg.includes('support')) {
-    reply = "The 'Help & Support' section contains documentation and system guides. I can also answer specific questions about managing installations or generating reports.";
+    return res.json({
+      topic: 'restricted',
+      reply: "I can't provide source code, credentials, internal infrastructure, database details, private endpoints, or deployment configuration. I can help with safe user guidance such as navigation, roles, reports, installations, and support procedures.",
+      suggestions: ['How do I preview a report?', 'How do I find pending work?', 'How do I contact support?'],
+    });
   }
 
-  res.json({ reply });
+  res.json(getAssistantResponse({ message, role: req.user.role }));
 });
 
 // CHAT SYSTEM - indexed by user so broadcasts stay O(connections for that user)

@@ -30,6 +30,7 @@ const emailSubjects = {
   password_changed: 'Your RIANA CIMS password was changed',
   password_reset: 'Reset your RIANA CIMS password',
   feedback_requested: 'RIANA installation feedback requested',
+  support_guide: 'Your RIANA CIMS support guide',
   general: 'RIANA CIMS notification',
 };
 

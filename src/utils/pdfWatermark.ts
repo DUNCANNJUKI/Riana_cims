@@ -19,6 +19,20 @@ const SUBSIDIARIES = [
 const RIANA_TEAL = [29, 130, 151];
 const RIANA_BLUE = [29, 130, 151]; // Matched to the edge tone of the official logo
 export const RIANA_DOCUMENT_TEAL = RIANA_TEAL as [number, number, number];
+export const RIANA_TRANSPARENT_HEADER_LOGO = '/Riana_mark_transparent.png';
+
+const LEGACY_RIANA_LOGO_PATTERN = /riana_(?:logo|logoz)\.png(?:[?#].*)?$/i;
+
+/**
+ * Keep custom company branding intact while replacing the legacy RIANA raster,
+ * whose teal background produced a visible rectangle inside report headers.
+ */
+export const resolveRianaHeaderLogoPath = (logoPath?: string | null): string => {
+  const normalizedPath = String(logoPath || '').trim();
+  return !normalizedPath || LEGACY_RIANA_LOGO_PATTERN.test(normalizedPath)
+    ? RIANA_TRANSPARENT_HEADER_LOGO
+    : normalizedPath;
+};
 
 export interface DocumentBrandingOptions {
   subsidiaryName?: string | null;
@@ -87,7 +101,6 @@ export const addCimsDocumentHeader = async (
   const primaryColor = options.primaryColor ?? brand.primary;
   const accentColor = options.accentColor ?? brand.accent;
   const margin = 14;
-  const logoSlot = { x: margin, y: 11, width: 36, height: 22 };
 
   if (brand.id === 'marezi') {
     const letterhead = await fetchImageAsBase64(brand.letterheadPath!);
@@ -125,26 +138,34 @@ export const addCimsDocumentHeader = async (
   doc.setFillColor(...primaryColor);
   doc.rect(0, 0, pageWidth, headerHeight, 'F');
 
+  // 10 mm is approximately 38 CSS pixels. The transparent mark is 18% taller
+  // than the previous logo while its narrow slot avoids invisible side whitespace.
+  const logoSlot = {
+    x: 10,
+    y: (headerHeight - 26) / 2,
+    width: 20,
+    height: 26,
+  };
+
   doc.setTextColor(255, 255, 255);
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(8.5);
   if (options.metaLeft) doc.text(options.metaLeft, margin, 7.5);
   if (options.metaRight) doc.text(options.metaRight, pageWidth - margin, 7.5, { align: 'right' });
 
-  let logoLoaded = false;
-  const logoBase64 = await fetchImageAsBase64(options.logoPath || '/Riana_logo.png');
+  const headerLogoPath = resolveRianaHeaderLogoPath(options.logoPath);
+  const logoBase64 = await fetchImageAsBase64(headerLogoPath, RIANA_TRANSPARENT_HEADER_LOGO);
   if (logoBase64) {
     try {
       addImageContained(doc, logoBase64, logoSlot.x, logoSlot.y, logoSlot.width, logoSlot.height);
-      logoLoaded = true;
     } catch {
-      logoLoaded = false;
+      // The centered text identity remains the deterministic fallback.
     }
   }
 
-  const textLeft = logoLoaded ? logoSlot.x + logoSlot.width + 12 : margin;
-  const textRight = pageWidth - margin;
-  const textCenter = logoLoaded ? textLeft + (textRight - textLeft) / 2 : pageWidth / 2;
+  // The logo owns the left branding zone; the title block remains at the true
+  // page center so its visual alignment is stable across A4 and Letter sizes.
+  const textCenter = pageWidth / 2;
 
   doc.setTextColor(255, 255, 255);
   doc.setFont('helvetica', 'bold');
@@ -176,7 +197,10 @@ export const addCimsDocumentHeader = async (
 /**
  * Fetches an image and returns it as a base64 string
  */
-export const fetchImageAsBase64 = async (src: string): Promise<string | null> => {
+export const fetchImageAsBase64 = async (
+  src: string,
+  fallbackSrc: string | null = '/Riana_logo.png',
+): Promise<string | null> => {
   try {
     if (/^data:image\//i.test(src)) return src;
     const isAbsolute = src.startsWith('http://') || src.startsWith('https://');
@@ -185,11 +209,11 @@ export const fetchImageAsBase64 = async (src: string): Promise<string | null> =>
     // Attempt fetch
     let response = await fetch(url).catch(() => null);
     
-    // Fallback order: relative, absolute, root riana-logo, or fallback API
-    if (!response || !response.ok) {
-      if (src !== '/Riana_logo.png') {
-        response = await fetch(`${window.location.origin}/Riana_logo.png`).catch(() => null);
-      }
+    // Preserve the caller's requested fallback without changing other image roles.
+    if ((!response || !response.ok) && fallbackSrc && src !== fallbackSrc) {
+      response = await fetch(
+        `${window.location.origin}${fallbackSrc.startsWith('/') ? '' : '/'}${fallbackSrc}`,
+      ).catch(() => null);
     }
     
     if (!response || !response.ok) return null;
@@ -311,7 +335,11 @@ export const addLetterheadToDocument = async (
 
   // Try to load logo for watermark and new branding assets
   const logoBase64 = await fetchImageAsGrayscaleBase64(logoPath);
-  const headerLogoBase64 = await fetchImageAsBase64(logoPath);
+  const headerLogoPath = resolveRianaHeaderLogoPath(logoPath);
+  const headerLogoBase64 = await fetchImageAsBase64(
+    headerLogoPath,
+    RIANA_TRANSPARENT_HEADER_LOGO,
+  );
   const watermarkBase64 = await fetchImageAsGrayscaleBase64('/report_watermark.png');
   const footerBase64 = await fetchImageAsBase64('/report_footer.png');
   const letterheadBase64 = await fetchImageAsBase64(letterheadPath) || await fetchImageAsBase64('/letterhead.jpg');
@@ -395,7 +423,7 @@ const addRianaContinuationHeader = (
   doc.rect(0, 0, pageWidth, 22, 'F');
   if (logoBase64) {
     try {
-      addImageContained(doc, logoBase64, 10, 3.5, 28, 15);
+      addImageContained(doc, logoBase64, 10, 2, 14, 18);
     } catch {
       // Text identity below remains the deterministic fallback.
     }

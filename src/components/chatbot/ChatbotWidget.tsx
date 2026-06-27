@@ -1,347 +1,104 @@
-import { useState, useRef, useEffect } from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { ScrollArea } from "@/components/ui/scroll-area";
-import { Badge } from "@/components/ui/badge";
-import { Send, User, Minimize2, Maximize2, ChevronDown, ChevronUp } from "lucide-react";
-import { User as UserType } from "@/types";
-import { apiClient } from "@/integrations/apiClient";
-
-interface Message {
-  id: string;
-  text: string;
-  sender: 'user' | 'bot';
-  timestamp: Date;
-  isExpanded?: boolean;
-}
+import { FormEvent, useEffect, useRef, useState } from 'react';
+import { Bot, Loader2, Maximize2, MessageCircle, Minimize2, Send, ShieldCheck, User as UserIcon, X } from 'lucide-react';
+import { User } from '@/types';
+import { useCimsAssistant } from '@/hooks/useCimsAssistant';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { ScrollArea } from '@/components/ui/scroll-area';
 
 interface ChatbotWidgetProps {
-  user?: UserType;
+  user?: User;
 }
-
-const MAX_SUMMARY_LENGTH = 150;
 
 export const ChatbotWidget = ({ user }: ChatbotWidgetProps) => {
   const [isOpen, setIsOpen] = useState(false);
   const [isMinimized, setIsMinimized] = useState(false);
-  const [robotMood, setRobotMood] = useState<'normal' | 'thinking' | 'excited' | 'error'>('normal');
-  
-  const getGreeting = () => {
-    const hour = new Date().getHours();
-    const userName = user ? `${user.first_name || user.email.split('@')[0]}` : 'there';
-    
-    let timeGreeting = '';
-    if (hour < 12) timeGreeting = 'Good morning';
-    else if (hour < 17) timeGreeting = 'Good afternoon';
-    else timeGreeting = 'Good evening';
-    
-    return `${timeGreeting}, ${userName}! 👋 I'm your RIANA CIMS assistant. How can I help you today?`;
-  };
-
-  const [messages, setMessages] = useState<Message[]>([
-    {
-      id: '1',
-      text: getGreeting(),
-      sender: 'bot',
-      timestamp: new Date(),
-      isExpanded: true
-    }
-  ]);
-  const [inputValue, setInputValue] = useState('');
-  const [isTyping, setIsTyping] = useState(false);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
-
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  };
+  const [input, setInput] = useState('');
+  const { messages, suggestions, isSending, sendMessage } = useCimsAssistant(user);
+  const endRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    scrollToBottom();
-  }, [messages]);
+    const openAssistant = () => { setIsOpen(true); setIsMinimized(false); };
+    window.addEventListener('open-assistant', openAssistant);
+    return () => window.removeEventListener('open-assistant', openAssistant);
+  }, []);
 
-  const summarizeText = (text: string): { summary: string; isTruncated: boolean } => {
-    if (text.length <= MAX_SUMMARY_LENGTH) {
-      return { summary: text, isTruncated: false };
-    }
-    // Find a good breaking point
-    const breakPoint = text.lastIndexOf(' ', MAX_SUMMARY_LENGTH);
-    const summary = text.substring(0, breakPoint > 0 ? breakPoint : MAX_SUMMARY_LENGTH) + '...';
-    return { summary, isTruncated: true };
-  };
+  useEffect(() => {
+    if (isOpen && !isMinimized) endRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }, [isMinimized, isOpen, isSending, messages]);
 
-  const toggleMessageExpand = (messageId: string) => {
-    setMessages(prev => prev.map(msg => 
-      msg.id === messageId ? { ...msg, isExpanded: !msg.isExpanded } : msg
-    ));
-  };
-
-  const generateBotResponse = async (userMessage: string): Promise<string> => {
-    try {
-      const data = await apiClient.post('/chat/assistant', {
-        message: userMessage
-      });
-
-      return data.reply || 'I apologize, but I couldn\'t generate a response. Please try again.';
-    } catch (error) {
-      console.error('Error in chatbot:', error);
-      return 'I apologize, but I\'m experiencing technical difficulties. Please try again.';
-    }
-  };
-
-  const handleSendMessage = async () => {
-    if (!inputValue.trim()) return;
-
-    const userMessage: Message = {
-      id: Date.now().toString(),
-      text: inputValue,
-      sender: 'user',
-      timestamp: new Date(),
-      isExpanded: true
-    };
-
-    const currentInput = inputValue;
-    setMessages(prev => [...prev, userMessage]);
-    setInputValue('');
-    setIsTyping(true);
-    setRobotMood('thinking');
-
-    try {
-      const response = await generateBotResponse(currentInput);
-      const botResponse: Message = {
-        id: (Date.now() + 1).toString(),
-        text: response,
-        sender: 'bot',
-        timestamp: new Date(),
-        isExpanded: false // Start collapsed for long messages
-      };
-      
-      setMessages(prev => [...prev, botResponse]);
-      setIsTyping(false);
-      
-      // Set mood based on response type
-      if (response.includes('error') || response.includes('sorry') || response.includes('apologize')) {
-        setRobotMood('error');
-        setTimeout(() => setRobotMood('normal'), 2000);
-      } else if (response.includes('help') || response.includes('assist')) {
-        setRobotMood('excited');
-        setTimeout(() => setRobotMood('normal'), 2000);
-      } else {
-        setRobotMood('normal');
-      }
-    } catch (error) {
-      console.error('Error in handleSendMessage:', error);
-      setIsTyping(false);
-      setRobotMood('error');
-      setTimeout(() => setRobotMood('normal'), 2000);
-    }
-  };
-
-  const handleKeyPress = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter') {
-      handleSendMessage();
-    }
-  };
-
-  const getMoodColor = () => {
-    switch (robotMood) {
-      case 'thinking': return 'hsl(200, 100%, 60%)';
-      case 'excited': return 'hsl(45, 93%, 47%)';
-      case 'error': return 'hsl(0, 84%, 60%)';
-      default: return 'hsl(142, 76%, 46%)';
-    }
-  };
-
-  const renderMessageContent = (message: Message) => {
-    const { summary, isTruncated } = summarizeText(message.text);
-    const showFull = message.isExpanded || !isTruncated;
-    
-    return (
-      <div className="space-y-1">
-        <p className="text-xs leading-relaxed whitespace-pre-wrap">
-          {showFull ? message.text : summary}
-        </p>
-        {isTruncated && (
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => toggleMessageExpand(message.id)}
-            className="h-5 px-2 text-[10px] text-cyan-400 hover:text-cyan-300 hover:bg-transparent"
-          >
-            {message.isExpanded ? (
-              <>
-                <ChevronUp className="h-3 w-3 mr-1" />
-                Show less
-              </>
-            ) : (
-              <>
-                <ChevronDown className="h-3 w-3 mr-1" />
-                Read more
-              </>
-            )}
-          </Button>
-        )}
-        <p className="text-[10px] opacity-60">
-          {message.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-        </p>
-      </div>
-    );
+  const submit = async (event: FormEvent) => {
+    event.preventDefault();
+    const message = input.trim();
+    if (!message || isSending) return;
+    setInput('');
+    await sendMessage(message);
   };
 
   if (!isOpen) {
     return (
       <div className="fixed bottom-4 right-4 z-50">
-        <Button
-          onClick={() => setIsOpen(true)}
-          className="rounded-full w-14 h-14 gradient-primary shadow-lg hover:scale-110 transition-all duration-300"
-        >
-          <div className="relative">
-            <div className="w-7 h-7 rounded-full bg-gradient-to-br from-slate-600 to-slate-800 flex items-center justify-center">
-              <div className="flex gap-0.5">
-                <div 
-                  className="w-1.5 h-1.5 rounded-full"
-                  style={{ backgroundColor: getMoodColor() }}
-                />
-                <div 
-                  className="w-1.5 h-1.5 rounded-full"
-                  style={{ backgroundColor: getMoodColor() }}
-                />
-              </div>
-            </div>
-          </div>
+        <Button onClick={() => setIsOpen(true)} size="icon" className="h-14 w-14 rounded-full shadow-lg transition-transform hover:scale-105" aria-label="Open RIANA Assistant">
+          <MessageCircle className="h-6 w-6" />
         </Button>
       </div>
     );
   }
 
   return (
-    <div className="fixed bottom-4 right-4 z-50">
-      <Card className={`shadow-xl border-primary/20 transition-all duration-300 bg-gradient-to-br from-slate-900 to-slate-800 text-white ${isMinimized ? 'w-80 h-12' : 'w-80 h-[420px]'}`}>
-        <CardHeader className="py-2 px-3 border-b border-slate-700">
-          <div className="flex items-center justify-between">
-            <CardTitle className="flex items-center gap-2 text-xs">
-              <div className={`w-6 h-6 rounded-full bg-gradient-to-br from-slate-600 to-slate-800 flex items-center justify-center border border-slate-500 ${isTyping ? 'animate-pulse' : ''}`}>
-                <div className="flex gap-0.5">
-                  <div 
-                    className="w-1 h-1 rounded-full transition-colors duration-300"
-                    style={{ backgroundColor: getMoodColor() }}
-                  />
-                  <div 
-                    className="w-1 h-1 rounded-full transition-colors duration-300"
-                    style={{ backgroundColor: getMoodColor() }}
-                  />
-                </div>
-              </div>
-              <div>
-                <div className="text-cyan-300 font-medium text-xs">RIANA Assistant</div>
-                <div className="text-[9px] text-slate-400">RIANA Automations</div>
-              </div>
-              <Badge 
-                variant="outline" 
-                className="text-[9px] px-1 py-0 border-green-500 text-green-400 bg-green-500/10"
-              >
-                Online
-              </Badge>
+    <div className="fixed bottom-4 right-4 z-50 w-[calc(100vw-2rem)] sm:w-96">
+      <Card className={`overflow-hidden border-primary/20 shadow-2xl ${isMinimized ? '' : 'h-[520px]'}`}>
+        <CardHeader className="border-b bg-primary px-4 py-3 text-primary-foreground">
+          <div className="flex items-center justify-between gap-3">
+            <CardTitle className="flex min-w-0 items-center gap-2 text-sm">
+              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary-foreground/15"><Bot className="h-4 w-4" /></span>
+              <span className="min-w-0"><span className="block truncate">RIANA Assistant</span><span className="block text-[10px] font-normal text-primary-foreground/75">User guidance only</span></span>
             </CardTitle>
-            <div className="flex gap-1">
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setIsMinimized(!isMinimized)}
-                className="h-5 w-5 p-0 text-slate-400 hover:text-white hover:bg-slate-700"
-              >
-                {isMinimized ? <Maximize2 className="h-3 w-3" /> : <Minimize2 className="h-3 w-3" />}
+            <div className="flex shrink-0 gap-1">
+              <Button type="button" variant="ghost" size="icon" className="h-8 w-8 text-primary-foreground hover:bg-primary-foreground/15 hover:text-primary-foreground" onClick={() => setIsMinimized((value) => !value)} aria-label={isMinimized ? 'Expand assistant' : 'Minimize assistant'}>
+                {isMinimized ? <Maximize2 className="h-4 w-4" /> : <Minimize2 className="h-4 w-4" />}
               </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setIsOpen(false)}
-                className="h-5 w-5 p-0 text-slate-400 hover:text-white hover:bg-slate-700"
-              >
-                ×
-              </Button>
+              <Button type="button" variant="ghost" size="icon" className="h-8 w-8 text-primary-foreground hover:bg-primary-foreground/15 hover:text-primary-foreground" onClick={() => setIsOpen(false)} aria-label="Close assistant"><X className="h-4 w-4" /></Button>
             </div>
           </div>
         </CardHeader>
-        
-        {!isMinimized && (
-          <CardContent className="p-0 flex flex-col h-[360px] bg-slate-900/50">
-            <ScrollArea className="flex-1 px-2 py-2">
-              <div className="space-y-2">
+
+        {!isMinimized ? (
+          <CardContent className="flex h-[456px] flex-col p-0">
+            <div className="flex gap-2 border-b bg-primary/5 px-4 py-2.5 text-[11px] leading-4 text-muted-foreground">
+              <ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" />
+              Safe workflow guidance. No source code, credentials, infrastructure, or database details.
+            </div>
+            <div className="flex gap-2 overflow-x-auto border-b px-3 py-2">
+              {suggestions.slice(0, 2).map((question) => (
+                <Button key={question} type="button" size="sm" variant="outline" className="h-auto shrink-0 py-1.5 text-[10px]" disabled={isSending} onClick={() => sendMessage(question)}>{question}</Button>
+              ))}
+            </div>
+            <ScrollArea className="min-h-0 flex-1 px-3 py-3" aria-live="polite">
+              <div className="space-y-3 pr-2">
                 {messages.map((message) => (
-                  <div
-                    key={message.id}
-                    className={`flex items-start gap-1.5 ${
-                      message.sender === 'user' ? 'justify-end' : 'justify-start'
-                    }`}
-                  >
-                    {message.sender === 'bot' && (
-                      <div className="w-5 h-5 rounded-full bg-gradient-to-br from-slate-600 to-slate-800 flex items-center justify-center flex-shrink-0 border border-slate-500">
-                        <div className="flex gap-0.5">
-                          <div className="w-0.5 h-0.5 rounded-full bg-green-400" />
-                          <div className="w-0.5 h-0.5 rounded-full bg-green-400" />
-                        </div>
-                      </div>
-                    )}
-                    <div
-                      className={`max-w-[220px] px-2 py-1.5 rounded-lg shadow ${
-                        message.sender === 'user'
-                          ? 'bg-gradient-to-r from-blue-600 to-blue-700 text-white'
-                          : 'bg-gradient-to-r from-slate-700 to-slate-600 text-slate-100 border border-slate-500'
-                      }`}
-                    >
-                      {renderMessageContent(message)}
+                  <div key={message.id} className={`flex items-start gap-2 ${message.sender === 'user' ? 'justify-end' : 'justify-start'}`}>
+                    {message.sender === 'assistant' ? <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary"><Bot className="h-3 w-3" /></span> : null}
+                    <div className={`max-w-[78%] rounded-xl px-3 py-2 text-xs leading-5 ${message.sender === 'user' ? 'bg-primary text-primary-foreground' : 'bg-muted text-foreground'}`}>
+                      <p className="whitespace-pre-wrap">{message.text}</p>
+                      <p className={`mt-1 text-[9px] ${message.sender === 'user' ? 'text-primary-foreground/70' : 'text-muted-foreground'}`}>{message.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>
                     </div>
-                    {message.sender === 'user' && (
-                      <div className="w-5 h-5 rounded-full bg-gradient-to-br from-blue-600 to-blue-700 flex items-center justify-center flex-shrink-0">
-                        <User className="h-2.5 w-2.5 text-white" />
-                      </div>
-                    )}
+                    {message.sender === 'user' ? <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground"><UserIcon className="h-3 w-3" /></span> : null}
                   </div>
                 ))}
-                
-                {isTyping && (
-                  <div className="flex items-start gap-1.5">
-                    <div className="w-5 h-5 rounded-full bg-gradient-to-br from-slate-600 to-slate-800 flex items-center justify-center border border-slate-500 animate-pulse">
-                      <div className="flex gap-0.5">
-                        <div className="w-0.5 h-0.5 rounded-full bg-blue-400" />
-                        <div className="w-0.5 h-0.5 rounded-full bg-blue-400" />
-                      </div>
-                    </div>
-                    <div className="bg-gradient-to-r from-slate-700 to-slate-600 px-2 py-1.5 rounded-lg border border-slate-500">
-                      <div className="flex space-x-1">
-                        <div className="w-1 h-1 bg-slate-300 rounded-full animate-bounce"></div>
-                        <div className="w-1 h-1 bg-slate-300 rounded-full animate-bounce" style={{ animationDelay: '0.1s' }}></div>
-                        <div className="w-1 h-1 bg-slate-300 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
-                      </div>
-                    </div>
-                  </div>
-                )}
-                <div ref={messagesEndRef} />
+                {isSending ? <div className="flex items-center gap-2 text-xs text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin text-primary" /> Preparing guidance...</div> : null}
+                <div ref={endRef} />
               </div>
             </ScrollArea>
-            
-            <div className="p-2 border-t border-slate-700 bg-slate-800/50">
-              <div className="flex gap-1.5">
-                <Input
-                  value={inputValue}
-                  onChange={(e) => setInputValue(e.target.value)}
-                  onKeyPress={handleKeyPress}
-                  placeholder="Type your message..."
-                  className="flex-1 text-xs h-7 bg-slate-700 border-slate-600 text-white placeholder:text-slate-400 focus:border-cyan-400"
-                />
-                <Button
-                  onClick={handleSendMessage}
-                  size="sm"
-                  className="px-2 h-7 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 border border-cyan-500 transition-all hover:scale-105 active:scale-95"
-                  disabled={!inputValue.trim() || isTyping}
-                >
-                  <Send className="h-3 w-3" />
-                </Button>
+            <form onSubmit={submit} className="border-t p-3">
+              <div className="flex gap-2">
+                <Input value={input} onChange={(event) => setInput(event.target.value)} placeholder="Ask RIANA Assistant" maxLength={1000} disabled={isSending} className="h-9 text-xs" aria-label="Assistant question" />
+                <Button type="submit" size="icon" className="h-9 w-9" disabled={!input.trim() || isSending} aria-label="Send question">{isSending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}</Button>
               </div>
-            </div>
+            </form>
           </CardContent>
-        )}
+        ) : null}
       </Card>
     </div>
   );

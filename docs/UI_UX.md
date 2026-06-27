@@ -21,12 +21,14 @@ Do not hard-code an independent palette in a page or embed another application s
 
 CRMS/Developers navigation must not expose separate Settings, Notifications, or user-management screens. Those are owned by main CIMS. The Developers overview uses the same CIMS card surfaces, borders, shadows, readable foreground text, and primary teal actions in both light and dark themes.
 
+Help & Support uses a true-white workspace, one dominant search field, role-specific recommendations, an expandable knowledge list, and a focused assistant panel. Support channels and resources share one lower rail instead of nested card grids. The page collapses to a single column on mobile, preserves keyboard focus states, and never presents unavailable tutorial placeholders as working features.
+
 ## Generated documents
 
 RIANA PDFs use a restrained teal header matched to the official logo edge tone, white header text, dark body text, light neutral table stripes, serial number, generation time, page number, confidentiality label, and reserved footer space. MAREZI PDFs use the approved full-page transparent MAREZI letterhead on every page; titles begin below its top rule and content stays above its footer. Continuation content starts at 40 mm and tables reserve 45 mm at the bottom on both identities.
 
 Each generated report name appears once in the branded header. Do not repeat the report name as a black body heading; body content starts with metadata, a section heading, or the report table.
 
-Header logos must be aspect-ratio contained inside the reserved logo slot and must not be stretched, boxed, duplicated, or overlaid as an extra floating image. The unchanged MAREZI asset is used only as document letterhead when either the client/request or generating user belongs to MAREZI. Watermarks must remain subtle enough that body text stays readable. Status colors never replace status text.
+RIANA report headers use the transparent canonical mark with 10 mm left padding, computed vertical centering, aspect-ratio-safe scaling, and a title block centered on the physical page for both A4 and Letter output. Header logos must not be stretched, boxed, shadowed, clipped, duplicated, or overlaid as an extra floating image. The unchanged MAREZI asset is used only as document letterhead when either the client/request or generating user belongs to MAREZI. Watermarks must remain subtle enough that body text stays readable. Status colors never replace status text.
 
 Preview and download must use the same protected source file so users cannot review one version and save another.

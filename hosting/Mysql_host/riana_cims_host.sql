@@ -1,5 +1,5 @@
 -- RIANA CIMS MySQL hosting database
--- Generated 2026-06-27T08:09:26.851Z
+-- Generated 2026-06-27T18:43:42.200Z
 -- Complete schema with sanitized reference data; no credentials or customer records.
 SET NAMES utf8mb4;
 SET FOREIGN_KEY_CHECKS = 0;
@@ -131,10 +131,24 @@ CREATE TABLE `company_settings` (
   `updated_at` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
   `backup_day` varchar(20) DEFAULT 'Daily',
   `backup_time` varchar(10) DEFAULT '02:00',
+  `tagline` varchar(255) DEFAULT NULL,
+  `website` varchar(255) DEFAULT NULL,
+  `email` varchar(255) DEFAULT NULL,
+  `phone` varchar(50) DEFAULT NULL,
+  `address` text DEFAULT NULL,
+  `contract_durations` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL CHECK (json_valid(`contract_durations`)),
+  `secondary_color` varchar(20) DEFAULT NULL,
+  `accent_color` varchar(20) DEFAULT NULL,
+  `timezone` varchar(100) DEFAULT 'Africa/Nairobi',
+  `date_format` varchar(30) DEFAULT 'DD/MM/YYYY',
+  `enable_email_notifications` tinyint(1) DEFAULT 1,
+  `enable_sms_notifications` tinyint(1) DEFAULT 1,
+  `enable_push_notifications` tinyint(1) DEFAULT 1,
+  `auto_reminder_days` smallint(5) unsigned DEFAULT 3,
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-INSERT INTO `company_settings` (`id`, `name`, `logo_path`, `font_color`, `primary_color`, `font_type`, `contract_types`, `backup_schedule`, `updated_at`, `backup_day`, `backup_time`) VALUES (1, 'RIANA CIMS', '/Riana_logo.png', '#000000', '#1A91AB', 'Inter', '[\"AMC\",\"Once-off\",\"Subscription\"]', '0 2 * * *', '2026-03-21 23:06:17.000', 'Daily', '02:00');
+INSERT INTO `company_settings` (`id`, `name`, `logo_path`, `font_color`, `primary_color`, `font_type`, `contract_types`, `backup_schedule`, `updated_at`, `backup_day`, `backup_time`, `tagline`, `website`, `email`, `phone`, `address`, `contract_durations`, `secondary_color`, `accent_color`, `timezone`, `date_format`, `enable_email_notifications`, `enable_sms_notifications`, `enable_push_notifications`, `auto_reminder_days`) VALUES (1, 'RIANA CIMS', '/Riana_logo.png', '#000000', '#1A91AB', 'Inter', '[\"AMC\",\"Once-off\",\"Subscription\"]', '0 2 * * *', '2026-03-21 23:06:17.000', 'Daily', '02:00', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 'Africa/Nairobi', 'DD/MM/YYYY', 1, 1, 1, 3);
 
 DROP TABLE IF EXISTS `crms_audit_logs`;
 CREATE TABLE `crms_audit_logs` (
@@ -441,6 +455,7 @@ CREATE TABLE `migration_history` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 INSERT INTO `migration_history` (`migration_id`, `description`, `applied_at`) VALUES ('20260621_security_foundation', 'Unified module RBAC, session revocation, security settings, and audit events', '2026-06-21 06:41:40.000');
+INSERT INTO `migration_history` (`migration_id`, `description`, `applied_at`) VALUES ('20260627_enterprise_roles_permissions', 'Applied from 20260627_enterprise_roles_permissions.sql', '2026-06-27 19:04:26.000');
 
 DROP TABLE IF EXISTS `modules`;
 CREATE TABLE `modules` (
@@ -482,16 +497,33 @@ CREATE TABLE `permissions` (
   CONSTRAINT `fk_permissions_module` FOREIGN KEY (`module_id`) REFERENCES `modules` (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+INSERT INTO `permissions` (`id`, `module_id`, `code`, `description`) VALUES ('analytics.view', 'cims', 'analytics.view', 'View analytics');
+INSERT INTO `permissions` (`id`, `module_id`, `code`, `description`) VALUES ('announcements.manage', 'cims', 'announcements.manage', 'Manage announcements');
+INSERT INTO `permissions` (`id`, `module_id`, `code`, `description`) VALUES ('assignments.manage', 'cims', 'assignments.manage', 'Assign technicians and update assignments');
+INSERT INTO `permissions` (`id`, `module_id`, `code`, `description`) VALUES ('assignments.view', 'cims', 'assignments.view', 'View assigned technicians');
 INSERT INTO `permissions` (`id`, `module_id`, `code`, `description`) VALUES ('cims:admin', 'cims', 'admin', 'Manage CIMS users and settings');
-INSERT INTO `permissions` (`id`, `module_id`, `code`, `description`) VALUES ('cims:backup.manage', 'cims', 'backup.manage', 'View, schedule, and create verified backups');
+INSERT INTO `permissions` (`id`, `module_id`, `code`, `description`) VALUES ('cims:backup.manage', 'cims', 'backup.manage', 'View and create database backups');
 INSERT INTO `permissions` (`id`, `module_id`, `code`, `description`) VALUES ('cims:manage', 'cims', 'manage', 'Manage CIMS operational records');
 INSERT INTO `permissions` (`id`, `module_id`, `code`, `description`) VALUES ('cims:read', 'cims', 'read', 'Read permitted CIMS records');
+INSERT INTO `permissions` (`id`, `module_id`, `code`, `description`) VALUES ('clients.manage', 'cims', 'clients.manage', 'Add, edit, and delete clients');
+INSERT INTO `permissions` (`id`, `module_id`, `code`, `description`) VALUES ('clients.view', 'cims', 'clients.view', 'View clients');
+INSERT INTO `permissions` (`id`, `module_id`, `code`, `description`) VALUES ('company.manage', 'cims', 'company.manage', 'Manage company settings and branding');
 INSERT INTO `permissions` (`id`, `module_id`, `code`, `description`) VALUES ('crms:admin', 'crms', 'admin', 'Manage CRMS users and settings');
 INSERT INTO `permissions` (`id`, `module_id`, `code`, `description`) VALUES ('crms:approve', 'crms', 'approve', 'Approve or reject change requests');
 INSERT INTO `permissions` (`id`, `module_id`, `code`, `description`) VALUES ('crms:assign', 'crms', 'assign', 'Assign and schedule change requests');
 INSERT INTO `permissions` (`id`, `module_id`, `code`, `description`) VALUES ('crms:create', 'crms', 'create', 'Create change requests');
 INSERT INTO `permissions` (`id`, `module_id`, `code`, `description`) VALUES ('crms:implement', 'crms', 'implement', 'Update assigned implementation work');
 INSERT INTO `permissions` (`id`, `module_id`, `code`, `description`) VALUES ('crms:read', 'crms', 'read', 'Read permitted change requests');
+INSERT INTO `permissions` (`id`, `module_id`, `code`, `description`) VALUES ('finances.manage', 'cims', 'finances.manage', 'Add, edit, and delete installation budgets');
+INSERT INTO `permissions` (`id`, `module_id`, `code`, `description`) VALUES ('finances.view', 'cims', 'finances.view', 'View installation budgets');
+INSERT INTO `permissions` (`id`, `module_id`, `code`, `description`) VALUES ('import.manage', 'cims', 'import.manage', 'Import system data');
+INSERT INTO `permissions` (`id`, `module_id`, `code`, `description`) VALUES ('installations.manage', 'cims', 'installations.manage', 'Add, edit, and update installations');
+INSERT INTO `permissions` (`id`, `module_id`, `code`, `description`) VALUES ('installations.view', 'cims', 'installations.view', 'View installations');
+INSERT INTO `permissions` (`id`, `module_id`, `code`, `description`) VALUES ('progress.manage', 'cims', 'progress.manage', 'Update installation progress');
+INSERT INTO `permissions` (`id`, `module_id`, `code`, `description`) VALUES ('progress.view', 'cims', 'progress.view', 'View installation progress');
+INSERT INTO `permissions` (`id`, `module_id`, `code`, `description`) VALUES ('reports.view', 'cims', 'reports.view', 'Preview and download all reports');
+INSERT INTO `permissions` (`id`, `module_id`, `code`, `description`) VALUES ('subsidiaries.manage', 'cims', 'subsidiaries.manage', 'Add, edit, and delete subsidiaries');
+INSERT INTO `permissions` (`id`, `module_id`, `code`, `description`) VALUES ('users.manage', 'cims', 'users.manage', 'Manage non-privileged users');
 
 DROP TABLE IF EXISTS `roles`;
 CREATE TABLE `roles` (
@@ -507,12 +539,15 @@ CREATE TABLE `roles` (
 
 INSERT INTO `roles` (`id`, `module_id`, `code`, `name`, `is_system`) VALUES ('cims:Admin', 'cims', 'Admin', 'Administrator', 1);
 INSERT INTO `roles` (`id`, `module_id`, `code`, `name`, `is_system`) VALUES ('cims:Developer', 'cims', 'Developer', 'Developer', 1);
+INSERT INTO `roles` (`id`, `module_id`, `code`, `name`, `is_system`) VALUES ('cims:Finance', 'cims', 'Finance', 'Finance', 1);
+INSERT INTO `roles` (`id`, `module_id`, `code`, `name`, `is_system`) VALUES ('cims:Management', 'cims', 'Management', 'Management', 1);
 INSERT INTO `roles` (`id`, `module_id`, `code`, `name`, `is_system`) VALUES ('cims:Sales', 'cims', 'Sales', 'Sales', 1);
 INSERT INTO `roles` (`id`, `module_id`, `code`, `name`, `is_system`) VALUES ('cims:SuperAdmin', 'cims', 'SuperAdmin', 'Super Administrator', 1);
 INSERT INTO `roles` (`id`, `module_id`, `code`, `name`, `is_system`) VALUES ('cims:Teamlead', 'cims', 'Teamlead', 'Team Lead', 1);
 INSERT INTO `roles` (`id`, `module_id`, `code`, `name`, `is_system`) VALUES ('cims:User', 'cims', 'User', 'User', 1);
 INSERT INTO `roles` (`id`, `module_id`, `code`, `name`, `is_system`) VALUES ('crms:Admin', 'crms', 'Admin', 'Administrator', 1);
 INSERT INTO `roles` (`id`, `module_id`, `code`, `name`, `is_system`) VALUES ('crms:Developer', 'crms', 'Developer', 'Developer', 1);
+INSERT INTO `roles` (`id`, `module_id`, `code`, `name`, `is_system`) VALUES ('crms:Management', 'crms', 'Management', 'Management', 1);
 INSERT INTO `roles` (`id`, `module_id`, `code`, `name`, `is_system`) VALUES ('crms:Sales', 'crms', 'Sales', 'Sales', 1);
 INSERT INTO `roles` (`id`, `module_id`, `code`, `name`, `is_system`) VALUES ('crms:SuperAdmin', 'crms', 'SuperAdmin', 'Super Administrator', 1);
 INSERT INTO `roles` (`id`, `module_id`, `code`, `name`, `is_system`) VALUES ('crms:Teamlead', 'crms', 'Teamlead', 'Team Lead', 1);
@@ -533,10 +568,27 @@ INSERT INTO `role_permissions` (`role_id`, `permission_id`) VALUES ('cims:Admin'
 INSERT INTO `role_permissions` (`role_id`, `permission_id`) VALUES ('cims:Admin', 'cims:read');
 INSERT INTO `role_permissions` (`role_id`, `permission_id`) VALUES ('cims:Developer', 'cims:read');
 INSERT INTO `role_permissions` (`role_id`, `permission_id`) VALUES ('cims:Sales', 'cims:read');
+INSERT INTO `role_permissions` (`role_id`, `permission_id`) VALUES ('cims:SuperAdmin', 'analytics.view');
+INSERT INTO `role_permissions` (`role_id`, `permission_id`) VALUES ('cims:SuperAdmin', 'announcements.manage');
+INSERT INTO `role_permissions` (`role_id`, `permission_id`) VALUES ('cims:SuperAdmin', 'assignments.manage');
+INSERT INTO `role_permissions` (`role_id`, `permission_id`) VALUES ('cims:SuperAdmin', 'assignments.view');
 INSERT INTO `role_permissions` (`role_id`, `permission_id`) VALUES ('cims:SuperAdmin', 'cims:admin');
 INSERT INTO `role_permissions` (`role_id`, `permission_id`) VALUES ('cims:SuperAdmin', 'cims:backup.manage');
 INSERT INTO `role_permissions` (`role_id`, `permission_id`) VALUES ('cims:SuperAdmin', 'cims:manage');
 INSERT INTO `role_permissions` (`role_id`, `permission_id`) VALUES ('cims:SuperAdmin', 'cims:read');
+INSERT INTO `role_permissions` (`role_id`, `permission_id`) VALUES ('cims:SuperAdmin', 'clients.manage');
+INSERT INTO `role_permissions` (`role_id`, `permission_id`) VALUES ('cims:SuperAdmin', 'clients.view');
+INSERT INTO `role_permissions` (`role_id`, `permission_id`) VALUES ('cims:SuperAdmin', 'company.manage');
+INSERT INTO `role_permissions` (`role_id`, `permission_id`) VALUES ('cims:SuperAdmin', 'finances.manage');
+INSERT INTO `role_permissions` (`role_id`, `permission_id`) VALUES ('cims:SuperAdmin', 'finances.view');
+INSERT INTO `role_permissions` (`role_id`, `permission_id`) VALUES ('cims:SuperAdmin', 'import.manage');
+INSERT INTO `role_permissions` (`role_id`, `permission_id`) VALUES ('cims:SuperAdmin', 'installations.manage');
+INSERT INTO `role_permissions` (`role_id`, `permission_id`) VALUES ('cims:SuperAdmin', 'installations.view');
+INSERT INTO `role_permissions` (`role_id`, `permission_id`) VALUES ('cims:SuperAdmin', 'progress.manage');
+INSERT INTO `role_permissions` (`role_id`, `permission_id`) VALUES ('cims:SuperAdmin', 'progress.view');
+INSERT INTO `role_permissions` (`role_id`, `permission_id`) VALUES ('cims:SuperAdmin', 'reports.view');
+INSERT INTO `role_permissions` (`role_id`, `permission_id`) VALUES ('cims:SuperAdmin', 'subsidiaries.manage');
+INSERT INTO `role_permissions` (`role_id`, `permission_id`) VALUES ('cims:SuperAdmin', 'users.manage');
 INSERT INTO `role_permissions` (`role_id`, `permission_id`) VALUES ('cims:Teamlead', 'cims:manage');
 INSERT INTO `role_permissions` (`role_id`, `permission_id`) VALUES ('cims:Teamlead', 'cims:read');
 INSERT INTO `role_permissions` (`role_id`, `permission_id`) VALUES ('cims:User', 'cims:read');
@@ -606,7 +658,6 @@ CREATE TABLE `subsidiaries` (
 INSERT INTO `subsidiaries` (`id`, `subsidiary_name`, `created_at`, `default_escalation_matrix`) VALUES ('34f8ccb0-0e95-11f1-9abb-00155d187c00', 'MAREZI', '2026-02-20 22:48:53.000', NULL);
 INSERT INTO `subsidiaries` (`id`, `subsidiary_name`, `created_at`, `default_escalation_matrix`) VALUES ('34f8cf97-0e95-11f1-9abb-00155d187c00', 'USS', '2026-02-20 22:48:53.000', NULL);
 INSERT INTO `subsidiaries` (`id`, `subsidiary_name`, `created_at`, `default_escalation_matrix`) VALUES ('34f8d0a8-0e95-11f1-9abb-00155d187c00', 'VMS', '2026-02-20 22:48:53.000', NULL);
-INSERT INTO `subsidiaries` (`id`, `subsidiary_name`, `created_at`, `default_escalation_matrix`) VALUES ('b78e70f3-1c82-4eab-96a7-768b05e3b1f7', 'TINDANCE', '2026-03-21 23:23:28.000', NULL);
 
 DROP TABLE IF EXISTS `system_logs`;
 CREATE TABLE `system_logs` (
@@ -660,13 +711,27 @@ CREATE TABLE `user_module_roles` (
   CONSTRAINT `fk_user_module_roles_user` FOREIGN KEY (`user_id`) REFERENCES `user_profiles` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+DROP TABLE IF EXISTS `user_permissions`;
+CREATE TABLE `user_permissions` (
+  `user_id` varchar(36) NOT NULL,
+  `permission_id` varchar(100) NOT NULL,
+  `granted_by` varchar(36) DEFAULT NULL,
+  `granted_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`user_id`,`permission_id`),
+  KEY `idx_user_permissions_permission` (`permission_id`),
+  KEY `fk_user_permissions_grantor` (`granted_by`),
+  CONSTRAINT `fk_user_permissions_grantor` FOREIGN KEY (`granted_by`) REFERENCES `user_profiles` (`id`) ON DELETE SET NULL,
+  CONSTRAINT `fk_user_permissions_permission` FOREIGN KEY (`permission_id`) REFERENCES `permissions` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_user_permissions_user` FOREIGN KEY (`user_id`) REFERENCES `user_profiles` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 DROP TABLE IF EXISTS `user_profiles`;
 CREATE TABLE `user_profiles` (
   `id` varchar(36) NOT NULL DEFAULT uuid(),
   `email` varchar(255) NOT NULL,
   `first_name` varchar(100) DEFAULT NULL,
   `last_name` varchar(100) DEFAULT NULL,
-  `role` enum('SuperAdmin','Admin','Developer','Teamlead','Sales','User') NOT NULL,
+  `role` enum('SuperAdmin','Admin','Management','Finance','Developer','Teamlead','Sales','User') NOT NULL,
   `designation` varchar(100) DEFAULT NULL,
   `phone_number` varchar(20) DEFAULT NULL,
   `department_id` varchar(36) DEFAULT NULL,
@@ -685,76 +750,5 @@ CREATE TABLE `user_profiles` (
   KEY `idx_users_role_active` (`role`,`is_active`),
   KEY `idx_users_active_role` (`is_active`,`role`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
--- Pending idempotent migration: 20260627_enterprise_roles_permissions.sql
-ALTER TABLE user_profiles
-  MODIFY role ENUM('SuperAdmin','Admin','Management','Finance','Developer','Teamlead','Sales','User') NOT NULL;
-
-ALTER TABLE company_settings
-  ADD COLUMN IF NOT EXISTS tagline VARCHAR(255) NULL,
-  ADD COLUMN IF NOT EXISTS website VARCHAR(255) NULL,
-  ADD COLUMN IF NOT EXISTS email VARCHAR(255) NULL,
-  ADD COLUMN IF NOT EXISTS phone VARCHAR(50) NULL,
-  ADD COLUMN IF NOT EXISTS address TEXT NULL,
-  ADD COLUMN IF NOT EXISTS contract_durations JSON NULL,
-  ADD COLUMN IF NOT EXISTS secondary_color VARCHAR(20) NULL,
-  ADD COLUMN IF NOT EXISTS accent_color VARCHAR(20) NULL,
-  ADD COLUMN IF NOT EXISTS timezone VARCHAR(100) DEFAULT 'Africa/Nairobi',
-  ADD COLUMN IF NOT EXISTS date_format VARCHAR(30) DEFAULT 'DD/MM/YYYY',
-  ADD COLUMN IF NOT EXISTS enable_email_notifications BOOLEAN DEFAULT TRUE,
-  ADD COLUMN IF NOT EXISTS enable_sms_notifications BOOLEAN DEFAULT TRUE,
-  ADD COLUMN IF NOT EXISTS enable_push_notifications BOOLEAN DEFAULT TRUE,
-  ADD COLUMN IF NOT EXISTS auto_reminder_days SMALLINT UNSIGNED DEFAULT 3;
-
-CREATE TABLE IF NOT EXISTS user_permissions (
-  user_id VARCHAR(36) NOT NULL,
-  permission_id VARCHAR(100) NOT NULL,
-  granted_by VARCHAR(36),
-  granted_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  PRIMARY KEY (user_id, permission_id),
-  INDEX idx_user_permissions_permission (permission_id),
-  CONSTRAINT fk_user_permissions_user FOREIGN KEY (user_id) REFERENCES user_profiles(id) ON DELETE CASCADE,
-  CONSTRAINT fk_user_permissions_permission FOREIGN KEY (permission_id) REFERENCES permissions(id) ON DELETE CASCADE,
-  CONSTRAINT fk_user_permissions_grantor FOREIGN KEY (granted_by) REFERENCES user_profiles(id) ON DELETE SET NULL
-);
-
-INSERT INTO roles (id,module_id,code,name) VALUES
-  ('cims:Management','cims','Management','Management'),
-  ('cims:Finance','cims','Finance','Finance'),
-  ('crms:Management','crms','Management','Management')
-ON DUPLICATE KEY UPDATE name=VALUES(name);
-
-INSERT INTO permissions (id,module_id,code,description) VALUES
-  ('clients.view','cims','clients.view','View clients'),
-  ('clients.manage','cims','clients.manage','Add, edit, and delete clients'),
-  ('installations.view','cims','installations.view','View installations'),
-  ('installations.manage','cims','installations.manage','Add, edit, and update installations'),
-  ('assignments.view','cims','assignments.view','View assigned technicians'),
-  ('assignments.manage','cims','assignments.manage','Assign technicians and update assignments'),
-  ('progress.view','cims','progress.view','View installation progress'),
-  ('progress.manage','cims','progress.manage','Update installation progress'),
-  ('reports.view','cims','reports.view','Preview and download all reports'),
-  ('finances.view','cims','finances.view','View installation budgets'),
-  ('finances.manage','cims','finances.manage','Add, edit, and delete installation budgets'),
-  ('analytics.view','cims','analytics.view','View analytics'),
-  ('announcements.manage','cims','announcements.manage','Manage announcements'),
-  ('import.manage','cims','import.manage','Import system data'),
-  ('users.manage','cims','users.manage','Manage non-privileged users'),
-  ('company.manage','cims','company.manage','Manage company settings and branding'),
-  ('subsidiaries.manage','cims','subsidiaries.manage','Manage subsidiaries'),
-  ('backup.manage','cims','backup.manage','View and create database backups')
-ON DUPLICATE KEY UPDATE description=VALUES(description);
-
-INSERT INTO user_module_roles (user_id,module_id,role_id)
-SELECT id,'cims',CONCAT('cims:',role) FROM user_profiles WHERE role IN ('Management','Finance')
-ON DUPLICATE KEY UPDATE role_id=VALUES(role_id);
-
-INSERT INTO user_module_roles (user_id,module_id,role_id)
-SELECT id,'crms','crms:Management' FROM user_profiles WHERE role='Management'
-ON DUPLICATE KEY UPDATE role_id=VALUES(role_id);
-
-INSERT INTO migration_history (migration_id,description)
-VALUES ('20260627_enterprise_roles_permissions','Finance and Management roles with direct per-user capability grants')
-ON DUPLICATE KEY UPDATE description=VALUES(description);
 
 SET FOREIGN_KEY_CHECKS = 1;

@@ -1,8 +1,14 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import jsPDF from 'jspdf';
 import { generateChangeRequestPDF, generateCompletionReportPDF } from './pdfGenerator';
-import { resolveDocumentBrand } from '../../../src/utils/pdfWatermark';
+import {
+  addCimsDocumentHeader,
+  resolveDocumentBrand,
+  resolveRianaHeaderLogoPath,
+  RIANA_TRANSPARENT_HEADER_LOGO,
+} from '../../../src/utils/pdfWatermark';
 
 const sampleRequest = {
   id: 'qa-request',
@@ -26,11 +32,18 @@ const fetchMock = vi.fn();
 
 beforeAll(() => {
   const letterheadBytes = new Uint8Array(readFileSync(resolve(__dirname, '../../../public/marezi-letterhead.png')));
+  const rianaLogoBytes = new Uint8Array(readFileSync(resolve(__dirname, '../../../public/Riana_mark_transparent.png')));
   fetchMock.mockImplementation(async (input: string | URL | Request) => {
     if (String(input).endsWith('/marezi-letterhead.png')) {
       return {
         ok: true,
         blob: async () => new Blob([letterheadBytes], { type: 'image/png' }),
+      } as Response;
+    }
+    if (String(input).endsWith(RIANA_TRANSPARENT_HEADER_LOGO)) {
+      return {
+        ok: true,
+        blob: async () => new Blob([rianaLogoBytes], { type: 'image/png' }),
       } as Response;
     }
     return { ok: false } as Response;
@@ -49,6 +62,27 @@ describe('professional PDF branding', () => {
     expect(resolveDocumentBrand('MAREZI Kenya').id).toBe('marezi');
     expect(resolveDocumentBrand('QSYS').id).toBe('riana');
     expect(resolveDocumentBrand('QSYS', 'MAREZI Kenya').id).toBe('marezi');
+  });
+
+  it('uses the transparent RIANA mark for legacy report logo paths', () => {
+    expect(resolveRianaHeaderLogoPath()).toBe(RIANA_TRANSPARENT_HEADER_LOGO);
+    expect(resolveRianaHeaderLogoPath('/Riana_logo.png')).toBe(RIANA_TRANSPARENT_HEADER_LOGO);
+    expect(resolveRianaHeaderLogoPath('/uploads/123-Riana_logoz.png')).toBe(RIANA_TRANSPARENT_HEADER_LOGO);
+    expect(resolveRianaHeaderLogoPath('/uploads/custom-company-brand.png')).toBe('/uploads/custom-company-brand.png');
+  });
+
+  it('renders the same balanced RIANA header on Letter-size PDFs', async () => {
+    const document = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'letter' });
+    await addCimsDocumentHeader(document, {
+      subtitle: 'Client Installation Management System',
+      documentTitle: 'Letter Size Header Validation',
+    });
+
+    const output = document.output('arraybuffer');
+    expect(output.byteLength).toBeGreaterThan(5_000);
+    const directory = resolve(__dirname, '../../../tmp/pdfs');
+    mkdirSync(directory, { recursive: true });
+    writeFileSync(resolve(directory, 'riana-header-letter.pdf'), new DataView(output));
   });
 
   it('generates branded request and completion documents with footers', async () => {
@@ -72,7 +106,12 @@ describe('professional PDF branding', () => {
       client: { ...sampleRequest.client, subsidiary_name: 'QSYS' },
     };
     const document = await generateChangeRequestPDF(rianaRequest);
-    expect(document.output('arraybuffer').byteLength).toBeGreaterThan(5_000);
+    const output = document.output('arraybuffer');
+    expect(output.byteLength).toBeGreaterThan(5_000);
+    const directory = resolve(__dirname, '../../../tmp/pdfs');
+    mkdirSync(directory, { recursive: true });
+    writeFileSync(resolve(directory, 'riana-header.pdf'), new DataView(output));
+    expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining(RIANA_TRANSPARENT_HEADER_LOGO));
   });
 
   it('uses MAREZI letterhead when the generating user belongs to MAREZI', async () => {

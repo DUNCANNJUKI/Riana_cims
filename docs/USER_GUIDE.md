@@ -9,6 +9,8 @@
 
 For a problem, open Help, search the knowledge articles, or use the assistant. Never send passwords, reset tokens, or client documents through chat.
 
+Help & Support provides role-specific recommendations, searchable and expandable workflow articles, the RIANA Assistant, a support guide delivered to your signed-in work email, system requirements, PWA installation guidance, security guidance, and approved RIANA Support/System Administrator/Live User Chat channels.
+
 ## Roles, Pending, and reports
 
 - Finance can view Clients, Installations, Assigned Technicians, Installation Progress, and all Reports without edit controls.

@@ -50,6 +50,16 @@ test('sensitive routes enforce twenty requests per five minutes', () => {
   assert.equal(blocked.statusCode, 429);
 });
 
+test('assistant and support-guide routes use the sensitive request limiter', () => {
+  for (const path of ['/api/chat/assistant', '/api/help/send-documentation']) {
+    const limiter = createSensitiveRateLimiter({ limit: 1, windowMs: 300000 });
+    limiter({ ip: '192.0.2.20', path }, response(), () => {});
+    const blocked = response();
+    limiter({ ip: '192.0.2.20', path }, blocked, () => assert.fail(`${path} should be blocked`));
+    assert.equal(blocked.statusCode, 429);
+  }
+});
+
 test('upload validation generates a contained name and rejects active content', () => {
   const pdf = Buffer.from('%PDF-1.7\nminimal');
   const result = safeUpload({ fileName: '/../../handover.pdf', base64Data: pdf.toString('base64') });
