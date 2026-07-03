@@ -17,6 +17,7 @@ import { User } from "@/types";
 import { DataManagementPanel } from "./DataManagementPanel";
 import { SubsidiaryEscalationManager } from "./SubsidiaryEscalationManager";
 import { FeedbackSettingsPanel } from "@/components/feedback/FeedbackSettingsPanel";
+import { SmtpSettingsPanel } from "./SmtpSettingsPanel";
 import { useDatabase } from "@/hooks/useDatabase";
 import { apiClient } from "@/integrations/apiClient";
 import { dispatchCompanyBrandingUpdated, resolveCompanyLogoUrl } from "@/utils/logoUrl";
@@ -285,7 +286,7 @@ export const CompanySettingsModule = ({ user }: CompanySettingsModuleProps) => {
       </div>
 
       <Tabs defaultValue="company" className="w-full">
-        <TabsList className="grid w-full grid-cols-5">
+        <TabsList className="grid h-auto w-full grid-cols-2 gap-1 sm:grid-cols-3 xl:grid-cols-6">
           <TabsTrigger value="company" className="flex items-center gap-2">
             <Building2 className="h-4 w-4" />
             Company Info
@@ -301,6 +302,10 @@ export const CompanySettingsModule = ({ user }: CompanySettingsModuleProps) => {
           <TabsTrigger value="feedback" className="flex items-center gap-2">
             <MessageSquare className="h-4 w-4" />
             Feedback Survey
+          </TabsTrigger>
+          <TabsTrigger value="email" className="flex items-center gap-2">
+            <Mail className="h-4 w-4" />
+            Email
           </TabsTrigger>
           <TabsTrigger value="data" className="flex items-center gap-2">
             <Database className="h-4 w-4" />
@@ -452,11 +457,15 @@ export const CompanySettingsModule = ({ user }: CompanySettingsModuleProps) => {
         </TabsContent>
 
         <TabsContent value="subsidiaries" className="mt-6">
-          <SubsidiaryEscalationManager />
+          <SubsidiaryEscalationManager user={user} />
         </TabsContent>
 
         <TabsContent value="feedback" className="mt-6">
           <FeedbackSettingsPanel />
+        </TabsContent>
+
+        <TabsContent value="email" className="mt-6">
+          <SmtpSettingsPanel />
         </TabsContent>
 
         <TabsContent value="data" className="mt-6">

@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -99,6 +99,7 @@ export const AnnouncementsManagementModule = ({ user }: AnnouncementsManagementM
   const [selectedSubsidiary, setSelectedSubsidiary] = useState<string>('all');
   const [expiresAt, setExpiresAt] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
+  const isDialogOpenRef = useRef(false);
   
   const { toast } = useToast();
 
@@ -107,12 +108,20 @@ export const AnnouncementsManagementModule = ({ user }: AnnouncementsManagementM
     loadSubsidiaries();
     loadTotalUsers();
 
-    const intervalId = setInterval(loadAnnouncements, 30000);
+    const intervalId = setInterval(() => {
+      if (document.visibilityState === 'visible' && !isDialogOpenRef.current) {
+        void loadAnnouncements(false);
+      }
+    }, 30000);
 
     return () => {
       clearInterval(intervalId);
     };
   }, []);
+
+  useEffect(() => {
+    isDialogOpenRef.current = isDialogOpen;
+  }, [isDialogOpen]);
 
   const loadTotalUsers = async () => {
     try {
@@ -133,8 +142,8 @@ export const AnnouncementsManagementModule = ({ user }: AnnouncementsManagementM
     }
   };
 
-  const loadAnnouncements = async () => {
-    setIsLoading(true);
+  const loadAnnouncements = async (showLoading = true) => {
+    if (showLoading) setIsLoading(true);
     try {
       let url = '/announcements';
       if (user.role === 'Teamlead') {
@@ -146,7 +155,7 @@ export const AnnouncementsManagementModule = ({ user }: AnnouncementsManagementM
     } catch (error) {
       console.error('Error loading announcements:', error);
     } finally {
-      setIsLoading(false);
+      if (showLoading) setIsLoading(false);
     }
   };
 

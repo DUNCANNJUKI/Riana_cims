@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
-import { User, LogOut, Settings, ExternalLink, Sun, Moon, MessageSquare } from "lucide-react";
+import { User, LogOut, Settings, Sun, Moon, MessageSquare, Menu } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -13,7 +13,6 @@ import {
 import { useAuth } from "@/hooks/useAuth";
 import { User as UserType } from "@/types";
 import { cn } from "@/lib/utils";
-import { RedirectDialog } from "@/components/common/RedirectDialog";
 import { ProfileSettingsDialog } from "@/components/profile/ProfileSettingsDialog";
 import { NotificationBell } from "@/components/layout/NotificationBell";
 import { useDatabase } from "@/hooks/useDatabase";
@@ -35,16 +34,16 @@ interface HeaderProps {
   user: UserType;
   className?: string;
   setActiveModule?: (module: string) => void;
+  onOpenMobileMenu?: () => void;
 }
 
-export const Header = ({ user, className, setActiveModule }: HeaderProps) => {
+export const Header = ({ user, className, setActiveModule, onOpenMobileMenu }: HeaderProps) => {
   const { logout } = useAuth();
   const { getCompanySettings } = useDatabase();
   const [logoPath, setLogoPath] = useState(TRANSPARENT_RIANA_LOGO);
-  const [isRedirectDialogOpen, setIsRedirectDialogOpen] = useState(false);
   const [isProfileSettingsOpen, setIsProfileSettingsOpen] = useState(false);
   const [isChatOpen, setIsChatOpen] = useState(false);
-  const { totalUnread } = useChat(user);
+  const chat = useChat(user);
   const [isDarkMode, setIsDarkMode] = useState(() => {
     if (typeof window !== 'undefined') {
       const savedTheme = localStorage.getItem('theme');
@@ -173,6 +172,15 @@ export const Header = ({ user, className, setActiveModule }: HeaderProps) => {
         <div className="flex w-full items-center justify-between gap-3">
           {/* Logo and Title - Responsive */}
           <div className="flex min-w-0 items-center gap-2.5 sm:gap-4">
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={onOpenMobileMenu}
+              className="h-10 w-10 shrink-0 text-white hover:bg-white/10 hover:text-white focus-visible:ring-white lg:hidden"
+              aria-label="Open navigation menu"
+            >
+              <Menu className="h-5 w-5" />
+            </Button>
             <div className="flex h-11 w-11 flex-shrink-0 items-center justify-center overflow-hidden sm:h-14 sm:w-14">
               <img 
                 src={logoPath} 
@@ -185,25 +193,14 @@ export const Header = ({ user, className, setActiveModule }: HeaderProps) => {
                 }}
               />
             </div>
-            <div className="min-w-0 leading-none">
+            <div className="hidden min-w-0 leading-none min-[390px]:block">
               <h1 className="truncate text-lg font-bold leading-[1.1] tracking-normal sm:text-2xl xl:text-[29px]">RIANA CIMS</h1>
               <p className="mt-1 truncate text-xs font-normal leading-tight text-white/85 sm:text-[15px] xl:text-base">Client Installation Management</p>
             </div>
           </div>
 
           {/* Action Buttons - Responsive */}
-          <div className="ml-auto flex flex-shrink-0 items-center gap-1.5 sm:gap-3 xl:gap-[22px]">
-            {/* Optimus Button - Hidden on very small screens */}
-            <Button 
-              variant="default"
-              size="sm"
-              onClick={() => setIsRedirectDialogOpen(true)}
-              className="hidden h-10 bg-white px-3 text-xs font-semibold text-primary shadow-sm transition-colors hover:bg-white/90 focus-visible:ring-white sm:flex sm:text-sm"
-            >
-              <ExternalLink className="h-[18px] w-[18px] sm:mr-2" />
-              <span className="hidden sm:inline">Optimus</span>
-            </Button>
-
+          <div className="ml-auto flex flex-shrink-0 items-center gap-0.5 min-[390px]:gap-1.5 sm:gap-3 xl:gap-[22px]">
             {/* Notification Bell - Always visible */}
             <NotificationBell
               user={user}
@@ -220,9 +217,9 @@ export const Header = ({ user, className, setActiveModule }: HeaderProps) => {
               title="Open Chat"
             >
               <MessageSquare className="h-5 w-5" />
-              {totalUnread > 0 && (
+              {chat.totalUnread > 0 && (
                 <Badge className="absolute -top-1 -right-1 h-4 w-4 flex items-center justify-center p-0 bg-red-500 text-[10px] animate-pulse border-white border">
-                  {totalUnread}
+                  {chat.totalUnread}
                 </Badge>
               )}
             </Button>
@@ -290,13 +287,6 @@ export const Header = ({ user, className, setActiveModule }: HeaderProps) => {
         </div>
       </div>
       
-      <RedirectDialog 
-        isOpen={isRedirectDialogOpen}
-        onClose={() => setIsRedirectDialogOpen(false)}
-        targetUrl="https://optimus.rianadevelopment.com/auth/login"
-        targetName="Optimus"
-      />
-
       <ProfileSettingsDialog
         isOpen={isProfileSettingsOpen}
         onClose={() => setIsProfileSettingsOpen(false)}
@@ -304,8 +294,8 @@ export const Header = ({ user, className, setActiveModule }: HeaderProps) => {
       />
 
       {isChatOpen && (
-        <div className="fixed bottom-4 right-4 z-50 w-[90vw] max-w-[400px] md:max-w-4xl h-[600px] animate-in slide-in-from-bottom-5">
-           <ChatModule currentUser={user} onClose={() => setIsChatOpen(false)} />
+        <div className="fixed inset-x-2 bottom-2 z-50 h-[min(600px,calc(100dvh-80px))] animate-in slide-in-from-bottom-5 sm:inset-x-auto sm:bottom-4 sm:right-4 sm:w-[90vw] sm:max-w-[400px] md:max-w-4xl">
+           <ChatModule currentUser={user} chat={chat} onClose={() => setIsChatOpen(false)} />
         </div>
       )}
     </header>

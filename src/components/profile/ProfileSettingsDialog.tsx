@@ -12,6 +12,7 @@ import { User, Camera, Lock, Loader2, Eye, EyeOff, CheckCircle, ShieldCheck } fr
 import { useToast } from "@/hooks/use-toast";
 import { apiClient } from "@/integrations/apiClient";
 import { User as UserType } from "@/types";
+import { CountryPhoneInput } from "@/components/common/CountryPhoneInput";
 
 interface ProfileSettingsDialogProps {
   isOpen: boolean;
@@ -375,12 +376,10 @@ export const ProfileSettingsDialog = ({ isOpen, onClose, user, onProfileUpdate }
                 {twoFactorMethod !== 'email' && (
                   <div className="space-y-2">
                     <Label htmlFor="two-factor-phone">Verification phone</Label>
-                    <Input
+                    <CountryPhoneInput
                       id="two-factor-phone"
-                      type="tel"
                       value={twoFactorPhone}
-                      onChange={(event) => setTwoFactorPhone(event.target.value)}
-                      placeholder="+254..."
+                      onChange={setTwoFactorPhone}
                     />
                   </div>
                 )}

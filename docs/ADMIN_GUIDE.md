@@ -6,7 +6,11 @@ Create users with the least module role required. Password changes and role/stat
 
 ## Notifications
 
-Account creation, assignment, password, approval, and handover workflows create in-app notifications and can dispatch email/SMS to database-derived recipients. Sender email is configured as `info@riana.co`. Use provider test recipients only in a controlled test environment.
+Account creation, assignment, password, approval, and handover workflows create in-app notifications and can dispatch email/SMS to database-derived recipients. Sender email is configured as `info@rianacims.name.ng` through authenticated Truehost SMTP. Use provider test recipients only in a controlled test environment.
+
+When an administrator creates an account, they do not choose or transmit a temporary password. Select the recipient country and enter a valid mobile number; the system stores the normalized E.164 value. The system sends the new user their username, login URL, and a single-use password-setup link that expires after 30 minutes by both email and SMS. Review the creation result for channel-specific delivery warnings; a provider failure does not roll back the account.
+
+Chat messages are persisted for offline recipients and synchronized after reconnect. The colleague list and conversation header show live online/offline state, and “Typing…” is ephemeral and is never stored. SuperAdmin can add escalation levels above tier three; other roles can edit the standard tiers but cannot create higher tiers.
 
 Developers approval, assignment, and completion events are server-dispatched to prevent browser-side duplication. Sales receives pending-approval alerts, the selected developer receives assignment alerts, and the user who assigned the work receives the completion alert. Each event records an in-app notification and attempts email and SMS delivery.
 
@@ -17,6 +21,10 @@ SuperAdmin and Management can view backup status, change the schedule, list back
 ## Branding and documents
 
 Maintain the canonical RIANA logo, primary teal, neutral text colors, and subsidiary assignments in company settings. The application shell always uses RIANA identity. A generated document uses MAREZI identity when either its client/request or its generating user belongs to MAREZI; otherwise it retains the existing RIANA document path.
+
+New-account welcome emails use the company name, primary/secondary colors, font, and logo saved in Company Settings. They include the username, login URL, assigned role, and a 30-minute secure password-setup link. Passwords are never included in email or SMS.
+
+Administrators with Company Settings permission can open the Email tab to review the current non-secret SMTP host, port, sender, TLS status, last test result, run a connection test, or send a labelled test email to a controlled recipient. The mailbox password is never displayed or stored in the database.
 
 MAREZI documents must use `public/marezi-letterhead.png`, extracted unchanged from the approved MAREZI Word letterhead. Do not replace it with a recreated logo, recolor it, stretch it, or combine it with the RIANA watermark/footer. Every page retains the MAREZI letterhead plus the standard confidentiality, generated-date, and `Page X of Y` metadata. RIANA documents retain the official logo-matched teal, watermark, graphical footer, and continuation header.
 

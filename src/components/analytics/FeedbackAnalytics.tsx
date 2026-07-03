@@ -267,7 +267,7 @@ export const FeedbackAnalytics = ({ user, refreshTrigger }: FeedbackAnalyticsPro
                       </Badge>
                     </TableCell>
                     <TableCell className="max-w-xs truncate">
-                      {feedback.positive_feedback || feedback.improvement_suggestions || 'No comments'}
+                      {feedback.client_comments || 'No comments'}
                     </TableCell>
                   </TableRow>
                 ))}

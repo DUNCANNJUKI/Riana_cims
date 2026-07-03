@@ -1,22 +1,11 @@
-const configuredApiUrl = import.meta.env.VITE_API_URL?.trim();
-const localHostnames = new Set(['localhost', '127.0.0.1', '::1']);
-const safeConfiguredApiUrl = (() => {
-  if (!configuredApiUrl || typeof window === 'undefined') return configuredApiUrl;
-  try {
-    const configured = new URL(configuredApiUrl);
-    if (localHostnames.has(configured.hostname) && localHostnames.has(window.location.hostname)) return undefined;
-    return configuredApiUrl;
-  } catch {
-    return undefined;
-  }
-})();
-const browserApiUrl = typeof window !== 'undefined'
-  ? (['5173', '8090'].includes(window.location.port)
-      ? `http://${window.location.hostname}:8081/api`
-      : `${window.location.origin}/api`)
-  : 'http://localhost:8081/api';
+const configuredDevelopmentApiUrl = import.meta.env.DEV
+  ? import.meta.env.VITE_API_URL?.trim()
+  : undefined;
 
-export const API_URL = (safeConfiguredApiUrl || browserApiUrl).replace(/\/$/, '');
+// Use the Vite proxy in development and the deployed origin in production.
+// A relative URL also works from another workstation on the LAN and prevents
+// that workstation from incorrectly calling its own localhost:8081.
+export const API_URL = (configuredDevelopmentApiUrl || '/api').replace(/\/$/, '');
 
 export const getAuthToken = () => {
   return localStorage.getItem('riana-auth-token');

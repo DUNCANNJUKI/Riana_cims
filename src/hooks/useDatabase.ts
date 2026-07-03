@@ -272,7 +272,7 @@ export const useDatabase = () => {
         title: failedDeliveries.length ? "User created with delivery warning" : "User created",
         description: failedDeliveries.length
           ? "The account was created, but one or more welcome messages could not be delivered."
-          : "Welcome credentials were sent by email and SMS where a phone number was provided.",
+          : "The username, login URL, and secure password-setup link were sent by email and SMS.",
         variant: failedDeliveries.length ? "destructive" : "default",
       });
 
@@ -385,6 +385,21 @@ export const useDatabase = () => {
         ...feedback,
         recommendation_score: getRecommendationScore(feedback),
       }));
+      const getClientComments = (feedback: any) => {
+        const responseComments = feedback.dynamic_responses && typeof feedback.dynamic_responses === 'object'
+          ? Object.values(feedback.dynamic_responses)
+              .filter((value): value is string => typeof value === 'string')
+          : [];
+        const candidates = [
+          feedback.positive_feedback,
+          feedback.improvement_suggestions,
+          ...responseComments,
+        ];
+        return Array.from(new Set(candidates
+          .map((value) => typeof value === 'string' ? value.trim() : '')
+          .filter((value) => value && !/^\d+(?:\.\d+)?$/.test(value))))
+          .join(' | ');
+      };
       const nps = calculateNps(feedbackWithNps);
       const totalFeedback = feedbackData.length;
       const averageRating = satisfaction.averageRating;
@@ -395,6 +410,7 @@ export const useDatabase = () => {
         ...feedback,
         client_name: feedback.clients?.client_name || 'Unknown Client',
         nps_category: classifyNpsScore(feedback.recommendation_score) || 'unrated',
+        client_comments: getClientComments(feedback),
       }));
 
       return {

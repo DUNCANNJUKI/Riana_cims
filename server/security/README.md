@@ -1,6 +1,6 @@
 # API security foundation
 
-Production requires a unique `JWT_SECRET` of at least 32 characters and an absolute `CIMS_LOGIN_URL`. Configure `CORS_ALLOWED_ORIGINS` (or legacy `ALLOWED_ORIGINS`) as a comma-separated list when RIANA is served from additional trusted origins.
+Production requires a unique `JWT_SECRET` of at least 32 characters and an absolute `CIMS_LOGIN_URL`. Configure `CORS_ALLOWED_ORIGINS` (or legacy `ALLOWED_ORIGINS`) as a comma-separated list when RIANA is served from additional trusted origins. Entries are normalized to exact HTTP(S) origins; wildcards are not supported. The API also accepts its current HTTPS request host as same-origin, which preserves secure operation behind the Truehost TLS proxy when the environment file is temporarily incomplete.
 
 Passwords are written with bcrypt. Existing plaintext rows are accepted once and upgraded atomically after the next successful login. `session_version` invalidates all outstanding tokens after password, role, or active-state changes.
 

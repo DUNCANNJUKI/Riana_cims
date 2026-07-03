@@ -29,6 +29,11 @@ playwright-report/
 test-results/
 tmp/
 release/
+Truehost/
+Truehost-upload.zip
+Truehost-node20-hotfix.zip
+Truehost-selector-recovery/
+Truehost-packages/database_private.zip
 
 # Editor directories and files
 .vscode/*

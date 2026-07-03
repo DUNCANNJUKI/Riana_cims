@@ -5,6 +5,8 @@ All protected calls use `Authorization: Bearer <token>` and JSON unless uploadin
 ## Public endpoints
 
 - `GET /api/health`
+- `GET /api/admin/email-configuration` — company administrators only; returns non-secret SMTP configuration and last-test status.
+- `POST /api/admin/email-configuration/test` — company administrators only; rate-limited connection or controlled test-email check.
 - `POST /api/auth/login`
 - `POST /api/auth/verify-2fa`
 - `POST /api/auth/forgot-password`
@@ -18,7 +20,20 @@ All other `/api` endpoints require an active database user. Backup endpoints req
 `400` invalid input, `401` missing/expired/stale session, `403` insufficient permission, `404` absent or inaccessible object, `409` conflicting state, `429` rate limit, and `500` an internal error without stack or provider secrets.
 
 Clients must not retry mutating methods automatically. Safe GET/HEAD calls may use bounded retry with backoff.
+
+## User chat
+
+Chat-user results include ephemeral online state. POST /api/chat/typing accepts receiver_id and boolean is_typing, then emits a non-persistent typing event to that active user. Persisted threads are reloaded after stream reconnect so offline messages synchronize.
+
+- `GET /api/chat/users` lists every other active user and the authenticated user's unread counts.
+- `GET /api/chat/stream` is an authenticated `text/event-stream` response. Clients send the normal Bearer token header; tokens are not placed in URLs.
+- `GET /api/chat/messages/:otherUserId` loads a two-user thread for an active recipient.
+- `POST /api/chat/messages` accepts `receiver_id` and trimmed `content` of 1-4000 characters. A user cannot message themselves or an inactive/nonexistent account.
+- Read receipts require receiver ownership and do not expose another user's thread.
+
 ## SuperAdmin and user-management API rules
+
+User creation and updates normalize valid international mobile numbers to E.164, using DEFAULT_PHONE_COUNTRY only when a prefix is omitted. Escalation matrix writes accept tier1 through tier10, bound contact field lengths, and reject tiers above three unless the authenticated user is SuperAdmin.
 
 - `GET /api/user_profiles` returns users with `module_roles`, effective `permissions`, and direct `extra_permissions`.
 - `POST /api/user_profiles` allows Admin, Management, and SuperAdmin user creation; only SuperAdmin can create Admin, Management, or SuperAdmin accounts.
@@ -43,3 +58,4 @@ Clients must not retry mutating methods automatically. Safe GET/HEAD calls may u
 - `/api/clients` and `/api/clients/:id` expose the client subsidiary name.
 - `/api/crms/clients` and change-request `client` objects expose `subsidiary_id` and `subsidiary_name`; Developers PDF generation uses these fields and does not accept a client-supplied branding asset or arbitrary asset URL.
 - Developers workflow notifications are dispatched by the API after the database event. A pending-approval request notifies active Sales users; an assignment notifies the selected developer; completion notifies the user who performed the latest assignment, with the senior developer as the legacy fallback. Each required event creates an in-app record and attempts email and SMS delivery using database-owned contact details.
+- `POST /api/user_profiles` requires and normalizes a valid international mobile number to E.164, creates an unusable random password hash, and creates a single-use password-setup token valid for 30 minutes. Both welcome email and SMS include the username, login URL, and setup URL. The response exposes per-provider results in `welcome_delivery`. Plaintext passwords are neither accepted as account credentials nor included in welcome messages.

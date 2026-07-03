@@ -15,6 +15,7 @@ import { apiClient } from "@/integrations/apiClient";
 import { Checkbox } from "@/components/ui/checkbox";
 import { baseCapabilitiesForRole, can, CAPABILITY_DEFINITIONS, isCapabilityDeniedForRole } from "@/security/accessControl";
 import { formatRoleLabel } from "@/utils/roleLabel";
+import { CountryPhoneInput, isValidInternationalPhone } from "@/components/common/CountryPhoneInput";
 
 interface UsersModuleProps {
   user: User;
@@ -109,10 +110,10 @@ export const UsersModule = ({ user }: UsersModuleProps) => {
   );
 
   const handleAddUser = async () => {
-    if (!newUser.email || !newUser.role || !newUser.designation || !newUser.first_name || !newUser.last_name || !newUser.password) {
+    if (!newUser.email || !newUser.role || !newUser.designation || !newUser.first_name || !newUser.last_name || !newUser.phone_number) {
       toast({
         title: "Error",
-        description: "Please fill in all required fields (first name, last name, email, password, role, designation)",
+        description: "Please fill in all required fields (first name, last name, email, phone number, role, designation)",
         variant: "destructive",
       });
       return;
@@ -121,8 +122,8 @@ export const UsersModule = ({ user }: UsersModuleProps) => {
       toast({ title: "Invalid email", description: "New users must use an @riana.co email address.", variant: "destructive" });
       return;
     }
-    if (newUser.password.length < 8) {
-      toast({ title: "Weak password", description: "Temporary passwords must be at least 8 characters.", variant: "destructive" });
+    if (!isValidInternationalPhone(newUser.phone_number)) {
+      toast({ title: "Invalid phone number", description: "Select the country and enter a valid mobile number for that country.", variant: "destructive" });
       return;
     }
     if (!assignableRoles.includes(newUser.role as User['role'])) {
@@ -137,7 +138,6 @@ export const UsersModule = ({ user }: UsersModuleProps) => {
     try {
       const userData = {
         email: newUser.email!,
-        password: newUser.password!,
         role: newUser.role! as User['role'],
         designation: newUser.designation!,
         department_id: newUser.department_id || null,
@@ -353,15 +353,8 @@ export const UsersModule = ({ user }: UsersModuleProps) => {
                     placeholder="user@riana.co"
                   />
                 </div>
-                <div className="space-y-2">
-                  <Label htmlFor="password">Password *</Label>
-                  <Input
-                    id="password"
-                    type="password"
-                    value={newUser.password || ''}
-                    onChange={(e) => setNewUser({...newUser, password: e.target.value})}
-                    placeholder="Password (user will change on first login)"
-                  />
+                <div className="rounded-md border border-border bg-muted/40 p-3 text-sm text-muted-foreground">
+                  The user will receive their username, login URL, and a secure password-setup link by email and SMS. The setup link expires after 30 minutes.
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="role">Role *</Label>
@@ -392,12 +385,12 @@ export const UsersModule = ({ user }: UsersModuleProps) => {
                    </Select>
                  </div>
                 <div className="space-y-2">
-                  <Label htmlFor="phone_number">Phone Number</Label>
-                  <Input
+                  <Label htmlFor="phone_number">Phone Number *</Label>
+                  <CountryPhoneInput
                     id="phone_number"
                     value={newUser.phone_number || ''}
-                    onChange={(e) => setNewUser({...newUser, phone_number: e.target.value})}
-                    placeholder="+254700000000"
+                    onChange={(phone_number) => setNewUser({...newUser, phone_number})}
+                    required
                   />
                 </div>
                 <div className="space-y-2">
@@ -667,11 +660,10 @@ export const UsersModule = ({ user }: UsersModuleProps) => {
               </div>
               <div className="space-y-2">
                 <Label htmlFor="edit_phone">Phone Number</Label>
-                <Input
+                <CountryPhoneInput
                   id="edit_phone"
                   value={editingUser.phone_number || ''}
-                  onChange={(e) => setEditingUser({...editingUser, phone_number: e.target.value})}
-                  placeholder="+254700000000"
+                  onChange={(phone_number) => setEditingUser({...editingUser, phone_number})}
                 />
               </div>
               {isSuperAdmin && (

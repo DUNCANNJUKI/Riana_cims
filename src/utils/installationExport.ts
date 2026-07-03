@@ -4,6 +4,7 @@ import autoTable from "jspdf-autotable";
 import { addCimsDocumentHeader, addLetterheadToDocument, DOCUMENT_LAYOUT, resolveDocumentBrand } from "./pdfWatermark";
 import { resolveDocumentSubsidiaryName } from "./brandIdentity";
 import { equipmentInstallationStatus } from "./equipmentStatus";
+import { escalationTierEntries } from "./escalationMatrix";
 
 const parseHexColor = (hex: string): [number, number, number] => {
   const clean = hex.replace('#', '');
@@ -289,11 +290,13 @@ export const generateInstallationReport = async (
     ensureSpace(60);
     yPos = addSectionHeader('ESCALATION MATRIX', yPos);
     
-    const matrixData = [
-      ['Tier 1', escalationMatrix.tier1?.name || 'N/A', escalationMatrix.tier1?.role || 'N/A', escalationMatrix.tier1?.email || 'N/A', escalationMatrix.tier1?.phone_number || 'N/A'],
-      ['Tier 2', escalationMatrix.tier2?.name || 'N/A', escalationMatrix.tier2?.role || 'N/A', escalationMatrix.tier2?.email || 'N/A', escalationMatrix.tier2?.phone_number || 'N/A'],
-      ['Tier 3', escalationMatrix.tier3?.name || 'N/A', escalationMatrix.tier3?.role || 'N/A', escalationMatrix.tier3?.email || 'N/A', escalationMatrix.tier3?.phone_number || 'N/A'],
-    ];
+    const matrixData = escalationTierEntries(escalationMatrix).map(([key, tier]) => [
+      `Tier ${Number(key.slice(4))}`,
+      tier.name || 'N/A',
+      tier.role || 'N/A',
+      tier.email || 'N/A',
+      tier.phone_number || 'N/A',
+    ]);
 
     autoTable(doc, {
       startY: yPos,

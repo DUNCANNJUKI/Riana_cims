@@ -2,6 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('path');
 const {
+  buildCorsOptions,
   createGlobalApiPolicy,
   createSensitiveRateLimiter,
   resolveJwtSecret,
@@ -18,10 +19,34 @@ const response = () => ({
   json(value) { this.body = value; return this; },
 });
 
+const evaluateOrigin = (options, origin) => new Promise((resolve) => {
+  options.origin(origin, (error, allowed) => resolve({ error, allowed }));
+});
+
 test('production rejects absent and published JWT secrets', () => {
   assert.throws(() => resolveJwtSecret({ NODE_ENV: 'production' }), /JWT_SECRET/);
   assert.throws(() => resolveJwtSecret({ NODE_ENV: 'production', JWT_SECRET: 'super-secret-key-change-in-prod' }), /JWT_SECRET/);
   assert.equal(resolveJwtSecret({ NODE_ENV: 'production', JWT_SECRET: 'a'.repeat(48) }), 'a'.repeat(48));
+});
+
+test('CORS permits the production request host and rejects lookalike origins', async () => {
+  const req = {
+    protocol: 'http', // TLS is terminated by the production reverse proxy.
+    get: (name) => name === 'host' ? 'rianacims.name.ng' : undefined,
+  };
+  const options = buildCorsOptions({ NODE_ENV: 'production' }, req);
+
+  assert.deepEqual(await evaluateOrigin(options, 'https://rianacims.name.ng'), { error: null, allowed: true });
+  assert.match((await evaluateOrigin(options, 'https://rianacims.name.ng.attacker.example')).error?.message || '', /not allowed/i);
+  assert.match((await evaluateOrigin(options, 'http://rianacims.name.ng')).error?.message || '', /not allowed/i);
+});
+
+test('CORS normalizes configured origins without widening the allow-list', async () => {
+  const options = buildCorsOptions({ CORS_ALLOWED_ORIGINS: 'https://portal.example.com/, https://admin.example.com' });
+
+  assert.equal((await evaluateOrigin(options, 'https://portal.example.com')).allowed, true);
+  assert.equal((await evaluateOrigin(options, 'https://admin.example.com')).allowed, true);
+  assert.match((await evaluateOrigin(options, 'https://example.com')).error?.message || '', /not allowed/i);
 });
 
 test('global API policy allows only explicit public paths', async () => {
@@ -50,8 +75,8 @@ test('sensitive routes enforce twenty requests per five minutes', () => {
   assert.equal(blocked.statusCode, 429);
 });
 
-test('assistant and support-guide routes use the sensitive request limiter', () => {
-  for (const path of ['/api/chat/assistant', '/api/help/send-documentation']) {
+test('assistant, support-guide, and SMTP test routes use the sensitive request limiter', () => {
+  for (const path of ['/api/chat/assistant', '/api/help/send-documentation', '/api/admin/email-configuration/test']) {
     const limiter = createSensitiveRateLimiter({ limit: 1, windowMs: 300000 });
     limiter({ ip: '192.0.2.20', path }, response(), () => {});
     const blocked = response();

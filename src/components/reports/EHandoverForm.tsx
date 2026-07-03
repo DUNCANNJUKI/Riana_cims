@@ -35,7 +35,13 @@ interface ParsedEscalationMatrix {
   tier1?: EscalationTier;
   tier2?: EscalationTier;
   tier3?: EscalationTier;
+  [tierKey: string]: EscalationTier | undefined;
 }
+
+const parsedEscalationTiers = (matrix: ParsedEscalationMatrix | null) =>
+  Object.entries(matrix || {})
+    .filter(([key, tier]) => /^tier\d+$/.test(key) && tier?.name)
+    .sort(([a], [b]) => Number(a.slice(4)) - Number(b.slice(4))) as [string, EscalationTier][];
 
 export const EHandoverForm = ({ client, installation, user }: EHandoverFormProps) => {
   const canManageInstallations = can(user, 'installations.manage');
@@ -442,7 +448,7 @@ export const EHandoverForm = ({ client, installation, user }: EHandoverFormProps
       }
 
       // ========== ESCALATION MATRIX SECTION ==========
-      if (escalationMatrix && (escalationMatrix.tier1?.name || escalationMatrix.tier2?.name || escalationMatrix.tier3?.name)) {
+      if (parsedEscalationTiers(escalationMatrix).length > 0) {
         checkPageBreak(50);
 
         doc.setFillColor(240, 247, 255);
@@ -452,16 +458,13 @@ export const EHandoverForm = ({ client, installation, user }: EHandoverFormProps
         addText('ESCALATION MATRIX', margin + 3, yPos + 3, { fontSize: 11, color: primaryColor, fontStyle: 'bold' });
         yPos += 10;
 
-        const escalationData: string[][] = [];
-        if (escalationMatrix.tier1?.name) {
-          escalationData.push(['Tier 1', escalationMatrix.tier1.name, escalationMatrix.tier1.role, escalationMatrix.tier1.phone_number, escalationMatrix.tier1.email]);
-        }
-        if (escalationMatrix.tier2?.name) {
-          escalationData.push(['Tier 2', escalationMatrix.tier2.name, escalationMatrix.tier2.role, escalationMatrix.tier2.phone_number, escalationMatrix.tier2.email]);
-        }
-        if (escalationMatrix.tier3?.name) {
-          escalationData.push(['Tier 3', escalationMatrix.tier3.name, escalationMatrix.tier3.role, escalationMatrix.tier3.phone_number, escalationMatrix.tier3.email]);
-        }
+        const escalationData = parsedEscalationTiers(escalationMatrix).map(([key, tier]) => [
+          `Tier ${Number(key.slice(4))}`,
+          tier.name,
+          tier.role,
+          tier.phone_number,
+          tier.email,
+        ]);
 
         if (escalationData.length > 0) {
           autoTable(doc, {
@@ -754,33 +757,15 @@ export const EHandoverForm = ({ client, installation, user }: EHandoverFormProps
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {escalationMatrix.tier1?.name && (
-                    <TableRow>
-                      <TableCell className="font-medium">Tier 1</TableCell>
-                      <TableCell>{escalationMatrix.tier1.name}</TableCell>
-                      <TableCell>{escalationMatrix.tier1.role}</TableCell>
-                      <TableCell>{escalationMatrix.tier1.phone_number}</TableCell>
-                      <TableCell>{escalationMatrix.tier1.email}</TableCell>
+                  {parsedEscalationTiers(escalationMatrix).map(([key, tier]) => (
+                    <TableRow key={key}>
+                      <TableCell className="font-medium">Tier {Number(key.slice(4))}</TableCell>
+                      <TableCell>{tier.name}</TableCell>
+                      <TableCell>{tier.role}</TableCell>
+                      <TableCell>{tier.phone_number}</TableCell>
+                      <TableCell>{tier.email}</TableCell>
                     </TableRow>
-                  )}
-                  {escalationMatrix.tier2?.name && (
-                    <TableRow>
-                      <TableCell className="font-medium">Tier 2</TableCell>
-                      <TableCell>{escalationMatrix.tier2.name}</TableCell>
-                      <TableCell>{escalationMatrix.tier2.role}</TableCell>
-                      <TableCell>{escalationMatrix.tier2.phone_number}</TableCell>
-                      <TableCell>{escalationMatrix.tier2.email}</TableCell>
-                    </TableRow>
-                  )}
-                  {escalationMatrix.tier3?.name && (
-                    <TableRow>
-                      <TableCell className="font-medium">Tier 3</TableCell>
-                      <TableCell>{escalationMatrix.tier3.name}</TableCell>
-                      <TableCell>{escalationMatrix.tier3.role}</TableCell>
-                      <TableCell>{escalationMatrix.tier3.phone_number}</TableCell>
-                      <TableCell>{escalationMatrix.tier3.email}</TableCell>
-                    </TableRow>
-                  )}
+                  ))}
                 </TableBody>
               </Table>
             </CardContent>

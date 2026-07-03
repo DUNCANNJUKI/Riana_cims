@@ -1,0 +1,20 @@
+{
+  "generatedAt": "2026-07-03T14:47:28.781Z",
+  "commit": "572a60b3e5f9128051d0d1cd4de7fa297bfee7bc",
+  "truehostNodeVersion": "24.15.0",
+  "supportedNodeVersion": ">=20",
+  "applicationRoot": "rianacims.name.ng/app",
+  "documentRoot": "/home/lxvtrfta/rianacims.name.ng",
+  "htaccessFile": "domain_root/.htaccess",
+  "applicationUrl": "https://rianacims.name.ng/",
+  "startupFile": "passenger_app.js",
+  "databaseFile": "database/riana_cims_host.sql",
+  "databaseContainsLiveRecords": false,
+  "databaseContainsLiveOperationalRecords": false,
+  "bootstrapSuperAdmin": {
+    "email": "superadmin@riana.co",
+    "active": false,
+    "passwordPresent": false,
+    "passwordStorage": "none"
+  }
+}

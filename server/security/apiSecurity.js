@@ -84,6 +84,7 @@ const SENSITIVE_PATHS = [
   /^\/api\/upload$/,
   /^\/api\/public\//,
   /^\/api\/admin\/backup/,
+  /^\/api\/admin\/email-configuration/,
   /^\/api\/(?:chat\/assistant|help\/send-documentation)$/,
 ];
 
@@ -119,9 +120,31 @@ const securityHeaders = (_req, res, next) => {
   next();
 };
 
-const buildCorsOptions = (env = process.env) => {
-  const configured = String(env.CORS_ALLOWED_ORIGINS || env.ALLOWED_ORIGINS || '').split(',').map((value) => value.trim()).filter(Boolean);
-  try { if (env.CIMS_LOGIN_URL) configured.push(new URL(env.CIMS_LOGIN_URL).origin); } catch {}
+const normalizeHttpOrigin = (value) => {
+  try {
+    const url = new URL(String(value || '').trim());
+    return ['http:', 'https:'].includes(url.protocol) ? url.origin : null;
+  } catch {
+    return null;
+  }
+};
+
+const buildCorsOptions = (env = process.env, req = null) => {
+  const configured = String(env.CORS_ALLOWED_ORIGINS || env.ALLOWED_ORIGINS || '')
+    .split(',')
+    .map((value) => value.trim())
+    .filter(Boolean);
+  if (env.CIMS_LOGIN_URL) configured.push(env.CIMS_LOGIN_URL);
+
+  // A browser POST includes an Origin header even when the SPA and API share a
+  // host. Derive that HTTPS origin from the current request so a missing cPanel
+  // allow-list cannot lock users out of a genuinely same-origin deployment.
+  const requestHost = String(req?.get?.('host') || req?.headers?.host || '').trim();
+  if (requestHost) {
+    const protocol = env.NODE_ENV === 'production' ? 'https' : String(req?.protocol || 'http');
+    configured.push(`${protocol}://${requestHost}`);
+  }
+
   configured.push(
     'http://localhost:8081',
     'http://127.0.0.1:8081',
@@ -130,11 +153,12 @@ const buildCorsOptions = (env = process.env) => {
     'http://localhost:5173',
     'http://127.0.0.1:5173',
   );
-  const allowed = new Set(configured);
+  const allowed = new Set(configured.map(normalizeHttpOrigin).filter(Boolean));
   return {
     credentials: true,
     origin(origin, callback) {
-      if (!origin || allowed.has(origin)) return callback(null, true);
+      const normalizedOrigin = normalizeHttpOrigin(origin);
+      if (!origin || (normalizedOrigin && allowed.has(normalizedOrigin))) return callback(null, true);
       callback(new Error('Origin is not allowed by CORS policy.'));
     },
   };

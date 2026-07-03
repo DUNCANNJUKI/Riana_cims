@@ -9,8 +9,10 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Building2, Users, Edit, Save, Loader2, AlertTriangle, Plus, Trash2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { EscalationMatrix, EscalationTier } from "@/types";
+import { EscalationMatrix, EscalationTier, User } from "@/types";
 import { apiClient } from "@/integrations/apiClient";
+import { emptyEscalationMatrix, emptyEscalationTier, escalationTierEntries, normalizeEscalationMatrix } from "@/utils/escalationMatrix";
+import { CountryPhoneInput } from "@/components/common/CountryPhoneInput";
 
 interface Subsidiary {
   id: string;
@@ -18,7 +20,7 @@ interface Subsidiary {
   default_escalation_matrix: EscalationMatrix | null;
 }
 
-export const SubsidiaryEscalationManager = () => {
+export const SubsidiaryEscalationManager = ({ user }: { user: User }) => {
   const [subsidiaries, setSubsidiaries] = useState<Subsidiary[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [selectedSubsidiary, setSelectedSubsidiary] = useState<Subsidiary | null>(null);
@@ -26,19 +28,16 @@ export const SubsidiaryEscalationManager = () => {
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [newSubsidiaryName, setNewSubsidiaryName] = useState('');
   const [editingSubsidiaryName, setEditingSubsidiaryName] = useState('');
-  const [editingMatrix, setEditingMatrix] = useState<EscalationMatrix>({
-    tier1: { name: '', role: '', phone_number: '', email: '' },
-    tier2: { name: '', role: '', phone_number: '', email: '' },
-    tier3: { name: '', role: '', phone_number: '', email: '' }
-  });
+  const [editingMatrix, setEditingMatrix] = useState<EscalationMatrix>(emptyEscalationMatrix);
+  const [isSaving, setIsSaving] = useState(false);
   const { toast } = useToast();
 
   useEffect(() => {
     loadSubsidiaries();
   }, []);
 
-  const loadSubsidiaries = async () => {
-    setIsLoading(true);
+  const loadSubsidiaries = async (showLoading = true) => {
+    if (showLoading) setIsLoading(true);
     try {
       const data = await apiClient.get('/subsidiaries');
       setSubsidiaries(data || []);
@@ -50,32 +49,29 @@ export const SubsidiaryEscalationManager = () => {
         variant: "destructive",
       });
     } finally {
-      setIsLoading(false);
+      if (showLoading) setIsLoading(false);
     }
   };
 
   const handleEditSubsidiary = (subsidiary: Subsidiary) => {
     setSelectedSubsidiary(subsidiary);
     setEditingSubsidiaryName(subsidiary.subsidiary_name);
-    setEditingMatrix(subsidiary.default_escalation_matrix || {
-      tier1: { name: '', role: '', phone_number: '', email: '' },
-      tier2: { name: '', role: '', phone_number: '', email: '' },
-      tier3: { name: '', role: '', phone_number: '', email: '' }
-    });
+    setEditingMatrix(normalizeEscalationMatrix(subsidiary.default_escalation_matrix));
     setIsEditDialogOpen(true);
   };
 
   const handleSaveEscalationMatrix = async () => {
     if (!selectedSubsidiary) return;
 
+    setIsSaving(true);
     try {
       await apiClient.patch(`/subsidiaries/${selectedSubsidiary.id}`, {
         subsidiary_name: editingSubsidiaryName.trim(),
-        default_escalation_matrix: editingMatrix
+        default_escalation_matrix: normalizeEscalationMatrix(editingMatrix)
       });
 
-      await loadSubsidiaries();
       setIsEditDialogOpen(false);
+      await loadSubsidiaries(false);
       toast({
         title: "Success",
         description: `Escalation matrix saved for ${selectedSubsidiary.subsidiary_name}`,
@@ -87,6 +83,8 @@ export const SubsidiaryEscalationManager = () => {
         description: "Failed to save escalation matrix locally",
         variant: "destructive",
       });
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -134,7 +132,7 @@ export const SubsidiaryEscalationManager = () => {
     }
   };
 
-  const updateTier = (tier: 'tier1' | 'tier2' | 'tier3', field: keyof EscalationTier, value: string) => {
+  const updateTier = (tier: string, field: keyof EscalationTier, value: string) => {
     setEditingMatrix(prev => ({
       ...prev,
       [tier]: {
@@ -144,13 +142,32 @@ export const SubsidiaryEscalationManager = () => {
     }));
   };
 
-  const TierFields = ({ tier, tierNum }: { tier: 'tier1' | 'tier2' | 'tier3'; tierNum: number }) => (
+  const addTier = () => {
+    const nextNumber = Math.max(3, ...escalationTierEntries(editingMatrix).map(([key]) => Number(key.slice(4)))) + 1;
+    setEditingMatrix((current) => ({ ...current, [`tier${nextNumber}`]: emptyEscalationTier() }));
+  };
+
+  const removeTier = (tier: string) => {
+    if (Number(tier.slice(4)) <= 3) return;
+    setEditingMatrix((current) => {
+      const next = { ...current };
+      delete next[tier];
+      return next;
+    });
+  };
+
+  const TierFields = ({ tier, tierNum }: { tier: string; tierNum: number }) => (
     <div className="space-y-3 p-4 border rounded-lg">
-      <div className="flex items-center gap-2 mb-3">
+      <div className="mb-3 flex items-center gap-2">
         <Badge variant="outline" className="bg-primary/10">Tier {tierNum}</Badge>
         <span className="text-sm text-muted-foreground">
           {tierNum === 1 ? 'First point of contact' : tierNum === 2 ? 'Secondary escalation' : 'Final escalation'}
         </span>
+        {user.role === 'SuperAdmin' && tierNum > 3 && (
+          <Button variant="ghost" size="sm" className="ml-auto" onClick={() => removeTier(tier)} aria-label={`Remove tier ${tierNum}`}>
+            <Trash2 className="h-4 w-4 text-destructive" />
+          </Button>
+        )}
       </div>
       <div className="grid grid-cols-2 gap-3">
         <div className="space-y-1">
@@ -163,7 +180,7 @@ export const SubsidiaryEscalationManager = () => {
         </div>
         <div className="space-y-1">
           <Label className="text-xs">Phone</Label>
-          <Input value={editingMatrix[tier]?.phone_number || ''} onChange={(e) => updateTier(tier, 'phone_number', e.target.value)} placeholder="+254..." className="h-9" />
+          <CountryPhoneInput value={editingMatrix[tier]?.phone_number || ''} onChange={(value) => updateTier(tier, 'phone_number', value)} />
         </div>
         <div className="space-y-1">
           <Label className="text-xs">Email</Label>
@@ -274,13 +291,21 @@ export const SubsidiaryEscalationManager = () => {
               <Label htmlFor="edit_subsidiary_name">Subsidiary Name</Label>
               <Input id="edit_subsidiary_name" value={editingSubsidiaryName} onChange={(event) => setEditingSubsidiaryName(event.target.value)} maxLength={50} />
             </div>
-            <TierFields tier="tier1" tierNum={1} />
-            <TierFields tier="tier2" tierNum={2} />
-            <TierFields tier="tier3" tierNum={3} />
+            {escalationTierEntries(editingMatrix).map(([tier]) => (
+              <TierFields key={tier} tier={tier} tierNum={Number(tier.slice(4))} />
+            ))}
+            {user.role === 'SuperAdmin' && (
+              <Button variant="outline" onClick={addTier}>
+                <Plus className="mr-2 h-4 w-4" /> Add Escalation Tier
+              </Button>
+            )}
           </div>
           <div className="flex justify-end gap-2 mt-4">
-            <Button variant="outline" onClick={() => setIsEditDialogOpen(false)}>Cancel</Button>
-            <Button onClick={handleSaveEscalationMatrix} className="gradient-primary"><Save className="h-4 w-4 mr-2" /> Save Escalation Matrix</Button>
+            <Button variant="outline" onClick={() => setIsEditDialogOpen(false)} disabled={isSaving}>Cancel</Button>
+            <Button onClick={handleSaveEscalationMatrix} className="gradient-primary" disabled={isSaving}>
+              {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+              Save Escalation Matrix
+            </Button>
           </div>
         </DialogContent>
       </Dialog>

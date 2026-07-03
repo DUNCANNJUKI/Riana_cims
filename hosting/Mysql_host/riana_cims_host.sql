@@ -1,5 +1,5 @@
 -- RIANA CIMS MySQL hosting database
--- Generated 2026-06-27T18:43:42.200Z
+-- Generated 2026-07-03T14:46:53.738Z
 -- Complete schema with sanitized reference data; no credentials or customer records.
 SET NAMES utf8mb4;
 SET FOREIGN_KEY_CHECKS = 0;
@@ -57,7 +57,7 @@ CREATE TABLE `auth_two_factor_challenges` (
 
 DROP TABLE IF EXISTS `clients`;
 CREATE TABLE `clients` (
-  `id` varchar(36) NOT NULL DEFAULT uuid(),
+  `id` varchar(36) NOT NULL,
   `client_name` varchar(255) NOT NULL,
   `branch` varchar(255) DEFAULT NULL,
   `contact_person_name` varchar(255) NOT NULL,
@@ -83,7 +83,7 @@ CREATE TABLE `clients` (
 
 DROP TABLE IF EXISTS `client_assignments`;
 CREATE TABLE `client_assignments` (
-  `id` varchar(36) NOT NULL DEFAULT uuid(),
+  `id` varchar(36) NOT NULL,
   `client_id` varchar(36) NOT NULL,
   `branch` varchar(255) DEFAULT NULL,
   `hardware_technician_id` varchar(36) DEFAULT NULL,
@@ -107,7 +107,7 @@ CREATE TABLE `client_assignments` (
 
 DROP TABLE IF EXISTS `companies`;
 CREATE TABLE `companies` (
-  `id` varchar(36) NOT NULL DEFAULT uuid(),
+  `id` varchar(36) NOT NULL,
   `name` varchar(255) NOT NULL,
   `logo_path` text DEFAULT NULL,
   `font_color` varchar(50) DEFAULT NULL,
@@ -254,7 +254,7 @@ CREATE TABLE `crms_user_links` (
 
 DROP TABLE IF EXISTS `departments`;
 CREATE TABLE `departments` (
-  `id` varchar(36) NOT NULL DEFAULT uuid(),
+  `id` varchar(36) NOT NULL,
   `department_name` varchar(255) NOT NULL,
   `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
   PRIMARY KEY (`id`)
@@ -269,7 +269,7 @@ INSERT INTO `departments` (`id`, `department_name`, `created_at`) VALUES ('ec053
 
 DROP TABLE IF EXISTS `feedback_links`;
 CREATE TABLE `feedback_links` (
-  `id` varchar(36) NOT NULL DEFAULT uuid(),
+  `id` varchar(36) NOT NULL,
   `client_id` varchar(36) NOT NULL,
   `installation_id` varchar(36) DEFAULT NULL,
   `unique_token` varchar(255) NOT NULL,
@@ -308,7 +308,7 @@ INSERT INTO `feedback_questions` (`id`, `question_text`, `question_type`, `categ
 
 DROP TABLE IF EXISTS `handover_uploads`;
 CREATE TABLE `handover_uploads` (
-  `id` varchar(36) NOT NULL DEFAULT uuid(),
+  `id` varchar(36) NOT NULL,
   `client_id` varchar(36) NOT NULL,
   `installation_id` varchar(36) DEFAULT NULL,
   `file_name` varchar(255) NOT NULL,
@@ -325,7 +325,7 @@ CREATE TABLE `handover_uploads` (
 
 DROP TABLE IF EXISTS `installations`;
 CREATE TABLE `installations` (
-  `id` varchar(36) NOT NULL DEFAULT uuid(),
+  `id` varchar(36) NOT NULL,
   `client_id` varchar(36) NOT NULL,
   `kiosk_type` varchar(100) DEFAULT NULL,
   `screen_with_size` varchar(100) DEFAULT NULL,
@@ -391,10 +391,10 @@ CREATE TABLE `installation_budgets` (
 
 DROP TABLE IF EXISTS `installation_feedback`;
 CREATE TABLE `installation_feedback` (
-  `id` varchar(36) NOT NULL DEFAULT uuid(),
+  `id` varchar(36) NOT NULL,
   `installation_id` varchar(36) NOT NULL,
   `client_id` varchar(36) NOT NULL,
-  `feedback_date` date NOT NULL DEFAULT curdate(),
+  `feedback_date` date NOT NULL,
   `installation_quality_rating` int(11) NOT NULL,
   `installation_timeliness_rating` int(11) NOT NULL,
   `installation_communication_rating` int(11) NOT NULL,
@@ -419,7 +419,7 @@ CREATE TABLE `installation_feedback` (
 
 DROP TABLE IF EXISTS `installation_progress`;
 CREATE TABLE `installation_progress` (
-  `id` varchar(36) NOT NULL DEFAULT uuid(),
+  `id` varchar(36) NOT NULL,
   `installation_id` varchar(36) NOT NULL,
   `progress_percentage` int(11) NOT NULL DEFAULT 0,
   `notes` text DEFAULT NULL,
@@ -648,7 +648,7 @@ INSERT INTO `security_settings` (`id`, `inactivity_minutes`, `warning_seconds`, 
 
 DROP TABLE IF EXISTS `subsidiaries`;
 CREATE TABLE `subsidiaries` (
-  `id` varchar(36) NOT NULL DEFAULT uuid(),
+  `id` varchar(36) NOT NULL,
   `subsidiary_name` varchar(255) NOT NULL,
   `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
   `default_escalation_matrix` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL CHECK (json_valid(`default_escalation_matrix`)),
@@ -661,7 +661,7 @@ INSERT INTO `subsidiaries` (`id`, `subsidiary_name`, `created_at`, `default_esca
 
 DROP TABLE IF EXISTS `system_logs`;
 CREATE TABLE `system_logs` (
-  `id` varchar(36) NOT NULL DEFAULT uuid(),
+  `id` varchar(36) NOT NULL,
   `user_id` varchar(36) DEFAULT NULL,
   `action` varchar(255) NOT NULL,
   `details` text DEFAULT NULL,
@@ -727,7 +727,7 @@ CREATE TABLE `user_permissions` (
 
 DROP TABLE IF EXISTS `user_profiles`;
 CREATE TABLE `user_profiles` (
-  `id` varchar(36) NOT NULL DEFAULT uuid(),
+  `id` varchar(36) NOT NULL,
   `email` varchar(255) NOT NULL,
   `first_name` varchar(100) DEFAULT NULL,
   `last_name` varchar(100) DEFAULT NULL,
@@ -750,5 +750,11 @@ CREATE TABLE `user_profiles` (
   KEY `idx_users_role_active` (`role`,`is_active`),
   KEY `idx_users_active_role` (`is_active`,`role`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Inactive bootstrap principal: it has no password and cannot sign in until explicitly activated.
+-- Set a private SUPERADMIN_PASSWORD during the one-time deployment bootstrap; never distribute a default password.
+INSERT INTO `user_profiles` (`id`,`email`,`first_name`,`last_name`,`role`,`designation`,`first_login`,`is_active`,`password`) VALUES ('00000000-0000-4000-8000-000000000001','superadmin@riana.co','Super','Admin','SuperAdmin','SuperAdmin',1,0,NULL) ON DUPLICATE KEY UPDATE `role`='SuperAdmin',`designation`='SuperAdmin';
+
+INSERT INTO `user_module_roles` (`user_id`,`module_id`,`role_id`,`granted_by`) VALUES ('00000000-0000-4000-8000-000000000001','cims','cims:SuperAdmin',NULL),('00000000-0000-4000-8000-000000000001','crms','crms:SuperAdmin',NULL) ON DUPLICATE KEY UPDATE `role_id`=VALUES(`role_id`);
 
 SET FOREIGN_KEY_CHECKS = 1;

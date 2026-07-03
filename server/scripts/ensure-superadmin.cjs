@@ -6,9 +6,25 @@ const { hashPassword } = require('../security/passwords');
 
 const email = String(process.env.SUPERADMIN_EMAIL || 'superadmin@riana.co').trim().toLowerCase();
 const password = process.env.SUPERADMIN_PASSWORD;
+const strongPassword = (value) => (
+  typeof value === 'string'
+  && value.length >= 14
+  && /[a-z]/.test(value)
+  && /[A-Z]/.test(value)
+  && /\d/.test(value)
+  && /[^A-Za-z0-9]/.test(value)
+);
 
 if (!password) {
   console.error('SUPERADMIN_PASSWORD is required.');
+  process.exit(1);
+}
+if (!strongPassword(password)) {
+  console.error('SUPERADMIN_PASSWORD must be at least 14 characters and include upper-case, lower-case, number, and symbol characters.');
+  process.exit(1);
+}
+if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+  console.error('SUPERADMIN_EMAIL must be a valid email address.');
   process.exit(1);
 }
 

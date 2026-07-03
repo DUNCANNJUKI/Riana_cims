@@ -14,6 +14,8 @@ import { format, isToday, isYesterday, differenceInDays } from "date-fns";
 import { playNotificationSound, playAnnouncementSound, playAssignmentSound } from "@/utils/notificationSound";
 import { cn } from "@/lib/utils";
 
+import { useNavigate } from 'react-router-dom';
+
 interface Notification {
   id: string;
   type: 'assignment' | 'installation' | 'handover' | 'feedback' | 'reminder' | 'announcement';
@@ -24,6 +26,8 @@ interface Notification {
   link?: string;
   priority?: string;
   persistentId?: string;
+  actionUrl?: string;
+  requestId?: string;
 }
 
 interface NotificationBellProps {
@@ -33,6 +37,7 @@ interface NotificationBellProps {
 }
 
 export const NotificationBell = ({ user, onNavigate, triggerClassName }: NotificationBellProps) => {
+  const navigate = useNavigate();
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [isOpen, setIsOpen] = useState(false);
   const [pendingCounts, setPendingCounts] = useState({
@@ -70,6 +75,8 @@ export const NotificationBell = ({ user, onNavigate, triggerClassName }: Notific
 
       (persistentNotifications || []).forEach((notification: any) => {
         const isAssignment = String(notification.title || '').toLowerCase().includes('assignment');
+        const actionUrl = typeof notification.action_url === 'string' ? notification.action_url.trim() : '';
+        const isDeveloperRequest = actionUrl.startsWith('/developers');
         newNotifications.push({
           id: `persistent-${notification.id}`,
           persistentId: notification.id,
@@ -78,7 +85,9 @@ export const NotificationBell = ({ user, onNavigate, triggerClassName }: Notific
           message: notification.message,
           timestamp: new Date(notification.created_at),
           read: Boolean(notification.read),
-          link: isAssignment ? 'assignments' : 'dashboard',
+          link: isDeveloperRequest ? 'developers' : isAssignment ? 'assignments' : 'dashboard',
+          actionUrl: actionUrl || undefined,
+          requestId: notification.request_id || undefined,
         });
       });
       const persistedRequestIds = new Set((persistentNotifications || []).map((notification: any) => notification.request_id).filter(Boolean));
@@ -222,6 +231,19 @@ export const NotificationBell = ({ user, onNavigate, triggerClassName }: Notific
     markAsRead(notification.id);
     if (notification.type === 'announcement') {
       void apiClient.post(`/announcements/${notification.id.replace('announcement-', '')}/read`, {});
+    }
+    if (notification.actionUrl) {
+      try {
+        const destination = new URL(notification.actionUrl, window.location.origin);
+        if (destination.origin === window.location.origin && destination.pathname.startsWith('/developers')) {
+          onNavigate?.('developers');
+          navigate(destination.pathname + destination.search + destination.hash);
+          setIsOpen(false);
+          return;
+        }
+      } catch (error) {
+        console.warn('Ignored invalid notification destination:', error);
+      }
     }
     if (notification.link && onNavigate) {
       onNavigate(notification.link);

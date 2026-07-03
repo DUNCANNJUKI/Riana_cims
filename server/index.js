@@ -10,7 +10,7 @@ const fsp = require('fs/promises');
 const jwt = require('jsonwebtoken');
 const createCrmsRouter = require('./routes/crms');
 const { createChallenge, verifyChallenge } = require('./utils/twoFactor');
-const { sendEmail, sendSms, sendWelcomeCredentials } = require('./services/notifications');
+const { normalizePhone, sendEmail, sendSms, sendWelcomeCredentials, smtpStatus, verifySmtpConnection } = require('./services/notifications');
 const { sendUserNotification, sendUsersNotification } = require('./services/notificationDispatcher');
 const { isSensitiveTechnicalRequest } = require('./services/chatbotPolicy');
 const { getAssistantResponse } = require('./services/chatbotKnowledge');
@@ -40,7 +40,7 @@ const {
 } = require('./security/apiSecurity');
 
 const app = express();
-const port = process.env.VITE_API_PORT || 3001;
+const port = process.env.PORT || process.env.VITE_API_PORT || 3001;
 const JWT_SECRET = resolveJwtSecret();
 
 const normalizedScore = (value, minimum, maximum, fallback) => {
@@ -54,8 +54,30 @@ const normalizeFeedbackResponses = (dynamicResponses) => (
     : {}
 );
 const textFeedbackFromResponses = (dynamicResponses) => Object.values(normalizeFeedbackResponses(dynamicResponses))
-  .map((value) => String(value || '').trim())
+  .filter((value) => typeof value === 'string')
+  .map((value) => value.trim())
   .filter(Boolean);
+
+const normalizeEscalationMatrixPayload = (value, allowExtraTiers) => {
+  if (value === null || value === undefined || value === '') return null;
+  const source = typeof value === 'string' ? JSON.parse(value) : value;
+  if (!source || typeof source !== 'object' || Array.isArray(source)) throw new Error('Escalation matrix must be an object.');
+  const entries = Object.entries(source);
+  if (entries.length > 10) throw new Error('Escalation matrix cannot exceed 10 tiers.');
+  const normalized = {};
+  for (const [key, tier] of entries) {
+    const match = /^tier([1-9]|10)$/.exec(key);
+    if (!match || !tier || typeof tier !== 'object' || Array.isArray(tier)) throw new Error('Escalation matrix contains an invalid tier.');
+    if (Number(match[1]) > 3 && !allowExtraTiers) throw new Error('Only SuperAdmin can add escalation tiers above tier 3.');
+    normalized[key] = {
+      name: String(tier.name || '').trim().slice(0, 100),
+      role: String(tier.role || '').trim().slice(0, 100),
+      phone_number: String(tier.phone_number || '').trim().slice(0, 20),
+      email: String(tier.email || '').trim().slice(0, 254),
+    };
+  }
+  return normalized;
+};
 
 const allowedEntries = (body, allowedFields) => Object.entries(body || {}).filter(([key]) => allowedFields.has(key));
 const sqlValue = (value) => typeof value === 'object' && value !== null ? JSON.stringify(value) : value;
@@ -190,6 +212,44 @@ const normalizeStoredFileReference = (reference) => {
   return filename;
 };
 
+const notificationBranding = async (loginUrl) => {
+  const [rows] = await pool.query(
+    'SELECT name,logo_path,primary_color,secondary_color,font_type FROM company_settings ORDER BY id LIMIT 1',
+  );
+  const settings = rows[0] || {};
+  const logoPath = String(settings.logo_path || '/Riana_logo.png').trim();
+  const branding = {
+    name: settings.name || 'RIANA CIMS',
+    primaryColor: settings.primary_color || '#0D8390',
+    secondaryColor: settings.secondary_color || '#2563EB',
+    fontFamily: settings.font_type || 'Arial',
+  };
+
+  if (/^https?:\/\//i.test(logoPath)) {
+    branding.logoUrl = logoPath;
+    return branding;
+  }
+  if (logoPath.startsWith('/')) {
+    branding.logoUrl = new URL(logoPath, loginUrl).toString();
+    return branding;
+  }
+
+  const filename = normalizeStoredFileReference(logoPath);
+  const resolved = filename && resolveStoredFile(uploadsDir, filename);
+  if (!resolved || !fs.existsSync(resolved)) return branding;
+  const extension = path.extname(filename).toLowerCase();
+  const contentTypes = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.webp': 'image/webp' };
+  if (!contentTypes[extension]) return branding;
+  try {
+    branding.logoContent = await fsp.readFile(resolved);
+  } catch {
+    return branding;
+  }
+  branding.logoFilename = filename;
+  branding.logoContentType = contentTypes[extension];
+  return branding;
+};
+
 const storedFileIsRegistered = async (filename) => {
   const safeFilename = normalizeStoredFileReference(filename);
   if (!safeFilename) return false;
@@ -220,7 +280,7 @@ app.set('trust proxy', 1);
 app.use(securityHeaders);
 // CORS is an API boundary. Applying it to same-origin hashed assets can reject
 // legitimate browser resource requests when production and test hostnames differ.
-app.use('/api', cors(buildCorsOptions()));
+app.use('/api', cors((req, callback) => callback(null, buildCorsOptions(process.env, req))));
 app.use(express.json({ limit: '15mb' }));
 app.use(createSensitiveRateLimiter({ limit: 20, windowMs: 5 * 60 * 1000 }));
 app.use('/api', createGlobalApiPolicy(authMiddleware));
@@ -801,6 +861,8 @@ const initDb = async () => {
       is_read BOOLEAN DEFAULT FALSE,
       read_at TIMESTAMP NULL,
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      INDEX idx_messages_inbox (receiver_id, is_read, created_at),
+      INDEX idx_messages_thread (sender_id, receiver_id, created_at),
       FOREIGN KEY (sender_id) REFERENCES user_profiles(id) ON DELETE CASCADE,
       FOREIGN KEY (receiver_id) REFERENCES user_profiles(id) ON DELETE CASCADE
     )`);
@@ -910,7 +972,11 @@ const initDb = async () => {
 // ------------------------------------------------------------------
 
 // Health Check
-app.get('/api/health', (req, res) => res.json({ status: 'ok', timestamp: new Date() }));
+app.get('/api/health', (_req, res) => res.json({
+  status: 'ok',
+  timestamp: new Date(),
+  corsPolicy: 'same-origin-host-v1',
+}));
 
 // Persistent notifications shared by CIMS and CRMS.
 app.get('/api/notifications', authMiddleware, async (req, res) => {
@@ -1403,6 +1469,14 @@ app.post('/api/installations', requireCapability('installations.manage'), async 
   try {
     const id = uuidv4();
     const updates = allowedEntries(req.body, INSTALLATION_FIELDS);
+    const matrixUpdate = updates.find(([key]) => key === 'escalation_matrix');
+    if (matrixUpdate) {
+      try {
+        matrixUpdate[1] = normalizeEscalationMatrixPayload(matrixUpdate[1], isSuperAdmin(req));
+      } catch (error) {
+        return res.status(400).json({ error: error.message });
+      }
+    }
     if (!updates.some(([key]) => key === 'client_id')) return res.status(400).json({ error: 'client_id is required.' });
     const fields = ['id', ...updates.map(([key]) => key)];
     const placeholders = fields.map(() => '?').join(', ');
@@ -1416,6 +1490,14 @@ app.patch('/api/installations/:id', requireCapability('installations.manage'), a
   try {
     const { id } = req.params;
     const updates = allowedEntries(req.body, INSTALLATION_FIELDS);
+    const matrixUpdate = updates.find(([key]) => key === 'escalation_matrix');
+    if (matrixUpdate) {
+      try {
+        matrixUpdate[1] = normalizeEscalationMatrixPayload(matrixUpdate[1], isSuperAdmin(req));
+      } catch (error) {
+        return res.status(400).json({ error: error.message });
+      }
+    }
     if (!updates.length) return res.status(400).json({ error: 'No valid installation fields supplied.' });
     const fields = updates.map(([key]) => `${key} = ?`).join(', ');
     const values = updates.map(([, value]) => sqlValue(value));
@@ -1665,6 +1747,12 @@ app.post('/api/user_profiles', authMiddleware, async (req, res) => {
     const data = req.body;
     const email = String(data.email || '').trim().toLowerCase();
     if (!/^[^\s@]+@riana\.co$/i.test(email)) return res.status(400).json({ error: 'New users must use a @riana.co email address.' });
+    let phoneNumber;
+    try {
+      phoneNumber = normalizePhone(data.phone_number);
+    } catch {
+      return res.status(400).json({ error: 'Select the country and enter a valid phone number so the welcome SMS can be delivered.' });
+    }
     if (!SYSTEM_ROLES.has(data.role)) return res.status(400).json({ error: 'Invalid user role.' });
     if (!userCanManageTargetRole(req, data.role)) return res.status(403).json({ error: 'Only SuperAdmin can create Admin or SuperAdmin users.' });
     const passwordHash = await hashPassword(crypto.randomBytes(32).toString('base64url'));
@@ -1672,7 +1760,7 @@ app.post('/api/user_profiles', authMiddleware, async (req, res) => {
       `INSERT INTO user_profiles
        (id,email,password,role,designation,department_id,subsidiary_id,phone_number,first_name,last_name,first_login,is_active)
        VALUES (?,?,?,?,?,?,?,?,?,?,TRUE,TRUE)`,
-      [id,email,passwordHash,data.role,data.designation || null,data.department_id || null,data.subsidiary_id || null,data.phone_number || null,data.first_name || null,data.last_name || null],
+      [id,email,passwordHash,data.role,data.designation || null,data.department_id || null,data.subsidiary_id || null,phoneNumber,data.first_name || null,data.last_name || null],
     );
     await pool.query(
       `INSERT INTO user_module_roles (user_id,module_id,role_id,granted_by) VALUES (?,?,?,?)
@@ -1697,21 +1785,22 @@ app.post('/api/user_profiles', authMiddleware, async (req, res) => {
       [uuidv4(), id, tokenHash],
     );
     const setupUrl = `${loginUrl.replace(/\/+$/, '')}/reset-password?token=${encodeURIComponent(setupToken)}`;
+    const branding = await notificationBranding(loginUrl);
     const welcomeDelivery = await sendWelcomeCredentials({
-      email, phoneNumber: data.phone_number, name: `${data.first_name || ''} ${data.last_name || ''}`.trim(), loginUrl, setupUrl,
+      email, phoneNumber, name: `${data.first_name || ''} ${data.last_name || ''}`.trim(), role: data.role, loginUrl, setupUrl, branding,
     });
     const inAppDelivery = await sendUserNotification({
       pool,
       userId: id,
       title: 'Welcome to RIANA CIMS',
-      message: 'Your RIANA CIMS account is ready. Use the secure setup link sent to you within 30 minutes.',
+      message: 'Your RIANA CIMS account is ready. Your username, login URL, and secure password-setup link were sent by email and SMS.',
       type: 'success',
       actionUrl: loginUrl,
       notificationType: 'welcome',
       email: false,
       sms: false,
     });
-    res.status(201).json({ id, ...data, email, first_login: true, welcome_delivery: welcomeDelivery, in_app_notification: inAppDelivery });
+    res.status(201).json({ id, ...data, email, phone_number: phoneNumber, first_login: true, welcome_delivery: welcomeDelivery, in_app_notification: inAppDelivery });
   } catch (err) {
     if (err.code === 'ER_DUP_ENTRY') return res.status(409).json({ error: 'A user with this email already exists.' });
     res.status(500).json({ error: err.message });
@@ -1741,6 +1830,19 @@ app.put('/api/user_profiles/:id', authMiddleware, async (req, res) => {
     }
     if (roleUpdate && !isSuperAdmin(req)) return res.status(403).json({ error: 'Only SuperAdmin can assign or remove system roles.' });
     if (roleUpdate && !userCanManageTargetRole(req, roleUpdate[1])) return res.status(403).json({ error: 'Only SuperAdmin can assign privileged roles.' });
+    for (const phoneField of ['phone_number', 'two_factor_phone']) {
+      const phoneUpdate = updates.find(([key]) => key === phoneField);
+      if (!phoneUpdate) continue;
+      if (!phoneUpdate[1] && phoneField === 'two_factor_phone') {
+        phoneUpdate[1] = null;
+        continue;
+      }
+      try {
+        phoneUpdate[1] = normalizePhone(phoneUpdate[1]);
+      } catch {
+        return res.status(400).json({ error: 'Select the country and enter a valid international phone number.' });
+      }
+    }
     if (updates.length) {
       const revokesSessions = updates.some(([key]) => key === 'role' || key === 'is_active');
       const fields = `${updates.map(([key]) => `${key} = ?`).join(', ')}${revokesSessions ? ', session_version = session_version + 1' : ''}`;
@@ -1907,6 +2009,14 @@ app.patch('/api/subsidiaries/:id', requireCapability('subsidiaries.manage'), asy
       nameUpdate[1] = String(nameUpdate[1] || '').trim();
       if (!nameUpdate[1] || nameUpdate[1].length > 50) return res.status(400).json({ error: 'A valid subsidiary name is required.' });
     }
+    const matrixUpdate = updates.find(([key]) => key === 'default_escalation_matrix');
+    if (matrixUpdate) {
+      try {
+        matrixUpdate[1] = normalizeEscalationMatrixPayload(matrixUpdate[1], isSuperAdmin(req));
+      } catch (error) {
+        return res.status(400).json({ error: error.message });
+      }
+    }
     const fields = updates.map(([key]) => `${key} = ?`).join(', ');
     const values = updates.map(([, value]) => sqlValue(value));
     const [result] = await pool.query(`UPDATE subsidiaries SET ${fields} WHERE id = ?`, [...values, id]);
@@ -2054,8 +2164,8 @@ app.post('/api/feedback', async (req, res) => {
         installation_quality_rating, installation_timeliness_rating, installation_communication_rating,
         technician_knowledge_rating, technician_professionalism_rating, technician_helpfulness_rating,
         recommendation_score, overall_satisfaction, positive_feedback, improvement_suggestions,
-        dynamic_responses
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        dynamic_responses, feedback_date
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURDATE())`,
       [
         id, 
         installation_id, 
@@ -2288,6 +2398,28 @@ app.post('/api/system_logs', async (req, res) => {
 });
 
 // COMPANY SETTINGS
+app.get('/api/admin/email-configuration', requireCapability('company.manage'), (_req, res) => {
+  res.json(smtpStatus());
+});
+
+app.post('/api/admin/email-configuration/test', requireCapability('company.manage'), async (req, res) => {
+  try {
+    const action = req.body?.action === 'send' ? 'send' : 'connection';
+    if (action === 'connection') return res.json(await verifySmtpConnection());
+    const recipientEmail = String(req.body?.recipientEmail || '').trim();
+    const delivery = await sendEmail({
+      recipientEmail,
+      recipientName: 'RIANA CIMS administrator',
+      notificationType: 'general',
+      requestDescription: `Production SMTP test requested from Company Settings at ${new Date().toISOString()}. No action is required.`,
+      deliveryTest: true,
+    });
+    res.json({ ...smtpStatus(), delivery });
+  } catch (error) {
+    res.status(502).json({ error: error.message, status: smtpStatus() });
+  }
+});
+
 app.get('/api/companies', async (req, res) => {
   try {
     const [rows] = await pool.query('SELECT * FROM company_settings LIMIT 1');
@@ -2440,8 +2572,8 @@ app.post('/api/public/installation-feedback', async (req, res) => {
       `INSERT INTO installation_feedback (
         id, client_id, installation_id, 
         overall_satisfaction, recommendation_score, 
-        positive_feedback, improvement_suggestions, dynamic_responses
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, 
+        positive_feedback, improvement_suggestions, dynamic_responses, feedback_date
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURDATE())`,
       [
         id, 
         data.client_id, 
@@ -2556,14 +2688,25 @@ app.post('/api/chat/assistant', async (req, res) => {
 // CHAT SYSTEM - indexed by user so broadcasts stay O(connections for that user)
 const chatClients = new Map();
 
+function notifyChatClients(userId, data) {
+  const connections = chatClients.get(String(userId));
+  if (!connections) return;
+  connections.forEach((response) => response.write(`data: ${JSON.stringify(data)}\n\n`));
+}
+
+function notifyAllChatClients(data) {
+  chatClients.forEach((_connections, userId) => notifyChatClients(userId, data));
+}
+
 app.get('/api/chat/stream', (req, res) => {
   res.setHeader('Content-Type', 'text/event-stream');
-  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Cache-Control', 'no-cache, no-transform');
   res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no');
   
   const clientId = uuidv4();
-  const userId = req.query.userId;
-  const token = req.query.token;
+  const userId = req.user.id;
+  const token = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '');
 
   try {
     const decoded = jwt.verify(token, JWT_SECRET);
@@ -2574,10 +2717,13 @@ app.get('/api/chat/stream', (req, res) => {
   }
 
   console.log(`[SSE] User ${userId} connected (client: ${clientId})`);
+  res.flushHeaders();
+  res.write(': connected\n\n');
   const userKey = String(userId);
   const userConnections = chatClients.get(userKey) || new Map();
   userConnections.set(clientId, res);
   chatClients.set(userKey, userConnections);
+  notifyAllChatClients({ type: 'presence', userId: userKey, online: true });
 
   // Set up heartbeat to keep connection alive
   const heartbeat = setInterval(() => {
@@ -2588,17 +2734,12 @@ app.get('/api/chat/stream', (req, res) => {
     console.log(`[SSE] User ${userId} disconnected (client: ${clientId})`);
     clearInterval(heartbeat);
     userConnections.delete(clientId);
-    if (userConnections.size === 0) chatClients.delete(userKey);
+    if (userConnections.size === 0) {
+      chatClients.delete(userKey);
+      notifyAllChatClients({ type: 'presence', userId: userKey, online: false });
+    }
   });
 });
-
-const notifyChatClients = (userId, data) => {
-  console.log(`[Chat] Notifying user ${userId}:`, data.type);
-  const connections = chatClients.get(String(userId));
-  if (!connections) return;
-  connections.forEach((response) => response.write(`data: ${JSON.stringify(data)}\n\n`));
-  console.log(`[Chat] Broadcast to ${connections.size} connections for user ${userId}`);
-};
 
 app.get('/api/chat/users', authMiddleware, async (req, res) => {
   try {
@@ -2608,13 +2749,32 @@ app.get('/api/chat/users', authMiddleware, async (req, res) => {
       FROM user_profiles u 
       WHERE u.id != ? AND u.is_active = 1
     `, [req.user.id, req.user.id]);
-    res.json(rows);
+    res.json(rows.map((row) => ({ ...row, online: chatClients.has(String(row.id)) })));
   } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.post('/api/chat/typing', authMiddleware, async (req, res) => {
+  try {
+    const receiverId = String(req.body?.receiver_id || '').trim();
+    if (!receiverId || receiverId === String(req.user.id)) return res.status(400).json({ error: 'Select another active user.' });
+    const [recipients] = await pool.query('SELECT id FROM user_profiles WHERE id = ? AND is_active = 1 LIMIT 1', [receiverId]);
+    if (!recipients.length) return res.status(404).json({ error: 'Active chat recipient not found.' });
+    notifyChatClients(receiverId, {
+      type: 'typing',
+      userId: String(req.user.id),
+      isTyping: req.body?.is_typing === true,
+    });
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: 'Unable to update typing status.' });
+  }
 });
 
 app.get('/api/chat/messages/:otherUserId', authMiddleware, async (req, res) => {
   try {
     const { otherUserId } = req.params;
+    const [recipients] = await pool.query('SELECT id FROM user_profiles WHERE id = ? AND is_active = 1 LIMIT 1', [otherUserId]);
+    if (!recipients.length || otherUserId === req.user.id) return res.status(404).json({ error: 'Active chat recipient not found.' });
     const [rows] = await pool.query(`
       SELECT m.*, 
              s.first_name as sender_first_name, s.last_name as sender_last_name,
@@ -2632,7 +2792,12 @@ app.get('/api/chat/messages/:otherUserId', authMiddleware, async (req, res) => {
 
 app.post('/api/chat/messages', authMiddleware, async (req, res) => {
   try {
-    const { receiver_id, content } = req.body;
+    const receiver_id = String(req.body?.receiver_id || '').trim();
+    const content = String(req.body?.content || '').trim();
+    if (!receiver_id || receiver_id === req.user.id) return res.status(400).json({ error: 'Select another active user.' });
+    if (!content || content.length > 4000) return res.status(400).json({ error: 'Message must be between 1 and 4000 characters.' });
+    const [recipients] = await pool.query('SELECT id FROM user_profiles WHERE id = ? AND is_active = 1 LIMIT 1', [receiver_id]);
+    if (!recipients.length) return res.status(404).json({ error: 'Active chat recipient not found.' });
     const id = uuidv4();
     
     await pool.query('INSERT INTO messages (id, sender_id, receiver_id, content) VALUES (?, ?, ?, ?)', 
@@ -2648,7 +2813,10 @@ app.post('/api/chat/messages', authMiddleware, async (req, res) => {
     notifyChatClients(receiver_id, { type: 'new_message', message: newMessage[0] });
     
     res.json(newMessage[0]);
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) {
+    console.error('Chat message send failed:', err.message);
+    res.status(500).json({ error: 'Unable to send the message.' });
+  }
 });
 
 app.patch('/api/chat/messages/:messageId/read', authMiddleware, async (req, res) => {

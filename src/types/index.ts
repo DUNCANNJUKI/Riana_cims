@@ -113,6 +113,7 @@ export interface EscalationMatrix {
   tier1: EscalationTier;
   tier2: EscalationTier;
   tier3: EscalationTier;
+  [tierKey: string]: EscalationTier;
 }
 
 export interface HandoverUpload {

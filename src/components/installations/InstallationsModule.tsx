@@ -13,6 +13,7 @@ import { useDatabase } from "@/hooks/useDatabase";
 import { Installation, Client, User, EscalationMatrix, Subsidiary } from "@/types";
 import { InstallationDetailsDialog } from "@/components/dialogs/InstallationDetailsDialog";
 import { EscalationMatrixDialog } from "@/components/dialogs/EscalationMatrixDialog";
+import { normalizeEscalationMatrix } from "@/utils/escalationMatrix";
 
 import { FeedbackLinkGenerator } from "@/components/feedback/FeedbackLinkGenerator";
 import { EHandoverUpload } from "@/components/handover/EHandoverUpload";
@@ -135,30 +136,9 @@ export const InstallationsModule = ({ user }: InstallationsModuleProps) => {
     }
 
     try {
-      // Prepare escalation matrix - ensure it's properly formatted
-      let escalationMatrix = null;
-      if (newInstallation.escalation_matrix) {
-        escalationMatrix = {
-          tier1: {
-            name: newInstallation.escalation_matrix.tier1?.name || '',
-            role: newInstallation.escalation_matrix.tier1?.role || '',
-            phone_number: newInstallation.escalation_matrix.tier1?.phone_number || '',
-            email: newInstallation.escalation_matrix.tier1?.email || ''
-          },
-          tier2: {
-            name: newInstallation.escalation_matrix.tier2?.name || '',
-            role: newInstallation.escalation_matrix.tier2?.role || '',
-            phone_number: newInstallation.escalation_matrix.tier2?.phone_number || '',
-            email: newInstallation.escalation_matrix.tier2?.email || ''
-          },
-          tier3: {
-            name: newInstallation.escalation_matrix.tier3?.name || '',
-            role: newInstallation.escalation_matrix.tier3?.role || '',
-            phone_number: newInstallation.escalation_matrix.tier3?.phone_number || '',
-            email: newInstallation.escalation_matrix.tier3?.email || ''
-          }
-        };
-      }
+      const escalationMatrix = newInstallation.escalation_matrix
+        ? normalizeEscalationMatrix(newInstallation.escalation_matrix)
+        : null;
 
       const installationData = {
         client_id: newInstallation.client_id!,
@@ -249,6 +229,7 @@ export const InstallationsModule = ({ user }: InstallationsModuleProps) => {
       await loadInitialData(); // Refresh data
     } catch (error) {
       console.error('Error saving escalation matrix:', error);
+      throw error;
     }
   };
 
@@ -933,6 +914,7 @@ export const InstallationsModule = ({ user }: InstallationsModuleProps) => {
         onClose={() => setIsEscalationDialogOpen(false)}
         onSave={handleSaveEscalationMatrix}
         existingMatrix={currentEscalationInstallation?.escalation_matrix}
+        canAddTiers={user.role === 'SuperAdmin'}
       />
 
       {/* Feedback Link Generator Dialog */}

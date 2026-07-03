@@ -16,19 +16,21 @@ import { cn } from "@/lib/utils";
 
 interface ChatModuleProps {
   currentUser: User;
+  chat: ReturnType<typeof useChat>;
   onClose?: () => void;
 }
 
-export const ChatModule = ({ currentUser, onClose }: ChatModuleProps) => {
+export const ChatModule = ({ currentUser, chat, onClose }: ChatModuleProps) => {
   const { 
     messages, users, activeChatUserId, setActiveChatUserId, 
-    sendMessage, unreadCounts, isConnected, totalUnread 
-  } = useChat(currentUser);
+    sendMessage, setTyping, typingUsers, unreadCounts, isConnected
+  } = chat;
   
   const [inputText, setInputText] = useState("");
   const [searchTerm, setSearchTerm] = useState("");
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const typingTimerRef = useRef<number | null>(null);
 
   const activeUser = users.find(u => u.id === activeChatUserId);
   
@@ -45,12 +47,19 @@ export const ChatModule = ({ currentUser, onClose }: ChatModuleProps) => {
     }
   }, [messages]);
 
+  useEffect(() => () => {
+    if (typingTimerRef.current) window.clearTimeout(typingTimerRef.current);
+    if (activeChatUserId) void setTyping(activeChatUserId, false);
+  }, [activeChatUserId, setTyping]);
+
   const handleSend = async (e?: React.FormEvent) => {
     e?.preventDefault();
     if (!inputText.trim() || !activeChatUserId) return;
     
     const text = inputText;
     setInputText("");
+    if (typingTimerRef.current) window.clearTimeout(typingTimerRef.current);
+    void setTyping(activeChatUserId, false);
     try {
       await sendMessage(activeChatUserId, text);
     } catch (error) {
@@ -59,7 +68,7 @@ export const ChatModule = ({ currentUser, onClose }: ChatModuleProps) => {
   };
 
   return (
-    <div className="flex h-[600px] w-full max-w-4xl border rounded-2xl shadow-2xl overflow-hidden glass-card">
+    <div className="flex h-full w-full max-w-4xl overflow-hidden rounded-2xl border shadow-2xl glass-card">
       {/* Sidebar - User List */}
       <div className={cn(
         "flex flex-col border-r bg-background/20 transition-all duration-300",
@@ -116,6 +125,10 @@ export const ChatModule = ({ currentUser, onClose }: ChatModuleProps) => {
                         {unreadCounts[user.id]}
                       </Badge>
                     )}
+                    <span className={cn(
+                      "absolute bottom-0 right-0 h-3 w-3 rounded-full border-2 border-background",
+                      user.online ? "bg-green-500" : "bg-slate-400",
+                    )} />
                   </div>
                   <div className="flex-1 overflow-hidden">
                     <div className="flex justify-between items-baseline mb-0.5">
@@ -162,7 +175,10 @@ export const ChatModule = ({ currentUser, onClose }: ChatModuleProps) => {
                       {(activeUser?.first_name?.[0] || activeUser?.email?.[0] || '?').toUpperCase()}
                     </AvatarFallback>
                   </Avatar>
-                  <div className="absolute bottom-0 right-0 h-3 w-3 rounded-full bg-green-500 border-2 border-background shadow-sm"></div>
+                  <div className={cn(
+                    "absolute bottom-0 right-0 h-3 w-3 rounded-full border-2 border-background shadow-sm",
+                    activeUser?.online ? "bg-green-500" : "bg-slate-400",
+                  )}></div>
                 </div>
                 <div>
                   <h3 className="font-bold text-base leading-tight text-foreground">
@@ -171,7 +187,7 @@ export const ChatModule = ({ currentUser, onClose }: ChatModuleProps) => {
                       : activeUser?.email}
                   </h3>
                   <p className="text-[11px] text-primary/70 font-medium">
-                    Online • {activeUser?.designation || activeUser?.role}
+                    {typingUsers[activeChatUserId] ? 'Typing...' : activeUser?.online ? 'Online' : 'Offline'} • {activeUser?.designation || activeUser?.role}
                   </p>
                 </div>
               </div>
@@ -250,7 +266,15 @@ export const ChatModule = ({ currentUser, onClose }: ChatModuleProps) => {
                     <Input 
                      placeholder="Message..." 
                      value={inputText}
-                     onChange={(e) => setInputText(e.target.value)}
+                     onChange={(e) => {
+                       const nextValue = e.target.value;
+                       setInputText(nextValue);
+                       if (!activeChatUserId) return;
+                       if (!inputText && nextValue) void setTyping(activeChatUserId, true);
+                       if (typingTimerRef.current) window.clearTimeout(typingTimerRef.current);
+                       typingTimerRef.current = window.setTimeout(() => void setTyping(activeChatUserId, false), 1200);
+                     }}
+                     onBlur={() => activeChatUserId && void setTyping(activeChatUserId, false)}
                      className="border-none bg-transparent focus-visible:ring-0 focus-visible:ring-offset-0 min-h-[44px] px-3 shadow-none text-foreground"
                      autoFocus
                    />

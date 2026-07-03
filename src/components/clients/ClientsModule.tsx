@@ -15,6 +15,7 @@ import { User, Client } from "@/types";
 import { apiClient } from "@/integrations/apiClient";
 import { can } from "@/security/accessControl";
 import { ClientDetailsDialog } from "@/components/dialogs/ClientDetailsDialog";
+import { CountryPhoneInput } from "@/components/common/CountryPhoneInput";
 
 interface ClientsModuleProps {
   user: User;
@@ -268,11 +269,10 @@ export const ClientsModule = ({ user }: ClientsModuleProps) => {
 
               <div className="space-y-2">
                 <Label htmlFor="contact_person_phone">Contact Phone</Label>
-                <Input
+                <CountryPhoneInput
                   id="contact_person_phone"
                   value={newClient.contact_person_phone || ''}
-                  onChange={(e) => setNewClient({...newClient, contact_person_phone: e.target.value})}
-                  placeholder="Enter phone number"
+                  onChange={(contact_person_phone) => setNewClient({...newClient, contact_person_phone})}
                 />
               </div>
               <div className="space-y-2">

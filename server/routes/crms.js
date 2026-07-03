@@ -1,6 +1,6 @@
 const express = require('express');
 const jwt = require('jsonwebtoken');
-const bcrypt = require('bcrypt');
+const bcrypt = require('bcryptjs');
 const { v4: uuidv4 } = require('uuid');
 const { createChallenge, verifyChallenge } = require('../utils/twoFactor');
 const { getSmsBalance, sendEmail, sendSms } = require('../services/notifications');
@@ -553,7 +553,17 @@ module.exports = function createCrmsRouter({ pool, jwtSecret }) {
       const [users] = await pool.query(`SELECT id,email,first_name,last_name FROM user_profiles WHERE ${lookup} AND is_active = TRUE LIMIT 1`, [identifier]);
       if (!users.length) return res.status(404).json({ error: 'Active recipient not found.' });
       const recipient = users[0];
-      res.json({ success: true, ...(await sendEmail({ ...req.body, recipientEmail: recipient.email, recipientName: fullName(recipient) })) });
+      const notification = {
+        recipientEmail: recipient.email,
+        recipientName: fullName(recipient),
+        notificationType: req.body.notificationType || 'general',
+        requestDescription: req.body.requestDescription || req.body.message,
+        ticketNumber: req.body.ticketNumber,
+        clientName: req.body.clientName,
+        comment: req.body.comment,
+        actionUrl: req.body.actionUrl,
+      };
+      res.json({ success: true, ...(await sendEmail(notification)) });
     }
     catch (error) { res.status(502).json({ success: false, error: error.message }); }
   });

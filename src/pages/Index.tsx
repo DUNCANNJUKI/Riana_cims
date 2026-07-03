@@ -24,24 +24,11 @@ import { NoticeBoard } from "@/components/noticeboard/NoticeBoard";
 import { SiteLoader } from "@/components/common/SiteLoader";
 import { AnnouncementsManagementModule } from "@/components/announcements/AnnouncementsManagementModule";
 import { TechnicianProfilePage } from "@/components/profile/TechnicianProfilePage";
-import { Button } from "@/components/ui/button";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-  DropdownMenuSeparator,
-} from "@/components/ui/dropdown-menu";
-import { Menu, LogOut, User, Settings } from "lucide-react";
 import { usePushNotifications } from "@/hooks/usePushNotifications";
 import { useOfflineSync } from "@/hooks/useOfflineSync";
-import { NotificationBell } from "@/components/layout/NotificationBell";
 import { DevelopersWorkspace } from "@/components/developers/DevelopersWorkspace";
 import { InactivityGuard } from "@/components/auth/InactivityGuard";
 import { useLocation } from "react-router-dom";
-import { can } from "@/security/accessControl";
-import { formatRoleLabel } from "@/utils/roleLabel";
 
 const Index = () => {
   const { user, isAuthenticated, isLoading, logout } = useAuth();
@@ -129,20 +116,6 @@ const Index = () => {
 
   const currentYear = new Date().getFullYear();
 
-  const getUserInitials = () => {
-    if (user.first_name && user.last_name) {
-      return `${user.first_name[0]}${user.last_name[0]}`.toUpperCase();
-    }
-    return user.email.charAt(0).toUpperCase();
-  };
-
-  const getUserDisplayName = () => {
-    if (user.first_name || user.last_name) {
-      return `${user.first_name || ''} ${user.last_name || ''}`.trim();
-    }
-    return user.email;
-  };
-
   return (
     <div className="min-h-screen bg-background">
       <div className="flex h-screen overflow-hidden">
@@ -154,77 +127,17 @@ const Index = () => {
           onMobileClose={() => setIsMobileSidebarOpen(false)}
         />
         <div className="flex-1 flex flex-col min-w-0">
-          {/* Mobile Header with Menu Button and User Menu */}
-          <div className="enterprise-header flex h-16 items-center justify-between gap-2 px-2 text-white lg:hidden">
-            <div className="flex min-w-0 items-center gap-1.5">
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={() => setIsMobileSidebarOpen(true)}
-                className="shrink-0 text-white hover:bg-white/10 hover:text-white focus-visible:ring-white"
-              >
-                <Menu className="h-5 w-5" />
-              </Button>
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden">
-                <img
-                  src="/Riana_mark_transparent.png"
-                  alt="RIANA Group"
-                  className="max-h-8 max-w-10 object-contain"
-                />
-              </div>
-              <div className="min-w-0 leading-none">
-                <span className="block truncate text-sm font-bold leading-tight">RIANA CIMS</span>
-                <span className="mt-0.5 hidden truncate text-[10px] font-normal leading-tight text-white/85 min-[360px]:block">
-                  Client Installation Management
-                </span>
-              </div>
+          <Header
+            user={user}
+            className="sticky top-0 z-40"
+            setActiveModule={setActiveModule}
+            onOpenMobileMenu={() => setIsMobileSidebarOpen(true)}
+          />
+          {!isOnline && (
+            <div className="bg-warning/10 px-3 py-1 text-center text-xs text-warning">
+              Offline - changes will sync when the connection returns.
             </div>
-            <div className="flex items-center gap-1">
-              {!isOnline && (
-                <span className="text-xs text-warning bg-warning/10 px-2 py-1 rounded">Offline</span>
-              )}
-              <NotificationBell
-                user={user}
-                onNavigate={setActiveModule}
-                triggerClassName="text-white hover:bg-white/10 hover:text-white focus-visible:ring-white dark:text-white"
-              />
-              
-              {/* Mobile User Menu with Logout */}
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button variant="ghost" className="h-9 w-9 rounded-full border-2 border-white/35 p-0 text-white shadow-sm hover:bg-white/10 focus-visible:ring-white">
-                    <Avatar className="h-8 w-8">
-                      <AvatarFallback className="bg-primary text-primary-foreground text-xs font-bold">
-                        {getUserInitials()}
-                      </AvatarFallback>
-                    </Avatar>
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-48">
-                  <div className="px-2 py-1.5">
-                    <p className="text-sm font-medium truncate">{getUserDisplayName()}</p>
-                    <p className="text-xs text-muted-foreground truncate">{formatRoleLabel(user.role)}</p>
-                  </div>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem onClick={() => setActiveModule('help')}>
-                    <User className="mr-2 h-4 w-4" />
-                    Profile
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => setActiveModule(can(user, 'company.manage') ? 'company' : 'help')}>
-                    <Settings className="mr-2 h-4 w-4" />
-                    Settings
-                  </DropdownMenuItem>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem onClick={logout} className="text-destructive">
-                    <LogOut className="mr-2 h-4 w-4" />
-                    Logout
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-            </div>
-          </div>
-          
-          <Header user={user} className="sticky top-0 z-40 hidden lg:block" setActiveModule={setActiveModule} />
+          )}
           <main className="flex-1 p-3 sm:p-4 lg:p-6 bg-background overflow-auto">
             {renderContent()}
           </main>

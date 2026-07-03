@@ -24,7 +24,17 @@ Explicit live delivery check:
 npm run notifications:test-live -- --confirm=live --email=recipient@example.com --phone=0712345678
 ```
 
-Brevo must authorize the production server IP and verify `info@riana.co`. B-Textman returns a provider message ID/status; `queued` means accepted for downstream delivery, not handset confirmation.
+Email is sent through authenticated implicit-TLS SMTP at `mail.rianacims.name.ng:465` as `info@rianacims.name.ng`. Keep the mailbox password only in the private runtime environment and verify the server certificate. B-Textman returns a provider message ID/status; `queued` means accepted for downstream delivery, not handset confirmation.
+
+The centralized SMTP transport uses connection pooling, TLS 1.2+, configurable rate limiting, bounded retries for temporary provider failures, plaintext fallbacks, responsive HTML, in-memory attachments, and validated CC/BCC/Reply-To fields. `SMTP_PASS` is accepted as a compatibility alias for `SMTP_PASSWORD`; define only one. Authorized administrators can use Company Settings → Email to view non-secret runtime status, verify the connection, and send a labelled test email. Email footers identify RIANA CIMS as powered by Riana Atomations.
+
+Set `SMTP_RETRY_ATTEMPTS` between 1 and 5 and `SMTP_RETRY_BASE_DELAY_MS` between 100 and 5000. Retries apply only to temporary SMTP/network responses; authentication, sender, and permanent mailbox errors fail immediately.
+
+For SMS incidents, confirm the private hosted environment has the gateway URL, send path, API key, approved `SMS_SENDER_ID`, and sufficient provider balance. HTTP 200 alone is not delivery proof: the API also rejects provider bodies that report `success:false`, `ok:false`, or a failed/rejected status.
+
+## Local PM2 startup
+
+The local workstation runs the built CIMS/CRMS application through the single `riana-cims` API process; the server serves the production frontend assets. Start it with `npx pm2 start ecosystem.config.cjs`, verify `http://127.0.0.1:8081/api/health`, then run `npx pm2 save`. On Windows, PM2 has no native init system; the scheduled task **RIANA CIMS PM2 Resurrect** restores the saved process list at user sign-in. Truehost uses cPanel Passenger and must not use this workstation task.
 
 ## Incident checks
 
@@ -50,3 +60,6 @@ The 2026-06-27 role release uses `server/migrations/20260627_enterprise_roles_pe
 Role or direct-grant changes increment `session_version`; affected users must sign in again. This is intentional privilege-cache invalidation.
 
 Rollback for branding-only assets remains code-and-asset only. Role/schema rollback must use the documented rollback migration after a verified backup.
+## Welcome notification delivery
+
+Creating an account sends a branded welcome email through authenticated SMTP and a welcome SMS through B-Textman. Both channels contain the login URL and expiring password-setup link; neither channel contains a plaintext password. Provider acceptance is returned in the account-creation response under `welcome_delivery`. Use `npm run notifications:verify` for an offline wiring check and `npm run notifications:test-live -- --confirm=live --email=<address> --phone=<number>` only with authorized test recipients.

@@ -27,7 +27,10 @@ async function deliverCode({ channel, destination, code }) {
     return { configured: true };
   }
 
-  if (process.env.BREVO_API_KEY || process.env.B_TEXTMAN_API_KEY) {
+  const providerConfigured = channel === 'email'
+    ? Boolean(process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASSWORD)
+    : Boolean(process.env.B_TEXTMAN_API_KEY);
+  if (providerConfigured) {
     await sendVerificationCode({ channel, destination, code });
     return { configured: true };
   }
