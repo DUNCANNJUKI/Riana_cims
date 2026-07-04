@@ -56,6 +56,7 @@ for (const target of [output, application, domainRoot, publicHtml, database]) as
 requirePath(path.join(root, 'dist', 'index.html'), 'CIMS production build');
 requirePath(path.join(root, 'CRMS', 'dist', 'index.html'), 'Developers production build');
 requirePath(path.join(root, 'hosting', 'Mysql_host', 'riana_cims_host.sql'), 'Sanitized host database');
+requirePath(path.join(root, 'hosting', 'Mysql_host', 'live_updates', '20260705_subsidiary_handover_equipment.sql'), 'Live database update');
 
 fs.rmSync(output, { recursive: true, force: true });
 fs.mkdirSync(application, { recursive: true });
@@ -79,6 +80,10 @@ const truehostSql = hostSql
     '-- Complete schema with sanitized reference data and one inactive, passwordless SuperAdmin bootstrap principal.',
   );
 fs.writeFileSync(path.join(database, 'riana_cims_host.sql'), truehostSql, 'utf8');
+fs.copyFileSync(
+  path.join(root, 'hosting', 'Mysql_host', 'live_updates', '20260705_subsidiary_handover_equipment.sql'),
+  path.join(output, 'LIVE_DB_UPDATE_20260705.sql'),
+);
 
 const serverPackage = JSON.parse(fs.readFileSync(path.join(root, 'server', 'package.json'), 'utf8'));
 const applicationPackage = {
@@ -234,6 +239,8 @@ Do not upload the \`database\` folder, \`.env.local\`, or any SQL file to \`publ
 The imported database always contains one inactive, passwordless SuperAdmin bootstrap principal. It cannot authenticate until step 7 securely activates it. No universal/default password exists in this package.
 
 ## Update or rollback
+
+For an existing live database, first back up the database, then select it in phpMyAdmin and import LIVE_DB_UPDATE_20260705.sql before uploading or restarting the new application. The update is idempotent, adds only the nullable subsidiary equipment-configuration column, preserves all rows, and records itself in migration_history. Do not import the clean-install riana_cims_host.sql over a live database.
 
 Before an update, back up the database and the current \`app\` folder. Preserve the production \`.env.local\`, uploads, backups, and any Truehost-managed \`.htaccess\`. Upload the new app files, run NPM Install, restart, and execute the smoke tests. To roll back, restore the previous app folder and its matching database backup.
 

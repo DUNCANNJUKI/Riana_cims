@@ -35,6 +35,8 @@ The imported database contains one inactive, passwordless SuperAdmin bootstrap p
 
 ## Update or rollback
 
+For an existing live database, first back up the database, then select it in phpMyAdmin and import LIVE_DB_UPDATE_20260705.sql before uploading or restarting the new application. The update is idempotent, adds only the nullable subsidiary equipment-configuration column, preserves all rows, and records itself in migration_history. Do not import the clean-install riana_cims_host.sql over a live database.
+
 Before an update, back up the database and the current `app` folder. Preserve the production `.env.local`, uploads, backups, and any Truehost-managed `.htaccess`. Upload the new app files, run NPM Install, restart, and execute the smoke tests. To roll back, restore the previous app folder and its matching database backup.
 
 ## Security checks

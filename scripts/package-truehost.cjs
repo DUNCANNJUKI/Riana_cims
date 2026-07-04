@@ -59,7 +59,7 @@ async function run() {
   ];
   for (const [name, directory] of archives) await zipDirectory(directory, path.join(output, name));
 
-  const metadata = ['BUILD_INFO.json', 'FILE_MANIFEST.sha256', 'TRUEHOST_DEPLOYMENT.md'];
+  const metadata = ['BUILD_INFO.json', 'FILE_MANIFEST.sha256', 'TRUEHOST_DEPLOYMENT.md', 'LIVE_DB_UPDATE_20260705.sql'];
   for (const name of metadata) fs.copyFileSync(requireFile(name), path.join(output, name));
 
   const packagedFiles = [...archives.map(([name]) => name), ...metadata];
