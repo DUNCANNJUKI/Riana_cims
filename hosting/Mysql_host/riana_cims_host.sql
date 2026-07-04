@@ -1,5 +1,5 @@
 -- RIANA CIMS MySQL hosting database
--- Generated 2026-07-03T14:46:53.738Z
+-- Generated 2026-07-04T23:16:39.857Z
 -- Complete schema with sanitized reference data; no credentials or customer records.
 SET NAMES utf8mb4;
 SET FOREIGN_KEY_CHECKS = 0;
@@ -456,6 +456,7 @@ CREATE TABLE `migration_history` (
 
 INSERT INTO `migration_history` (`migration_id`, `description`, `applied_at`) VALUES ('20260621_security_foundation', 'Unified module RBAC, session revocation, security settings, and audit events', '2026-06-21 06:41:40.000');
 INSERT INTO `migration_history` (`migration_id`, `description`, `applied_at`) VALUES ('20260627_enterprise_roles_permissions', 'Applied from 20260627_enterprise_roles_permissions.sql', '2026-06-27 19:04:26.000');
+INSERT INTO `migration_history` (`migration_id`, `description`, `applied_at`) VALUES ('20260705_subsidiary_handover_equipment', 'Applied from 20260705_subsidiary_handover_equipment.sql', '2026-07-05 02:11:40.000');
 
 DROP TABLE IF EXISTS `modules`;
 CREATE TABLE `modules` (
@@ -652,12 +653,13 @@ CREATE TABLE `subsidiaries` (
   `subsidiary_name` varchar(255) NOT NULL,
   `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
   `default_escalation_matrix` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL CHECK (json_valid(`default_escalation_matrix`)),
+  `equipment_configuration` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL CHECK (json_valid(`equipment_configuration`)),
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-INSERT INTO `subsidiaries` (`id`, `subsidiary_name`, `created_at`, `default_escalation_matrix`) VALUES ('34f8ccb0-0e95-11f1-9abb-00155d187c00', 'MAREZI', '2026-02-20 22:48:53.000', NULL);
-INSERT INTO `subsidiaries` (`id`, `subsidiary_name`, `created_at`, `default_escalation_matrix`) VALUES ('34f8cf97-0e95-11f1-9abb-00155d187c00', 'USS', '2026-02-20 22:48:53.000', NULL);
-INSERT INTO `subsidiaries` (`id`, `subsidiary_name`, `created_at`, `default_escalation_matrix`) VALUES ('34f8d0a8-0e95-11f1-9abb-00155d187c00', 'VMS', '2026-02-20 22:48:53.000', NULL);
+INSERT INTO `subsidiaries` (`id`, `subsidiary_name`, `created_at`, `default_escalation_matrix`, `equipment_configuration`) VALUES ('34f8ccb0-0e95-11f1-9abb-00155d187c00', 'MAREZI', '2026-02-20 22:48:53.000', NULL, NULL);
+INSERT INTO `subsidiaries` (`id`, `subsidiary_name`, `created_at`, `default_escalation_matrix`, `equipment_configuration`) VALUES ('34f8cf97-0e95-11f1-9abb-00155d187c00', 'USS', '2026-02-20 22:48:53.000', NULL, NULL);
+INSERT INTO `subsidiaries` (`id`, `subsidiary_name`, `created_at`, `default_escalation_matrix`, `equipment_configuration`) VALUES ('34f8d0a8-0e95-11f1-9abb-00155d187c00', 'VMS', '2026-02-20 22:48:53.000', NULL, NULL);
 
 DROP TABLE IF EXISTS `system_logs`;
 CREATE TABLE `system_logs` (

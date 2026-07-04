@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { FileText, Download, Building2, Phone, Mail, Calendar, User, Loader2, Eye, Plus, Trash2 } from "lucide-react";
-import { Client, Installation, User as UserType } from "@/types";
+import { Client, HandoverEquipmentItem, Installation, User as UserType } from "@/types";
 import { useDatabase } from "@/hooks/useDatabase";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
@@ -15,8 +15,12 @@ import { PDFPreviewModal } from "@/components/common/PDFPreviewModal";
 import { apiClient } from "@/integrations/apiClient";
 import { toast } from "sonner";
 import { resolveDocumentSubsidiaryName } from "@/utils/brandIdentity";
-import { equipmentInstallationStatus } from "@/utils/equipmentStatus";
 import { can } from "@/security/accessControl";
+import {
+  buildHandoverEquipmentRows,
+  defaultHandoverEquipmentConfiguration,
+  normalizeHandoverEquipmentConfiguration,
+} from "@/utils/equipmentConfiguration";
 
 interface EHandoverFormProps {
   client: Client;
@@ -48,6 +52,7 @@ export const EHandoverForm = ({ client, installation, user }: EHandoverFormProps
   const [companyLogo, setCompanyLogo] = useState<string>("");
   const [companyName, setCompanyName] = useState<string>("RIANA Technologies");
   const [escalationMatrix, setEscalationMatrix] = useState<ParsedEscalationMatrix | null>(null);
+  const [equipmentConfiguration, setEquipmentConfiguration] = useState<HandoverEquipmentItem[]>(defaultHandoverEquipmentConfiguration);
   const [accountManager, setAccountManager] = useState<string>("");
   const [hardwareTech, setHardwareTech] = useState<string>("");
   const [softwareTech, setSoftwareTech] = useState<string>("");
@@ -64,6 +69,10 @@ export const EHandoverForm = ({ client, installation, user }: EHandoverFormProps
     client.subsidiary_name,
     client.subsidiaries?.subsidiary_name,
     user.subsidiary_name,
+  );
+  const equipmentRows = useMemo(
+    () => buildHandoverEquipmentRows(liveInstallation, equipmentConfiguration),
+    [liveInstallation, equipmentConfiguration],
   );
 
   // Load installation data
@@ -145,6 +154,7 @@ export const EHandoverForm = ({ client, installation, user }: EHandoverFormProps
   };
 
   const loadEscalationMatrix = async () => {
+    let hasInstallationMatrix = false;
     // First, try to use installation's escalation matrix
     if (installation.escalation_matrix) {
       try {
@@ -153,7 +163,7 @@ export const EHandoverForm = ({ client, installation, user }: EHandoverFormProps
           : installation.escalation_matrix;
         
         setEscalationMatrix(matrix as ParsedEscalationMatrix);
-        return;
+        hasInstallationMatrix = true;
       } catch (error) {
         console.error('Error parsing escalation matrix:', error);
       }
@@ -166,8 +176,9 @@ export const EHandoverForm = ({ client, installation, user }: EHandoverFormProps
       
       if (clientData?.subsidiary_id) {
         const subsidiaryData = await apiClient.get(`/subsidiaries/${clientData.subsidiary_id}`);
+        setEquipmentConfiguration(normalizeHandoverEquipmentConfiguration(subsidiaryData?.equipment_configuration));
         
-        if (subsidiaryData?.default_escalation_matrix) {
+        if (!hasInstallationMatrix && subsidiaryData?.default_escalation_matrix) {
           const matrix = typeof subsidiaryData.default_escalation_matrix === 'string'
             ? JSON.parse(subsidiaryData.default_escalation_matrix)
             : subsidiaryData.default_escalation_matrix;
@@ -348,23 +359,7 @@ export const EHandoverForm = ({ client, installation, user }: EHandoverFormProps
       addText('EQUIPMENT DETAILS', margin + 3, yPos + 3, { fontSize: 11, color: primaryColor, fontStyle: 'bold' });
       yPos += 10;
 
-      const equipmentData = [
-        ['Kiosk Type', liveInstallation.kiosk_type || 'N/A', 'Configured'],
-        ['Kiosk Count', String(liveInstallation.kiosk_count || 0), equipmentInstallationStatus(liveInstallation.kiosk_count, 'Installed')],
-        ['Tripleplay/Counters', String(liveInstallation.counter_count || 0), equipmentInstallationStatus(liveInstallation.counter_count, 'Installed')],
-        ['LED Displays', String(liveInstallation.led_count || 0), equipmentInstallationStatus(liveInstallation.led_count, 'Installed')],
-        ['Screen Size', liveInstallation.screen_with_size || 'N/A', 'Configured'],
-        ['Service Points', String(liveInstallation.service_points || 0), equipmentInstallationStatus(liveInstallation.service_points, 'Active')],
-        ['UPS Units', String(liveInstallation.ups_count || 0), equipmentInstallationStatus(liveInstallation.ups_count, 'Installed')],
-        ['Speakers', String(liveInstallation.speakers || 0), equipmentInstallationStatus(liveInstallation.speakers, 'Installed')],
-        ['Amplifiers', String(liveInstallation.amplifiers || 0), equipmentInstallationStatus(liveInstallation.amplifiers, 'Configured')],
-        ['Media Controllers', String(liveInstallation.media_controllers || 0), equipmentInstallationStatus(liveInstallation.media_controllers, 'Configured')],
-        ['Tablets', String(liveInstallation.tablets || 0), equipmentInstallationStatus(liveInstallation.tablets, 'Setup Complete')],
-        ['Digital Signage', String(liveInstallation.digital_signage_system || 0), equipmentInstallationStatus(liveInstallation.digital_signage_system, 'Operational')],
-        ['HDMI Cables', String(liveInstallation.hdmis || 0), equipmentInstallationStatus(liveInstallation.hdmis, 'Connected')],
-        ['Splitters', String(liveInstallation.splitters || 0), equipmentInstallationStatus(liveInstallation.splitters, 'Installed')],
-        ['Staff Trained', `${liveInstallation.staff_trained || 0} personnel`, equipmentInstallationStatus(liveInstallation.staff_trained, 'Completed')],
-      ];
+      const equipmentData = equipmentRows.map((row) => [row.label, row.displayValue, row.status]);
 
       autoTable(doc, {
         startY: yPos,
@@ -646,21 +641,11 @@ export const EHandoverForm = ({ client, installation, user }: EHandoverFormProps
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {[
-                  ['Kiosks', liveInstallation.kiosk_count, 'Installed'],
-                  ['Tripleplay Devices', liveInstallation.counter_count, 'Installed'],
-                  ['LED Displays', liveInstallation.led_count, 'Installed'],
-                  ['Service Points', liveInstallation.service_points, 'Active'],
-                  ['UPS Units', liveInstallation.ups_count, 'Installed'],
-                  ['Speakers', liveInstallation.speakers, 'Installed'],
-                  ['Tablets', liveInstallation.tablets, 'Setup Complete'],
-                  ['Digital Signage', liveInstallation.digital_signage_system, 'Operational'],
-                  ['Splitters', liveInstallation.splitters, 'Installed'],
-                ].map(([label, quantity, status]) => (
-                  <TableRow key={String(label)}>
-                    <TableCell>{label}</TableCell>
-                    <TableCell>{quantity}</TableCell>
-                    <TableCell><Badge variant="outline">{equipmentInstallationStatus(quantity, String(status))}</Badge></TableCell>
+                {equipmentRows.map((row) => (
+                  <TableRow key={row.field}>
+                    <TableCell>{row.label}</TableCell>
+                    <TableCell>{row.displayValue}</TableCell>
+                    <TableCell><Badge variant="outline">{row.status}</Badge></TableCell>
                   </TableRow>
                 ))}
               </TableBody>

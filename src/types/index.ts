@@ -34,7 +34,31 @@ export interface Company {
 export interface Subsidiary {
   id: string;
   subsidiary_name: 'QSYS' | 'USS' | 'VMS' | string;
-  default_escalation_matrix?: string; // JSON string
+  default_escalation_matrix?: EscalationMatrix | string | null;
+  equipment_configuration?: HandoverEquipmentItem[] | string | null;
+}
+
+export type HandoverEquipmentField =
+  | 'kiosk_type'
+  | 'kiosk_count'
+  | 'counter_count'
+  | 'led_count'
+  | 'screen_with_size'
+  | 'service_points'
+  | 'ups_count'
+  | 'speakers'
+  | 'amplifiers'
+  | 'media_controllers'
+  | 'tablets'
+  | 'digital_signage_system'
+  | 'hdmis'
+  | 'splitters'
+  | 'staff_trained';
+
+export interface HandoverEquipmentItem {
+  field: HandoverEquipmentField;
+  label: string;
+  installed_status: string;
 }
 
 export interface Department {

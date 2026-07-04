@@ -7,17 +7,24 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { Building2, Users, Edit, Save, Loader2, AlertTriangle, Plus, Trash2 } from "lucide-react";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Building2, Users, Edit, Save, Loader2, AlertTriangle, Plus, Trash2, Package, ArrowUp, ArrowDown } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { EscalationMatrix, EscalationTier, User } from "@/types";
+import { EscalationMatrix, EscalationTier, HandoverEquipmentField, HandoverEquipmentItem, User } from "@/types";
 import { apiClient } from "@/integrations/apiClient";
 import { emptyEscalationMatrix, emptyEscalationTier, escalationTierEntries, normalizeEscalationMatrix } from "@/utils/escalationMatrix";
 import { CountryPhoneInput } from "@/components/common/CountryPhoneInput";
+import {
+  defaultHandoverEquipmentConfiguration,
+  HANDOVER_EQUIPMENT_CATALOG,
+  normalizeHandoverEquipmentConfiguration,
+} from "@/utils/equipmentConfiguration";
 
 interface Subsidiary {
   id: string;
   subsidiary_name: string;
   default_escalation_matrix: EscalationMatrix | null;
+  equipment_configuration: HandoverEquipmentItem[] | null;
 }
 
 export const SubsidiaryEscalationManager = ({ user }: { user: User }) => {
@@ -29,6 +36,8 @@ export const SubsidiaryEscalationManager = ({ user }: { user: User }) => {
   const [newSubsidiaryName, setNewSubsidiaryName] = useState('');
   const [editingSubsidiaryName, setEditingSubsidiaryName] = useState('');
   const [editingMatrix, setEditingMatrix] = useState<EscalationMatrix>(emptyEscalationMatrix);
+  const [editingEquipment, setEditingEquipment] = useState<HandoverEquipmentItem[]>(defaultHandoverEquipmentConfiguration);
+  const [equipmentToAdd, setEquipmentToAdd] = useState<HandoverEquipmentField | ''>('');
   const [isSaving, setIsSaving] = useState(false);
   const { toast } = useToast();
 
@@ -57,30 +66,38 @@ export const SubsidiaryEscalationManager = ({ user }: { user: User }) => {
     setSelectedSubsidiary(subsidiary);
     setEditingSubsidiaryName(subsidiary.subsidiary_name);
     setEditingMatrix(normalizeEscalationMatrix(subsidiary.default_escalation_matrix));
+    setEditingEquipment(normalizeHandoverEquipmentConfiguration(subsidiary.equipment_configuration));
+    setEquipmentToAdd('');
     setIsEditDialogOpen(true);
   };
 
   const handleSaveEscalationMatrix = async () => {
     if (!selectedSubsidiary) return;
+    if (user.role === 'SuperAdmin' && editingEquipment.length === 0) {
+      toast({ title: 'Equipment required', description: 'Select at least one E-handover equipment item.', variant: 'destructive' });
+      return;
+    }
 
     setIsSaving(true);
     try {
-      await apiClient.patch(`/subsidiaries/${selectedSubsidiary.id}`, {
+      const payload: Record<string, unknown> = {
         subsidiary_name: editingSubsidiaryName.trim(),
         default_escalation_matrix: normalizeEscalationMatrix(editingMatrix)
-      });
+      };
+      if (user.role === 'SuperAdmin') payload.equipment_configuration = editingEquipment;
+      await apiClient.patch(`/subsidiaries/${selectedSubsidiary.id}`, payload);
 
       setIsEditDialogOpen(false);
       await loadSubsidiaries(false);
       toast({
         title: "Success",
-        description: `Escalation matrix saved for ${selectedSubsidiary.subsidiary_name}`,
+        description: `Subsidiary configuration saved for ${selectedSubsidiary.subsidiary_name}`,
       });
     } catch (error) {
       console.error('Error saving escalation matrix:', error);
       toast({
         title: "Error",
-        description: "Failed to save escalation matrix locally",
+        description: error instanceof Error ? error.message : "Failed to save subsidiary configuration",
         variant: "destructive",
       });
     } finally {
@@ -114,10 +131,16 @@ export const SubsidiaryEscalationManager = ({ user }: { user: User }) => {
     }
 
     try {
-      await apiClient.post('/subsidiaries', { subsidiary_name: newSubsidiaryName.trim() });
-      await loadSubsidiaries();
+      const created = await apiClient.post('/subsidiaries', { subsidiary_name: newSubsidiaryName.trim() });
       setIsAddDialogOpen(false);
       setNewSubsidiaryName('');
+      const subsidiary: Subsidiary = {
+        ...created,
+        default_escalation_matrix: null,
+        equipment_configuration: null,
+      };
+      setSubsidiaries((current) => [...current, subsidiary].sort((a, b) => a.subsidiary_name.localeCompare(b.subsidiary_name)));
+      handleEditSubsidiary(subsidiary);
       toast({
         title: "Success",
         description: `Subsidiary "${newSubsidiaryName}" added successfully`,
@@ -155,6 +178,34 @@ export const SubsidiaryEscalationManager = ({ user }: { user: User }) => {
       return next;
     });
   };
+
+  const updateEquipment = (index: number, changes: Partial<HandoverEquipmentItem>) => {
+    setEditingEquipment((current) => current.map((item, itemIndex) =>
+      itemIndex === index ? { ...item, ...changes } : item
+    ));
+  };
+
+  const moveEquipment = (index: number, direction: -1 | 1) => {
+    setEditingEquipment((current) => {
+      const destination = index + direction;
+      if (destination < 0 || destination >= current.length) return current;
+      const next = [...current];
+      [next[index], next[destination]] = [next[destination], next[index]];
+      return next;
+    });
+  };
+
+  const addEquipment = () => {
+    if (!equipmentToAdd) return;
+    const catalogItem = HANDOVER_EQUIPMENT_CATALOG.find((item) => item.field === equipmentToAdd);
+    if (!catalogItem || editingEquipment.some((item) => item.field === equipmentToAdd)) return;
+    setEditingEquipment((current) => [...current, { ...catalogItem }]);
+    setEquipmentToAdd('');
+  };
+
+  const availableEquipment = HANDOVER_EQUIPMENT_CATALOG.filter((catalogItem) =>
+    !editingEquipment.some((item) => item.field === catalogItem.field)
+  );
 
   const TierFields = ({ tier, tierNum }: { tier: string; tierNum: number }) => (
     <div className="space-y-3 p-4 border rounded-lg">
@@ -195,8 +246,8 @@ export const SubsidiaryEscalationManager = ({ user }: { user: User }) => {
       <CardHeader>
         <div className="flex items-center justify-between">
           <div>
-            <CardTitle className="flex items-center gap-2"><Building2 className="h-5 w-5" /> Subsidiary Escalation Matrix</CardTitle>
-            <CardDescription>Configure default escalation contacts for each subsidiary.</CardDescription>
+            <CardTitle className="flex items-center gap-2"><Building2 className="h-5 w-5" /> Subsidiary Configuration</CardTitle>
+            <CardDescription>Configure escalation contacts and each subsidiary's E-handover equipment list.</CardDescription>
           </div>
           <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
             <DialogTrigger asChild><Button className="gradient-primary"><Plus className="h-4 w-4 mr-2" /> Add Subsidiary</Button></DialogTrigger>
@@ -232,6 +283,7 @@ export const SubsidiaryEscalationManager = ({ user }: { user: User }) => {
                 <TableHead>Tier 1 Contact</TableHead>
                 <TableHead>Tier 2 Contact</TableHead>
                 <TableHead>Tier 3 Contact</TableHead>
+                <TableHead>E-Handover Equipment</TableHead>
                 <TableHead>Actions</TableHead>
               </TableRow>
             </TableHeader>
@@ -264,6 +316,13 @@ export const SubsidiaryEscalationManager = ({ user }: { user: User }) => {
                     ) : <Badge variant="outline" className="text-muted-foreground">Not set</Badge>}
                   </TableCell>
                   <TableCell>
+                    <Badge variant="secondary">
+                      <Package className="mr-1 h-3 w-3" />
+                      {sub.equipment_configuration?.length || HANDOVER_EQUIPMENT_CATALOG.length} items
+                    </Badge>
+                    {!sub.equipment_configuration && <p className="mt-1 text-xs text-muted-foreground">Default list</p>}
+                  </TableCell>
+                  <TableCell>
                     <div className="flex gap-2">
                       <Button variant="outline" size="sm" onClick={() => handleEditSubsidiary(sub)}>
                         <Edit className="h-3 w-3 mr-1" /> Edit
@@ -281,30 +340,88 @@ export const SubsidiaryEscalationManager = ({ user }: { user: User }) => {
       </CardContent>
 
       <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
-        <DialogContent className="max-w-2xl">
+        <DialogContent className="max-h-[92vh] max-w-4xl overflow-hidden">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2"><Users className="h-5 w-5" /> Configure Escalation Matrix</DialogTitle>
-            <DialogDescription>{selectedSubsidiary && `Set default escalation contacts for ${selectedSubsidiary.subsidiary_name}`}</DialogDescription>
+            <DialogTitle className="flex items-center gap-2"><Users className="h-5 w-5" /> Subsidiary Configuration</DialogTitle>
+            <DialogDescription>{selectedSubsidiary && `Configure escalation contacts and E-handover equipment for ${selectedSubsidiary.subsidiary_name}`}</DialogDescription>
           </DialogHeader>
-          <div className="space-y-4 max-h-[60vh] overflow-y-auto">
+          <div className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="edit_subsidiary_name">Subsidiary Name</Label>
               <Input id="edit_subsidiary_name" value={editingSubsidiaryName} onChange={(event) => setEditingSubsidiaryName(event.target.value)} maxLength={50} />
             </div>
-            {escalationTierEntries(editingMatrix).map(([tier]) => (
-              <TierFields key={tier} tier={tier} tierNum={Number(tier.slice(4))} />
-            ))}
-            {user.role === 'SuperAdmin' && (
-              <Button variant="outline" onClick={addTier}>
-                <Plus className="mr-2 h-4 w-4" /> Add Escalation Tier
-              </Button>
-            )}
+            <Tabs defaultValue="escalation">
+              <TabsList className="grid w-full grid-cols-2">
+                <TabsTrigger value="escalation">Escalation Matrix</TabsTrigger>
+                <TabsTrigger value="equipment">E-Handover Equipment</TabsTrigger>
+              </TabsList>
+              <TabsContent value="escalation" className="max-h-[56vh] space-y-4 overflow-y-auto pr-1">
+                {escalationTierEntries(editingMatrix).map(([tier]) => (
+                  <TierFields key={tier} tier={tier} tierNum={Number(tier.slice(4))} />
+                ))}
+                {user.role === 'SuperAdmin' && (
+                  <Button variant="outline" onClick={addTier}>
+                    <Plus className="mr-2 h-4 w-4" /> Add Escalation Tier
+                  </Button>
+                )}
+              </TabsContent>
+              <TabsContent value="equipment" className="max-h-[56vh] space-y-4 overflow-y-auto pr-1">
+                <div className="rounded-lg border bg-muted/30 p-3 text-sm text-muted-foreground">
+                  The order, labels, and success wording below are used in this subsidiary's E-handover preview and PDF.
+                </div>
+                {user.role !== 'SuperAdmin' && (
+                  <p className="text-sm text-warning">Only SuperAdmin can change E-handover equipment configuration.</p>
+                )}
+                <div className="space-y-3">
+                  {editingEquipment.map((item, index) => (
+                    <div key={item.field} className="grid gap-3 rounded-lg border p-3 md:grid-cols-[auto_1fr_1fr_auto] md:items-end">
+                      <div className="flex gap-1">
+                        <Button type="button" variant="ghost" size="icon" onClick={() => moveEquipment(index, -1)} disabled={user.role !== 'SuperAdmin' || index === 0} aria-label={`Move ${item.label} up`}>
+                          <ArrowUp className="h-4 w-4" />
+                        </Button>
+                        <Button type="button" variant="ghost" size="icon" onClick={() => moveEquipment(index, 1)} disabled={user.role !== 'SuperAdmin' || index === editingEquipment.length - 1} aria-label={`Move ${item.label} down`}>
+                          <ArrowDown className="h-4 w-4" />
+                        </Button>
+                      </div>
+                      <div className="space-y-1">
+                        <Label className="text-xs">Equipment label</Label>
+                        <Input value={item.label} onChange={(event) => updateEquipment(index, { label: event.target.value })} disabled={user.role !== 'SuperAdmin'} maxLength={80} />
+                        <p className="text-[11px] text-muted-foreground">Source: {item.field}</p>
+                      </div>
+                      <div className="space-y-1">
+                        <Label className="text-xs">Success status</Label>
+                        <Input value={item.installed_status} onChange={(event) => updateEquipment(index, { installed_status: event.target.value })} disabled={user.role !== 'SuperAdmin'} maxLength={40} />
+                      </div>
+                      <Button type="button" variant="ghost" size="icon" onClick={() => setEditingEquipment((current) => current.filter((_, itemIndex) => itemIndex !== index))} disabled={user.role !== 'SuperAdmin'} aria-label={`Remove ${item.label}`}>
+                        <Trash2 className="h-4 w-4 text-destructive" />
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+                {user.role === 'SuperAdmin' && (
+                  <div className="flex flex-col gap-2 rounded-lg border p-3 sm:flex-row">
+                    <Select value={equipmentToAdd} onValueChange={(value) => setEquipmentToAdd(value as HandoverEquipmentField)}>
+                      <SelectTrigger className="flex-1"><SelectValue placeholder="Select equipment to add" /></SelectTrigger>
+                      <SelectContent>
+                        {availableEquipment.map((item) => <SelectItem key={item.field} value={item.field}>{item.label}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                    <Button type="button" variant="outline" onClick={addEquipment} disabled={!equipmentToAdd}>
+                      <Plus className="mr-2 h-4 w-4" /> Add Equipment
+                    </Button>
+                    <Button type="button" variant="outline" onClick={() => setEditingEquipment(defaultHandoverEquipmentConfiguration())}>
+                      Restore Defaults
+                    </Button>
+                  </div>
+                )}
+              </TabsContent>
+            </Tabs>
           </div>
           <div className="flex justify-end gap-2 mt-4">
             <Button variant="outline" onClick={() => setIsEditDialogOpen(false)} disabled={isSaving}>Cancel</Button>
             <Button onClick={handleSaveEscalationMatrix} className="gradient-primary" disabled={isSaving}>
               {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
-              Save Escalation Matrix
+              Save Configuration
             </Button>
           </div>
         </DialogContent>

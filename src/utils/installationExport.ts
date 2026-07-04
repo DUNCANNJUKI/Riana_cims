@@ -3,8 +3,8 @@ import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import { addCimsDocumentHeader, addLetterheadToDocument, DOCUMENT_LAYOUT, resolveDocumentBrand } from "./pdfWatermark";
 import { resolveDocumentSubsidiaryName } from "./brandIdentity";
-import { equipmentInstallationStatus } from "./equipmentStatus";
 import { escalationTierEntries } from "./escalationMatrix";
+import { buildHandoverEquipmentRows } from "./equipmentConfiguration";
 
 const parseHexColor = (hex: string): [number, number, number] => {
   const clean = hex.replace('#', '');
@@ -169,23 +169,8 @@ export const generateInstallationReport = async (
   ensureSpace(60);
   yPos = addSectionHeader('EQUIPMENT DETAILS', yPos);
 
-  const equipmentData = [
-    ['Kiosk Type', installation.kiosk_type || 'N/A', 'Configured'],
-    ['Kiosk Count', String(installation.kiosk_count || 0), equipmentInstallationStatus(installation.kiosk_count, 'Installed')],
-    ['LED Displays', String(installation.led_count || 0), equipmentInstallationStatus(installation.led_count, 'Installed')],
-    ['Tripleplay Devices', String(installation.counter_count || 0), equipmentInstallationStatus(installation.counter_count, 'Installed')],
-    ['Screen Size', installation.screen_with_size || 'N/A', 'Configured'],
-    ['Service Points', String(installation.service_points || 0), equipmentInstallationStatus(installation.service_points, 'Active')],
-    ['UPS Units', String(installation.ups_count || 0), equipmentInstallationStatus(installation.ups_count, 'Installed')],
-    ['Speakers', String(installation.speakers || 0), equipmentInstallationStatus(installation.speakers, 'Installed')],
-    ['Amplifiers', String(installation.amplifiers || 0), equipmentInstallationStatus(installation.amplifiers, 'Configured')],
-    ['Media Controllers', String(installation.media_controllers || 0), equipmentInstallationStatus(installation.media_controllers, 'Configured')],
-    ['Tablets', String(installation.tablets || 0), equipmentInstallationStatus(installation.tablets, 'Setup Complete')],
-    ['Digital Signage', String(installation.digital_signage_system || 0), equipmentInstallationStatus(installation.digital_signage_system, 'Operational')],
-    ['HDMI Cables', String(installation.hdmis || 0), equipmentInstallationStatus(installation.hdmis, 'Connected')],
-    ['Splitters', String(installation.splitters || 0), equipmentInstallationStatus(installation.splitters, 'Installed')],
-    ['Staff Trained', `${installation.staff_trained || 0} personnel`, equipmentInstallationStatus(installation.staff_trained, 'Completed')],
-  ];
+  const equipmentData = buildHandoverEquipmentRows(installation, subsidiary?.equipment_configuration)
+    .map((row) => [row.label, row.displayValue, row.status]);
 
   autoTable(doc, {
     startY: yPos,

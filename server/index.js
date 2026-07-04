@@ -12,6 +12,7 @@ const createCrmsRouter = require('./routes/crms');
 const { createChallenge, verifyChallenge } = require('./utils/twoFactor');
 const { normalizePhone, sendEmail, sendSms, sendWelcomeCredentials, smtpStatus, verifySmtpConnection } = require('./services/notifications');
 const { sendUserNotification, sendUsersNotification } = require('./services/notificationDispatcher');
+const { normalizeEquipmentConfigurationPayload } = require('./services/subsidiaryEquipment');
 const { isSensitiveTechnicalRequest } = require('./services/chatbotPolicy');
 const { getAssistantResponse } = require('./services/chatbotKnowledge');
 const { createDatabaseBackup, listBackups, pruneBackups, getLastRun } = require('./services/databaseBackup');
@@ -84,7 +85,7 @@ const sqlValue = (value) => typeof value === 'object' && value !== null ? JSON.s
 const CLIENT_FIELDS = new Set(['client_name','industry_classification','current_vendor','tags','contact_person_name','contact_person_department','contact_email','contact_phone','account_manager_id','subsidiary_id','department_id','branch','start_date','contract_type']);
 const INSTALLATION_FIELDS = new Set(['client_id','branch','kiosk_type','kiosk_count','counter_count','counter_names','led_count','led_names','service_points','ups_count','speakers','screen_with_size','media_controllers','tablets','digital_signage_system','staff_trained','amplifiers','hdmis','splitters','handover_file_path','account_manager_id','assigned_technician_id','hardware_technician_id','software_technician_id','status','remarks','assigned_date','completion_date','scheduled_end_date','extension_reason','escalation_matrix','waiting_reason']);
 const ASSIGNMENT_FIELDS = new Set(['client_id','installation_id','hardware_technician_id','software_technician_id','installation_start_date','scheduled_end_date','status','progress_percentage','notes','branch']);
-const SUBSIDIARY_FIELDS = new Set(['subsidiary_name','default_escalation_matrix']);
+const SUBSIDIARY_FIELDS = new Set(['subsidiary_name','default_escalation_matrix','equipment_configuration']);
 const FEEDBACK_LINK_FIELDS = new Set(['client_id','installation_id','expires_at','is_used']);
 const COMPANY_FIELDS = new Set(['name','logo_path','tagline','website','email','phone','address','contract_types','contract_durations','font_color','primary_color','secondary_color','accent_color','font_type','timezone','date_format','enable_email_notifications','enable_sms_notifications','enable_push_notifications','auto_reminder_days','backup_schedule','backup_day','backup_time']);
 const SYSTEM_ROLES = new Set(['SuperAdmin', 'Admin', 'Management', 'Finance', 'Developer', 'Teamlead', 'Sales', 'User']);
@@ -345,7 +346,8 @@ const initDb = async () => {
     await pool.query(`CREATE TABLE IF NOT EXISTS subsidiaries (
       id VARCHAR(36) PRIMARY KEY,
       subsidiary_name VARCHAR(50) NOT NULL UNIQUE,
-      default_escalation_matrix JSON
+      default_escalation_matrix JSON,
+      equipment_configuration JSON
     )`);
 
     // Departments
@@ -794,6 +796,9 @@ const initDb = async () => {
       const columnNames = columns.map(c => c.Field);
       if (!columnNames.includes('default_escalation_matrix')) {
         await pool.query('ALTER TABLE subsidiaries ADD COLUMN default_escalation_matrix JSON');
+      }
+      if (!columnNames.includes('equipment_configuration')) {
+        await pool.query('ALTER TABLE subsidiaries ADD COLUMN equipment_configuration JSON AFTER default_escalation_matrix');
       }
     } catch (err) {
       console.warn('Error patching subsidiaries table:', err.message);
@@ -1967,7 +1972,8 @@ app.get('/api/subsidiaries', async (req, res) => {
     const [rows] = await pool.query('SELECT * FROM subsidiaries ORDER BY subsidiary_name');
     res.json(rows.map(r => ({
       ...r,
-      default_escalation_matrix: typeof r.default_escalation_matrix === 'string' ? JSON.parse(r.default_escalation_matrix) : r.default_escalation_matrix
+      default_escalation_matrix: typeof r.default_escalation_matrix === 'string' ? JSON.parse(r.default_escalation_matrix) : r.default_escalation_matrix,
+      equipment_configuration: typeof r.equipment_configuration === 'string' ? JSON.parse(r.equipment_configuration) : r.equipment_configuration,
     })));
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
@@ -1982,6 +1988,9 @@ app.get('/api/subsidiaries/:id', async (req, res) => {
       default_escalation_matrix: typeof row.default_escalation_matrix === 'string'
         ? JSON.parse(row.default_escalation_matrix)
         : row.default_escalation_matrix,
+      equipment_configuration: typeof row.equipment_configuration === 'string'
+        ? JSON.parse(row.equipment_configuration)
+        : row.equipment_configuration,
     });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
@@ -2013,6 +2022,15 @@ app.patch('/api/subsidiaries/:id', requireCapability('subsidiaries.manage'), asy
     if (matrixUpdate) {
       try {
         matrixUpdate[1] = normalizeEscalationMatrixPayload(matrixUpdate[1], isSuperAdmin(req));
+      } catch (error) {
+        return res.status(400).json({ error: error.message });
+      }
+    }
+    const equipmentUpdate = updates.find(([key]) => key === 'equipment_configuration');
+    if (equipmentUpdate) {
+      if (!isSuperAdmin(req)) return res.status(403).json({ error: 'Only SuperAdmin can configure subsidiary E-handover equipment.' });
+      try {
+        equipmentUpdate[1] = normalizeEquipmentConfigurationPayload(equipmentUpdate[1]);
       } catch (error) {
         return res.status(400).json({ error: error.message });
       }

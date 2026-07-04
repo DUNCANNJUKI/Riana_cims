@@ -41,6 +41,7 @@ User creation and updates normalize valid international mobile numbers to E.164,
 - `DELETE /api/user_profiles/:id` requires user-management capability and cannot remove the acting account or a privileged target unless the actor is SuperAdmin.
 - `GET /api/access/permissions` and `PUT /api/user_profiles/:id/permissions` are SuperAdmin-only. Direct grants are replaced transactionally, audited, and revoke the target session.
 - `POST|PATCH|DELETE /api/subsidiaries` requires subsidiary-management capability. Delete returns `409` while attached users exist.
+- Subsidiary responses include parsed `equipment_configuration`. `PATCH /api/subsidiaries/:id` accepts an ordered list of supported, unique equipment fields with bounded labels and status text; changing that field is SuperAdmin-only.
 - Finance defaults to read-only operational/report capabilities. Management is denied installation/progress writes at the API boundary even if a direct grant is attempted.
 - Company logo uploads use `purpose: "company-logo"`; all other uploads require installation-management capability.
 - `POST|PATCH|DELETE /api/crms/profiles` and `/api/crms/user_roles` return `403` because CRMS user management is disabled by design.

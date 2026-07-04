@@ -30,6 +30,12 @@ MAREZI documents must use `public/marezi-letterhead.png`, extracted unchanged fr
 
 When adding a generator, call the shared document header and branding utilities and pass both the client/request subsidiary and generating-user subsidiary to the shared resolver. Do not implement precedence between those inputs: MAREZI membership in either input selects the approved MAREZI document identity.
 
+## Subsidiary E-handover configuration
+
+After SuperAdmin adds a subsidiary, the configuration dialog opens automatically. Use **Escalation Matrix** to maintain contact tiers and **E-Handover Equipment** to select, rename, reorder, or remove supported equipment fields and customize their successful status wording. At least one equipment item is required.
+
+The saved ordered list applies to E-handover preview, E-handover PDF, and installation report output for clients assigned to that subsidiary. Existing subsidiaries without a saved configuration retain the complete legacy equipment list until SuperAdmin saves a customized list. Only SuperAdmin can change equipment configuration; the API rejects equivalent changes from other roles.
+
 ## Release procedure
 
 Back up, apply migrations, build both clients, restart the managed API process, check `/api/health`, test login for each role, test a read and approved write per module, preview/download a handover, and inspect notification and backup status.
