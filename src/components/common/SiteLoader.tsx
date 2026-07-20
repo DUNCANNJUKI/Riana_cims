@@ -5,6 +5,8 @@ interface SiteLoaderProps {
   minDuration?: number;
 }
 
+const LOADER_LETTERS = "RIANA CIMS".split("");
+
 export const SiteLoader = ({ isLoading, minDuration = 800 }: SiteLoaderProps) => {
   const [showLoader, setShowLoader] = useState(isLoading);
 
@@ -20,38 +22,35 @@ export const SiteLoader = ({ isLoading, minDuration = 800 }: SiteLoaderProps) =>
   if (!showLoader) return null;
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900">
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-[#086f76]">
       <div className="flex flex-col items-center space-y-6 animate-fade-in">
-        {/* Company Logo */}
-        <div className="relative">
-          <img 
-            src="/Riana_mark_transparent.png"
-            alt="RIANA Group" 
-            className="h-20 w-20 object-contain animate-pulse"
+        <div className="relative flex h-28 w-28 items-center justify-center overflow-hidden rounded-2xl bg-[#086f76] shadow-2xl ring-1 ring-white/20">
+          <img
+            src="/pwa-icon.svg"
+            alt="RIANA CIMS"
+            className="h-full w-full object-cover"
           />
-          {/* Glow effect */}
-          <div className="absolute inset-0 blur-xl opacity-30 bg-primary rounded-full"></div>
+          <div className="absolute inset-0 rounded-2xl ring-4 ring-white/10 animate-ping" />
         </div>
-        
-        {/* Company Name */}
-        <div className="text-center">
-          <h1 className="text-2xl font-bold text-white tracking-wider">RIANA CIMS</h1>
-          <p className="text-sm text-slate-400 mt-1">Client Installation Management System</p>
+
+        <div className="flex h-10 items-end justify-center gap-1 text-2xl font-extrabold text-white sm:text-3xl" aria-label="RIANA CIMS loading">
+          {LOADER_LETTERS.map((letter, index) => (
+            <span
+              key={`${letter}-${index}`}
+              className={letter === " " ? "w-3" : "inline-block animate-bounce"}
+              style={letter === " " ? undefined : { animationDelay: `${index * 80}ms`, animationDuration: "900ms" }}
+              aria-hidden="true"
+            >
+              {letter === " " ? "\u00A0" : letter}
+            </span>
+          ))}
         </div>
-        
-        {/* Loading Animation */}
-        <div className="flex items-center space-x-2">
-          <div className="w-3 h-3 bg-primary rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></div>
-          <div className="w-3 h-3 bg-primary rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></div>
-          <div className="w-3 h-3 bg-primary rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></div>
+
+        <div className="h-1 w-52 overflow-hidden rounded-full bg-white/20">
+          <div className="h-full rounded-full bg-white animate-[progress_1.5s_ease-in-out_infinite]" />
         </div>
-        
-        {/* Progress Bar */}
-        <div className="w-48 h-1 bg-slate-700 rounded-full overflow-hidden">
-          <div className="h-full bg-gradient-to-r from-primary to-primary/60 rounded-full animate-[progress_1.5s_ease-in-out_infinite]"></div>
-        </div>
-        
-        <p className="text-xs text-slate-500">Loading system resources...</p>
+
+        <p className="text-xs font-medium text-white/75">Loading system resources...</p>
       </div>
     </div>
   );

@@ -18,6 +18,8 @@ import {
   FileCheck,
   Play,
   Flag,
+  Plus,
+  X,
 } from 'lucide-react';
 import { CompanyLogoLoader, PageLoader } from '@crms/components/common/CompanyLogoLoader';
 import { Button } from '@crms/components/ui/button';
@@ -32,14 +34,43 @@ import { RequestTimeline } from '@crms/components/request/RequestTimeline';
 import { useToast } from '@crms/hooks/use-toast';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@crms/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@crms/components/ui/select';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { getCimsUser } from '@crms/lib/cimsSession';
 import { Label } from '@crms/components/ui/label';
-import { useChangeRequest, useProfiles, useUpdateChangeRequest, useCreateAuditLog, useAuditLogs } from '@crms/hooks/useSupabaseData';
+import { useChangeRequest, useProfiles, useUpdateChangeRequest, useCreateAuditLog, useAuditLogs, useClientScope } from '@crms/hooks/useSupabaseData';
 import { generateChangeRequestPDF, generateCompletionReportPDF, downloadPDF } from '@crms/lib/pdfGenerator';
 import { useCurrentUserRole } from '@crms/hooks/useCurrentUserRole';
 import { useLocation } from 'react-router-dom';
 
+const defaultModules = [
+  'Authentication',
+  'User Management',
+  'Security',
+  'Reporting',
+  'Analytics',
+  'Data Export',
+  'Payment Gateway',
+  'Transaction Processing',
+  'HR Portal',
+  'Leave Management',
+  'Timesheets',
+  'Inventory',
+  'ERP Integration',
+  'Stock Management',
+  'Dashboard',
+  'Notifications',
+];
+
+const parseModulesAffected = (value: unknown): string[] => {
+  if (Array.isArray(value)) return value.filter((module): module is string => typeof module === 'string' && module.trim().length > 0);
+  if (typeof value !== 'string' || !value.trim()) return [];
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed.filter((module): module is string => typeof module === 'string' && module.trim().length > 0) : [];
+  } catch {
+    return [];
+  }
+};
 export default function RequestDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -53,6 +84,7 @@ export default function RequestDetail() {
   const { data: request, isLoading: requestLoading } = useChangeRequest(id!);
   const { data: profiles } = useProfiles();
   const { data: allAuditLogs } = useAuditLogs();
+  const { data: clientScope } = useClientScope(request?.client_id);
 
   const updateRequest = useUpdateChangeRequest();
   const createAuditLog = useCreateAuditLog();
@@ -66,19 +98,36 @@ export default function RequestDetail() {
   const [editForm, setEditForm] = useState({
     change_description: '',
     priority: '',
+    branch_id: '',
+    department_id: '',
     department: '',
+    modules_affected: [] as string[],
   });
+  const [availableEditModules, setAvailableEditModules] = useState<string[]>(defaultModules);
+  const [editCustomModule, setEditCustomModule] = useState('');
 
   const developers = profiles || [];
   const auditLogs = allAuditLogs?.filter((log: any) => log.request_id === id) || [];
+  const editBranchOptions = clientScope?.branches || [];
+  const editDepartmentOptions = useMemo(
+    () => editForm.branch_id
+      ? (clientScope?.departments || []).filter((department) => department.branch_id === editForm.branch_id)
+      : (clientScope?.departments || []),
+    [clientScope?.departments, editForm.branch_id],
+  );
 
   useEffect(() => {
     if (request) {
+      const requestModules = parseModulesAffected(request.modules_affected);
       setEditForm({
         change_description: request.change_description,
         priority: request.priority,
-        department: request.department,
+        branch_id: request.branch_id || request.branch_scope?.id || request.department_scope?.branch_id || '',
+        department_id: request.department_id || request.department_scope?.id || '',
+        department: request.department_scope?.name || request.department,
+        modules_affected: requestModules,
       });
+      setAvailableEditModules(Array.from(new Set([...defaultModules, ...requestModules])));
 
       // Auto-open assign dialog if coming from RequestList dropdown
       const params = new URLSearchParams(location.search);
@@ -93,6 +142,55 @@ export default function RequestDetail() {
   if (requestLoading) {
     return <PageLoader />;
   }
+
+  const handleEditModuleToggle = (module: string) => {
+    setEditForm((prev) => ({
+      ...prev,
+      modules_affected: prev.modules_affected.includes(module)
+        ? prev.modules_affected.filter((selected) => selected !== module)
+        : [...prev.modules_affected, module],
+    }));
+  };
+
+  const handleAddEditModule = () => {
+    const moduleName = editCustomModule.trim().replace(/\s+/g, ' ');
+    if (!moduleName) return;
+    const existingModule = availableEditModules.find((module) => module.toLowerCase() === moduleName.toLowerCase());
+    const resolvedModule = existingModule || moduleName;
+    if (!existingModule) setAvailableEditModules((prev) => [...prev, moduleName]);
+    setEditForm((prev) => ({
+      ...prev,
+      modules_affected: prev.modules_affected.includes(resolvedModule) ? prev.modules_affected : [...prev.modules_affected, resolvedModule],
+    }));
+    setEditCustomModule('');
+  };
+
+  const handleEditBranchChange = (branchId: string) => {
+    setEditForm((prev) => ({
+      ...prev,
+      branch_id: branchId,
+      department_id: '',
+      department: '',
+    }));
+  };
+
+  const handleEditDepartmentChange = (departmentId: string) => {
+    const selectedDepartment = (clientScope?.departments || []).find((department) => department.id === departmentId);
+    setEditForm((prev) => ({
+      ...prev,
+      department_id: departmentId,
+      branch_id: selectedDepartment?.branch_id || prev.branch_id,
+      department: selectedDepartment?.department_name || prev.department,
+    }));
+  };
+
+  const handleDeleteEditModule = (module: string) => {
+    setAvailableEditModules((prev) => prev.filter((availableModule) => availableModule !== module));
+    setEditForm((prev) => ({
+      ...prev,
+      modules_affected: prev.modules_affected.filter((selectedModule) => selectedModule !== module),
+    }));
+  };
 
   if (!request) {
     return (
@@ -367,12 +465,110 @@ export default function RequestDetail() {
                     </SelectContent>
                   </Select>
                 </div>
-                <div className="space-y-2">
-                  <Label>Department</Label>
-                  <Input
-                    value={editForm.department}
-                    onChange={(e) => setEditForm(prev => ({ ...prev, department: e.target.value }))}
-                  />
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label>Branch</Label>
+                    <Select value={editForm.branch_id} onValueChange={handleEditBranchChange} disabled={editBranchOptions.length === 0}>
+                      <SelectTrigger>
+                        <SelectValue placeholder={editBranchOptions.length ? "Select branch" : "No branches configured"} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {editBranchOptions.map((branch) => (
+                          <SelectItem key={branch.id} value={branch.id}>
+                            {branch.branch_name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Department</Label>
+                    <Select
+                      value={editForm.department_id}
+                      onValueChange={handleEditDepartmentChange}
+                      disabled={(editBranchOptions.length > 0 && !editForm.branch_id) || editDepartmentOptions.length === 0}
+                    >
+                      <SelectTrigger>
+                        <SelectValue
+                          placeholder={
+                            editBranchOptions.length > 0 && !editForm.branch_id
+                              ? "Select branch first"
+                              : editDepartmentOptions.length
+                                ? "Select department"
+                                : "No departments configured"
+                          }
+                        />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {editDepartmentOptions.map((department) => (
+                          <SelectItem key={department.id} value={department.id}>
+                            {department.department_name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+                <div className="space-y-3">
+                  <Label>Modules Affected</Label>
+                  <div className="grid grid-cols-2 gap-2">
+                    {availableEditModules.map((module) => (
+                      <div key={module} className="flex min-w-0 items-center gap-2 rounded-md border border-border/60 px-2 py-1.5">
+                        <input
+                          id={`edit-module-${module}`}
+                          type="checkbox"
+                          className="h-4 w-4 accent-primary"
+                          checked={editForm.modules_affected.includes(module)}
+                          onChange={() => handleEditModuleToggle(module)}
+                        />
+                        <Label htmlFor={`edit-module-${module}`} className="min-w-0 flex-1 cursor-pointer truncate text-sm font-normal">
+                          {module}
+                        </Label>
+                        <button
+                          type="button"
+                          className="rounded p-1 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                          onClick={() => handleDeleteEditModule(module)}
+                          aria-label={`Delete ${module}`}
+                        >
+                          <X className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="flex gap-2">
+                    <Input
+                      value={editCustomModule}
+                      onChange={(event) => setEditCustomModule(event.target.value)}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter') {
+                          event.preventDefault();
+                          handleAddEditModule();
+                        }
+                      }}
+                      placeholder="Add module affected"
+                    />
+                    <Button type="button" variant="outline" onClick={handleAddEditModule}>
+                      <Plus className="mr-2 h-4 w-4" />
+                      Add
+                    </Button>
+                  </div>
+                  {editForm.modules_affected.length > 0 && (
+                    <div className="flex flex-wrap gap-2">
+                      {editForm.modules_affected.map((module) => (
+                        <span key={module} className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-medium text-primary">
+                          {module}
+                          <button
+                            type="button"
+                            className="rounded-full p-0.5 hover:bg-primary/15"
+                            onClick={() => setEditForm((prev) => ({ ...prev, modules_affected: prev.modules_affected.filter((selected) => selected !== module) }))}
+                            aria-label={`Remove ${module}`}
+                          >
+                            <X className="h-3 w-3" />
+                          </button>
+                        </span>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </div>
               <DialogFooter>
@@ -516,7 +712,7 @@ export default function RequestDetail() {
             </CardHeader>
             <CardContent>
               <div className="flex flex-wrap gap-2">
-                {(Array.isArray(request.modules_affected) ? request.modules_affected : JSON.parse(request.modules_affected || '[]')).map((module: string) => (
+                {parseModulesAffected(request.modules_affected).map((module: string) => (
                   <span
                     key={module}
                     className="inline-flex items-center px-3 py-1.5 rounded-lg text-sm font-medium bg-primary/10 text-primary border border-primary/20"
@@ -689,3 +885,6 @@ export default function RequestDetail() {
     </div>
   );
 }
+
+
+

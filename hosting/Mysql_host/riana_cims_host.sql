@@ -1,5 +1,5 @@
 -- RIANA CIMS MySQL hosting database
--- Generated 2026-07-20T09:18:38.457Z
+-- Generated 2026-07-20T20:47:51.339Z
 -- Complete schema with sanitized reference data; no credentials or customer records.
 SET NAMES utf8mb4;
 SET FOREIGN_KEY_CHECKS = 0;
@@ -254,7 +254,7 @@ CREATE TABLE `company_settings` (
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-INSERT INTO `company_settings` (`id`, `name`, `logo_path`, `font_color`, `primary_color`, `font_type`, `contract_types`, `backup_schedule`, `updated_at`, `backup_day`, `backup_time`, `tagline`, `website`, `email`, `phone`, `address`, `contract_durations`, `secondary_color`, `accent_color`, `timezone`, `date_format`, `enable_email_notifications`, `enable_sms_notifications`, `enable_push_notifications`, `auto_reminder_days`) VALUES (1, 'RIANA CIMS', '/Riana_logo.png', '#000000', '#1A91AB', 'Inter', '[\"AMC\",\"Once-off\",\"Subscription\"]', '0 2 * * *', '2026-03-21 23:06:17.000', 'Daily', '02:00', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 'Africa/Nairobi', 'DD/MM/YYYY', 1, 1, 1, 3);
+INSERT INTO `company_settings` (`id`, `name`, `logo_path`, `font_color`, `primary_color`, `font_type`, `contract_types`, `backup_schedule`, `updated_at`, `backup_day`, `backup_time`, `tagline`, `website`, `email`, `phone`, `address`, `contract_durations`, `secondary_color`, `accent_color`, `timezone`, `date_format`, `enable_email_notifications`, `enable_sms_notifications`, `enable_push_notifications`, `auto_reminder_days`) VALUES (1, 'RIANA CIMS', '/Riana_logo.png', '#000000', '#1A91AB', 'Inter', '[\"AMC\",\"Once-off\",\"Subscription\"]', '0 2 * * *', '2026-07-20 21:31:20.000', 'Daily', '02:00', 'Innovative Technology Solutions', 'https://www.riana.co', 'info@riana.co', '+254 700 000 000', '6th Floor, Allianz Plaza, 96 Riverside Drive, Nairobi, Kenya', '{\"AMC\":\"12 months\",\"WARRANTY\":\"24 months\",\"LEASE\":\"36 months\",\"POC\":\"3 months\"}', '#10b981', '#f59e0b', 'Africa/Nairobi', 'DD/MM/YYYY', 1, 1, 1, 3);
 
 DROP TABLE IF EXISTS `contact_reveal_audit`;
 CREATE TABLE `contact_reveal_audit` (
@@ -295,6 +295,9 @@ CREATE TABLE `crms_change_requests` (
   `id` varchar(36) NOT NULL,
   `ticket_number` varchar(50) NOT NULL,
   `client_id` varchar(36) NOT NULL,
+  `branch_id` varchar(36) DEFAULT NULL,
+  `department_id` varchar(36) DEFAULT NULL,
+  `installation_id` varchar(36) DEFAULT NULL,
   `department` varchar(255) NOT NULL,
   `date_requested` date NOT NULL,
   `source` enum('email','phone','whatsapp','meeting') NOT NULL,
@@ -317,7 +320,9 @@ CREATE TABLE `crms_change_requests` (
   UNIQUE KEY `ticket_number` (`ticket_number`),
   KEY `senior_developer_id` (`senior_developer_id`),
   KEY `idx_crms_requests_client_status` (`client_id`,`status`),
-  KEY `idx_crms_requests_assignee_status` (`assigned_developer_id`,`status`)
+  KEY `idx_crms_requests_assignee_status` (`assigned_developer_id`,`status`),
+  KEY `idx_crms_change_requests_scope` (`client_id`,`branch_id`,`department_id`),
+  KEY `idx_crms_change_requests_installation` (`installation_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 DROP TABLE IF EXISTS `crms_client_links`;
@@ -394,6 +399,8 @@ DROP TABLE IF EXISTS `feedback_links`;
 CREATE TABLE `feedback_links` (
   `id` varchar(36) NOT NULL,
   `client_id` varchar(36) NOT NULL,
+  `branch_id` varchar(36) DEFAULT NULL,
+  `department_id` varchar(36) DEFAULT NULL,
   `installation_id` varchar(36) DEFAULT NULL,
   `unique_token` varchar(255) NOT NULL,
   `expires_at` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
@@ -408,7 +415,8 @@ CREATE TABLE `feedback_links` (
   KEY `idx_client_id` (`client_id`),
   KEY `idx_feedback_links_client_expiry` (`client_id`,`expires_at`),
   KEY `idx_feedback_links_client_active` (`client_id`,`installation_id`,`is_used`,`expires_at`),
-  KEY `idx_feedback_links_token_expires` (`unique_token`,`expires_at`)
+  KEY `idx_feedback_links_token_expires` (`unique_token`,`expires_at`),
+  KEY `idx_feedback_links_scope` (`client_id`,`branch_id`,`department_id`,`is_used`,`expires_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 DROP TABLE IF EXISTS `feedback_questions`;
@@ -454,7 +462,9 @@ CREATE TABLE `handover_uploads` (
   `file_hash` char(64) DEFAULT NULL,
   PRIMARY KEY (`id`),
   KEY `idx_client_id` (`client_id`),
-  KEY `idx_installation_id` (`installation_id`)
+  KEY `idx_installation_id` (`installation_id`),
+  KEY `idx_handover_scope` (`client_id`,`branch_id`,`department_id`,`work_type`),
+  KEY `idx_handover_version_group` (`version_group_id`,`is_latest_version`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 DROP TABLE IF EXISTS `installations`;
@@ -500,7 +510,8 @@ CREATE TABLE `installations` (
   KEY `idx_client_id` (`client_id`),
   KEY `idx_status` (`status`),
   KEY `idx_installations_client_status` (`client_id`,`status`),
-  KEY `idx_installations_client_created` (`client_id`,`created_at`)
+  KEY `idx_installations_client_created` (`client_id`,`created_at`),
+  KEY `idx_installations_branch_department` (`branch_id`,`department_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 DROP TABLE IF EXISTS `installation_budgets`;
@@ -521,6 +532,7 @@ CREATE TABLE `installation_budgets` (
   PRIMARY KEY (`id`),
   KEY `installation_id` (`installation_id`),
   KEY `created_by` (`created_by`),
+  KEY `idx_installation_budgets_installation` (`installation_id`,`created_at`),
   CONSTRAINT `installation_budgets_ibfk_1` FOREIGN KEY (`installation_id`) REFERENCES `installations` (`id`) ON DELETE CASCADE,
   CONSTRAINT `installation_budgets_ibfk_2` FOREIGN KEY (`created_by`) REFERENCES `user_profiles` (`id`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -682,6 +694,10 @@ INSERT INTO `migration_history` (`migration_id`, `description`, `applied_at`) VA
 INSERT INTO `migration_history` (`migration_id`, `description`, `applied_at`) VALUES ('20260710_profile_avatar_chat_messages', 'Applied from 20260710_profile_avatar_chat_messages.sql', '2026-07-15 18:03:10.000');
 INSERT INTO `migration_history` (`migration_id`, `description`, `applied_at`) VALUES ('20260714_chat_presence_missed_call_dismissals', 'Applied from 20260714_chat_presence_missed_call_dismissals.sql', '2026-07-15 18:03:10.000');
 INSERT INTO `migration_history` (`migration_id`, `description`, `applied_at`) VALUES ('20260715_private_file_management', 'Applied from 20260715_private_file_management.sql', '2026-07-15 18:03:10.000');
+INSERT INTO `migration_history` (`migration_id`, `description`, `applied_at`) VALUES ('20260717_ehandover_completion_status', 'Applied from 20260717_ehandover_completion_status.sql', '2026-07-20 22:19:41.000');
+INSERT INTO `migration_history` (`migration_id`, `description`, `applied_at`) VALUES ('20260718_client_branch_department_scope', 'Applied from 20260718_client_branch_department_scope.sql', '2026-07-20 22:19:41.000');
+INSERT INTO `migration_history` (`migration_id`, `description`, `applied_at`) VALUES ('20260719_live_module_schema_repair', 'Applied from 20260719_live_module_schema_repair.sql', '2026-07-20 22:19:41.000');
+INSERT INTO `migration_history` (`migration_id`, `description`, `applied_at`) VALUES ('20260720_developer_request_scope_submit_fix', 'Applied from 20260720_developer_request_scope_submit_fix.sql', '2026-07-20 23:47:43.000');
 
 DROP TABLE IF EXISTS `missed_call_dismissals`;
 CREATE TABLE `missed_call_dismissals` (
@@ -1079,404 +1095,6 @@ CREATE TABLE `user_profiles` (
   KEY `idx_users_active_role` (`is_active`,`role`),
   KEY `idx_user_profiles_active_role` (`is_active`,`role`,`created_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
--- Pending idempotent migration: 20260717_ehandover_completion_status.sql
--- RIANA CIMS live database update
--- Date: 2026-07-17
--- Feature: E-handover export completion status alignment
--- Safe to rerun. This script adds missing handover columns and backfills
--- completed installation status for installations with uploaded E-handovers.
---
--- BEFORE IMPORTING:
--- 1. Create and verify a full production database backup.
--- 2. Import after 20260714_chat_presence_missed_call_dismissals.sql.
--- 3. In phpMyAdmin, select the existing RIANA CIMS production database.
---
--- ROLLBACK PLAN:
--- 1. Roll back the application build first if needed.
--- 2. Restore the verified database backup if the completion-status backfill must be reversed.
-
-SET NAMES utf8mb4;
-
-CREATE TABLE IF NOT EXISTS migration_history (
-  migration_id VARCHAR(100) NOT NULL,
-  description VARCHAR(255) NOT NULL,
-  applied_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  PRIMARY KEY (migration_id)
-);
-
-DELIMITER $$
-
-DROP PROCEDURE IF EXISTS riana_add_column_if_missing $$
-CREATE PROCEDURE riana_add_column_if_missing(
-  IN target_table VARCHAR(64),
-  IN target_column VARCHAR(64),
-  IN column_definition TEXT
-)
-BEGIN
-  DECLARE duplicate_column CONDITION FOR 1060;
-  DECLARE CONTINUE HANDLER FOR duplicate_column BEGIN END;
-
-  SET @riana_sql = CONCAT('ALTER TABLE `', target_table, '` ADD COLUMN ', column_definition);
-  PREPARE riana_stmt FROM @riana_sql;
-  EXECUTE riana_stmt;
-  DEALLOCATE PREPARE riana_stmt;
-END $$
-
-DELIMITER ;
-
-CALL riana_add_column_if_missing('installations', 'handover_file_path', '`handover_file_path` TEXT NULL');
-CALL riana_add_column_if_missing('installations', 'handover_status', '`handover_status` VARCHAR(50) DEFAULT ''pending''');
-
-UPDATE installations i
-JOIN (
-  SELECT
-    installation_id,
-    MAX(upload_date) AS latest_upload_date,
-    MAX(file_path) AS latest_file_path,
-    MAX(CASE WHEN is_signed = 1 THEN 1 ELSE 0 END) AS has_signed_upload
-  FROM handover_uploads
-  WHERE installation_id IS NOT NULL
-  GROUP BY installation_id
-) h ON h.installation_id = i.id
-SET
-  i.status = 'completed',
-  i.completion_date = COALESCE(i.completion_date, DATE(h.latest_upload_date), CURDATE()),
-  i.handover_file_path = COALESCE(i.handover_file_path, h.latest_file_path),
-  i.handover_status = CASE
-    WHEN h.has_signed_upload = 1 THEN 'signed'
-    ELSE COALESCE(i.handover_status, 'uploaded')
-  END;
-
-DROP PROCEDURE IF EXISTS riana_add_column_if_missing;
-
-INSERT INTO migration_history (migration_id, description)
-VALUES (
-  '20260717_ehandover_completion_status',
-  'Adds E-handover installation completion/status columns and backfills completed installations from uploads'
-)
-ON DUPLICATE KEY UPDATE
-  description = VALUES(description);
-
-SHOW COLUMNS FROM installations LIKE 'handover_file_path';
-SHOW COLUMNS FROM installations LIKE 'handover_status';
-SELECT COUNT(*) AS completed_ehandover_installations
-FROM installations i
-JOIN handover_uploads h ON h.installation_id = i.id
-WHERE i.status = 'completed';
-
--- Pending idempotent migration: 20260718_client_branch_department_scope.sql
--- Client branch/department hierarchy, access scope, and secure handover metadata.
-SET NAMES utf8mb4;
--- Additive only: existing clients, installations, change requests, and handover uploads remain valid.
-
-CREATE TABLE IF NOT EXISTS client_branches (
-  id VARCHAR(36) PRIMARY KEY,
-  client_id VARCHAR(36) NOT NULL,
-  branch_name VARCHAR(150) NOT NULL,
-  branch_code VARCHAR(60) NULL,
-  contact_person_name VARCHAR(150) NULL,
-  contact_email VARCHAR(255) NULL,
-  contact_phone VARCHAR(30) NULL,
-  physical_address TEXT NULL,
-  status VARCHAR(30) NOT NULL DEFAULT 'active',
-  notes TEXT NULL,
-  created_by VARCHAR(36) NULL,
-  updated_by VARCHAR(36) NULL,
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  deleted_at TIMESTAMP NULL,
-  INDEX idx_client_branches_client_status (client_id,status),
-  UNIQUE KEY uq_client_branches_name (client_id,branch_name)
-);
-
-CREATE TABLE IF NOT EXISTS client_departments (
-  id VARCHAR(36) PRIMARY KEY,
-  client_id VARCHAR(36) NOT NULL,
-  branch_id VARCHAR(36) NOT NULL,
-  department_name VARCHAR(150) NOT NULL,
-  department_code VARCHAR(60) NULL,
-  contact_person_name VARCHAR(150) NULL,
-  contact_email VARCHAR(255) NULL,
-  contact_phone VARCHAR(30) NULL,
-  status VARCHAR(30) NOT NULL DEFAULT 'active',
-  notes TEXT NULL,
-  created_by VARCHAR(36) NULL,
-  updated_by VARCHAR(36) NULL,
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  deleted_at TIMESTAMP NULL,
-  INDEX idx_client_departments_branch_status (branch_id,status),
-  INDEX idx_client_departments_client_status (client_id,status),
-  UNIQUE KEY uq_client_departments_name (branch_id,department_name)
-);
-
-CREATE TABLE IF NOT EXISTS user_access_scopes (
-  id VARCHAR(36) PRIMARY KEY,
-  user_id VARCHAR(36) NOT NULL,
-  scope_type VARCHAR(40) NOT NULL DEFAULT 'all_clients',
-  client_id VARCHAR(36) NULL,
-  branch_id VARCHAR(36) NULL,
-  department_id VARCHAR(36) NULL,
-  include_future_departments BOOLEAN NOT NULL DEFAULT TRUE,
-  created_by VARCHAR(36) NULL,
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  UNIQUE KEY uq_user_access_scope (user_id,scope_type,client_id,branch_id,department_id),
-  INDEX idx_user_access_scope_user (user_id)
-);
-
-DELIMITER $$
-
-DROP PROCEDURE IF EXISTS riana_add_column_if_missing $$
-CREATE PROCEDURE riana_add_column_if_missing(IN p_sql TEXT)
-BEGIN
-  DECLARE duplicate_column CONDITION FOR 1060;
-  DECLARE CONTINUE HANDLER FOR duplicate_column BEGIN END;
-
-  SET @riana_sql = p_sql;
-  PREPARE stmt FROM @riana_sql;
-  EXECUTE stmt;
-  DEALLOCATE PREPARE stmt;
-END $$
-
-DROP PROCEDURE IF EXISTS riana_add_index_if_missing $$
-CREATE PROCEDURE riana_add_index_if_missing(IN p_table VARCHAR(64), IN p_index VARCHAR(64), IN p_sql TEXT)
-BEGIN
-  DECLARE duplicate_key CONDITION FOR 1061;
-  DECLARE CONTINUE HANDLER FOR duplicate_key BEGIN END;
-
-  SET @riana_sql = p_sql;
-  PREPARE stmt FROM @riana_sql;
-  EXECUTE stmt;
-  DEALLOCATE PREPARE stmt;
-END $$
-
-DELIMITER ;
-
-CALL riana_add_column_if_missing('ALTER TABLE installations ADD COLUMN branch_id VARCHAR(36) NULL AFTER client_id');
-CALL riana_add_column_if_missing('ALTER TABLE installations ADD COLUMN department_id VARCHAR(36) NULL AFTER branch_id');
-CALL riana_add_index_if_missing('installations', 'idx_installations_branch_department', 'ALTER TABLE installations ADD INDEX idx_installations_branch_department (branch_id, department_id)');
-
-CALL riana_add_column_if_missing('ALTER TABLE crms_change_requests ADD COLUMN branch_id VARCHAR(36) NULL AFTER client_id');
-CALL riana_add_column_if_missing('ALTER TABLE crms_change_requests ADD COLUMN department_id VARCHAR(36) NULL AFTER branch_id');
-CALL riana_add_column_if_missing('ALTER TABLE crms_change_requests ADD COLUMN installation_id VARCHAR(36) NULL AFTER department_id');
-CALL riana_add_index_if_missing('crms_change_requests', 'idx_crms_change_requests_scope', 'ALTER TABLE crms_change_requests ADD INDEX idx_crms_change_requests_scope (client_id, branch_id, department_id)');
-CALL riana_add_index_if_missing('crms_change_requests', 'idx_crms_change_requests_installation', 'ALTER TABLE crms_change_requests ADD INDEX idx_crms_change_requests_installation (installation_id)');
-
-CALL riana_add_column_if_missing('ALTER TABLE handover_uploads ADD COLUMN branch_id VARCHAR(36) NULL AFTER installation_id');
-CALL riana_add_column_if_missing('ALTER TABLE handover_uploads ADD COLUMN department_id VARCHAR(36) NULL AFTER branch_id');
-CALL riana_add_column_if_missing('ALTER TABLE handover_uploads ADD COLUMN work_type VARCHAR(40) NOT NULL DEFAULT ''installation'' AFTER department_id');
-CALL riana_add_column_if_missing('ALTER TABLE handover_uploads ADD COLUMN change_request_id VARCHAR(36) NULL AFTER work_type');
-CALL riana_add_column_if_missing('ALTER TABLE handover_uploads ADD COLUMN version_group_id VARCHAR(36) NULL AFTER change_request_id');
-CALL riana_add_column_if_missing('ALTER TABLE handover_uploads ADD COLUMN version_number INT NOT NULL DEFAULT 1 AFTER version_group_id');
-CALL riana_add_column_if_missing('ALTER TABLE handover_uploads ADD COLUMN is_latest_version BOOLEAN NOT NULL DEFAULT TRUE AFTER version_number');
-CALL riana_add_column_if_missing('ALTER TABLE handover_uploads ADD COLUMN status VARCHAR(30) NOT NULL DEFAULT ''uploaded'' AFTER is_latest_version');
-CALL riana_add_column_if_missing('ALTER TABLE handover_uploads ADD COLUMN file_hash CHAR(64) NULL AFTER status');
-CALL riana_add_index_if_missing('handover_uploads', 'idx_handover_scope', 'ALTER TABLE handover_uploads ADD INDEX idx_handover_scope (client_id, branch_id, department_id, work_type)');
-CALL riana_add_index_if_missing('handover_uploads', 'idx_handover_version_group', 'ALTER TABLE handover_uploads ADD INDEX idx_handover_version_group (version_group_id, is_latest_version)');
-CALL riana_add_column_if_missing('ALTER TABLE client_assignments ADD COLUMN branch_id VARCHAR(36) NULL AFTER client_id');
-CALL riana_add_column_if_missing('ALTER TABLE client_assignments ADD COLUMN department_id VARCHAR(36) NULL AFTER branch_id');
-CALL riana_add_column_if_missing('ALTER TABLE client_assignments ADD COLUMN installation_id VARCHAR(36) NULL AFTER department_id');
-CALL riana_add_index_if_missing('client_assignments', 'idx_assignment_scope', 'ALTER TABLE client_assignments ADD INDEX idx_assignment_scope (client_id, branch_id, department_id)');
-
-INSERT IGNORE INTO client_branches
-  (id, client_id, branch_name, branch_code, status, notes)
-SELECT
-  UUID(),
-  c.id,
-  COALESCE(NULLIF(TRIM(c.branch), ''), 'MAIN'),
-  CASE WHEN NULLIF(TRIM(c.branch), '') IS NULL THEN 'MAIN' ELSE NULL END,
-  'active',
-  'Auto-created primary branch for existing client'
-FROM clients c
-WHERE NOT EXISTS (
-  SELECT 1
-  FROM client_branches b
-  WHERE CONVERT(b.client_id USING utf8mb4) COLLATE utf8mb4_unicode_ci = CONVERT(c.id USING utf8mb4) COLLATE utf8mb4_unicode_ci
-    AND b.deleted_at IS NULL
-);
-
-DROP PROCEDURE IF EXISTS riana_add_column_if_missing;
-DROP PROCEDURE IF EXISTS riana_add_index_if_missing;
-
--- Pending idempotent migration: 20260719_live_module_schema_repair.sql
--- Live module schema repair for Developers, feedback links, messaging presence, assignments, and finances.
-SET NAMES utf8mb4;
-
-CREATE TABLE IF NOT EXISTS migration_history (
-  migration_id VARCHAR(100) PRIMARY KEY,
-  description TEXT,
-  applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE TABLE IF NOT EXISTS client_branches (
-  id VARCHAR(36) PRIMARY KEY,
-  client_id VARCHAR(36) NOT NULL,
-  branch_name VARCHAR(150) NOT NULL,
-  branch_code VARCHAR(60) NULL,
-  contact_person_name VARCHAR(150) NULL,
-  contact_email VARCHAR(255) NULL,
-  contact_phone VARCHAR(30) NULL,
-  physical_address TEXT NULL,
-  status VARCHAR(30) NOT NULL DEFAULT 'active',
-  notes TEXT NULL,
-  created_by VARCHAR(36) NULL,
-  updated_by VARCHAR(36) NULL,
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  deleted_at TIMESTAMP NULL,
-  INDEX idx_client_branches_client_status (client_id,status),
-  UNIQUE KEY uq_client_branches_name (client_id,branch_name)
-);
-
-CREATE TABLE IF NOT EXISTS client_departments (
-  id VARCHAR(36) PRIMARY KEY,
-  client_id VARCHAR(36) NOT NULL,
-  branch_id VARCHAR(36) NOT NULL,
-  department_name VARCHAR(150) NOT NULL,
-  department_code VARCHAR(60) NULL,
-  contact_person_name VARCHAR(150) NULL,
-  contact_email VARCHAR(255) NULL,
-  contact_phone VARCHAR(30) NULL,
-  status VARCHAR(30) NOT NULL DEFAULT 'active',
-  notes TEXT NULL,
-  created_by VARCHAR(36) NULL,
-  updated_by VARCHAR(36) NULL,
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  deleted_at TIMESTAMP NULL,
-  INDEX idx_client_departments_branch_status (branch_id,status),
-  INDEX idx_client_departments_client_status (client_id,status),
-  UNIQUE KEY uq_client_departments_name (branch_id,department_name)
-);
-
-CREATE TABLE IF NOT EXISTS user_access_scopes (
-  id VARCHAR(36) PRIMARY KEY,
-  user_id VARCHAR(36) NOT NULL,
-  scope_type VARCHAR(40) NOT NULL DEFAULT 'all_clients',
-  client_id VARCHAR(36) NULL,
-  branch_id VARCHAR(36) NULL,
-  department_id VARCHAR(36) NULL,
-  include_future_departments BOOLEAN NOT NULL DEFAULT TRUE,
-  created_by VARCHAR(36) NULL,
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  UNIQUE KEY uq_user_access_scope (user_id,scope_type,client_id,branch_id,department_id),
-  INDEX idx_user_access_scope_user (user_id)
-);
-
-CREATE TABLE IF NOT EXISTS installation_budgets (
-  id VARCHAR(36) PRIMARY KEY,
-  installation_id VARCHAR(36) NOT NULL,
-  total_budget FLOAT DEFAULT 0,
-  labor_cost FLOAT DEFAULT 0,
-  equipment_cost FLOAT DEFAULT 0,
-  transport_cost FLOAT DEFAULT 0,
-  miscellaneous_cost FLOAT DEFAULT 0,
-  notes TEXT,
-  created_by VARCHAR(36),
-  currency VARCHAR(10) DEFAULT 'KES',
-  branch VARCHAR(100),
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-);
-
-DELIMITER $$
-
-DROP PROCEDURE IF EXISTS riana_add_column_if_missing $$
-CREATE PROCEDURE riana_add_column_if_missing(IN p_sql TEXT)
-BEGIN
-  DECLARE duplicate_column CONDITION FOR 1060;
-  DECLARE CONTINUE HANDLER FOR duplicate_column BEGIN END;
-
-  SET @riana_sql = p_sql;
-  PREPARE stmt FROM @riana_sql;
-  EXECUTE stmt;
-  DEALLOCATE PREPARE stmt;
-END $$
-
-DROP PROCEDURE IF EXISTS riana_add_index_if_missing $$
-CREATE PROCEDURE riana_add_index_if_missing(IN p_table VARCHAR(64), IN p_index VARCHAR(64), IN p_sql TEXT)
-BEGIN
-  DECLARE duplicate_key CONDITION FOR 1061;
-  DECLARE CONTINUE HANDLER FOR duplicate_key BEGIN END;
-
-  SET @riana_sql = p_sql;
-  PREPARE stmt FROM @riana_sql;
-  EXECUTE stmt;
-  DEALLOCATE PREPARE stmt;
-END $$
-
-DELIMITER ;
-
-CALL riana_add_column_if_missing('ALTER TABLE user_profiles ADD COLUMN avatar_url VARCHAR(255) NULL');
-CALL riana_add_column_if_missing('ALTER TABLE user_profiles ADD COLUMN last_seen_at TIMESTAMP NULL');
-CALL riana_add_index_if_missing('user_profiles', 'idx_user_profiles_active_role', 'ALTER TABLE user_profiles ADD INDEX idx_user_profiles_active_role (is_active, role, created_at)');
-
-CALL riana_add_column_if_missing('ALTER TABLE crms_change_requests ADD COLUMN branch_id VARCHAR(36) NULL AFTER client_id');
-CALL riana_add_column_if_missing('ALTER TABLE crms_change_requests ADD COLUMN department_id VARCHAR(36) NULL AFTER branch_id');
-CALL riana_add_column_if_missing('ALTER TABLE crms_change_requests ADD COLUMN installation_id VARCHAR(36) NULL AFTER department_id');
-CALL riana_add_index_if_missing('crms_change_requests', 'idx_crms_change_requests_scope', 'ALTER TABLE crms_change_requests ADD INDEX idx_crms_change_requests_scope (client_id, branch_id, department_id)');
-CALL riana_add_index_if_missing('crms_change_requests', 'idx_crms_change_requests_installation', 'ALTER TABLE crms_change_requests ADD INDEX idx_crms_change_requests_installation (installation_id)');
-
-CALL riana_add_column_if_missing('ALTER TABLE feedback_links ADD COLUMN branch_id VARCHAR(36) NULL AFTER client_id');
-CALL riana_add_column_if_missing('ALTER TABLE feedback_links ADD COLUMN department_id VARCHAR(36) NULL AFTER branch_id');
-CALL riana_add_index_if_missing('feedback_links', 'idx_feedback_links_scope', 'ALTER TABLE feedback_links ADD INDEX idx_feedback_links_scope (client_id, branch_id, department_id, is_used, expires_at)');
-CALL riana_add_index_if_missing('feedback_links', 'idx_feedback_links_token_expires', 'ALTER TABLE feedback_links ADD INDEX idx_feedback_links_token_expires (unique_token, expires_at)');
-
-CALL riana_add_column_if_missing('ALTER TABLE client_assignments ADD COLUMN branch_id VARCHAR(36) NULL AFTER client_id');
-CALL riana_add_column_if_missing('ALTER TABLE client_assignments ADD COLUMN department_id VARCHAR(36) NULL AFTER branch_id');
-CALL riana_add_column_if_missing('ALTER TABLE client_assignments ADD COLUMN installation_id VARCHAR(36) NULL AFTER department_id');
-CALL riana_add_column_if_missing('ALTER TABLE client_assignments ADD COLUMN branch VARCHAR(100) NULL AFTER notes');
-CALL riana_add_index_if_missing('client_assignments', 'idx_assignment_scope', 'ALTER TABLE client_assignments ADD INDEX idx_assignment_scope (client_id, branch_id, department_id)');
-
-CALL riana_add_column_if_missing('ALTER TABLE installations ADD COLUMN branch_id VARCHAR(36) NULL AFTER client_id');
-CALL riana_add_column_if_missing('ALTER TABLE installations ADD COLUMN department_id VARCHAR(36) NULL AFTER branch_id');
-CALL riana_add_index_if_missing('installations', 'idx_installations_branch_department', 'ALTER TABLE installations ADD INDEX idx_installations_branch_department (branch_id, department_id)');
-
-CALL riana_add_column_if_missing('ALTER TABLE installation_budgets ADD COLUMN currency VARCHAR(10) DEFAULT ''KES''');
-CALL riana_add_column_if_missing('ALTER TABLE installation_budgets ADD COLUMN branch VARCHAR(100) NULL');
-CALL riana_add_column_if_missing('ALTER TABLE installation_budgets ADD COLUMN created_by VARCHAR(36) NULL');
-CALL riana_add_index_if_missing('installation_budgets', 'idx_installation_budgets_installation', 'ALTER TABLE installation_budgets ADD INDEX idx_installation_budgets_installation (installation_id, created_at)');
-
-INSERT IGNORE INTO client_branches
-  (id, client_id, branch_name, branch_code, status, notes)
-SELECT
-  UUID(),
-  c.id,
-  COALESCE(NULLIF(TRIM(c.branch), ''), 'MAIN'),
-  CASE WHEN NULLIF(TRIM(c.branch), '') IS NULL THEN 'MAIN' ELSE NULL END,
-  'active',
-  'Auto-created primary branch for existing client'
-FROM clients c
-WHERE NOT EXISTS (
-  SELECT 1
-  FROM client_branches b
-  WHERE CONVERT(b.client_id USING utf8mb4) COLLATE utf8mb4_unicode_ci = CONVERT(c.id USING utf8mb4) COLLATE utf8mb4_unicode_ci
-    AND b.deleted_at IS NULL
-);
-
-DROP PROCEDURE IF EXISTS riana_add_column_if_missing;
-DROP PROCEDURE IF EXISTS riana_add_index_if_missing;
-
-INSERT INTO migration_history (migration_id, description)
-VALUES (
-  '20260719_live_module_schema_repair',
-  'Repairs live module schema for Developers, feedback links, messaging presence, assignments, and finances'
-)
-ON DUPLICATE KEY UPDATE
-  description = VALUES(description);
-
-SHOW COLUMNS FROM user_profiles LIKE 'last_seen_at';
-SHOW COLUMNS FROM feedback_links LIKE 'branch_id';
-SHOW COLUMNS FROM feedback_links LIKE 'department_id';
-SHOW COLUMNS FROM client_assignments LIKE 'branch_id';
-SHOW COLUMNS FROM client_assignments LIKE 'department_id';
-SHOW COLUMNS FROM crms_change_requests LIKE 'branch_id';
-SHOW COLUMNS FROM crms_change_requests LIKE 'department_id';
-SHOW TABLES LIKE 'installation_budgets';
-SELECT COUNT(*) AS clients_without_branch_rows FROM clients c WHERE NOT EXISTS (SELECT 1 FROM client_branches b WHERE CONVERT(b.client_id USING utf8mb4) COLLATE utf8mb4_unicode_ci = CONVERT(c.id USING utf8mb4) COLLATE utf8mb4_unicode_ci AND b.deleted_at IS NULL);
 
 -- Inactive bootstrap principal: it has no password and cannot sign in until explicitly activated.
 -- Set a private SUPERADMIN_PASSWORD during the one-time deployment bootstrap; never distribute a default password.

@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Send, Save } from 'lucide-react';
+import { ArrowLeft, Plus, Send, Save, X } from 'lucide-react';
 import { Button } from '@crms/components/ui/button';
 import { Input } from '@crms/components/ui/input';
 import { Label } from '@crms/components/ui/label';
@@ -15,12 +15,13 @@ import {
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@crms/components/ui/card';
 import { Checkbox } from '@crms/components/ui/checkbox';
 import { useToast } from '@crms/hooks/use-toast';
-import { useClients, useProfiles, useCreateChangeRequest } from '@crms/hooks/useSupabaseData';
+import { useClients, useProfiles, useCreateChangeRequest, useClientScope } from '@crms/hooks/useSupabaseData';
 import { Skeleton } from '@crms/components/ui/skeleton';
+
 type RequestSource = 'email' | 'phone' | 'whatsapp' | 'meeting';
 type PriorityLevel = 'low' | 'medium' | 'high' | 'critical';
 
-const modules = [
+const defaultModules = [
   'Authentication',
   'User Management',
   'Security',
@@ -39,16 +40,6 @@ const modules = [
   'Notifications',
 ];
 
-const departments = [
-  'IT Infrastructure',
-  'Sales Operations',
-  'Finance',
-  'HR',
-  'Operations',
-  'Customer Support',
-  'Marketing',
-];
-
 export default function NewRequest() {
   const navigate = useNavigate();
   const { toast } = useToast();
@@ -56,12 +47,16 @@ export default function NewRequest() {
   const { data: profiles } = useProfiles();
   const createRequest = useCreateChangeRequest();
 
+  const [availableModules, setAvailableModules] = useState<string[]>(defaultModules);
   const [selectedModules, setSelectedModules] = useState<string[]>([]);
+  const [customModule, setCustomModule] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
 
-  // Form state
   const [formData, setFormData] = useState({
     clientId: '',
+    branchId: '',
+    departmentId: '',
     department: '',
     source: '' as RequestSource | '',
     description: '',
@@ -69,6 +64,34 @@ export default function NewRequest() {
     dateRequested: new Date().toISOString().split('T')[0],
     estimatedCompletion: '',
   });
+
+  const { data: clientScope, isLoading: scopeLoading } = useClientScope(formData.clientId);
+  const branchOptions = clientScope?.branches || [];
+  const allDepartments = clientScope?.departments || [];
+  const departmentOptions = useMemo(
+    () => formData.branchId ? allDepartments.filter((department) => department.branch_id === formData.branchId) : allDepartments,
+    [allDepartments, formData.branchId],
+  );
+  const hasConfiguredBranches = branchOptions.length > 0;
+  const hasConfiguredDepartments = departmentOptions.length > 0;
+  const modulesAffected = useMemo(() => selectedModules.filter(Boolean), [selectedModules]);
+
+  useEffect(() => {
+    const branchMissing = formData.branchId && hasConfiguredBranches && !branchOptions.some((branch) => branch.id === formData.branchId);
+    if (branchMissing) {
+      setFormData((prev) => ({ ...prev, branchId: '', departmentId: '', department: '' }));
+      return;
+    }
+    if (!formData.departmentId) return;
+    const selectedDepartment = departmentOptions.find((department) => department.id === formData.departmentId);
+    if (!selectedDepartment) {
+      setFormData((prev) => ({ ...prev, departmentId: '', department: '' }));
+    }
+  }, [branchOptions, departmentOptions, formData.branchId, formData.departmentId, hasConfiguredBranches]);
+
+  const selectModule = (module: string) => {
+    setSelectedModules((prev) => prev.includes(module) ? prev : [...prev, module]);
+  };
 
   const handleModuleToggle = (module: string) => {
     setSelectedModules((prev) =>
@@ -78,19 +101,69 @@ export default function NewRequest() {
     );
   };
 
+  const handleAddCustomModule = () => {
+    const moduleName = customModule.trim().replace(/\s+/g, ' ');
+    if (!moduleName) return;
+    const exists = availableModules.some((module) => module.toLowerCase() === moduleName.toLowerCase());
+    if (!exists) setAvailableModules((prev) => [...prev, moduleName]);
+    selectModule(exists ? availableModules.find((module) => module.toLowerCase() === moduleName.toLowerCase()) || moduleName : moduleName);
+    setCustomModule('');
+  };
+
   const handleInputChange = (field: string, value: string) => {
+    setSubmitError(null);
     setFormData(prev => ({ ...prev, [field]: value }));
   };
 
-  const handleSubmit = async (e: React.FormEvent, sendForApproval: boolean) => {
-    e.preventDefault();
+  const handleClientChange = (clientId: string) => {
+    setSubmitError(null);
+    setFormData(prev => ({
+      ...prev,
+      clientId,
+      branchId: '',
+      departmentId: '',
+      department: '',
+    }));
+  };
 
-    // Validation
-    if (!formData.clientId || !formData.department || !formData.source ||
+  const handleBranchChange = (branchId: string) => {
+    setSubmitError(null);
+    setFormData(prev => ({
+      ...prev,
+      branchId,
+      departmentId: '',
+      department: '',
+    }));
+  };
+
+  const handleDepartmentChange = (departmentId: string) => {
+    const selectedDepartment = allDepartments.find((department) => department.id === departmentId);
+    setSubmitError(null);
+    setFormData(prev => ({
+      ...prev,
+      departmentId,
+      branchId: selectedDepartment?.branch_id || prev.branchId,
+      department: selectedDepartment?.department_name || '',
+    }));
+  };
+
+  const handleDeleteAvailableModule = (module: string) => {
+    setAvailableModules((prev) => prev.filter((availableModule) => availableModule !== module));
+    setSelectedModules((prev) => prev.filter((selectedModule) => selectedModule !== module));
+  };
+
+  const handleSubmit = async (sendForApproval: boolean, event?: React.SyntheticEvent) => {
+    event?.preventDefault();
+    setSubmitError(null);
+
+    const departmentName = formData.department || (!hasConfiguredDepartments ? 'General' : '');
+    if (!formData.clientId || (hasConfiguredBranches && !formData.branchId) || (hasConfiguredDepartments && !formData.departmentId) || !departmentName || !formData.source ||
       !formData.description || !formData.priority || !formData.estimatedCompletion) {
+      const message = 'Please fill in all required fields';
+      setSubmitError(message);
       toast({
         title: 'Validation Error',
-        description: 'Please fill in all required fields',
+        description: message,
         variant: 'destructive',
       });
       return;
@@ -99,8 +172,10 @@ export default function NewRequest() {
     setIsSubmitting(true);
 
     try {
-      // Get a senior developer to assign (first available one for now)
-      const seniorDevs = profiles?.filter(p => p.department === 'Development') || [];
+      const seniorDevs = profiles?.filter((profile) => {
+        const role = (profile as { role?: string }).role;
+        return role === 'senior_developer' || role === 'admin';
+      }) || [];
       const seniorDevId = seniorDevs[0]?.id || profiles?.[0]?.id;
 
       if (!seniorDevId) {
@@ -109,13 +184,15 @@ export default function NewRequest() {
 
       await createRequest.mutateAsync({
         client_id: formData.clientId,
-        department: formData.department,
+        branch_id: formData.branchId || null,
+        department_id: formData.departmentId || null,
+        department: departmentName,
         source: formData.source as RequestSource,
         change_description: formData.description,
         priority: formData.priority as PriorityLevel,
         date_requested: formData.dateRequested,
         estimated_completion_date: formData.estimatedCompletion,
-        modules_affected: selectedModules,
+        modules_affected: modulesAffected,
         senior_developer_id: seniorDevId,
         status: sendForApproval ? 'pending_approval' : 'waiting',
       });
@@ -130,9 +207,11 @@ export default function NewRequest() {
       navigate('/developers/requests');
     } catch (error) {
       console.error('Error creating request:', error);
+      const message = error instanceof Error ? error.message : 'Failed to create change request. Please try again.';
+      setSubmitError(message);
       toast({
         title: 'Error',
-        description: 'Failed to create change request. Please try again.',
+        description: message,
         variant: 'destructive',
       });
     } finally {
@@ -158,36 +237,33 @@ export default function NewRequest() {
 
   return (
     <div className="max-w-4xl mx-auto space-y-6 animate-fade-in">
-      {/* Header */}
       <div className="flex items-center gap-4">
         <Button variant="ghost" size="icon" onClick={() => navigate(-1)}>
           <ArrowLeft className="h-5 w-5" />
         </Button>
         <div>
           <h1 className="text-2xl font-bold">New Change Request</h1>
-          <p className="text-muted-foreground">
-            Create a new system modification request
-          </p>
+          <p className="text-muted-foreground">Create a new system modification request</p>
         </div>
       </div>
 
-      <form onSubmit={(e) => handleSubmit(e, true)}>
+      {submitError && (
+        <div className="rounded-md border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+          {submitError}
+        </div>
+      )}
+
+      <form onSubmit={(event) => handleSubmit(true, event)}>
         <div className="grid gap-6">
-          {/* Client Information */}
           <Card>
             <CardHeader>
               <CardTitle>Client Information</CardTitle>
-              <CardDescription>
-                Select the client and provide contract details
-              </CardDescription>
+              <CardDescription>Select the client and provide contract details</CardDescription>
             </CardHeader>
-            <CardContent className="grid gap-4 md:grid-cols-2">
+            <CardContent className="grid gap-4 md:grid-cols-3">
               <div className="space-y-2">
                 <Label htmlFor="client">Client *</Label>
-                <Select
-                  value={formData.clientId}
-                  onValueChange={(value) => handleInputChange('clientId', value)}
-                >
+                <Select value={formData.clientId} onValueChange={handleClientChange}>
                   <SelectTrigger id="client">
                     <SelectValue placeholder="Select client" />
                   </SelectTrigger>
@@ -202,30 +278,70 @@ export default function NewRequest() {
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="department">Department *</Label>
+                <Label htmlFor="branch">Branch {hasConfiguredBranches ? '*' : ''}</Label>
                 <Select
-                  value={formData.department}
-                  onValueChange={(value) => handleInputChange('department', value)}
+                  value={formData.branchId}
+                  onValueChange={handleBranchChange}
+                  disabled={!formData.clientId || scopeLoading || !hasConfiguredBranches}
                 >
-                  <SelectTrigger id="department">
-                    <SelectValue placeholder="Select department" />
+                  <SelectTrigger id="branch">
+                    <SelectValue
+                      placeholder={
+                        !formData.clientId
+                          ? 'Select client first'
+                          : scopeLoading
+                            ? 'Loading branches...'
+                            : !hasConfiguredBranches
+                              ? 'No branches configured'
+                              : 'Select branch'
+                      }
+                    />
                   </SelectTrigger>
                   <SelectContent>
-                    {departments.map((dept) => (
-                      <SelectItem key={dept} value={dept}>
-                        {dept}
+                    {branchOptions.map((branch) => (
+                      <SelectItem key={branch.id} value={branch.id}>
+                        {branch.branch_name}
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
               </div>
 
-              <div className="space-y-2 md:col-span-2">
-                <Label htmlFor="source">Request Source *</Label>
+              <div className="space-y-2">
+                <Label htmlFor="department">Department {hasConfiguredDepartments ? '*' : ''}</Label>
                 <Select
-                  value={formData.source}
-                  onValueChange={(value) => handleInputChange('source', value)}
+                  value={formData.departmentId}
+                  onValueChange={handleDepartmentChange}
+                  disabled={!formData.clientId || scopeLoading || (hasConfiguredBranches && !formData.branchId) || !hasConfiguredDepartments}
                 >
+                  <SelectTrigger id="department">
+                    <SelectValue
+                      placeholder={
+                        !formData.clientId
+                          ? 'Select client first'
+                          : scopeLoading
+                            ? 'Loading departments...'
+                            : hasConfiguredBranches && !formData.branchId
+                              ? 'Select branch first'
+                              : !hasConfiguredDepartments
+                                ? 'No departments configured'
+                                : 'Select department'
+                      }
+                    />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {departmentOptions.map((department) => (
+                      <SelectItem key={department.id} value={department.id}>
+                        {department.department_name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2 md:col-span-3">
+                <Label htmlFor="source">Request Source *</Label>
+                <Select value={formData.source} onValueChange={(value) => handleInputChange('source', value)}>
                   <SelectTrigger id="source">
                     <SelectValue placeholder="How was this received?" />
                   </SelectTrigger>
@@ -240,13 +356,10 @@ export default function NewRequest() {
             </CardContent>
           </Card>
 
-          {/* Request Details */}
           <Card>
             <CardHeader>
               <CardTitle>Request Details</CardTitle>
-              <CardDescription>
-                Describe the change request and set priority
-              </CardDescription>
+              <CardDescription>Describe the change request and set priority</CardDescription>
             </CardHeader>
             <CardContent className="grid gap-4">
               <div className="space-y-2">
@@ -263,10 +376,7 @@ export default function NewRequest() {
               <div className="grid gap-4 md:grid-cols-3">
                 <div className="space-y-2">
                   <Label htmlFor="priority">Priority *</Label>
-                  <Select
-                    value={formData.priority}
-                    onValueChange={(value) => handleInputChange('priority', value)}
-                  >
+                  <Select value={formData.priority} onValueChange={(value) => handleInputChange('priority', value)}>
                     <SelectTrigger id="priority">
                       <SelectValue placeholder="Select priority" />
                     </SelectTrigger>
@@ -281,61 +391,71 @@ export default function NewRequest() {
 
                 <div className="space-y-2">
                   <Label htmlFor="dateRequested">Date Requested *</Label>
-                  <Input
-                    id="dateRequested"
-                    type="date"
-                    value={formData.dateRequested}
-                    onChange={(e) => handleInputChange('dateRequested', e.target.value)}
-                  />
+                  <Input id="dateRequested" type="date" value={formData.dateRequested} onChange={(e) => handleInputChange('dateRequested', e.target.value)} />
                 </div>
 
                 <div className="space-y-2">
                   <Label htmlFor="estimatedCompletion">Estimated Completion *</Label>
-                  <Input
-                    id="estimatedCompletion"
-                    type="date"
-                    value={formData.estimatedCompletion}
-                    onChange={(e) => handleInputChange('estimatedCompletion', e.target.value)}
-                  />
+                  <Input id="estimatedCompletion" type="date" value={formData.estimatedCompletion} onChange={(e) => handleInputChange('estimatedCompletion', e.target.value)} />
                 </div>
               </div>
             </CardContent>
           </Card>
 
-          {/* Modules Affected */}
           <Card>
             <CardHeader>
               <CardTitle>Modules Affected</CardTitle>
-              <CardDescription>
-                Select all modules that will be impacted by this change
-              </CardDescription>
+              <CardDescription>Select or add all modules that will be impacted by this change</CardDescription>
             </CardHeader>
-            <CardContent>
+            <CardContent className="space-y-4">
               <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
-                {modules.map((module) => (
-                  <div key={module} className="flex items-center space-x-2">
-                    <Checkbox
-                      id={module}
-                      checked={selectedModules.includes(module)}
-                      onCheckedChange={() => handleModuleToggle(module)}
-                    />
-                    <Label
-                      htmlFor={module}
-                      className="text-sm font-normal cursor-pointer"
+                {availableModules.map((module) => (
+                  <div key={module} className="flex min-w-0 items-center gap-2 rounded-md border border-border/60 px-2 py-1.5">
+                    <Checkbox id={`module-${module}`} checked={selectedModules.includes(module)} onCheckedChange={() => handleModuleToggle(module)} />
+                    <Label htmlFor={`module-${module}`} className="min-w-0 flex-1 cursor-pointer truncate text-sm font-normal">{module}</Label>
+                    <button
+                      type="button"
+                      className="rounded p-1 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                      onClick={() => handleDeleteAvailableModule(module)}
+                      aria-label={`Delete ${module}`}
                     >
-                      {module}
-                    </Label>
+                      <X className="h-3.5 w-3.5" />
+                    </button>
                   </div>
                 ))}
               </div>
-              {selectedModules.length > 0 && (
-                <div className="mt-4 flex flex-wrap gap-2">
-                  {selectedModules.map((module) => (
-                    <span
-                      key={module}
-                      className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-primary/10 text-primary"
-                    >
+
+              <div className="flex flex-col gap-2 sm:flex-row">
+                <Input
+                  value={customModule}
+                  onChange={(event) => setCustomModule(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter') {
+                      event.preventDefault();
+                      handleAddCustomModule();
+                    }
+                  }}
+                  placeholder="Add module affected"
+                />
+                <Button type="button" variant="outline" onClick={handleAddCustomModule}>
+                  <Plus className="mr-2 h-4 w-4" />
+                  Add Module
+                </Button>
+              </div>
+
+              {modulesAffected.length > 0 && (
+                <div className="flex flex-wrap gap-2">
+                  {modulesAffected.map((module) => (
+                    <span key={module} className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-medium text-primary">
                       {module}
+                      <button
+                        type="button"
+                        className="rounded-full p-0.5 hover:bg-primary/15"
+                        onClick={() => setSelectedModules((prev) => prev.filter((selected) => selected !== module))}
+                        aria-label={`Remove ${module}`}
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
                     </span>
                   ))}
                 </div>
@@ -343,18 +463,12 @@ export default function NewRequest() {
             </CardContent>
           </Card>
 
-          {/* Actions */}
           <div className="flex justify-end gap-3">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={(e) => handleSubmit(e as React.FormEvent, false)}
-              disabled={isSubmitting}
-            >
+            <Button type="button" variant="outline" onClick={(event) => handleSubmit(false, event)} disabled={isSubmitting}>
               <Save className="mr-2 h-4 w-4" />
               Save as Draft
             </Button>
-            <Button type="submit" disabled={isSubmitting}>
+            <Button type="button" onClick={(event) => handleSubmit(true, event)} disabled={isSubmitting}>
               <Send className="mr-2 h-4 w-4" />
               Send for Approval
             </Button>
@@ -364,3 +478,6 @@ export default function NewRequest() {
     </div>
   );
 }
+
+
+

@@ -1,51 +1,33 @@
-import { Skeleton } from "@crms/components/ui/skeleton";
-import { useEffect, useState } from "react";
-import { fetchCompanyBranding, resolveCompanyLogoUrl } from "@crms/lib/companyBranding";
+const LOADER_LETTERS = "RIANA CIMS".split("");
 
 export function CompanyLogoLoader({ className = "", size = "md" }: { className?: string; size?: "sm" | "md" | "lg" }) {
-    const [logoUrl, setLogoUrl] = useState(resolveCompanyLogoUrl());
     const sizeClasses = {
-        sm: "h-12 w-12",
-        md: "h-24 w-24",
-        lg: "h-32 w-32",
+        sm: "h-12 w-12 rounded-xl",
+        md: "h-24 w-24 rounded-2xl",
+        lg: "h-32 w-32 rounded-3xl",
     };
 
-    useEffect(() => {
-        let cancelled = false;
-        fetchCompanyBranding()
-            .then((branding) => {
-                if (!cancelled && branding?.logo_path) {
-                    setLogoUrl(resolveCompanyLogoUrl(branding.logo_path, branding.updated_at || branding.id));
-                }
-            })
-            .catch(() => undefined);
-
-        const handleBrandingUpdate = (event: Event) => {
-            const detail = (event as CustomEvent<{ logoPath?: string | null; version?: number }>).detail;
-            setLogoUrl(resolveCompanyLogoUrl(detail?.logoPath, detail?.version || Date.now()));
-        };
-
-        window.addEventListener("riana-company-branding-updated", handleBrandingUpdate);
-        return () => {
-            cancelled = true;
-            window.removeEventListener("riana-company-branding-updated", handleBrandingUpdate);
-        };
-    }, []);
-
     return (
-        <div className={`flex flex-col items-center justify-center gap-4 ${className}`}>
-            <div className={`relative ${sizeClasses[size]} animate-pulse`}>
+        <div className={`flex flex-col items-center justify-center gap-5 ${className}`}>
+            <div className={`relative overflow-hidden bg-[#086f76] shadow-lg ring-1 ring-white/20 ${sizeClasses[size]}`}>
                 <img
-                    src={logoUrl}
-                    alt="Riana Group"
-                    className="h-full w-full object-contain rounded-lg shadow-sm"
+                    src="/pwa-icon.svg"
+                    alt="RIANA CIMS"
+                    className="h-full w-full object-cover"
                 />
-                <div className="absolute inset-0 border-4 border-primary/20 rounded-lg animate-ping duration-1000" />
+                <div className="absolute inset-0 rounded-[inherit] ring-4 ring-primary/20 animate-ping" />
             </div>
-            <div className="flex items-center gap-4 mt-2">
-                <div className="h-3 w-3 rounded-full bg-status-approved shadow-[0_0_10px_#22c55e] animate-loader-breathe" />
-                <div className="h-3 w-3 rounded-full bg-status-approved shadow-[0_0_10px_#22c55e] animate-loader-breathe [animation-delay:0.3s]" />
-                <div className="h-3 w-3 rounded-full bg-status-approved shadow-[0_0_10px_#22c55e] animate-loader-breathe [animation-delay:0.6s]" />
+            <div className="flex h-8 items-end justify-center gap-1 text-lg font-extrabold text-primary sm:text-xl" aria-label="RIANA CIMS loading">
+                {LOADER_LETTERS.map((letter, index) => (
+                    <span
+                        key={`${letter}-${index}`}
+                        className={letter === " " ? "w-2" : "inline-block animate-bounce"}
+                        style={letter === " " ? undefined : { animationDelay: `${index * 80}ms`, animationDuration: "900ms" }}
+                        aria-hidden="true"
+                    >
+                        {letter === " " ? "\u00A0" : letter}
+                    </span>
+                ))}
             </div>
         </div>
     );

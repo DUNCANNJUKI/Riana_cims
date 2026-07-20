@@ -1,7 +1,11 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="RIANA CIMS">
-  <rect width="512" height="512" rx="112" fill="#ffffff"/>
-  <circle cx="256" cy="214" r="124" fill="#173f75"/>
-  <path d="M186 303V125h82c52 0 84 28 84 73 0 30-16 52-44 64l57 41h-63l-48-35h-17v35zm51-79h29c22 0 34-9 34-26s-12-25-34-25h-29z" fill="#ffffff"/>
-  <text x="256" y="390" text-anchor="middle" font-family="Arial, sans-serif" font-size="54" font-weight="700" fill="#173f75">RIANA</text>
-  <text x="256" y="436" text-anchor="middle" font-family="Arial, sans-serif" font-size="27" font-weight="600" letter-spacing="8" fill="#2563eb">CIMS</text>
+  <rect width="512" height="512" fill="#086f76"/>
+  <g transform="translate(151 48) scale(1.58)" fill="#ffffff">
+    <path d="M58 9 21 72l37 82V9Z" opacity="0.98"/>
+    <path d="M69 0v165l32-59L69 0Z" opacity="0.9"/>
+    <path d="M47 30 0 88l45 85-21-96 23-47Z" opacity="0.92"/>
+    <path d="M83 38v101l44-47-44-54Z" opacity="0.86"/>
+    <path d="M36 116 59 187l-2-71H36Z" opacity="0.78"/>
+  </g>
+  <text x="256" y="448" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="54" font-weight="800" fill="#ffffff">RIANA CIMS</text>
 </svg>

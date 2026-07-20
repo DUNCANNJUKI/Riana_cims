@@ -111,7 +111,7 @@ export function NativeDevelopersWorkspace({ userId, role }: NativeDevelopersWork
       </div>
 
       <div className="min-h-[calc(100dvh-14rem)] min-w-0 rounded-xl border bg-background p-1 shadow-sm sm:p-3">
-        <Suspense fallback={<div className="flex min-h-[360px] items-center justify-center text-sm text-muted-foreground">Loading Developers workspace…</div>}>
+        <Suspense fallback={<div className="flex min-h-[360px] items-center justify-center text-sm text-muted-foreground">Loading Developers workspace...</div>}>
         <Routes>
           <Route path="/developers" element={<Dashboard />} />
           <Route path="/developers/pending" element={<Pending />} />
@@ -123,8 +123,8 @@ export function NativeDevelopersWorkspace({ userId, role }: NativeDevelopersWork
           <Route path="/developers/audit" element={role === "SuperAdmin" || role === "Admin" || role === "Management" || role === "Teamlead" ? <AuditLog /> : <Navigate to="/developers" replace />} />
           <Route path="/developers/assignments" element={<Assignments />} />
           <Route path="/developers/users" element={<Navigate to="/" replace />} />
-          <Route path="/developers/settings" element={<Navigate to="/" replace />} />
-          <Route path="/developers/notifications" element={<Navigate to="/" replace />} />
+          <Route path="/developers/settings" element={<Navigate to="/developers" replace />} />
+          <Route path="/developers/notifications" element={<Navigate to="/developers" replace />} />
           <Route path="/developers/*" element={<NotFound />} />
         </Routes>
         </Suspense>

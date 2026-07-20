@@ -23,11 +23,55 @@ type ChangeRequest = Database['public']['Tables']['change_requests']['Row'];
 type AuditLog = Database['public']['Tables']['audit_logs']['Row'];
 type Notification = Database['public']['Tables']['notifications']['Row'];
 type UserRole = Database['public']['Tables']['user_roles']['Row'];
+type ChangeRequestInsert = Omit<Database['public']['Tables']['change_requests']['Insert'], 'ticket_number'> & {
+  branch_id?: string | null;
+  department_id?: string | null;
+  installation_id?: string | null;
+};
+
+export interface ClientBranch {
+  id: string;
+  client_id: string;
+  branch_name: string;
+  branch_code?: string | null;
+  contact_person_name?: string | null;
+  contact_email?: string | null;
+  contact_phone?: string | null;
+  status?: string | null;
+}
+
+export interface ClientDepartment {
+  id: string;
+  client_id: string;
+  branch_id: string;
+  department_name: string;
+  department_code?: string | null;
+  branch_name?: string | null;
+  status?: string | null;
+}
+
+export interface ClientScope {
+  branches: ClientBranch[];
+  departments: ClientDepartment[];
+  fallback_branch?: string | null;
+}
+
+export interface RequestScopeSummary {
+  id: string;
+  name: string;
+  status?: string | null;
+  branch_id?: string | null;
+}
 
 export interface ChangeRequestWithRelations extends ChangeRequest {
+  branch_id?: string | null;
+  department_id?: string | null;
+  installation_id?: string | null;
   client?: Client & { subsidiary_id?: string | null; subsidiary_name?: string | null };
   assigned_developer?: Profile;
   senior_developer?: Profile;
+  branch_scope?: RequestScopeSummary | null;
+  department_scope?: RequestScopeSummary | null;
 }
 
 export interface AuditLogWithRelations extends AuditLog {
@@ -41,6 +85,26 @@ export function useClients() {
   return useQuery({
     queryKey: ['clients'],
     queryFn: () => fetchJson<Client[]>(`${API_URL}/clients`, 'Failed to fetch clients'),
+    staleTime: DEFAULT_STALE_TIME,
+    gcTime: DEFAULT_GC_TIME,
+  });
+}
+
+export function useClientScope(clientId?: string) {
+  return useQuery({
+    queryKey: ['client_scope', clientId],
+    queryFn: () => fetchJson<ClientScope>(`${API_URL}/clients/${clientId}/scope`, 'Failed to fetch client branches and departments'),
+    enabled: !!clientId,
+    staleTime: DEFAULT_STALE_TIME,
+    gcTime: DEFAULT_GC_TIME,
+  });
+}
+
+export function useClientDepartments(clientId?: string) {
+  return useQuery({
+    queryKey: ['client_departments', clientId],
+    queryFn: () => fetchJson<ClientDepartment[]>(`${API_URL}/clients/${clientId}/departments`, 'Failed to fetch client departments'),
+    enabled: !!clientId,
     staleTime: DEFAULT_STALE_TIME,
     gcTime: DEFAULT_GC_TIME,
   });
@@ -218,13 +282,16 @@ export function useChangeRequest(id: string) {
 export function useCreateChangeRequest() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (request: Omit<Database['public']['Tables']['change_requests']['Insert'], 'ticket_number'>) => {
+    mutationFn: async (request: ChangeRequestInsert) => {
       const res = await fetch(`${API_URL}/change_requests`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(request),
       });
-      if (!res.ok) throw new Error('Failed to create change request');
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error || 'Failed to create change request');
+      }
       return res.json();
     },
     onSuccess: () => {
@@ -243,7 +310,10 @@ export function useUpdateChangeRequest() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(updates),
       });
-      if (!res.ok) throw new Error('Failed to update change request');
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error || 'Failed to update change request');
+      }
       return res.json();
     },
     onSuccess: () => {
@@ -367,3 +437,6 @@ export function useUsersWithRoles() {
     },
   });
 }
+
+
+

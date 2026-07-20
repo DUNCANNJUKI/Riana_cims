@@ -78,7 +78,7 @@ const Index = () => {
   }
 
   const renderContent = () => {
-    const developerWorkspaceRole = user.module_roles?.crms || user.role;
+    const developerWorkspaceRole = user.role === 'SuperAdmin' ? 'SuperAdmin' : user.module_roles?.crms || user.role;
     switch (activeModule) {
       case 'dashboard':
         return <Dashboard user={user} />;
@@ -176,3 +176,4 @@ const Index = () => {
 };
 
 export default Index;
+

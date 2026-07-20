@@ -32,7 +32,7 @@ export const Sidebar = ({ user, activeModule, setActiveModule, isMobileOpen, onM
   const [logoPath, setLogoPath] = useState("/Riana_logo.png");
   const avatarSrc = resolveAvatarUrl(user.avatar_url);
   const developerModuleRole = user.module_roles?.crms;
-  const effectiveDeveloperRole = developerModuleRole || user.role;
+  const effectiveDeveloperRole = user.role === 'SuperAdmin' ? 'SuperAdmin' : developerModuleRole || user.role;
   const canAccessDevelopers = ['SuperAdmin', 'Admin', 'Management', 'Teamlead', 'Developer', 'Sales'].includes(effectiveDeveloperRole);
 
   useEffect(() => {
@@ -272,3 +272,7 @@ export const Sidebar = ({ user, activeModule, setActiveModule, isMobileOpen, onM
     </>
   );
 };
+
+
+
+

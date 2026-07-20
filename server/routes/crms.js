@@ -59,6 +59,85 @@ const storedRequestStatus = (status) => status === 'waiting_clarification' ? 'wa
 
 module.exports = function createCrmsRouter({ pool, jwtSecret }) {
   const router = express.Router();
+  const tableColumnCache = new Map();
+
+  const getTableColumns = async (tableName) => {
+    if (tableColumnCache.has(tableName)) return tableColumnCache.get(tableName);
+    const [rows] = await pool.query(`SHOW COLUMNS FROM \`${tableName}\``);
+    const columns = new Set(rows.map((row) => row.Field));
+    tableColumnCache.set(tableName, columns);
+    return columns;
+  };
+
+  const hasTableColumn = async (tableName, columnName) => (await getTableColumns(tableName)).has(columnName);
+
+  const normalizeNullableId = (value) => {
+    const normalized = String(value || '').trim();
+    return normalized && normalized !== 'all' && normalized !== 'none' ? normalized : null;
+  };
+
+  const validateRequestScope = async ({ clientId, branchId, departmentId, installationId }) => {
+    const normalizedClientId = normalizeNullableId(clientId);
+    let normalizedBranchId = normalizeNullableId(branchId);
+    const normalizedDepartmentId = normalizeNullableId(departmentId);
+    const normalizedInstallationId = normalizeNullableId(installationId);
+
+    if (!normalizedClientId) throw Object.assign(new Error('client_id is required.'), { status: 400 });
+
+    const [clients] = await pool.query('SELECT id FROM clients WHERE id = ? LIMIT 1', [normalizedClientId]);
+    if (!clients.length) throw Object.assign(new Error('Client not found.'), { status: 404 });
+
+    if (normalizedDepartmentId) {
+      const [departments] = await pool.query(
+        'SELECT id,client_id,branch_id,department_name,status,deleted_at FROM client_departments WHERE id = ? LIMIT 1',
+        [normalizedDepartmentId],
+      );
+      const department = departments[0];
+      if (!department || String(department.client_id) !== String(normalizedClientId) || department.deleted_at || String(department.status || 'active').toLowerCase() !== 'active') {
+        throw Object.assign(new Error('Selected department does not belong to this active client.'), { status: 400 });
+      }
+      if (normalizedBranchId && String(department.branch_id) !== String(normalizedBranchId)) {
+        throw Object.assign(new Error('Selected department does not belong to the selected branch.'), { status: 400 });
+      }
+      normalizedBranchId = normalizedBranchId || department.branch_id;
+    }
+
+    if (normalizedBranchId) {
+      const [branches] = await pool.query(
+        'SELECT id,client_id,status,deleted_at FROM client_branches WHERE id = ? LIMIT 1',
+        [normalizedBranchId],
+      );
+      const branch = branches[0];
+      if (!branch || String(branch.client_id) !== String(normalizedClientId) || branch.deleted_at || String(branch.status || 'active').toLowerCase() !== 'active') {
+        throw Object.assign(new Error('Selected branch does not belong to this active client.'), { status: 400 });
+      }
+    }
+
+    if (normalizedInstallationId) {
+      const [installations] = await pool.query(
+        'SELECT id,client_id,branch_id,department_id FROM installations WHERE id = ? LIMIT 1',
+        [normalizedInstallationId],
+      );
+      const installation = installations[0];
+      if (!installation || String(installation.client_id) !== String(normalizedClientId)) {
+        throw Object.assign(new Error('Selected installation does not belong to this client.'), { status: 400 });
+      }
+      if (normalizedBranchId && installation.branch_id && String(installation.branch_id) !== String(normalizedBranchId)) {
+        throw Object.assign(new Error('Selected installation does not belong to the selected branch.'), { status: 400 });
+      }
+      if (normalizedDepartmentId && installation.department_id && String(installation.department_id) !== String(normalizedDepartmentId)) {
+        throw Object.assign(new Error('Selected installation does not belong to the selected department.'), { status: 400 });
+      }
+      normalizedBranchId = normalizedBranchId || installation.branch_id || null;
+    }
+
+    return {
+      clientId: normalizedClientId,
+      branchId: normalizedBranchId || null,
+      departmentId: normalizedDepartmentId,
+      installationId: normalizedInstallationId,
+    };
+  };
 
   const finishLogin = (res, user) => {
     const token = jwt.sign(
@@ -254,7 +333,7 @@ module.exports = function createCrmsRouter({ pool, jwtSecret }) {
       const decoded = jwt.verify(token, jwtSecret);
       if (!decoded.id) return res.status(401).json({ error: 'Invalid session.' });
       const [users] = await pool.query(
-        `SELECT u.id,u.email,COALESCE(r.code,u.role) AS role,u.is_active
+        `SELECT u.id,u.email,CASE WHEN u.role = 'SuperAdmin' THEN 'SuperAdmin' ELSE COALESCE(r.code,u.role) END AS role,u.is_active
          FROM user_profiles u
          LEFT JOIN user_module_roles umr ON umr.user_id = u.id AND umr.module_id = 'crms'
          LEFT JOIN roles r ON r.id = umr.role_id
@@ -314,6 +393,51 @@ module.exports = function createCrmsRouter({ pool, jwtSecret }) {
     try { const [rows] = await pool.query(`${clientSelect} ORDER BY client_name`); res.json(rows); }
     catch (error) { res.status(500).json({ error: error.message }); }
   });
+  router.get('/clients/:id/scope', async (req, res) => {
+    try {
+      const [clients] = await pool.query('SELECT id,branch FROM clients WHERE id = ? LIMIT 1', [req.params.id]);
+      if (!clients.length) return res.status(404).json({ error: 'Client not found.' });
+
+      const [branches] = await pool.query(
+        `SELECT id,client_id,branch_name,branch_code,status,contact_person_name,contact_email,contact_phone,created_at,updated_at
+         FROM client_branches
+         WHERE client_id = ? AND deleted_at IS NULL AND LOWER(COALESCE(status,'active')) = 'active'
+         ORDER BY branch_name ASC`,
+        [req.params.id],
+      );
+      const [departments] = await pool.query(
+        `SELECT d.id,d.client_id,d.branch_id,d.department_name,d.department_code,d.status,d.notes,d.created_at,d.updated_at,
+          b.branch_name
+         FROM client_departments d
+         INNER JOIN client_branches b ON b.id COLLATE utf8mb4_general_ci=d.branch_id
+         WHERE d.client_id = ? AND d.deleted_at IS NULL AND LOWER(COALESCE(d.status,'active')) = 'active'
+         ORDER BY b.branch_name ASC, d.department_name ASC`,
+        [req.params.id],
+      );
+
+      res.json({
+        branches,
+        departments,
+        fallback_branch: clients[0].branch || null,
+      });
+    } catch (error) { res.status(500).json({ error: error.message }); }
+  });
+  router.get('/clients/:id/departments', async (req, res) => {
+    try {
+      const [clients] = await pool.query('SELECT id FROM clients WHERE id = ? LIMIT 1', [req.params.id]);
+      if (!clients.length) return res.status(404).json({ error: 'Client not found.' });
+      const [rows] = await pool.query(
+        `SELECT d.id,d.client_id,d.branch_id,d.department_name,d.department_code,d.status,d.notes,d.created_at,d.updated_at,
+          b.branch_name
+         FROM client_departments d
+         INNER JOIN client_branches b ON b.id COLLATE utf8mb4_general_ci=d.branch_id
+         WHERE d.client_id = ? AND d.deleted_at IS NULL AND LOWER(COALESCE(d.status,'active')) = 'active'
+         ORDER BY b.branch_name ASC, d.department_name ASC`,
+        [req.params.id],
+      );
+      res.json(rows);
+    } catch (error) { res.status(500).json({ error: error.message }); }
+  });
   router.post('/clients', async (req, res) => {
     try {
       if (denyUnlessRole(req, res, 'Admin', 'Sales')) return;
@@ -356,19 +480,39 @@ module.exports = function createCrmsRouter({ pool, jwtSecret }) {
     catch (error) { res.status(500).json({ error: error.message }); }
   });
 
-  const requestJoins = `SELECT cr.*,
-    IF(c.id IS NULL,NULL,JSON_OBJECT('id',c.id,'name',c.client_name,'branch',COALESCE(cb.branch_name,c.branch),'contact_person',c.contact_person_name,'contact_email',c.contact_email,'contact_phone',c.contact_phone,'contract_type',LOWER(c.contract_type),'subsidiary_id',c.subsidiary_id,'subsidiary_name',s.subsidiary_name)) client,
+  const getRequestJoins = async () => {
+    const hasBranchId = await hasTableColumn('crms_change_requests', 'branch_id');
+    const hasDepartmentId = await hasTableColumn('crms_change_requests', 'department_id');
+    const hasInstallationId = await hasTableColumn('crms_change_requests', 'installation_id');
+    const branchNameExpression = hasBranchId ? 'COALESCE(cb.branch_name,c.branch)' : 'c.branch';
+    const scopeColumns = [
+      hasBranchId ? 'cr.branch_id' : 'NULL AS branch_id',
+      hasDepartmentId ? 'cr.department_id' : 'NULL AS department_id',
+      hasInstallationId ? 'cr.installation_id' : 'NULL AS installation_id',
+    ].join(',');
+    const branchScope = hasBranchId
+      ? `IF(cb.id IS NULL,NULL,JSON_OBJECT('id',cb.id,'name',cb.branch_name,'status',cb.status)) branch_scope`
+      : 'NULL branch_scope';
+    const departmentScope = hasDepartmentId
+      ? `IF(cd.id IS NULL,NULL,JSON_OBJECT('id',cd.id,'name',cd.department_name,'status',cd.status,'branch_id',cd.branch_id)) department_scope`
+      : 'NULL department_scope';
+    const branchJoin = hasBranchId ? 'LEFT JOIN client_branches cb ON cb.id COLLATE utf8mb4_general_ci=cr.branch_id' : '';
+    const departmentJoin = hasDepartmentId ? 'LEFT JOIN client_departments cd ON cd.id COLLATE utf8mb4_general_ci=cr.department_id' : '';
+
+    return `SELECT cr.*,${scopeColumns},
+    IF(c.id IS NULL,NULL,JSON_OBJECT('id',c.id,'name',c.client_name,'branch',${branchNameExpression},'contact_person',c.contact_person_name,'contact_email',c.contact_email,'contact_phone',c.contact_phone,'contract_type',LOWER(c.contract_type),'subsidiary_id',c.subsidiary_id,'subsidiary_name',s.subsidiary_name)) client,
     IF(ad.id IS NULL,NULL,JSON_OBJECT('id',ad.id,'name',CONCAT_WS(' ',ad.first_name,ad.last_name))) assigned_developer,
     IF(sd.id IS NULL,NULL,JSON_OBJECT('id',sd.id,'name',CONCAT_WS(' ',sd.first_name,sd.last_name))) senior_developer,
-    IF(cb.id IS NULL,NULL,JSON_OBJECT('id',cb.id,'name',cb.branch_name,'status',cb.status)) branch_scope,
-    IF(cd.id IS NULL,NULL,JSON_OBJECT('id',cd.id,'name',cd.department_name,'status',cd.status,'branch_id',cd.branch_id)) department_scope
+    ${branchScope},
+    ${departmentScope}
     FROM crms_change_requests cr
     LEFT JOIN clients c ON c.id COLLATE utf8mb4_general_ci=cr.client_id
     LEFT JOIN subsidiaries s ON s.id COLLATE utf8mb4_general_ci=c.subsidiary_id
-    LEFT JOIN client_branches cb ON cb.id COLLATE utf8mb4_general_ci=cr.branch_id
-    LEFT JOIN client_departments cd ON cd.id COLLATE utf8mb4_general_ci=cr.department_id
+    ${branchJoin}
+    ${departmentJoin}
     LEFT JOIN user_profiles ad ON ad.id COLLATE utf8mb4_general_ci=cr.assigned_developer_id
     LEFT JOIN user_profiles sd ON sd.id COLLATE utf8mb4_general_ci=cr.senior_developer_id`;
+  };
   const formatRequest = (row) => ({
     ...row,
     client: typeof row.client === 'string' ? JSON.parse(row.client) : row.client,
@@ -381,6 +525,7 @@ module.exports = function createCrmsRouter({ pool, jwtSecret }) {
   router.get('/change_requests', async (req, res) => {
     try {
       const developerOnly = req.user.role === 'Developer';
+      const requestJoins = await getRequestJoins();
       const [rows] = await pool.query(
         `${requestJoins}${developerOnly ? ' WHERE cr.assigned_developer_id = ?' : ''} ORDER BY cr.created_at DESC`,
         developerOnly ? [req.user.id] : [],
@@ -392,6 +537,7 @@ module.exports = function createCrmsRouter({ pool, jwtSecret }) {
   router.get('/change_requests/:id', async (req, res) => {
     try {
       const developerOnly = req.user.role === 'Developer';
+      const requestJoins = await getRequestJoins();
       const [rows] = await pool.query(
         `${requestJoins} WHERE cr.id = ?${developerOnly ? ' AND cr.assigned_developer_id = ?' : ''}`,
         developerOnly ? [req.params.id, req.user.id] : [req.params.id],
@@ -405,6 +551,7 @@ module.exports = function createCrmsRouter({ pool, jwtSecret }) {
       if (req.user.role === 'Developer' && req.params.developerId !== req.user.id) {
         return res.status(403).json({ error: 'Developers may only view their own assignments.' });
       }
+      const requestJoins = await getRequestJoins();
       const [rows] = await pool.query(`${requestJoins} WHERE cr.assigned_developer_id = ? ORDER BY cr.created_at DESC`, [req.params.developerId]); res.json(rows.map(formatRequest));
     }
     catch (error) { res.status(500).json({ error: error.message }); }
@@ -416,12 +563,26 @@ module.exports = function createCrmsRouter({ pool, jwtSecret }) {
       const ticket = `CR-${Date.now().toString().slice(-8)}`;
       const r = req.body;
       const scope = await validateRequestScope({ clientId: r.client_id, branchId: r.branch_id, departmentId: r.department_id, installationId: r.installation_id });
+      const requestColumns = await getTableColumns('crms_change_requests');
+      const insertColumns = ['id','ticket_number','client_id'];
+      const insertValues = [id,ticket,scope.clientId];
+      for (const [column, value] of [
+        ['branch_id', scope.branchId],
+        ['department_id', scope.departmentId],
+        ['installation_id', scope.installationId],
+      ]) {
+        if (requestColumns.has(column)) {
+          insertColumns.push(column);
+          insertValues.push(value);
+        }
+      }
+      insertColumns.push('department','date_requested','source','change_description','priority','status','modules_affected','estimated_completion_date','senior_developer_id','assigned_developer_id','is_chargeable','sales_remarks','commencement_date','completion_date');
+      insertValues.push(r.department,r.date_requested || new Date().toISOString().slice(0, 10),r.source,r.change_description,r.priority,r.status || 'pending_approval',JSON.stringify(r.modules_affected || []),r.estimated_completion_date,r.senior_developer_id,r.assigned_developer_id || null,!!r.is_chargeable,r.sales_remarks || null,r.commencement_date || null,r.completion_date || null);
       await pool.query(
-        `INSERT INTO crms_change_requests
-         (id,ticket_number,client_id,branch_id,department_id,installation_id,department,date_requested,source,change_description,priority,status,modules_affected,estimated_completion_date,senior_developer_id,assigned_developer_id,is_chargeable,sales_remarks,commencement_date,completion_date)
-         VALUES (?,?,?,?,?,?,?,CURDATE(),?,?,?,?,?,?,?,?,?,?,?,?)`,
-        [id,ticket,scope.clientId,scope.branchId,scope.departmentId,scope.installationId,r.department,r.source,r.change_description,r.priority,r.status || 'pending_approval',JSON.stringify(r.modules_affected || []),r.estimated_completion_date,r.senior_developer_id,r.assigned_developer_id || null,!!r.is_chargeable,r.sales_remarks || null,r.commencement_date || null,r.completion_date || null],
+        `INSERT INTO crms_change_requests (${insertColumns.map((column) => `\`${column}\``).join(',')}) VALUES (${insertColumns.map(() => '?').join(',')})`,
+        insertValues,
       );
+      const requestJoins = await getRequestJoins();
       const [rows] = await pool.query(`${requestJoins} WHERE cr.id = ?`, [id]);
       const created = formatRequest(rows[0]);
       await notifySalesApprovalNeeded(req, created);
@@ -430,7 +591,7 @@ module.exports = function createCrmsRouter({ pool, jwtSecret }) {
         await notifyAssignedDeveloper(req, created);
       }
       res.status(201).json(created);
-    } catch (error) { res.status(500).json({ error: error.message }); }
+    } catch (error) { res.status(error.status || 500).json({ error: error.message }); }
   });
   router.patch('/change_requests/:id', async (req, res) => {
     try {
@@ -451,12 +612,14 @@ module.exports = function createCrmsRouter({ pool, jwtSecret }) {
       if (req.body.status !== undefined && allowedStatuses && !allowedStatuses.has(req.body.status)) {
         return res.status(403).json({ error: 'This status transition is not permitted for your role.' });
       }
+      const requestColumns = await getTableColumns('crms_change_requests');
       const fields = []; const values = [];
-      for (const [key,value] of Object.entries(req.body)) if (allowed.has(key)) {
+      for (const [key,value] of Object.entries(req.body)) if (allowed.has(key) && requestColumns.has(key)) {
         fields.push(`\`${key}\`=?`);
         values.push(key === 'modules_affected' ? JSON.stringify(value) : key === 'status' ? storedRequestStatus(value) : value);
       }
       if (fields.length) await pool.query(`UPDATE crms_change_requests SET ${fields.join(',')} WHERE id=?`, [...values,req.params.id]);
+      const requestJoins = await getRequestJoins();
       const [rows] = await pool.query(`${requestJoins} WHERE cr.id=?`, [req.params.id]);
       const updated = formatRequest(rows[0]);
       const assignmentChanged = updated.assigned_developer_id
@@ -637,3 +800,14 @@ module.exports = function createCrmsRouter({ pool, jwtSecret }) {
 
   return router;
 };
+
+
+
+
+
+
+
+
+
+
+

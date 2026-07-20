@@ -37,7 +37,7 @@ export function useCurrentUserRole(): UserRoleState {
       Developer: 'developer',
       Sales: 'sales',
     };
-    const effectiveRole = user?.module_roles?.crms || user?.role;
+    const effectiveRole = user?.role === 'SuperAdmin' ? 'SuperAdmin' : user?.module_roles?.crms || user?.role;
     const mappedRole = effectiveRole ? roleMap[effectiveRole] : undefined;
     const roles = mappedRole ? [mappedRole] : [];
 
@@ -96,3 +96,4 @@ export function useDemoRole(): UserRoleState {
     canAddComments: true,
   };
 }
+
