@@ -24,8 +24,14 @@ const args = Object.fromEntries(process.argv.slice(2).map((arg) => {
 
 const logoBranding = (loginUrl) => {
   const logoCandidates = [
+    path.join(__dirname, '../../public/Riana_logo_transparent.png'),
+    path.join(__dirname, '../../public/Riana_mark_transparent.png'),
     path.join(__dirname, '../../public/Riana_logo.png'),
+    path.join(__dirname, '../../dist/Riana_logo_transparent.png'),
+    path.join(__dirname, '../../dist/Riana_mark_transparent.png'),
     path.join(__dirname, '../../dist/Riana_logo.png'),
+    path.join(__dirname, '../../client/dist/Riana_logo_transparent.png'),
+    path.join(__dirname, '../../client/dist/Riana_mark_transparent.png'),
     path.join(__dirname, '../../client/dist/Riana_logo.png'),
   ];
   const logoPath = logoCandidates.find(candidate => fs.existsSync(candidate));
@@ -40,7 +46,7 @@ const logoBranding = (loginUrl) => {
     branding.logoFilename = path.basename(logoPath);
     branding.logoContentType = 'image/png';
   } else {
-    branding.logoUrl = `${loginUrl}/Riana_logo.png`;
+    branding.logoUrl = `${loginUrl}/Riana_mark_transparent.png`;
   }
   return branding;
 };

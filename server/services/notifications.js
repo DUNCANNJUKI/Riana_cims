@@ -133,8 +133,14 @@ const LOGO_CONTENT_TYPES = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg':
 const bundledLogo = () => {
   if (cachedBundledLogo !== undefined) return cachedBundledLogo;
   const candidates = [
+    path.join(__dirname, '../../public/Riana_logo_transparent.png'),
+    path.join(__dirname, '../../public/Riana_mark_transparent.png'),
     path.join(__dirname, '../../public/Riana_logo.png'),
+    path.join(__dirname, '../../dist/Riana_logo_transparent.png'),
+    path.join(__dirname, '../../dist/Riana_mark_transparent.png'),
     path.join(__dirname, '../../dist/Riana_logo.png'),
+    path.join(__dirname, '../../client/dist/Riana_logo_transparent.png'),
+    path.join(__dirname, '../../client/dist/Riana_mark_transparent.png'),
     path.join(__dirname, '../../client/dist/Riana_logo.png'),
   ];
   const logoPath = candidates.find(candidate => fs.existsSync(candidate));
