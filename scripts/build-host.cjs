@@ -1,4 +1,4 @@
-const fs = require('fs');
+﻿const fs = require('fs');
 const path = require('path');
 
 const root = path.resolve(__dirname, '..');
@@ -15,6 +15,5 @@ fs.cpSync(path.join(root, 'server'), path.join(release, 'server'), {
 for (const file of ['ecosystem.config.cjs', '.env.example', 'README.md']) {
   fs.copyFileSync(path.join(root, file), path.join(release, file));
 }
-fs.cpSync(path.join(root, 'docs'), path.join(release, 'docs'), { recursive: true });
 fs.cpSync(path.join(root, 'hosting'), path.join(release, 'hosting'), { recursive: true });
 console.log(`Host release staged at ${release}`);

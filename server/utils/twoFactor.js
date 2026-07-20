@@ -29,7 +29,7 @@ async function deliverCode({ channel, destination, code }) {
 
   const providerConfigured = channel === 'email'
     ? Boolean(process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASSWORD)
-    : Boolean(process.env.B_TEXTMAN_API_KEY);
+    : Boolean(process.env.AFRICASTALKING_API_KEY);
   if (providerConfigured) {
     await sendVerificationCode({ channel, destination, code });
     return { configured: true };

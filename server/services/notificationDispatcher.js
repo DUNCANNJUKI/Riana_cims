@@ -1,5 +1,5 @@
 const { v4: uuidv4 } = require('uuid');
-const { sendEmail, sendSms } = require('./notifications');
+const { sendEmail, sendSms, sendWhatsApp, whatsappConfigured } = require('./notifications');
 
 const USER_TYPES = new Set(['info', 'success', 'warning', 'error']);
 
@@ -18,9 +18,10 @@ async function deliverUserNotification({
   notificationType = 'general',
   email = true,
   sms = false,
+  whatsapp = sms,
   smsMessage,
   details = {},
-}, providers = { sendEmail, sendSms }) {
+}, providers = { sendEmail, sendSms, sendWhatsApp, whatsappConfigured }) {
   const [users] = await pool.query(
     'SELECT id,email,phone_number,first_name,last_name FROM user_profiles WHERE id = ? LIMIT 1',
     [userId],
@@ -62,6 +63,20 @@ async function deliverUserNotification({
     deliveries.push({
       channel: 'sms',
       promise: providers.sendSms({ phoneNumber: user.phone_number, message: smsMessage || message }),
+    });
+  }
+  if (whatsapp && user.phone_number && providers.sendWhatsApp && (!providers.whatsappConfigured || providers.whatsappConfigured())) {
+    deliveries.push({
+      channel: 'whatsapp',
+      promise: providers.sendWhatsApp({
+        phoneNumber: user.phone_number,
+        message: smsMessage || message,
+        recipientName: userName(user),
+        serviceName: details.clientName || details.ticketNumber || notificationType,
+        bookingDate: new Date().toLocaleDateString('en-GB'),
+        notificationType,
+        clientName: details.clientName,
+      }),
     });
   }
 

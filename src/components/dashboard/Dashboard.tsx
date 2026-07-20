@@ -8,6 +8,7 @@ import { NoticeBoard } from "@/components/noticeboard/NoticeBoard";
 import { Button } from "@/components/ui/button";
 import { can } from "@/security/accessControl";
 import { formatRoleLabel } from "@/utils/roleLabel";
+import { OPERATIONAL_REFRESH_INTERVAL_MS } from "@/utils/refreshIntervals";
 
 interface DashboardProps {
   user: User;
@@ -27,8 +28,8 @@ export const Dashboard = ({ user, stats }: DashboardProps) => {
   useEffect(() => {
     loadDashboardData();
     
-    // Set up polling for dashboard updates
-    const intervalId = setInterval(loadDashboardData, 30000);
+    // Set up gentle background polling for dashboard updates.
+    const intervalId = setInterval(loadDashboardData, OPERATIONAL_REFRESH_INTERVAL_MS);
     
     return () => {
       clearInterval(intervalId);

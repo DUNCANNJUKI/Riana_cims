@@ -53,6 +53,7 @@ interface Assignment {
   client_id: string;
   client_name: string;
   branch: string | null;
+  department_name?: string | null;
   contact_person: string;
   contact_phone: string;
   contact_email: string | null;
@@ -65,6 +66,9 @@ interface Assignment {
   counter_count?: number;
   led_count?: number;
   service_points?: number;
+  ups_count?: number;
+  media_controllers?: number;
+  tablets?: number;
 }
 
 const statusConfig = {
@@ -76,6 +80,7 @@ const statusConfig = {
 };
 
 import { useDatabase } from "@/hooks/useDatabase";
+import { OPERATIONAL_REFRESH_INTERVAL_MS } from "@/utils/refreshIntervals";
 
 export const TechnicianMobileDashboard = ({ user }: TechnicianMobileDashboardProps) => {
   const [assignments, setAssignments] = useState<Assignment[]>([]);
@@ -100,10 +105,10 @@ export const TechnicianMobileDashboard = ({ user }: TechnicianMobileDashboardPro
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
 
-    // Poll assignments every 15 seconds for "realtime" updates
+    // Keep background refresh gentle; manual refresh remains immediate.
     const interval = setInterval(() => {
       loadAssignments(true); // pass true to indicate silent background poll
-    }, 15000);
+    }, OPERATIONAL_REFRESH_INTERVAL_MS);
 
     return () => {
       window.removeEventListener('online', handleOnline);
@@ -126,11 +131,12 @@ export const TechnicianMobileDashboard = ({ user }: TechnicianMobileDashboardPro
       const enrichedAssignments: Assignment[] = filtered.map((a: any) => ({
         id: a.id,
         client_id: a.client_id,
-        client_name: a.clients?.client_name || 'Unknown Client',
-        branch: a.branch || a.clients?.branch,
-        contact_person: a.clients?.contact_person_name || '',
-        contact_phone: a.clients?.contact_person_phone || '',
-        contact_email: a.clients?.contact_person_email || null,
+        client_name: a.client_name || a.clients?.client_name || 'Unknown Client',
+        branch: a.branch || a.clients?.branch || null,
+        department_name: a.department_name || null,
+        contact_person: a.contact_person_name || a.clients?.contact_person_name || '',
+        contact_phone: a.contact_phone || a.clients?.contact_person_phone || '',
+        contact_email: a.contact_email || a.clients?.contact_person_email || null,
         status: a.status,
         installation_start_date: a.installation_start_date,
         scheduled_end_date: a.scheduled_end_date,
@@ -140,6 +146,9 @@ export const TechnicianMobileDashboard = ({ user }: TechnicianMobileDashboardPro
         counter_count: a.counter_count,
         led_count: a.led_count,
         service_points: a.service_points,
+        ups_count: a.ups_count,
+        media_controllers: a.media_controllers,
+        tablets: a.tablets,
       }));
 
       setAssignments(enrichedAssignments);
@@ -359,27 +368,24 @@ export const TechnicianMobileDashboard = ({ user }: TechnicianMobileDashboardPro
                                     </span>
                                   </div>
                                   <h3 className="font-semibold text-sm truncate max-w-[200px]">{assignment.client_name}</h3>
-                                  {assignment.branch && (
-                                    <p className="text-xs text-muted-foreground flex items-center gap-1 mt-1 truncate max-w-[200px]">
+                                  {(assignment.branch || assignment.department_name) && (
+                                    <p className="text-xs text-muted-foreground flex items-center gap-1 mt-1 truncate max-w-[220px]">
                                       <MapPin className="h-3 w-3 shrink-0" />
-                                      <span className="truncate">{assignment.branch}</span>
+                                      <span className="truncate">{[assignment.branch, assignment.department_name].filter(Boolean).join(' / ')}</span>
                                     </p>
                                   )}
                                 </div>
                                 <ChevronRight className="h-5 w-5 text-muted-foreground shrink-0" />
                               </div>
-                              
                               {/* Quick equipment summary */}
-                              <div className="flex items-center gap-3 mt-3 text-xs text-muted-foreground">
-                                {assignment.kiosk_count && assignment.kiosk_count > 0 && (
-                                  <span>🖥️ {assignment.kiosk_count} Kiosks</span>
-                                )}
-                                {assignment.counter_count && assignment.counter_count > 0 && (
-                                  <span>📊 {assignment.counter_count} Counters</span>
-                                )}
-                                {assignment.service_points && assignment.service_points > 0 && (
-                                  <span>📍 {assignment.service_points} SPs</span>
-                                )}
+                              <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                                {assignment.kiosk_count && assignment.kiosk_count > 0 && <span>Kiosks: {assignment.kiosk_count}</span>}
+                                {assignment.counter_count && assignment.counter_count > 0 && <span>Counters: {assignment.counter_count}</span>}
+                                {assignment.led_count && assignment.led_count > 0 && <span>LEDs: {assignment.led_count}</span>}
+                                {assignment.service_points && assignment.service_points > 0 && <span>Service points: {assignment.service_points}</span>}
+                                {assignment.ups_count && assignment.ups_count > 0 && <span>UPS: {assignment.ups_count}</span>}
+                                {assignment.media_controllers && assignment.media_controllers > 0 && <span>Media controllers: {assignment.media_controllers}</span>}
+                                {assignment.tablets && assignment.tablets > 0 && <span>Tablets: {assignment.tablets}</span>}
                               </div>
                             </CardContent>
                           </Card>

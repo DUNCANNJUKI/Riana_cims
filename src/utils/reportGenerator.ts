@@ -1,6 +1,7 @@
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { apiClient } from '@/integrations/apiClient';
+import { getBranchLabel, getDepartmentLabel } from './scopeLabels';
 import { addCimsDocumentHeader, DOCUMENT_LAYOUT, getPDFAsBlob, generateReportSerial, RIANA_DOCUMENT_TEAL, resolveDocumentBrand } from './pdfWatermark';
 import { applyCompanyBranding } from './companyLogo';
 
@@ -187,7 +188,7 @@ const getTableHeaders = (reportType: string): string[] => {
   const headers: Record<string, string[]> = {
     'clients-summary': ['Client Name', 'Contact Person', 'Phone', 'Email', 'Contract', 'Industry', 'Start Date'],
     'installations-overview': ['Client', 'Kiosks', 'Displays', 'Tablets', 'UPS', 'Status', 'Completion'],
-    'e-handover': ['Client', 'Upload Date', 'File Name', 'Signed', 'Status', 'Notes'],
+    'e-handover': ['Client', 'Branch', 'Department', 'Upload Date', 'File Name', 'Signed', 'Status', 'Notes'],
     'installation-progress': ['Client', 'Start Date', 'Hardware Tech', 'Software Tech', 'End Date', 'Status'],
     'monthly-analytics': ['Month', 'New Clients', 'Installations', 'Avg. Duration', 'Satisfaction'],
     'contract-distribution': ['Contract Type', 'Client Count', 'Percentage'],
@@ -198,38 +199,50 @@ const getTableHeaders = (reportType: string): string[] => {
   return headers[reportType] || ['Data'];
 };
 
+
+const toDateTime = (value: any, endOfDay = false) => {
+  if (!value) return null;
+  const text = String(value);
+  const date = new Date(/^\d{4}-\d{2}-\d{2}$/.test(text) ? `${text}T${endOfDay ? '23:59:59.999' : '00:00:00.000'}` : text);
+  const time = date.getTime();
+  return Number.isFinite(time) ? time : null;
+};
+
+const withinDateRange = (value: any, dateRange?: { from: string; to: string }) => {
+  const time = toDateTime(value);
+  if (time === null) return !dateRange?.from && !dateRange?.to;
+  const from = dateRange?.from ? toDateTime(dateRange.from) : null;
+  const to = dateRange?.to ? toDateTime(dateRange.to, true) : null;
+  return (from === null || time >= from) && (to === null || time <= to);
+};
 const fetchReportData = async (reportType: string, dateRange?: { from: string; to: string }) => {
   try {
     switch (reportType) {
       case 'clients-summary': {
         const data = await apiClient.get('/clients');
         let filtered = data || [];
-        if (dateRange?.from) filtered = filtered.filter((c: any) => c.start_date >= dateRange.from);
-        if (dateRange?.to) filtered = filtered.filter((c: any) => c.start_date <= dateRange.to);
+        filtered = filtered.filter((c: any) => withinDateRange(c.start_date || c.created_at, dateRange));
         return filtered;
       }
       
       case 'installations-overview': {
         const data = await apiClient.get('/installations');
         let filtered = data || [];
-        if (dateRange?.from) filtered = filtered.filter((i: any) => i.created_at >= dateRange.from);
-        if (dateRange?.to) filtered = filtered.filter((i: any) => i.created_at <= dateRange.to);
+        filtered = filtered.filter((i: any) => withinDateRange(i.created_at || i.assigned_date, dateRange));
         return filtered;
       }
       
       case 'e-handover': {
         const data = await apiClient.get('/handover_uploads');
         let filtered = data || [];
-        if (dateRange?.from) filtered = filtered.filter((h: any) => h.upload_date >= dateRange.from);
-        if (dateRange?.to) filtered = filtered.filter((h: any) => h.upload_date <= dateRange.to);
+        filtered = filtered.filter((h: any) => withinDateRange(h.upload_date, dateRange));
         return filtered;
       }
       
       case 'installation-progress': {
         const data = await apiClient.get('/client_assignments');
         let filtered = data || [];
-        if (dateRange?.from) filtered = filtered.filter((a: any) => a.installation_start_date >= dateRange.from);
-        if (dateRange?.to) filtered = filtered.filter((a: any) => a.installation_start_date <= dateRange.to);
+        filtered = filtered.filter((a: any) => withinDateRange(a.installation_start_date || a.created_at, dateRange));
         return filtered;
       }
       
@@ -248,13 +261,14 @@ const fetchReportData = async (reportType: string, dateRange?: { from: string; t
         });
 
         installations?.forEach((inst: any) => {
-          const month = new Date(inst.created_at).toLocaleDateString('en-US', { year: 'numeric', month: 'short' });
+          const startDate = inst.assigned_date || inst.installation_start_date || inst.created_at;
+          const month = new Date(startDate || inst.created_at).toLocaleDateString('en-US', { year: 'numeric', month: 'short' });
           if (!monthlyData[month]) monthlyData[month] = { month, newClients: 0, newInstallations: 0, completed: 0, totalDays: 0, count: 0 };
           monthlyData[month].newInstallations++;
           if (inst.status === 'completed') {
             monthlyData[month].completed++;
-            if (inst.completion_date) {
-              const days = Math.floor((new Date(inst.completion_date).getTime() - new Date(inst.created_at).getTime()) / (1000 * 60 * 60 * 24));
+            if (inst.completion_date && startDate) {
+              const days = Math.ceil((new Date(inst.completion_date).getTime() - new Date(startDate).getTime()) / (1000 * 60 * 60 * 24));
               monthlyData[month].totalDays += Math.max(0, days);
               monthlyData[month].count++;
             }
@@ -275,8 +289,7 @@ const fetchReportData = async (reportType: string, dateRange?: { from: string; t
       case 'user-activity': {
         const data = await apiClient.get(`/system_logs?limit=100`);
         let filtered = data || [];
-        if (dateRange?.from) filtered = filtered.filter((l: any) => l.created_at >= dateRange.from);
-        if (dateRange?.to) filtered = filtered.filter((l: any) => l.created_at <= dateRange.to);
+        filtered = filtered.filter((l: any) => withinDateRange(l.created_at, dateRange));
         return filtered;
       }
       
@@ -334,8 +347,10 @@ const fetchReportData = async (reportType: string, dateRange?: { from: string; t
               techStats[techId].total++;
               if (assignment.status === 'completed') {
                 techStats[techId].completed++;
-                if (assignment.scheduled_end_date && assignment.installation_start_date) {
-                  const days = Math.floor((new Date(assignment.scheduled_end_date).getTime() - new Date(assignment.installation_start_date).getTime()) / (1000 * 60 * 60 * 24));
+                const startDate = assignment.installation_start_date || assignment.assigned_date || assignment.created_at;
+                const endDate = assignment.completion_date || assignment.completed_at || assignment.updated_at;
+                if (startDate && endDate) {
+                  const days = Math.ceil((new Date(endDate).getTime() - new Date(startDate).getTime()) / (1000 * 60 * 60 * 24));
                   techStats[techId].totalDays += Math.max(0, days);
                   techStats[techId].count++;
                 }
@@ -351,7 +366,7 @@ const fetchReportData = async (reportType: string, dateRange?: { from: string; t
   } catch (error) {
 
     console.error('Error fetching report data:', error);
-    return [];
+    throw error;
   }
 };
 
@@ -362,8 +377,8 @@ const formatTableData = (reportType: string, data: any[]): any[][] => {
       return data.map(client => [
         client.client_name || '',
         client.contact_person_name || '',
-        client.contact_person_phone || '',
-        client.contact_person_email || 'N/A',
+        client.contact_person_phone || client.contact_phone || client.contact_person_phone_masked || client.contact_phone_masked || 'N/A',
+        client.contact_person_email || client.contact_email || client.contact_person_email_masked || client.contact_email_masked || 'N/A',
         client.contract_type || '',
         client.industry_classification || '',
         client.start_date ? new Date(client.start_date).toLocaleDateString('en-GB') : ''
@@ -382,12 +397,14 @@ const formatTableData = (reportType: string, data: any[]): any[][] => {
     
     case 'e-handover':
       return data.map(handover => [
-        handover.clients?.client_name || '',
+        handover.clients?.client_name || handover.client_name || 'Unknown Client',
+        handover.branch_label || getBranchLabel(handover),
+        handover.department_label || getDepartmentLabel(handover),
         handover.upload_date ? new Date(handover.upload_date).toLocaleDateString('en-GB') : '',
         handover.file_name || 'N/A',
         handover.is_signed ? 'Yes' : 'No',
-        handover.installations?.status?.toUpperCase() || 'N/A',
-        handover.notes || '-'
+        (handover.installations?.status || handover.installation_status || 'completed').toUpperCase(),
+        handover.notes || handover.installations?.remarks || handover.installation_notes || '-'
       ]);
     
     case 'installation-progress':
@@ -411,7 +428,7 @@ const formatTableData = (reportType: string, data: any[]): any[][] => {
     
     case 'user-activity':
       return data.map(log => [
-        log.user_profiles ? `${log.user_profiles.first_name} ${log.user_profiles.last_name}` : log.user_id?.substring(0, 8) || 'System',
+        log.user_profiles ? `${log.user_profiles.first_name} ${log.user_profiles.last_name}` : log.email || log.user_id?.substring(0, 8) || 'System',
         log.action || '',
         log.details?.substring(0, 50) || 'N/A',
         new Date(log.created_at).toLocaleString('en-GB')

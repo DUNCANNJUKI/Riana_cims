@@ -9,13 +9,16 @@ const fs = require('fs');
 const fsp = require('fs/promises');
 const jwt = require('jsonwebtoken');
 const createCrmsRouter = require('./routes/crms');
+const createFilesRouter = require('./routes/files');
 const { createChallenge, verifyChallenge } = require('./utils/twoFactor');
-const { normalizePhone, sendEmail, sendSms, sendWelcomeCredentials, smtpStatus, verifySmtpConnection } = require('./services/notifications');
+const { normalizePhone, sendEmail, sendSms, sendWelcomeCredentials, sendWhatsApp, smtpStatus, verifySmtpConnection, whatsappConfigured, whatsappStatus, smsStatus } = require('./services/notifications');
 const { sendUserNotification, sendUsersNotification } = require('./services/notificationDispatcher');
+const { logAuditEvent, logDenied, logFailure, logSuccess, sanitizeAuditData } = require('./services/auditService');
 const { normalizeEquipmentConfigurationPayload } = require('./services/subsidiaryEquipment');
 const { isSensitiveTechnicalRequest } = require('./services/chatbotPolicy');
 const { getAssistantResponse } = require('./services/chatbotKnowledge');
 const { createDatabaseBackup, listBackups, pruneBackups, getLastRun } = require('./services/databaseBackup');
+const { createFileAccessToken, ensurePrivateUploadRoot, getPrivateFileConfig, readFileAccessToken } = require('./services/privateFileStorage');
 const { hashPassword, verifyPassword, verifyAndUpgradePassword } = require('./security/passwords');
 const {
   CAPABILITY_DEFINITIONS,
@@ -43,6 +46,12 @@ const {
 const app = express();
 const port = process.env.PORT || process.env.VITE_API_PORT || 3001;
 const JWT_SECRET = resolveJwtSecret();
+const privateFileConfig = getPrivateFileConfig();
+const configuredCallRingTimeout = Number(process.env.CHAT_CALL_RING_TIMEOUT_SECONDS || 45);
+const CHAT_CALL_RING_TIMEOUT_SECONDS = Number.isFinite(configuredCallRingTimeout)
+  ? Math.max(15, Math.min(300, Math.round(configuredCallRingTimeout)))
+  : 45;
+const CHAT_MISSED_CALL_LOOKBACK_DAYS = 14;
 
 const normalizedScore = (value, minimum, maximum, fallback) => {
   if (value === undefined || value === null || value === '') return fallback;
@@ -58,6 +67,68 @@ const textFeedbackFromResponses = (dynamicResponses) => Object.values(normalizeF
   .filter((value) => typeof value === 'string')
   .map((value) => value.trim())
   .filter(Boolean);
+const slugifyFeedbackClientName = (value) => {
+  const slug = String(value || '')
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 80);
+  return slug || 'client';
+};
+const buildFeedbackUrl = (req, feedback) => {
+  const baseUrl = canonicalAppUrl(req).replace(/\/+$/, '');
+  return `${baseUrl}/feedback/${encodeURIComponent(slugifyFeedbackClientName(feedback.client_name))}/${encodeURIComponent(feedback.unique_token)}`;
+};
+const MAIN_SCOPE_LABEL = 'MAIN';
+const scopeCount = (value) => {
+  const count = Number(value);
+  return Number.isFinite(count) ? count : null;
+};
+const cleanScopeLabel = (value) => {
+  const label = String(value || '').trim();
+  if (!label) return '';
+  return /^(main|main branch|primary|primary branch)$/i.test(label) ? MAIN_SCOPE_LABEL : label;
+};
+const scopedBranchLabel = (row = {}) => {
+  const count = scopeCount(row.branch_count);
+  if (count !== null && count <= 1) return MAIN_SCOPE_LABEL;
+  return cleanScopeLabel(row.branch_name || row.branch || row.client_branch) || MAIN_SCOPE_LABEL;
+};
+const scopedDepartmentLabel = (row = {}) => {
+  const count = scopeCount(row.department_count);
+  if (count !== null && count <= 1) return MAIN_SCOPE_LABEL;
+  return cleanScopeLabel(row.department_name) || MAIN_SCOPE_LABEL;
+};
+const scopedLabel = (row = {}) => {
+  const branch = scopedBranchLabel(row);
+  const department = scopedDepartmentLabel(row);
+  return branch === department ? branch : `${branch} / ${department}`;
+};
+const scopedClientLabel = (row = {}) => {
+  const clientName = row.client_name || 'Client';
+  const scope = scopedLabel(row);
+  return scope ? `${clientName} - ${scope}` : clientName;
+};
+const buildFeedbackLinkPreview = (req, feedback) => {
+  const recipientName = feedback.contact_person_name || feedback.client_name || 'Client';
+  const feedbackUrl = buildFeedbackUrl(req, feedback);
+  const clientLabel = scopedClientLabel(feedback);
+  return {
+    recipient_name: recipientName,
+    recipient_email: feedback.contact_email || '',
+    recipient_phone: feedback.contact_phone || '',
+    can_send_email: Boolean(feedback.contact_email),
+    can_send_sms: Boolean(feedback.contact_phone),
+    feedback_url: feedbackUrl,
+    client_slug: slugifyFeedbackClientName(feedback.client_name),
+    client_label: clientLabel,
+    branch_label: scopedBranchLabel(feedback),
+    department_label: scopedDepartmentLabel(feedback),
+    message: `Hello ${recipientName}, please rate your installation experience for ${clientLabel}. Your secure one-time feedback link is ${feedbackUrl}`,
+  };
+};
 
 const normalizeEscalationMatrixPayload = (value, allowExtraTiers) => {
   if (value === null || value === undefined || value === '') return null;
@@ -82,11 +153,65 @@ const normalizeEscalationMatrixPayload = (value, allowExtraTiers) => {
 
 const allowedEntries = (body, allowedFields) => Object.entries(body || {}).filter(([key]) => allowedFields.has(key));
 const sqlValue = (value) => typeof value === 'object' && value !== null ? JSON.stringify(value) : value;
+const maskPhoneNumber = (value) => {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  const digits = raw.replace(/\D/g, '');
+  if (digits.length <= 4) return raw.replace(/.(?=.)/g, '*');
+  const visible = digits.slice(-4);
+  const prefix = raw.startsWith('+') ? '+' : '';
+  return `${prefix}${'*'.repeat(Math.max(digits.length - 4, 4))}${visible}`;
+};
+const maskEmailAddress = (value) => {
+  const raw = String(value || '').trim();
+  if (!raw || !raw.includes('@')) return raw ? '***' : '';
+  const [localPart, domain] = raw.split('@');
+  const visibleLocal = localPart.slice(0, 1);
+  return `${visibleLocal || '*'}***@${domain}`;
+};
+const normalizeRevealField = (field) => ({
+  contact_person_phone: 'contact_phone',
+  contact_person_email: 'contact_email',
+}[field] || field);
+const attachClientContactAliases = (row, { includeSensitive = false } = {}) => {
+  const contactPhone = row.contact_phone || row.contact_person_phone || '';
+  const contactEmail = row.contact_email || row.contact_person_email || '';
+  const client = { ...row };
+
+  if (!includeSensitive) {
+    delete client.contact_phone;
+    delete client.contact_email;
+  }
+
+  return {
+    ...client,
+    contact_person_phone: includeSensitive ? contactPhone : '',
+    contact_person_email: includeSensitive ? contactEmail : '',
+    contact_phone_masked: maskPhoneNumber(contactPhone),
+    contact_email_masked: maskEmailAddress(contactEmail),
+    contact_person_phone_masked: maskPhoneNumber(contactPhone),
+    contact_person_email_masked: maskEmailAddress(contactEmail),
+  };
+};
+const normalizeClientPayload = (body = {}) => {
+  const normalized = { ...body };
+  if (Object.prototype.hasOwnProperty.call(normalized, 'contact_person_phone') && !Object.prototype.hasOwnProperty.call(normalized, 'contact_phone')) {
+    normalized.contact_phone = normalized.contact_person_phone;
+  }
+  if (Object.prototype.hasOwnProperty.call(normalized, 'contact_person_email') && !Object.prototype.hasOwnProperty.call(normalized, 'contact_email')) {
+    normalized.contact_email = normalized.contact_person_email;
+  }
+  delete normalized.contact_person_phone;
+  delete normalized.contact_person_email;
+  return normalized;
+};
 const CLIENT_FIELDS = new Set(['client_name','industry_classification','current_vendor','tags','contact_person_name','contact_person_department','contact_email','contact_phone','account_manager_id','subsidiary_id','department_id','branch','start_date','contract_type']);
-const INSTALLATION_FIELDS = new Set(['client_id','branch','kiosk_type','kiosk_count','counter_count','counter_names','led_count','led_names','service_points','ups_count','speakers','screen_with_size','media_controllers','tablets','digital_signage_system','staff_trained','amplifiers','hdmis','splitters','handover_file_path','account_manager_id','assigned_technician_id','hardware_technician_id','software_technician_id','status','remarks','assigned_date','completion_date','scheduled_end_date','extension_reason','escalation_matrix','waiting_reason']);
-const ASSIGNMENT_FIELDS = new Set(['client_id','installation_id','hardware_technician_id','software_technician_id','installation_start_date','scheduled_end_date','status','progress_percentage','notes','branch']);
+const INSTALLATION_FIELDS = new Set(['client_id','branch_id','department_id','kiosk_type','kiosk_count','counter_count','counter_names','led_count','led_names','service_points','ups_count','speakers','screen_with_size','media_controllers','tablets','digital_signage_system','staff_trained','amplifiers','hdmis','splitters','handover_file_path','handover_status','account_manager_id','assigned_technician_id','hardware_technician_id','software_technician_id','status','remarks','assigned_date','completion_date','scheduled_end_date','extension_reason','escalation_matrix','waiting_reason']);
+const ASSIGNMENT_FIELDS = new Set(['client_id','branch_id','department_id','installation_id','hardware_technician_id','software_technician_id','installation_start_date','scheduled_end_date','status','progress_percentage','notes','branch']);
+const ASSIGNMENT_SELF_UPDATE_FIELDS = new Set(['status','progress_percentage','notes']);
+const ASSIGNMENT_STATUSES = new Set(['assigned','waiting','in_progress','completed']);
 const SUBSIDIARY_FIELDS = new Set(['subsidiary_name','default_escalation_matrix','equipment_configuration']);
-const FEEDBACK_LINK_FIELDS = new Set(['client_id','installation_id','expires_at','is_used']);
+const FEEDBACK_LINK_FIELDS = new Set(['client_id','installation_id','branch_id','department_id','expires_at','is_used']);
 const COMPANY_FIELDS = new Set(['name','logo_path','tagline','website','email','phone','address','contract_types','contract_durations','font_color','primary_color','secondary_color','accent_color','font_type','timezone','date_format','enable_email_notifications','enable_sms_notifications','enable_push_notifications','auto_reminder_days','backup_schedule','backup_day','backup_time']);
 const SYSTEM_ROLES = new Set(['SuperAdmin', 'Admin', 'Management', 'Finance', 'Developer', 'Teamlead', 'Sales', 'User']);
 const PRIVILEGED_ROLES = new Set(['SuperAdmin', 'Admin', 'Management']);
@@ -94,6 +219,8 @@ const CRMS_ACCESS_ROLES = new Set(['SuperAdmin', 'Admin', 'Management', 'Teamlea
 const isSuperAdmin = (req) => req.user?.role === 'SuperAdmin';
 const isAdminOrSuperAdmin = (req) => ['SuperAdmin', 'Admin', 'Management'].includes(req.user?.role);
 const userCanManageTargetRole = (req, targetRole) => isSuperAdmin(req) || !PRIVILEGED_ROLES.has(targetRole);
+const CHAT_REACTION_TYPES = new Set(['like', 'love', 'laugh', 'wow', 'sad', 'angry']);
+const MESSAGE_DELETE_FOR_EVERYONE_WINDOW_MINUTES = Number(process.env.MESSAGE_DELETE_FOR_EVERYONE_WINDOW_MINUTES || 1440);
 const USER_MODULE_ROLES_SQL = `
   COALESCE((
     SELECT GROUP_CONCAT(CONCAT(umr.module_id, ':', r.code) SEPARATOR ',')
@@ -213,6 +340,83 @@ const normalizeStoredFileReference = (reference) => {
   return filename;
 };
 
+const CHAT_ATTACHMENT_TYPES = {
+  '.pdf': 'application/pdf',
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.webp': 'image/webp',
+  '.txt': 'text/plain',
+  '.csv': 'text/csv',
+  '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  '.pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+};
+
+const safeChatAttachmentUpload = ({ fileName, base64Data, maxBytes = 10 * 1024 * 1024 }) => {
+  const extension = path.extname(String(fileName || '')).toLowerCase();
+  if (!Object.prototype.hasOwnProperty.call(CHAT_ATTACHMENT_TYPES, extension)) {
+    throw Object.assign(new Error('Only PDF, image, text, CSV, and Office document attachments are allowed.'), { status: 400 });
+  }
+  if (!/^[A-Za-z0-9+/]*={0,2}$/.test(String(base64Data || ''))) {
+    throw Object.assign(new Error('Invalid base64 file data.'), { status: 400 });
+  }
+  const buffer = Buffer.from(base64Data, 'base64');
+  if (!buffer.length || buffer.length > maxBytes) {
+    throw Object.assign(new Error('Attachment must be between 1 byte and 10 MB.'), { status: 413 });
+  }
+  const zipBased = ['.docx', '.xlsx', '.pptx'];
+  const signatures = {
+    '.pdf': (b) => b.subarray(0, 5).toString() === '%PDF-',
+    '.png': (b) => b.subarray(0, 8).equals(Buffer.from([0x89,0x50,0x4e,0x47,0x0d,0x0a,0x1a,0x0a])),
+    '.jpg': (b) => b[0] === 0xff && b[1] === 0xd8 && b[b.length - 2] === 0xff && b[b.length - 1] === 0xd9,
+    '.jpeg': (b) => b[0] === 0xff && b[1] === 0xd8 && b[b.length - 2] === 0xff && b[b.length - 1] === 0xd9,
+    '.webp': (b) => b.subarray(0, 4).toString() === 'RIFF' && b.subarray(8, 12).toString() === 'WEBP',
+    '.txt': (b) => !b.includes(0x00),
+    '.csv': (b) => !b.includes(0x00),
+  };
+  const matchesSignature = zipBased.includes(extension)
+    ? buffer.subarray(0, 2).toString() === 'PK'
+    : signatures[extension]?.(buffer);
+  if (!matchesSignature) {
+    throw Object.assign(new Error('Attachment content does not match its extension.'), { status: 400 });
+  }
+  return {
+    buffer,
+    storedName: `${crypto.randomUUID()}${extension}`,
+    extension,
+    contentType: CHAT_ATTACHMENT_TYPES[extension],
+  };
+};
+
+const LOGO_CONTENT_TYPES = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.webp': 'image/webp' };
+const bundledLogoCandidates = (logoPath = '/Riana_logo.png') => {
+  const relativeLogoPath = String(logoPath || '/Riana_logo.png').replace(/^\/+/, '');
+  return [
+    path.join(__dirname, '../public', relativeLogoPath),
+    path.join(__dirname, '../dist', relativeLogoPath),
+    path.join(__dirname, '../client/dist', relativeLogoPath),
+  ];
+};
+const attachLogoFile = async (branding, filePath, filename = path.basename(filePath)) => {
+  const extension = path.extname(filename).toLowerCase();
+  if (!LOGO_CONTENT_TYPES[extension] || !fs.existsSync(filePath)) return false;
+  try {
+    branding.logoContent = await fsp.readFile(filePath);
+    branding.logoFilename = filename;
+    branding.logoContentType = LOGO_CONTENT_TYPES[extension];
+    return true;
+  } catch {
+    return false;
+  }
+};
+const attachFirstAvailableLogo = async (branding, candidates) => {
+  for (const candidate of candidates) {
+    if (await attachLogoFile(branding, candidate)) return true;
+  }
+  return false;
+};
+
 const notificationBranding = async (loginUrl) => {
   const [rows] = await pool.query(
     'SELECT name,logo_path,primary_color,secondary_color,font_type FROM company_settings ORDER BY id LIMIT 1',
@@ -232,25 +436,74 @@ const notificationBranding = async (loginUrl) => {
   }
   if (logoPath.startsWith('/')) {
     branding.logoUrl = new URL(logoPath, loginUrl).toString();
+    await attachFirstAvailableLogo(branding, bundledLogoCandidates(logoPath));
     return branding;
   }
 
   const filename = normalizeStoredFileReference(logoPath);
   const resolved = filename && resolveStoredFile(uploadsDir, filename);
-  if (!resolved || !fs.existsSync(resolved)) return branding;
-  const extension = path.extname(filename).toLowerCase();
-  const contentTypes = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.webp': 'image/webp' };
-  if (!contentTypes[extension]) return branding;
-  try {
-    branding.logoContent = await fsp.readFile(resolved);
-  } catch {
-    return branding;
+  if (!resolved || !(await attachLogoFile(branding, resolved, filename))) {
+    await attachFirstAvailableLogo(branding, bundledLogoCandidates());
   }
-  branding.logoFilename = filename;
-  branding.logoContentType = contentTypes[extension];
   return branding;
 };
 
+const legacyFileAccessUrls = (filePath) => {
+  const filename = normalizeStoredFileReference(filePath);
+  if (!filename) return { secure_preview_url: null, secure_download_url: null };
+  const previewToken = createFileAccessToken({ legacyUploadPath: filename, disposition: 'inline' });
+  const downloadToken = createFileAccessToken({ legacyUploadPath: filename, disposition: 'attachment' });
+  return {
+    secure_preview_url: `/api/download?token=${encodeURIComponent(previewToken)}&disposition=inline`,
+    secure_download_url: `/api/download?token=${encodeURIComponent(downloadToken)}`,
+  };
+};
+
+const attachSecureHandoverUrls = (row) => ({
+  ...row,
+  ...legacyFileAccessUrls(row.file_path),
+  file_path_label: path.basename(normalizeStoredFileReference(row.file_path) || row.file_name || 'document'),
+});
+
+const resolveLegacyDownloadFilename = (req) => {
+  if (req.query.token) {
+    const payload = readFileAccessToken(req.query.token);
+    return normalizeStoredFileReference(payload.legacyUploadPath);
+  }
+  return normalizeStoredFileReference(req.query.path);
+};
+
+const normalizeNullableId = (value) => {
+  const normalized = String(value || '').trim();
+  return normalized || null;
+};
+
+const validateClientBranchDepartment = async ({ clientId, branchId, departmentId, allowInactive = false }) => {
+  const normalizedClientId = normalizeNullableId(clientId);
+  const normalizedBranchId = normalizeNullableId(branchId);
+  const normalizedDepartmentId = normalizeNullableId(departmentId);
+  if (!normalizedClientId) throw Object.assign(new Error('client_id is required.'), { status: 400 });
+  const [clients] = await pool.query('SELECT id FROM clients WHERE id = ? LIMIT 1', [normalizedClientId]);
+  if (!clients.length) throw Object.assign(new Error('Client not found.'), { status: 404 });
+  if (normalizedBranchId) {
+    const [branches] = await pool.query('SELECT id,client_id,status,deleted_at FROM client_branches WHERE id = ? LIMIT 1', [normalizedBranchId]);
+    const branch = branches[0];
+    if (!branch || String(branch.client_id) !== String(normalizedClientId) || (!allowInactive && (branch.deleted_at || branch.status !== 'active'))) {
+      throw Object.assign(new Error('Selected branch does not belong to this active client.'), { status: 400 });
+    }
+  }
+  if (normalizedDepartmentId) {
+    const [departments] = await pool.query('SELECT id,client_id,branch_id,status,deleted_at FROM client_departments WHERE id = ? LIMIT 1', [normalizedDepartmentId]);
+    const department = departments[0];
+    if (!department || String(department.client_id) !== String(normalizedClientId) || (!allowInactive && (department.deleted_at || department.status !== 'active'))) {
+      throw Object.assign(new Error('Selected department does not belong to this active client.'), { status: 400 });
+    }
+    if (normalizedBranchId && String(department.branch_id) !== String(normalizedBranchId)) {
+      throw Object.assign(new Error('Selected department does not belong to the selected branch.'), { status: 400 });
+    }
+  }
+  return { clientId: normalizedClientId, branchId: normalizedBranchId, departmentId: normalizedDepartmentId };
+};
 const storedFileIsRegistered = async (filename) => {
   const safeFilename = normalizeStoredFileReference(filename);
   if (!safeFilename) return false;
@@ -258,7 +511,9 @@ const storedFileIsRegistered = async (filename) => {
   const [handoverRows] = await pool.query('SELECT id FROM handover_uploads WHERE file_path IN (?, ?, ?) LIMIT 1', compatiblePaths);
   if (handoverRows.length) return true;
   const [companyRows] = await pool.query('SELECT id FROM company_settings WHERE logo_path IN (?, ?, ?) LIMIT 1', compatiblePaths);
-  return companyRows.length > 0;
+  if (companyRows.length) return true;
+  const [avatarRows] = await pool.query('SELECT id FROM user_profiles WHERE avatar_url IN (?, ?, ?) LIMIT 1', compatiblePaths);
+  return avatarRows.length > 0;
 };
 
 const authorizeStoredFile = async (req, res, next) => {
@@ -283,7 +538,7 @@ app.use(securityHeaders);
 // legitimate browser resource requests when production and test hostnames differ.
 app.use('/api', cors((req, callback) => callback(null, buildCorsOptions(process.env, req))));
 app.use(express.json({ limit: '15mb' }));
-app.use(createSensitiveRateLimiter({ limit: 20, windowMs: 5 * 60 * 1000 }));
+app.use(createSensitiveRateLimiter({ limit: Number(process.env.SENSITIVE_RATE_LIMIT || 120), windowMs: Number(process.env.SENSITIVE_RATE_WINDOW_MS || 60 * 1000) }));
 app.use('/api', createGlobalApiPolicy(authMiddleware));
 app.use('/uploads', authMiddleware, authorizeStoredFile, express.static(uploadsDir, {
   fallthrough: false,
@@ -293,11 +548,12 @@ app.use('/uploads', authMiddleware, authorizeStoredFile, express.static(uploadsD
   },
 }));
 app.use('/api/crms', createCrmsRouter({ pool, jwtSecret: JWT_SECRET }));
+app.use('/api/files', createFilesRouter({ pool, config: privateFileConfig }));
 
 // File Upload & Handover Metadata
 app.post('/api/upload', requireAnyCapability('installations.manage', 'company.manage'), async (req, res) => {
   try {
-    const { fileName, base64Data, client_id, installation_id, is_signed, notes, purpose } = req.body;
+    const { fileName, base64Data, client_id, installation_id, branch_id, department_id, change_request_id, work_type, is_signed, notes, purpose } = req.body;
     if (purpose === 'company-logo' && !hasCapability(req.user, 'company.manage')) {
       return res.status(403).json({ error: 'Company branding permission is required.' });
     }
@@ -316,11 +572,32 @@ app.post('/api/upload', requireAnyCapability('installations.manage', 'company.ma
     
     // If metadata provided, also save to DB
     let handoverId = null;
+    const secureUrls = legacyFileAccessUrls(finalFileName);
     if (client_id && installation_id) {
+      const [installations] = await pool.query('SELECT client_id,branch_id,department_id FROM installations WHERE id = ? LIMIT 1', [installation_id]);
+      const installation = installations[0];
+      if (!installation || String(installation.client_id) !== String(client_id)) {
+        return res.status(400).json({ error: 'Installation does not belong to the selected client.' });
+      }
+      const scope = await validateClientBranchDepartment({
+        clientId: client_id,
+        branchId: branch_id || installation.branch_id,
+        departmentId: department_id || installation.department_id,
+      });
       handoverId = uuidv4();
+      const versionGroupId = uuidv4();
+      const fileHash = crypto.createHash('sha256').update(buffer).digest('hex');
       await pool.query(
-        'INSERT INTO handover_uploads (id, client_id, installation_id, file_name, file_path, file_size, is_signed, notes, uploaded_by_user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
-        [handoverId, client_id, installation_id, fileName, finalFileName, buffer.length, is_signed === 'true' || is_signed === true, notes || '', req.user.id]
+        `INSERT INTO handover_uploads
+         (id, client_id, installation_id, branch_id, department_id, work_type, change_request_id, version_group_id, version_number, is_latest_version, status, file_hash, file_name, file_path, file_size, is_signed, notes, uploaded_by_user_id)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, TRUE, 'uploaded', ?, ?, ?, ?, ?, ?, ?)`,
+        [handoverId, client_id, installation_id, scope.branchId, scope.departmentId, work_type || 'installation', change_request_id || null, versionGroupId, fileHash, fileName, finalFileName, buffer.length, is_signed === 'true' || is_signed === true, notes || '', req.user.id]
+      );
+      await pool.query(
+        `UPDATE installations
+         SET status = 'completed', completion_date = COALESCE(completion_date, CURDATE()), handover_file_path = ?, handover_status = ?
+         WHERE id = ?`,
+        [finalFileName, is_signed === 'true' || is_signed === true ? 'signed' : 'uploaded', installation_id],
       );
     }
     
@@ -329,6 +606,8 @@ app.post('/api/upload', requireAnyCapability('installations.manage', 'company.ma
       filePath: finalFileName,
       id: handoverId,
       file_path: finalFileName,
+      file_path_label: path.basename(finalFileName),
+      ...secureUrls,
       file_name: fileName,
       upload_date: new Date().toISOString()
     });
@@ -366,6 +645,7 @@ const initDb = async () => {
       department_id VARCHAR(36),
       subsidiary_id VARCHAR(36),
       phone_number VARCHAR(20),
+      avatar_url VARCHAR(255),
       first_name VARCHAR(100),
       last_name VARCHAR(100),
       first_login BOOLEAN DEFAULT TRUE,
@@ -374,6 +654,7 @@ const initDb = async () => {
       two_factor_method ENUM('email', 'sms', 'call') DEFAULT 'email',
       two_factor_phone VARCHAR(30),
       session_version INT UNSIGNED NOT NULL DEFAULT 0,
+      last_seen_at TIMESTAMP NULL,
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (department_id) REFERENCES departments(id) ON DELETE SET NULL,
       FOREIGN KEY (subsidiary_id) REFERENCES subsidiaries(id) ON DELETE SET NULL
@@ -381,10 +662,12 @@ const initDb = async () => {
 
     await pool.query("ALTER TABLE user_profiles MODIFY role ENUM('SuperAdmin','Admin','Management','Finance','Developer','Teamlead','Sales','User') NOT NULL");
     await pool.query(`ALTER TABLE user_profiles
+      ADD COLUMN IF NOT EXISTS avatar_url VARCHAR(255) NULL,
       ADD COLUMN IF NOT EXISTS two_factor_enabled BOOLEAN NOT NULL DEFAULT FALSE,
       ADD COLUMN IF NOT EXISTS two_factor_method ENUM('email','sms','call') NOT NULL DEFAULT 'email',
       ADD COLUMN IF NOT EXISTS two_factor_phone VARCHAR(30) NULL,
-      ADD COLUMN IF NOT EXISTS session_version INT UNSIGNED NOT NULL DEFAULT 0`);
+      ADD COLUMN IF NOT EXISTS session_version INT UNSIGNED NOT NULL DEFAULT 0,
+      ADD COLUMN IF NOT EXISTS last_seen_at TIMESTAMP NULL`);
 
     await pool.query(`CREATE TABLE IF NOT EXISTS user_permissions (
       user_id VARCHAR(36) NOT NULL,
@@ -397,6 +680,59 @@ const initDb = async () => {
       CONSTRAINT fk_user_permissions_permission FOREIGN KEY (permission_id) REFERENCES permissions(id) ON DELETE CASCADE,
       CONSTRAINT fk_user_permissions_grantor FOREIGN KEY (granted_by) REFERENCES user_profiles(id) ON DELETE SET NULL
     )`);
+
+    await pool.query(`CREATE TABLE IF NOT EXISTS uploaded_files (
+      id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+      tenant_id VARCHAR(36) NULL,
+      organization_id VARCHAR(36) NULL,
+      branch_id VARCHAR(100) NULL,
+      uploaded_by VARCHAR(36) NOT NULL,
+      original_name VARCHAR(255) NOT NULL,
+      stored_name VARCHAR(255) NOT NULL,
+      relative_path VARCHAR(500) NOT NULL,
+      mime_type VARCHAR(150) NOT NULL,
+      detected_mime_type VARCHAR(150) NULL,
+      extension VARCHAR(20) NULL,
+      file_size BIGINT UNSIGNED NOT NULL,
+      file_category VARCHAR(100) NOT NULL,
+      related_entity_type VARCHAR(100) NULL,
+      related_entity_id VARCHAR(64) NULL,
+      visibility ENUM('private','organization','public') NOT NULL DEFAULT 'private',
+      status ENUM('uploading','processing','active','failed','quarantined','deleted') NOT NULL DEFAULT 'processing',
+      checksum_sha256 CHAR(64) NULL,
+      image_width INT UNSIGNED NULL,
+      image_height INT UNSIGNED NULL,
+      original_file_id BIGINT UNSIGNED NULL,
+      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      deleted_at TIMESTAMP NULL,
+      deleted_by VARCHAR(36) NULL,
+      deletion_reason VARCHAR(500) NULL,
+      INDEX idx_file_tenant (tenant_id, id),
+      INDEX idx_file_organization (organization_id, id),
+      INDEX idx_file_branch (branch_id, id),
+      INDEX idx_file_owner (uploaded_by),
+      INDEX idx_file_entity (related_entity_type, related_entity_id),
+      INDEX idx_file_status (status),
+      INDEX idx_file_checksum (checksum_sha256)
+    )`);
+
+    await pool.query(`CREATE TABLE IF NOT EXISTS uploaded_file_variants (
+      id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+      file_id BIGINT UNSIGNED NOT NULL,
+      variant_type ENUM('original','optimized','thumbnail') NOT NULL,
+      stored_name VARCHAR(255) NOT NULL,
+      relative_path VARCHAR(500) NOT NULL,
+      mime_type VARCHAR(150) NOT NULL,
+      file_size BIGINT UNSIGNED NOT NULL,
+      width INT UNSIGNED NULL,
+      height INT UNSIGNED NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE KEY unique_file_variant (file_id, variant_type),
+      INDEX idx_uploaded_file_variants_file (file_id)
+    )`);
+
+
 
     for (const capability of CAPABILITY_DEFINITIONS) {
       await pool.query(
@@ -443,8 +779,7 @@ const initDb = async () => {
       expires_at DATETIME NOT NULL,
       used_at DATETIME NULL,
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-      INDEX idx_password_reset_active (user_id,used_at,expires_at),
-      FOREIGN KEY (user_id) REFERENCES user_profiles(id) ON DELETE CASCADE
+      INDEX idx_password_reset_active (user_id,used_at,expires_at)
     )`);
 
     await pool.query(`CREATE TABLE IF NOT EXISTS crms_notifications (
@@ -459,8 +794,7 @@ const initDb = async () => {
       email_sent BOOLEAN DEFAULT FALSE,
       sms_sent BOOLEAN DEFAULT FALSE,
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-      INDEX idx_crms_notifications_user_read (user_id,\`read\`),
-      FOREIGN KEY (user_id) REFERENCES user_profiles(id) ON DELETE CASCADE
+      INDEX idx_crms_notifications_user_read (user_id,\`read\`)
     )`);
 
     // Clients
@@ -487,10 +821,68 @@ const initDb = async () => {
       FOREIGN KEY (added_by_user_id) REFERENCES user_profiles(id) ON DELETE SET NULL
     )`);
 
+    // Client Branches and Departments
+    await pool.query(`CREATE TABLE IF NOT EXISTS client_branches (
+      id VARCHAR(36) PRIMARY KEY,
+      client_id VARCHAR(36) NOT NULL,
+      branch_name VARCHAR(150) NOT NULL,
+      branch_code VARCHAR(60),
+      contact_person_name VARCHAR(150),
+      contact_email VARCHAR(255),
+      contact_phone VARCHAR(30),
+      physical_address TEXT,
+      status VARCHAR(30) NOT NULL DEFAULT 'active',
+      notes TEXT,
+      created_by VARCHAR(36),
+      updated_by VARCHAR(36),
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      deleted_at TIMESTAMP NULL,
+      INDEX idx_client_branches_client_status (client_id,status),
+      UNIQUE KEY uq_client_branches_name (client_id,branch_name)
+    )`);
+
+    await pool.query(`CREATE TABLE IF NOT EXISTS client_departments (
+      id VARCHAR(36) PRIMARY KEY,
+      client_id VARCHAR(36) NOT NULL,
+      branch_id VARCHAR(36) NOT NULL,
+      department_name VARCHAR(150) NOT NULL,
+      department_code VARCHAR(60),
+      contact_person_name VARCHAR(150),
+      contact_email VARCHAR(255),
+      contact_phone VARCHAR(30),
+      status VARCHAR(30) NOT NULL DEFAULT 'active',
+      notes TEXT,
+      created_by VARCHAR(36),
+      updated_by VARCHAR(36),
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      deleted_at TIMESTAMP NULL,
+      INDEX idx_client_departments_branch_status (branch_id,status),
+      INDEX idx_client_departments_client_status (client_id,status),
+      UNIQUE KEY uq_client_departments_name (branch_id,department_name)
+    )`);
+
+    await pool.query(`CREATE TABLE IF NOT EXISTS user_access_scopes (
+      id VARCHAR(36) PRIMARY KEY,
+      user_id VARCHAR(36) NOT NULL,
+      scope_type VARCHAR(40) NOT NULL DEFAULT 'all_clients',
+      client_id VARCHAR(36),
+      branch_id VARCHAR(36),
+      department_id VARCHAR(36),
+      include_future_departments BOOLEAN NOT NULL DEFAULT TRUE,
+      created_by VARCHAR(36),
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      UNIQUE KEY uq_user_access_scope (user_id,scope_type,client_id,branch_id,department_id),
+      INDEX idx_user_access_scope_user (user_id)
+    )`);
     // Installations
     await pool.query(`CREATE TABLE IF NOT EXISTS installations (
       id VARCHAR(36) PRIMARY KEY,
       client_id VARCHAR(36) NOT NULL,
+      branch_id VARCHAR(36),
+      department_id VARCHAR(36),
       branch VARCHAR(100),
       kiosk_type VARCHAR(100),
       kiosk_count INT DEFAULT 0,
@@ -510,6 +902,7 @@ const initDb = async () => {
       hdmis INT DEFAULT 0,
       splitters INT DEFAULT 0,
       handover_file_path VARCHAR(512),
+      handover_status VARCHAR(50) DEFAULT 'pending',
       account_manager_id VARCHAR(36),
       assigned_technician_id VARCHAR(36),
       hardware_technician_id VARCHAR(36),
@@ -524,6 +917,7 @@ const initDb = async () => {
       waiting_reason TEXT,
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      INDEX idx_installations_branch_department (branch_id,department_id),
       FOREIGN KEY (client_id) REFERENCES clients(id) ON DELETE CASCADE,
       FOREIGN KEY (account_manager_id) REFERENCES user_profiles(id) ON DELETE SET NULL,
       FOREIGN KEY (assigned_technician_id) REFERENCES user_profiles(id) ON DELETE SET NULL,
@@ -531,10 +925,17 @@ const initDb = async () => {
       FOREIGN KEY (software_technician_id) REFERENCES user_profiles(id) ON DELETE SET NULL
     )`);
 
+    await pool.query(`ALTER TABLE installations
+      ADD COLUMN IF NOT EXISTS branch_id VARCHAR(36) NULL,
+      ADD COLUMN IF NOT EXISTS department_id VARCHAR(36) NULL,
+      ADD COLUMN IF NOT EXISTS handover_status VARCHAR(50) DEFAULT 'pending'`);
+
     // Client Assignments
     await pool.query(`CREATE TABLE IF NOT EXISTS client_assignments (
       id VARCHAR(36) PRIMARY KEY,
       client_id VARCHAR(36) NOT NULL,
+      branch_id VARCHAR(36),
+      department_id VARCHAR(36),
       installation_id VARCHAR(36),
       hardware_technician_id VARCHAR(36),
       software_technician_id VARCHAR(36),
@@ -547,6 +948,7 @@ const initDb = async () => {
       branch VARCHAR(100),
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      INDEX idx_assignment_scope (client_id,branch_id,department_id),
       FOREIGN KEY (client_id) REFERENCES clients(id) ON DELETE CASCADE,
       FOREIGN KEY (installation_id) REFERENCES installations(id) ON DELETE SET NULL,
       FOREIGN KEY (hardware_technician_id) REFERENCES user_profiles(id) ON DELETE SET NULL,
@@ -554,11 +956,24 @@ const initDb = async () => {
       FOREIGN KEY (assigned_by_user_id) REFERENCES user_profiles(id) ON DELETE SET NULL
     )`);
 
-    // Ensure installation_id column exists on pre-existing databases
+    // Ensure scoped assignment columns exist on pre-existing databases.
+    for (const [column, definition] of [
+      ['branch_id', 'VARCHAR(36) NULL AFTER client_id'],
+      ['department_id', 'VARCHAR(36) NULL AFTER branch_id'],
+      ['installation_id', 'VARCHAR(36) NULL AFTER department_id'],
+    ]) {
+      try {
+        const [assignmentColumns] = await pool.query('SHOW COLUMNS FROM client_assignments LIKE ?', [column]);
+        if (!assignmentColumns.length) await pool.query(`ALTER TABLE client_assignments ADD COLUMN ${column} ${definition}`);
+      } catch (e) {
+        console.warn(`Unable to ensure client_assignments.${column}:`, e.message);
+      }
+    }
     try {
-      await pool.query('ALTER TABLE client_assignments ADD COLUMN installation_id VARCHAR(36)');
+      const [assignmentIndexes] = await pool.query("SHOW INDEX FROM client_assignments WHERE Key_name = 'idx_assignment_scope'");
+      if (!assignmentIndexes.length) await pool.query('ALTER TABLE client_assignments ADD INDEX idx_assignment_scope (client_id,branch_id,department_id)');
     } catch (e) {
-      // Ignore - column already exists
+      console.warn('Unable to ensure client_assignments scope index:', e.message);
     }
 
     // Seed Departments if empty
@@ -610,6 +1025,8 @@ const initDb = async () => {
     await pool.query(`CREATE TABLE IF NOT EXISTS installation_feedback (
       id VARCHAR(36) PRIMARY KEY,
       client_id VARCHAR(36) NOT NULL,
+      branch_id VARCHAR(36),
+      department_id VARCHAR(36),
       installation_id VARCHAR(36),
       submitted_by VARCHAR(36),
       installation_quality_rating INT DEFAULT 5,
@@ -624,10 +1041,7 @@ const initDb = async () => {
       improvement_suggestions TEXT,
       dynamic_responses JSON,
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-      FOREIGN KEY (client_id) REFERENCES clients(id) ON DELETE CASCADE,
-      FOREIGN KEY (installation_id) REFERENCES installations(id) ON DELETE SET NULL,
-      FOREIGN KEY (submitted_by) REFERENCES user_profiles(id) ON DELETE SET NULL
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
     )`);
     
     try {
@@ -640,6 +1054,8 @@ const initDb = async () => {
     await pool.query(`CREATE TABLE IF NOT EXISTS feedback_links (
       id VARCHAR(36) PRIMARY KEY,
       client_id VARCHAR(36) NOT NULL,
+      branch_id VARCHAR(36),
+      department_id VARCHAR(36),
       installation_id VARCHAR(36),
       unique_token VARCHAR(100) NOT NULL UNIQUE,
       expires_at TIMESTAMP NOT NULL,
@@ -648,10 +1064,7 @@ const initDb = async () => {
       email_sent BOOLEAN DEFAULT FALSE,
       sms_sent BOOLEAN DEFAULT FALSE,
       created_by_user_id VARCHAR(36),
-      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-      FOREIGN KEY (client_id) REFERENCES clients(id) ON DELETE CASCADE,
-      FOREIGN KEY (installation_id) REFERENCES installations(id) ON DELETE SET NULL,
-      FOREIGN KEY (created_by_user_id) REFERENCES user_profiles(id) ON DELETE SET NULL
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )`);
 
     // Announcements
@@ -686,16 +1099,23 @@ const initDb = async () => {
       announcement_id VARCHAR(36) NOT NULL,
       user_id VARCHAR(36) NOT NULL,
       read_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-      FOREIGN KEY (announcement_id) REFERENCES announcements(id) ON DELETE CASCADE,
-      FOREIGN KEY (user_id) REFERENCES user_profiles(id) ON DELETE CASCADE,
-      UNIQUE(announcement_id, user_id)
+      FOREIGN KEY (announcement_id) REFERENCES announcements(id) ON DELETE CASCADE
     )`);
 
     // Handover Uploads
     await pool.query(`CREATE TABLE IF NOT EXISTS handover_uploads (
       id VARCHAR(36) PRIMARY KEY,
       client_id VARCHAR(36) NOT NULL,
+      branch_id VARCHAR(36),
+      department_id VARCHAR(36),
       installation_id VARCHAR(36),
+      work_type VARCHAR(40) NOT NULL DEFAULT 'installation',
+      change_request_id VARCHAR(36),
+      version_group_id VARCHAR(36),
+      version_number INT NOT NULL DEFAULT 1,
+      is_latest_version BOOLEAN NOT NULL DEFAULT TRUE,
+      status VARCHAR(30) NOT NULL DEFAULT 'uploaded',
+      file_hash CHAR(64),
       file_name VARCHAR(255) NOT NULL,
       file_path VARCHAR(512) NOT NULL,
       file_size BIGINT,
@@ -703,11 +1123,23 @@ const initDb = async () => {
       is_signed BOOLEAN DEFAULT FALSE,
       notes TEXT,
       uploaded_by_user_id VARCHAR(36),
+      INDEX idx_handover_scope (client_id,branch_id,department_id,work_type),
+      INDEX idx_handover_version_group (version_group_id,is_latest_version),
       FOREIGN KEY (client_id) REFERENCES clients(id) ON DELETE CASCADE,
       FOREIGN KEY (installation_id) REFERENCES installations(id) ON DELETE SET NULL,
       FOREIGN KEY (uploaded_by_user_id) REFERENCES user_profiles(id) ON DELETE SET NULL
     )`);
 
+    await pool.query(`ALTER TABLE handover_uploads
+      ADD COLUMN IF NOT EXISTS branch_id VARCHAR(36) NULL,
+      ADD COLUMN IF NOT EXISTS department_id VARCHAR(36) NULL,
+      ADD COLUMN IF NOT EXISTS work_type VARCHAR(40) NOT NULL DEFAULT 'installation',
+      ADD COLUMN IF NOT EXISTS change_request_id VARCHAR(36) NULL,
+      ADD COLUMN IF NOT EXISTS version_group_id VARCHAR(36) NULL,
+      ADD COLUMN IF NOT EXISTS version_number INT NOT NULL DEFAULT 1,
+      ADD COLUMN IF NOT EXISTS is_latest_version BOOLEAN NOT NULL DEFAULT TRUE,
+      ADD COLUMN IF NOT EXISTS status VARCHAR(30) NOT NULL DEFAULT 'uploaded',
+      ADD COLUMN IF NOT EXISTS file_hash CHAR(64) NULL`);
     // Technician Performance Scores
     await pool.query(`CREATE TABLE IF NOT EXISTS technician_performance_scores (
       id VARCHAR(36) PRIMARY KEY,
@@ -857,21 +1289,182 @@ const initDb = async () => {
       FOREIGN KEY (actor_user_id) REFERENCES user_profiles(id) ON DELETE SET NULL
     )`);
 
+
+    await pool.query(`CREATE TABLE IF NOT EXISTS audit_logs (
+      id VARCHAR(36) PRIMARY KEY,
+      event_uuid VARCHAR(36) NOT NULL,
+      user_id VARCHAR(36) NULL,
+      impersonator_user_id VARCHAR(36) NULL,
+      action VARCHAR(120) NOT NULL,
+      category VARCHAR(60) NOT NULL DEFAULT 'system',
+      module VARCHAR(80) NOT NULL,
+      entity_type VARCHAR(80) NULL,
+      entity_id VARCHAR(100) NULL,
+      description VARCHAR(1000) NULL,
+      old_values JSON NULL,
+      new_values JSON NULL,
+      metadata JSON NULL,
+      ip_address VARCHAR(45) NULL,
+      user_agent TEXT NULL,
+      device VARCHAR(255) NULL,
+      session_id VARCHAR(120) NULL,
+      request_id VARCHAR(80) NULL,
+      route VARCHAR(255) NULL,
+      http_method VARCHAR(12) NULL,
+      status ENUM('success','failure','denied') NOT NULL DEFAULT 'success',
+      severity ENUM('info','notice','warning','critical') NOT NULL DEFAULT 'info',
+      integrity_hash CHAR(64) NULL,
+      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      INDEX idx_audit_logs_user_created (user_id,created_at),
+      INDEX idx_audit_logs_action (action),
+      INDEX idx_audit_logs_module_created (module,created_at),
+      INDEX idx_audit_logs_entity (entity_type,entity_id),
+      INDEX idx_audit_logs_created (created_at),
+      INDEX idx_audit_logs_severity (severity),
+      INDEX idx_audit_logs_status (status),
+      INDEX idx_audit_logs_ip (ip_address),
+      UNIQUE KEY uq_audit_event_uuid (event_uuid),
+      FOREIGN KEY (user_id) REFERENCES user_profiles(id) ON DELETE SET NULL,
+      FOREIGN KEY (impersonator_user_id) REFERENCES user_profiles(id) ON DELETE SET NULL
+    )`);
     // Messages for user-to-user chat
     await pool.query(`CREATE TABLE IF NOT EXISTS messages (
       id VARCHAR(36) PRIMARY KEY,
       sender_id VARCHAR(36) NOT NULL,
       receiver_id VARCHAR(36) NOT NULL,
       content TEXT NOT NULL,
+      message_kind ENUM('text','attachment','call') NOT NULL DEFAULT 'text',
+      reply_to_message_id VARCHAR(36),
+      attachment_file_name VARCHAR(255),
+      attachment_file_path VARCHAR(255),
+      attachment_content_type VARCHAR(120),
+      attachment_size INT UNSIGNED,
+      call_type ENUM('audio','video'),
+      call_status ENUM('ringing','accepted','declined','missed','ended') NULL,
+      call_started_at DATETIME NULL,
+      call_ended_at DATETIME NULL,
+      is_edited BOOLEAN DEFAULT FALSE,
+      edited_at TIMESTAMP NULL,
+      is_deleted_for_everyone BOOLEAN DEFAULT FALSE,
+      deleted_for_everyone_at TIMESTAMP NULL,
+      deleted_for_everyone_by VARCHAR(36) NULL,
+      deletion_reason VARCHAR(255) NULL,
+      content_hash CHAR(64) NULL,
       is_read BOOLEAN DEFAULT FALSE,
       read_at TIMESTAMP NULL,
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       INDEX idx_messages_inbox (receiver_id, is_read, created_at),
       INDEX idx_messages_thread (sender_id, receiver_id, created_at),
+      INDEX idx_messages_reply (reply_to_message_id),
+      INDEX idx_messages_attachment (attachment_file_path),
       FOREIGN KEY (sender_id) REFERENCES user_profiles(id) ON DELETE CASCADE,
-      FOREIGN KEY (receiver_id) REFERENCES user_profiles(id) ON DELETE CASCADE
+      FOREIGN KEY (receiver_id) REFERENCES user_profiles(id) ON DELETE CASCADE,
+      FOREIGN KEY (reply_to_message_id) REFERENCES messages(id) ON DELETE SET NULL
     )`);
 
+    await pool.query(`ALTER TABLE messages
+      ADD COLUMN IF NOT EXISTS message_kind ENUM('text','attachment','call') NOT NULL DEFAULT 'text',
+      ADD COLUMN IF NOT EXISTS reply_to_message_id VARCHAR(36) NULL,
+      ADD COLUMN IF NOT EXISTS attachment_file_name VARCHAR(255) NULL,
+      ADD COLUMN IF NOT EXISTS attachment_file_path VARCHAR(255) NULL,
+      ADD COLUMN IF NOT EXISTS attachment_content_type VARCHAR(120) NULL,
+      ADD COLUMN IF NOT EXISTS attachment_size INT UNSIGNED NULL,
+      ADD COLUMN IF NOT EXISTS call_type ENUM('audio','video') NULL,
+      ADD COLUMN IF NOT EXISTS call_status ENUM('ringing','accepted','declined','missed','ended') NULL,
+      ADD COLUMN IF NOT EXISTS call_started_at DATETIME NULL,
+      ADD COLUMN IF NOT EXISTS call_ended_at DATETIME NULL,
+      ADD COLUMN IF NOT EXISTS is_edited BOOLEAN DEFAULT FALSE,
+      ADD COLUMN IF NOT EXISTS edited_at TIMESTAMP NULL,
+      ADD COLUMN IF NOT EXISTS is_deleted_for_everyone BOOLEAN DEFAULT FALSE,
+      ADD COLUMN IF NOT EXISTS deleted_for_everyone_at TIMESTAMP NULL,
+      ADD COLUMN IF NOT EXISTS deleted_for_everyone_by VARCHAR(36) NULL,
+      ADD COLUMN IF NOT EXISTS deletion_reason VARCHAR(255) NULL,
+      ADD COLUMN IF NOT EXISTS content_hash CHAR(64) NULL`);
+
+
+    await pool.query(`CREATE TABLE IF NOT EXISTS message_edit_history (
+      id VARCHAR(36) PRIMARY KEY,
+      message_id VARCHAR(36) NOT NULL,
+      edited_by VARCHAR(36) NULL,
+      previous_content TEXT NULL,
+      new_content_hash CHAR(64) NOT NULL,
+      edited_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      INDEX idx_message_edit_history_message (message_id,edited_at),
+      FOREIGN KEY (message_id) REFERENCES messages(id) ON DELETE CASCADE,
+      FOREIGN KEY (edited_by) REFERENCES user_profiles(id) ON DELETE SET NULL
+    )`);
+
+    await pool.query(`CREATE TABLE IF NOT EXISTS message_reactions (
+      id VARCHAR(36) PRIMARY KEY,
+      message_id VARCHAR(36) NOT NULL,
+      user_id VARCHAR(36) NOT NULL,
+      reaction_type ENUM('like','love','laugh','wow','sad','angry') NOT NULL,
+      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      UNIQUE KEY uq_message_reaction_user (message_id,user_id),
+      INDEX idx_message_reactions_user (user_id),
+      FOREIGN KEY (message_id) REFERENCES messages(id) ON DELETE CASCADE
+    )`);
+
+    await pool.query(`CREATE TABLE IF NOT EXISTS message_user_deletions (
+      id VARCHAR(36) PRIMARY KEY,
+      message_id VARCHAR(36) NOT NULL,
+      user_id VARCHAR(36) NOT NULL,
+      deleted_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE KEY uq_message_user_deletion (message_id,user_id),
+      INDEX idx_message_user_deletions_user (user_id,deleted_at),
+      FOREIGN KEY (message_id) REFERENCES messages(id) ON DELETE CASCADE
+    )`);
+
+    await pool.query(`CREATE TABLE IF NOT EXISTS message_recipient_status (
+      id VARCHAR(36) PRIMARY KEY,
+      message_id VARCHAR(36) NOT NULL,
+      user_id VARCHAR(36) NOT NULL,
+      delivered_at TIMESTAMP NULL,
+      read_at TIMESTAMP NULL,
+      UNIQUE KEY uq_message_recipient_status (message_id,user_id),
+      INDEX idx_message_recipient_status_user_read (user_id,read_at),
+      FOREIGN KEY (message_id) REFERENCES messages(id) ON DELETE CASCADE
+    )`);
+
+    await pool.query(`CREATE TABLE IF NOT EXISTS call_participants (
+      id VARCHAR(36) PRIMARY KEY,
+      call_id VARCHAR(36) NOT NULL,
+      user_id VARCHAR(36) NOT NULL,
+      status ENUM('invited','ringing','accepted','declined','ended','missed') NOT NULL DEFAULT 'ringing',
+      joined_at DATETIME NULL,
+      left_at DATETIME NULL,
+      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      UNIQUE KEY uq_call_participant (call_id,user_id),
+      INDEX idx_call_participants_user_status (user_id,status,created_at),
+      FOREIGN KEY (call_id) REFERENCES messages(id) ON DELETE CASCADE
+    )`);
+
+    await pool.query(`CREATE TABLE IF NOT EXISTS missed_call_dismissals (
+      id VARCHAR(36) PRIMARY KEY,
+      call_id VARCHAR(36) NOT NULL,
+      user_id VARCHAR(36) NOT NULL,
+      dismissed_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE KEY uq_missed_call_dismissal (call_id,user_id),
+      INDEX idx_missed_call_dismissals_user (user_id,dismissed_at),
+      FOREIGN KEY (call_id) REFERENCES messages(id) ON DELETE CASCADE
+    )`);
+
+    await pool.query(`CREATE TABLE IF NOT EXISTS contact_reveal_audit (
+      id VARCHAR(36) PRIMARY KEY,
+      user_id VARCHAR(36) NULL,
+      entity_type VARCHAR(50) NOT NULL,
+      entity_id VARCHAR(36) NOT NULL,
+      field_name VARCHAR(80) NOT NULL,
+      reason VARCHAR(255) NULL,
+      ip_address VARCHAR(64) NULL,
+      user_agent VARCHAR(255) NULL,
+      revealed_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      INDEX idx_contact_reveal_entity (entity_type,entity_id,revealed_at),
+      INDEX idx_contact_reveal_user (user_id,revealed_at),
+      FOREIGN KEY (user_id) REFERENCES user_profiles(id) ON DELETE SET NULL
+    )`);
     // Patch company_settings for backup_schedule and colors
     try {
       const [columns] = await pool.query('SHOW COLUMNS FROM company_settings');
@@ -1030,8 +1623,30 @@ app.get('/api/uploads', async (req, res) => {
     if (req.query.client_id) { filters.push('client_id = ?'); values.push(req.query.client_id); }
     if (req.query.installation_id) { filters.push('installation_id = ?'); values.push(req.query.installation_id); }
     const where = filters.length ? ` WHERE ${filters.join(' AND ')}` : '';
-    const [rows] = await pool.query(`SELECT * FROM handover_uploads${where} ORDER BY upload_date DESC`, values);
-    res.json(rows);
+    const scopedWhere = where ? where.replace(/\bclient_id\b/g, 'h.client_id').replace(/\binstallation_id\b/g, 'h.installation_id') : '';
+    const [rows] = await pool.query(`
+      SELECT h.*, c.client_name, c.branch AS client_branch, cb.branch_name, cd.department_name,
+             i.status AS installation_status, i.remarks AS installation_notes,
+             (SELECT COUNT(*) FROM client_branches b2 WHERE ${sqlUuidEquals('b2.client_id', 'h.client_id')} AND b2.deleted_at IS NULL) AS branch_count,
+             (SELECT COUNT(*) FROM client_departments d2 WHERE ${sqlUuidEquals('d2.client_id', 'h.client_id')} AND d2.deleted_at IS NULL AND (COALESCE(h.branch_id, i.branch_id) IS NULL OR ${sqlUuidEquals('d2.branch_id', 'COALESCE(h.branch_id, i.branch_id)')})) AS department_count
+      FROM handover_uploads h
+      LEFT JOIN clients c ON ${sqlUuidEquals('c.id', 'h.client_id')}
+      LEFT JOIN installations i ON ${sqlUuidEquals('i.id', 'h.installation_id')}
+      LEFT JOIN client_branches cb ON ${sqlUuidEquals('cb.id', 'COALESCE(h.branch_id, i.branch_id)')}
+      LEFT JOIN client_departments cd ON ${sqlUuidEquals('cd.id', 'COALESCE(h.department_id, i.department_id)')}
+      ${scopedWhere}
+      ORDER BY h.upload_date DESC`, values);
+    res.json(rows.map(row => attachSecureHandoverUrls({
+      ...row,
+      branch: row.branch_name || row.client_branch,
+      branch_name: row.branch_name || row.client_branch,
+      department_name: row.department_name || null,
+      branch_label: scopedBranchLabel(row),
+      department_label: scopedDepartmentLabel(row),
+      scope_label: scopedLabel(row),
+      clients: { client_name: row.client_name, branch: row.branch_name || row.client_branch },
+      installations: { status: row.installation_status, remarks: row.installation_notes },
+    })));
   } catch {
     res.status(500).json({ error: 'Unable to load uploaded documents.' });
   }
@@ -1039,11 +1654,12 @@ app.get('/api/uploads', async (req, res) => {
 
 app.get('/api/download', async (req, res) => {
   try {
-    const filename = normalizeStoredFileReference(req.query.path);
+    const filename = resolveLegacyDownloadFilename(req);
     const filePath = resolveStoredFile(uploadsDir, filename);
     if (!filePath || !fs.existsSync(filePath) || !(await storedFileIsRegistered(filename))) {
       return res.status(404).json({ error: 'File not found.' });
     }
+    if (!req.query.token) res.setHeader('Deprecation', 'true');
     const disposition = req.query.disposition === 'inline' ? 'inline' : 'attachment';
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('Content-Disposition', `${disposition}; filename="${path.basename(filename).replace(/["\r\n]/g, '')}"`);
@@ -1223,19 +1839,28 @@ app.post('/api/auth/login', async (req, res) => {
       LEFT JOIN subsidiaries s ON s.id = u.subsidiary_id
       WHERE LOWER(u.email) = ?
     `, [email]);
-    if (!rows.length) return res.status(401).json({ error: 'Invalid credentials' });
+    if (!rows.length) {
+      await logFailure(pool, req, { action: 'login_failed', category: 'authentication', module: 'Auth', description: 'Login failed for an unknown email address.', metadata: { email } });
+      return res.status(401).json({ error: 'Invalid credentials' });
+    }
     
     const user = rows[0];
-    if (!user.is_active) return res.status(403).json({ error: 'This user account is inactive.' });
+    if (!user.is_active) {
+      await logFailure(pool, req, { user_id: user.id, action: 'login_failed', category: 'authentication', module: 'Auth', description: 'Inactive user attempted to log in.', severity: 'warning' });
+      return res.status(403).json({ error: 'This user account is inactive.' });
+    }
     if (!(await verifyAndUpgradePassword(pool, user, password))) {
+      await logFailure(pool, req, { user_id: user.id, action: 'login_failed', category: 'authentication', module: 'Auth', description: 'Login failed because the password was invalid.', severity: 'warning' });
       return res.status(401).json({ error: 'Invalid credentials' });
     }
 
     if (user.two_factor_enabled) {
       const challenge = await createChallenge(pool, user, JWT_SECRET);
+      await logSuccess(pool, req, { user_id: user.id, action: 'login_2fa_challenge_created', category: 'authentication', module: 'Auth', description: 'Two-factor challenge created during login.' });
       return res.json({ requiresTwoFactor: true, ...challenge });
     }
 
+    await logSuccess(pool, req, { user_id: user.id, action: 'login_success', category: 'authentication', module: 'Auth', description: 'User logged in successfully.' });
     issueCimsSession(res, user);
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
@@ -1243,7 +1868,10 @@ app.post('/api/auth/login', async (req, res) => {
 app.post('/api/auth/verify-2fa', async (req, res) => {
   try {
     const challenge = await verifyChallenge(pool, req.body.challengeId, req.body.code, JWT_SECRET);
-    if (!challenge) return res.status(401).json({ error: 'Invalid or expired verification code.' });
+    if (!challenge) {
+      await logFailure(pool, req, { action: 'login_2fa_failed', category: 'authentication', module: 'Auth', description: 'Invalid or expired two-factor verification code.', severity: 'warning' });
+      return res.status(401).json({ error: 'Invalid or expired verification code.' });
+    }
     const [rows] = await pool.query(`
       SELECT u.*, s.subsidiary_name, ${USER_MODULE_ROLES_SQL}, ${USER_PERMISSIONS_SQL}
       FROM user_profiles u
@@ -1251,6 +1879,7 @@ app.post('/api/auth/verify-2fa', async (req, res) => {
       WHERE u.id = ? AND u.is_active = TRUE
     `, [challenge.user_id]);
     if (!rows.length) return res.status(403).json({ error: 'User account is unavailable.' });
+    await logSuccess(pool, req, { user_id: rows[0].id, action: 'login_success', category: 'authentication', module: 'Auth', description: 'User completed two-factor login successfully.' });
     issueCimsSession(res, rows[0]);
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
@@ -1270,16 +1899,45 @@ app.patch('/api/auth/2fa-settings', authMiddleware, async (req, res) => {
   try {
     const enabled = Boolean(req.body.enabled);
     const method = ['email', 'sms', 'call'].includes(req.body.method) ? req.body.method : 'email';
-    const phone = String(req.body.phone || '').trim() || null;
-    if (enabled && method !== 'email' && !phone) {
-      return res.status(400).json({ error: 'A phone number is required for SMS or call verification.' });
+    let phone = null;
+    if (method !== 'email') {
+      const rawPhone = String(req.body.phone || '').trim();
+      if (enabled && !rawPhone) {
+        return res.status(400).json({ error: 'A phone number is required for SMS or call verification.' });
+      }
+      if (rawPhone) {
+        try {
+          phone = normalizePhone(rawPhone);
+        } catch {
+          return res.status(400).json({ error: 'Select the country and enter a valid international phone number.' });
+        }
+      }
     }
     await pool.query(
       'UPDATE user_profiles SET two_factor_enabled=?,two_factor_method=?,two_factor_phone=? WHERE id=?',
       [enabled, method, phone, req.user.id],
     );
+    await logSuccess(pool, req, { action: 'two_factor_settings_changed', category: 'authentication', module: 'Auth', entity_type: 'user', entity_id: req.user.id, description: 'Two-factor settings changed.', metadata: { enabled, method } });
     res.json({ success: true, enabled, method, phone });
   } catch (err) { res.status(500).json({ error: err.message }); }
+});
+app.post('/api/auth/avatar', authMiddleware, async (req, res) => {
+  try {
+    const { fileName, base64Data } = req.body || {};
+    if (!fileName || !base64Data) return res.status(400).json({ error: 'Missing profile picture data.' });
+    const { buffer, storedName: finalFileName, extension } = safeUpload({ fileName, base64Data, maxBytes: 5 * 1024 * 1024 });
+    if (!['.png', '.jpg', '.jpeg', '.webp'].includes(extension)) {
+      return res.status(400).json({ error: 'Only PNG, JPEG, and WebP profile pictures are allowed.' });
+    }
+    const filePath = resolveStoredFile(uploadsDir, finalFileName);
+    await fsp.writeFile(filePath, buffer, { flag: 'wx', mode: 0o640 });
+    await pool.query('UPDATE user_profiles SET avatar_url=? WHERE id=?', [finalFileName, req.user.id]);
+    await auditSecurityEvent(pool, req, 'profile_avatar_uploaded', { fileName: finalFileName });
+    res.json({ success: true, avatar_url: finalFileName });
+  } catch (err) {
+    console.error('Profile avatar upload error:', err);
+    res.status(err.status || 500).json({ error: err.status ? err.message : 'Profile picture upload failed.' });
+  }
 });
 
 app.get('/api/auth/me', authMiddleware, async (req, res) => {
@@ -1300,7 +1958,7 @@ app.get('/api/auth/me', authMiddleware, async (req, res) => {
 app.get('/api/user_profiles', authMiddleware, async (req, res) => {
   try {
     const [rows] = await pool.query(`
-      SELECT u.id,u.email,u.role,u.designation,u.department_id,u.subsidiary_id,u.phone_number,
+      SELECT u.id,u.email,u.role,u.designation,u.department_id,u.subsidiary_id,u.phone_number,u.avatar_url,
         u.first_name,u.last_name,u.first_login,u.is_active,u.two_factor_enabled,u.two_factor_method,
         u.two_factor_phone,u.created_at,d.department_name,s.subsidiary_name, ${USER_MODULE_ROLES_SQL}, ${USER_PERMISSIONS_SQL}
       FROM user_profiles u
@@ -1318,6 +1976,7 @@ app.patch('/api/auth/password', authMiddleware, async (req, res) => {
     if (password.length < 8) return res.status(400).json({ error: 'Password must be at least 8 characters.' });
     const passwordHash = await hashPassword(password);
     await pool.query('UPDATE user_profiles SET password = ?, first_login = FALSE, session_version = session_version + 1 WHERE id = ?', [passwordHash, req.user.id]);
+    await logSuccess(pool, req, { action: 'password_changed', category: 'authentication', module: 'Auth', entity_type: 'user', entity_id: req.user.id, description: 'User changed their password.', severity: 'notice' });
     const loginUrl = canonicalAppUrl(req);
     const delivery = await sendUserNotification({
       pool,
@@ -1357,7 +2016,7 @@ app.get('/api/clients', async (req, res) => {
       ORDER BY c.created_at DESC
     `);
     res.json(rows.map(r => ({
-      ...r,
+      ...attachClientContactAliases(r, { includeSensitive: hasCapability(req.user, 'clients.manage') }),
       tags: typeof r.tags === 'string' ? JSON.parse(r.tags) : r.tags,
       departments: { department_name: r.department_name },
       subsidiaries: { subsidiary_name: r.subsidiary_name },
@@ -1379,7 +2038,7 @@ app.get('/api/clients/:id', async (req, res) => {
     if (rows.length === 0) return res.status(404).json({ error: 'Client not found' });
     const r = rows[0];
     res.json({
-      ...r,
+      ...attachClientContactAliases(r, { includeSensitive: hasCapability(req.user, 'clients.manage') }),
       tags: typeof r.tags === 'string' ? JSON.parse(r.tags) : r.tags,
       departments: { department_name: r.department_name },
       subsidiaries: { subsidiary_name: r.subsidiary_name },
@@ -1388,6 +2047,51 @@ app.get('/api/clients/:id', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+
+app.post('/api/clients/:id/reveal-contact', requireAnyCapability('clients.view', 'clients.manage'), async (req, res) => {
+  try {
+    const field = normalizeRevealField(req.body?.field);
+    if (!['contact_phone', 'contact_email'].includes(field)) return res.status(400).json({ error: 'Invalid contact field.' });
+    const [rows] = await pool.query(`SELECT id,client_name,contact_phone,contact_email FROM clients WHERE id = ? LIMIT 1`, [req.params.id]);
+    if (!rows.length) return res.status(404).json({ error: 'Client not found.' });
+    const value = rows[0][field] || '';
+    await pool.query(
+      `INSERT INTO contact_reveal_audit (id,user_id,entity_type,entity_id,field_name,reason,ip_address,user_agent) VALUES (?,?,?,?,?,?,?,?)`,
+      [uuidv4(), req.user.id, 'client', rows[0].id, field, String(req.body?.reason || '').slice(0, 255) || null, req.ip || null, String(req.headers['user-agent'] || '').slice(0, 255)],
+    );
+    await logSuccess(pool, req, {
+      action: 'client_contact_revealed',
+      category: 'data_access',
+      module: 'Clients',
+      entity_type: 'client',
+      entity_id: rows[0].id,
+      description: 'Client hidden contact information was revealed.',
+      metadata: { field_name: field, client_name: rows[0].client_name },
+    });
+    res.json({ field, value, masked: field === 'contact_email' ? maskEmailAddress(value) : maskPhoneNumber(value) });
+  } catch (err) { res.status(500).json({ error: 'Unable to reveal contact information.' }); }
+});
+
+app.post('/api/user_profiles/:id/reveal-contact', authMiddleware, async (req, res) => {
+  try {
+    const targetUserId = String(req.params.id || '').trim();
+    const field = normalizeRevealField(req.body?.field);
+    if (!['phone_number', 'two_factor_phone', 'email'].includes(field)) return res.status(400).json({ error: 'Invalid contact field.' });
+    if (targetUserId !== String(req.user.id) && !hasCapability(req.user, 'users.manage')) {
+      await logDenied(pool, req, { action: 'user_contact_reveal_denied', category: 'data_access', module: 'Users', entity_type: 'user', entity_id: targetUserId, description: 'Unauthorized user contact reveal attempt.' });
+      return res.status(403).json({ error: 'User management permission is required.' });
+    }
+    const [rows] = await pool.query(`SELECT id,email,phone_number,two_factor_phone FROM user_profiles WHERE id = ? LIMIT 1`, [targetUserId]);
+    if (!rows.length) return res.status(404).json({ error: 'User not found.' });
+    const value = rows[0][field] || '';
+    await pool.query(
+      `INSERT INTO contact_reveal_audit (id,user_id,entity_type,entity_id,field_name,reason,ip_address,user_agent) VALUES (?,?,?,?,?,?,?,?)`,
+      [uuidv4(), req.user.id, 'user_profile', rows[0].id, field, String(req.body?.reason || '').slice(0, 255) || null, req.ip || null, String(req.headers['user-agent'] || '').slice(0, 255)],
+    );
+    await logSuccess(pool, req, { action: 'user_contact_revealed', category: 'data_access', module: 'Users', entity_type: 'user', entity_id: rows[0].id, description: 'User hidden contact information was revealed.', metadata: { field_name: field } });
+    res.json({ field, value, masked: field === 'email' ? maskEmailAddress(value) : maskPhoneNumber(value) });
+  } catch (err) { res.status(500).json({ error: 'Unable to reveal user contact information.' }); }
+});
 app.post('/api/clients', requireCapability('clients.manage'), async (req, res) => {
   try {
     const id = uuidv4();
@@ -1417,7 +2121,7 @@ app.post('/api/clients', requireCapability('clients.manage'), async (req, res) =
 app.put('/api/clients/:id', requireCapability('clients.manage'), async (req, res) => {
   try {
     const { id } = req.params;
-    const updates = allowedEntries(req.body, CLIENT_FIELDS);
+    const updates = allowedEntries(normalizeClientPayload(req.body), CLIENT_FIELDS);
     if (!updates.length) return res.status(400).json({ error: 'No valid client fields supplied.' });
     const fields = updates.map(([key]) => `${key} = ?`).join(', ');
     const values = updates.map(([, value]) => sqlValue(value));
@@ -1433,43 +2137,205 @@ app.delete('/api/clients/:id', requireCapability('clients.manage'), async (req, 
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// CLIENT BRANCHES AND DEPARTMENTS API
+const sanitizeScopeText = (value, maxLength = 255) => String(value || '').trim().slice(0, maxLength) || null;
+
+app.get('/api/clients/:id/branches', requireAnyCapability('clients.view', 'clients.manage'), async (req, res) => {
+  try {
+    const [rows] = await pool.query(
+      `SELECT b.*,
+        (SELECT COUNT(*) FROM client_departments d WHERE ${sqlUuidEquals('d.branch_id', 'b.id')} AND d.deleted_at IS NULL) AS department_count,
+        (SELECT COUNT(*) FROM installations i WHERE ${sqlUuidEquals('i.branch_id', 'b.id')}) AS installation_count
+       FROM client_branches b
+       WHERE ${sqlUuidParamEquals('b.client_id')} AND b.deleted_at IS NULL
+       ORDER BY b.branch_name ASC`,
+      [req.params.id],
+    );
+    res.json(rows);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+app.post('/api/clients/:id/branches', requireCapability('clients.manage'), async (req, res) => {
+  try {
+    const [clients] = await pool.query('SELECT id FROM clients WHERE id = ? LIMIT 1', [req.params.id]);
+    if (!clients.length) return res.status(404).json({ error: 'Client not found.' });
+    const branchName = sanitizeScopeText(req.body.branch_name || req.body.name, 150);
+    if (!branchName) return res.status(400).json({ error: 'branch_name is required.' });
+    const id = uuidv4();
+    await pool.query(
+      `INSERT INTO client_branches
+       (id,client_id,branch_name,branch_code,contact_person_name,contact_email,contact_phone,physical_address,status,notes,created_by,updated_by)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
+      [id, req.params.id, branchName, sanitizeScopeText(req.body.branch_code, 60), sanitizeScopeText(req.body.contact_person_name, 150), sanitizeScopeText(req.body.contact_email, 255), sanitizeScopeText(req.body.contact_phone, 30), sanitizeScopeText(req.body.physical_address, 5000), 'active', sanitizeScopeText(req.body.notes, 5000), req.user.id, req.user.id],
+    );
+    await logSuccess(pool, req, { action: 'client_branch_created', category: 'clients', module: 'Clients', entity_type: 'client_branch', entity_id: id, description: 'Client branch created.', metadata: { client_id: req.params.id, branch_name: branchName } });
+    res.status(201).json({ id, client_id: req.params.id, branch_name: branchName, status: 'active' });
+  } catch (err) { res.status(err.code === 'ER_DUP_ENTRY' ? 409 : 500).json({ error: err.code === 'ER_DUP_ENTRY' ? 'This branch already exists for the selected client.' : err.message }); }
+});
+
+app.put('/api/branches/:id', requireCapability('clients.manage'), async (req, res) => {
+  try {
+    const updates = [
+      ['branch_name', sanitizeScopeText(req.body.branch_name || req.body.name, 150)],
+      ['branch_code', sanitizeScopeText(req.body.branch_code, 60)],
+      ['contact_person_name', sanitizeScopeText(req.body.contact_person_name, 150)],
+      ['contact_email', sanitizeScopeText(req.body.contact_email, 255)],
+      ['contact_phone', sanitizeScopeText(req.body.contact_phone, 30)],
+      ['physical_address', sanitizeScopeText(req.body.physical_address, 5000)],
+      ['notes', sanitizeScopeText(req.body.notes, 5000)],
+    ].filter(([, value], index) => index !== 0 || value);
+    if (!updates.length) return res.status(400).json({ error: 'No valid branch fields supplied.' });
+    const fields = updates.map(([field]) => `${field} = ?`).concat('updated_by = ?').join(', ');
+    const values = updates.map(([, value]) => value).concat(req.user.id, req.params.id);
+    await pool.query(`UPDATE client_branches SET ${fields} WHERE id = ? AND deleted_at IS NULL`, values);
+    res.json({ success: true });
+  } catch (err) { res.status(err.code === 'ER_DUP_ENTRY' ? 409 : 500).json({ error: err.code === 'ER_DUP_ENTRY' ? 'This branch already exists for the selected client.' : err.message }); }
+});
+
+app.patch('/api/branches/:id/status', requireCapability('clients.manage'), async (req, res) => {
+  try {
+    const status = ['active', 'inactive'].includes(req.body.status) ? req.body.status : 'inactive';
+    await pool.query("UPDATE client_branches SET status=?,updated_by=?,deleted_at=CASE WHEN ? = 'inactive' THEN CURRENT_TIMESTAMP ELSE NULL END WHERE id=?", [status, req.user.id, status, req.params.id]);
+    res.json({ success: true, status });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.get('/api/clients/:id/departments', requireAnyCapability('clients.view', 'clients.manage'), async (req, res) => {
+  try {
+    const filters = [sqlUuidParamEquals('d.client_id'), 'd.deleted_at IS NULL'];
+    const values = [req.params.id];
+    if (req.query.branch_id) { filters.push(sqlUuidParamEquals('d.branch_id')); values.push(req.query.branch_id); }
+    const [rows] = await pool.query(
+      `SELECT d.*, b.branch_name,
+        (SELECT COUNT(*) FROM installations i WHERE ${sqlUuidEquals('i.department_id', 'd.id')}) AS installation_count
+       FROM client_departments d
+       INNER JOIN client_branches b ON ${sqlUuidEquals('b.id', 'd.branch_id')}
+       WHERE ${filters.join(' AND ')}
+       ORDER BY b.branch_name ASC, d.department_name ASC`,
+      values,
+    );
+    res.json(rows);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+app.get('/api/branches/:id/departments', requireAnyCapability('clients.view', 'clients.manage'), async (req, res) => {
+  try {
+    const [rows] = await pool.query(
+      `SELECT d.*, b.branch_name
+       FROM client_departments d
+       INNER JOIN client_branches b ON ${sqlUuidEquals('b.id', 'd.branch_id')}
+       WHERE ${sqlUuidParamEquals('d.branch_id')} AND d.deleted_at IS NULL
+       ORDER BY d.department_name ASC`,
+      [req.params.id],
+    );
+    res.json(rows);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+app.post('/api/branches/:id/departments', requireCapability('clients.manage'), async (req, res) => {
+  try {
+    const [branches] = await pool.query('SELECT id,client_id,status,deleted_at FROM client_branches WHERE id = ? LIMIT 1', [req.params.id]);
+    const branch = branches[0];
+    if (!branch || branch.deleted_at || branch.status !== 'active') return res.status(404).json({ error: 'Active branch not found.' });
+    const departmentName = sanitizeScopeText(req.body.department_name || req.body.name, 150);
+    if (!departmentName) return res.status(400).json({ error: 'department_name is required.' });
+    const id = uuidv4();
+    await pool.query(
+      `INSERT INTO client_departments
+       (id,client_id,branch_id,department_name,department_code,contact_person_name,contact_email,contact_phone,status,notes,created_by,updated_by)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
+      [id, branch.client_id, req.params.id, departmentName, sanitizeScopeText(req.body.department_code, 60), sanitizeScopeText(req.body.contact_person_name, 150), sanitizeScopeText(req.body.contact_email, 255), sanitizeScopeText(req.body.contact_phone, 30), 'active', sanitizeScopeText(req.body.notes, 5000), req.user.id, req.user.id],
+    );
+    await logSuccess(pool, req, { action: 'client_department_created', category: 'clients', module: 'Clients', entity_type: 'client_department', entity_id: id, description: 'Client department created.', metadata: { client_id: branch.client_id, branch_id: req.params.id, department_name: departmentName } });
+    res.status(201).json({ id, client_id: branch.client_id, branch_id: req.params.id, department_name: departmentName, status: 'active' });
+  } catch (err) { res.status(err.code === 'ER_DUP_ENTRY' ? 409 : 500).json({ error: err.code === 'ER_DUP_ENTRY' ? 'This department already exists for the selected branch.' : err.message }); }
+});
+
+app.put('/api/departments/:id', requireCapability('clients.manage'), async (req, res) => {
+  try {
+    const updates = [
+      ['department_name', sanitizeScopeText(req.body.department_name || req.body.name, 150)],
+      ['department_code', sanitizeScopeText(req.body.department_code, 60)],
+      ['contact_person_name', sanitizeScopeText(req.body.contact_person_name, 150)],
+      ['contact_email', sanitizeScopeText(req.body.contact_email, 255)],
+      ['contact_phone', sanitizeScopeText(req.body.contact_phone, 30)],
+      ['notes', sanitizeScopeText(req.body.notes, 5000)],
+    ].filter(([, value], index) => index !== 0 || value);
+    if (!updates.length) return res.status(400).json({ error: 'No valid department fields supplied.' });
+    const fields = updates.map(([field]) => `${field} = ?`).concat('updated_by = ?').join(', ');
+    const values = updates.map(([, value]) => value).concat(req.user.id, req.params.id);
+    await pool.query(`UPDATE client_departments SET ${fields} WHERE id = ? AND deleted_at IS NULL`, values);
+    res.json({ success: true });
+  } catch (err) { res.status(err.code === 'ER_DUP_ENTRY' ? 409 : 500).json({ error: err.code === 'ER_DUP_ENTRY' ? 'This department already exists for the selected branch.' : err.message }); }
+});
+
+app.patch('/api/departments/:id/status', requireCapability('clients.manage'), async (req, res) => {
+  try {
+    const status = ['active', 'inactive'].includes(req.body.status) ? req.body.status : 'inactive';
+    await pool.query("UPDATE client_departments SET status=?,updated_by=?,deleted_at=CASE WHEN ? = 'inactive' THEN CURRENT_TIMESTAMP ELSE NULL END WHERE id=?", [status, req.user.id, status, req.params.id]);
+    res.json({ success: true, status });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+const sqlUuidEquals = (left, right) => `CONVERT(${left} USING utf8mb4) COLLATE utf8mb4_unicode_ci = CONVERT(${right} USING utf8mb4) COLLATE utf8mb4_unicode_ci`;
+const sqlUuidParamEquals = (column) => `CONVERT(${column} USING utf8mb4) COLLATE utf8mb4_unicode_ci = CONVERT(? USING utf8mb4) COLLATE utf8mb4_unicode_ci`;
 // INSTALLATIONS
+const formatInstallationRow = (r) => ({
+  ...r,
+  clients: { client_name: r.client_name, contact_person_name: r.contact_person_name, branch: r.branch_name || r.client_branch || r.branch },
+  branch_name: r.branch_name || r.branch || r.client_branch,
+  department_name: r.department_name || null,
+  escalation_matrix: typeof r.escalation_matrix === 'string' ? JSON.parse(r.escalation_matrix) : r.escalation_matrix,
+  led_names: typeof r.led_names === 'string' ? JSON.parse(r.led_names) : r.led_names,
+});
+
+const installationSelectWithScope = `
+  SELECT i.*, c.client_name, c.contact_person_name, c.branch as client_branch, cb.branch_name, cd.department_name,
+    (SELECT COUNT(*) FROM client_branches b2 WHERE ${sqlUuidEquals('b2.client_id', 'i.client_id')} AND b2.deleted_at IS NULL) AS branch_count,
+    (SELECT COUNT(*) FROM client_departments d2 WHERE ${sqlUuidEquals('d2.client_id', 'i.client_id')} AND d2.deleted_at IS NULL AND (i.branch_id IS NULL OR ${sqlUuidEquals('d2.branch_id', 'i.branch_id')})) AS department_count
+  FROM installations i
+  LEFT JOIN clients c ON ${sqlUuidEquals('i.client_id', 'c.id')}
+  LEFT JOIN client_branches cb ON ${sqlUuidEquals('cb.id', 'i.branch_id')}
+  LEFT JOIN client_departments cd ON ${sqlUuidEquals('cd.id', 'i.department_id')}
+`;
+
+const installationSelectFallback = `
+  SELECT i.*, c.client_name, c.contact_person_name, c.branch as client_branch, NULL AS branch_name, NULL AS department_name, 1 AS branch_count, 0 AS department_count
+  FROM installations i
+  LEFT JOIN clients c ON ${sqlUuidEquals('i.client_id', 'c.id')}
+`;
+
+const queryInstallations = async ({ id } = {}) => {
+  const where = id ? ' WHERE i.id = ?' : '';
+  const order = id ? '' : ' ORDER BY i.created_at DESC';
+  const values = id ? [id] : [];
+  try {
+    const [rows] = await pool.query(`${installationSelectWithScope}${where}${order}`, values);
+    return rows;
+  } catch (error) {
+    if (!['ER_NO_SUCH_TABLE', 'ER_BAD_FIELD_ERROR', 'ER_CANT_CREATE_TABLE'].includes(error.code)) throw error;
+    console.warn('Installations hierarchy query fallback:', error.message);
+    const [rows] = await pool.query(`${installationSelectFallback}${where}${order}`, values);
+    return rows;
+  }
+};
+
 app.get('/api/installations', async (req, res) => {
   try {
-    const [rows] = await pool.query(`
-      SELECT i.*, c.client_name, c.contact_person_name, c.branch as client_branch
-      FROM installations i
-      LEFT JOIN clients c ON i.client_id = c.id
-      ORDER BY i.created_at DESC
-    `);
-    res.json(rows.map(r => ({
-      ...r,
-      clients: { client_name: r.client_name, contact_person_name: r.contact_person_name, branch: r.client_branch },
-      escalation_matrix: typeof r.escalation_matrix === 'string' ? JSON.parse(r.escalation_matrix) : r.escalation_matrix,
-      led_names: typeof r.led_names === 'string' ? JSON.parse(r.led_names) : r.led_names
-    })));
-  } catch (err) { res.status(500).json({ error: err.message }); }
+    const rows = await queryInstallations();
+    res.json(rows.map(formatInstallationRow));
+  } catch (err) {
+    console.error('Installations fetch failed:', err);
+    res.status(500).json({ error: 'Unable to load installations.' });
+  }
 });
 
 app.get('/api/installations/:id', async (req, res) => {
   try {
-    const [rows] = await pool.query(`
-      SELECT i.*, c.client_name, c.contact_person_name, c.branch as client_branch
-      FROM installations i
-      LEFT JOIN clients c ON i.client_id = c.id
-      WHERE i.id = ?
-    `, [req.params.id]);
+    const rows = await queryInstallations({ id: req.params.id });
     if (rows.length === 0) return res.status(404).json({ error: 'Installation not found' });
-    const r = rows[0];
-    res.json({
-      ...r,
-      clients: { client_name: r.client_name, contact_person_name: r.contact_person_name, branch: r.client_branch },
-      escalation_matrix: typeof r.escalation_matrix === 'string' ? JSON.parse(r.escalation_matrix) : r.escalation_matrix,
-      led_names: typeof r.led_names === 'string' ? JSON.parse(r.led_names) : r.led_names
-    });
-  } catch (err) { res.status(500).json({ error: err.message }); }
+    res.json(formatInstallationRow(rows[0]));
+  } catch (err) {
+    console.error('Installation fetch failed:', err);
+    res.status(500).json({ error: 'Unable to load installation.' });
+  }
 });
-
 app.post('/api/installations', requireCapability('installations.manage'), async (req, res) => {
   try {
     const id = uuidv4();
@@ -1483,6 +2349,16 @@ app.post('/api/installations', requireCapability('installations.manage'), async 
       }
     }
     if (!updates.some(([key]) => key === 'client_id')) return res.status(400).json({ error: 'client_id is required.' });
+    const installationScope = await validateClientBranchDepartment({
+      clientId: req.body.client_id,
+      branchId: req.body.branch_id,
+      departmentId: req.body.department_id,
+    });
+    for (const [field, value] of [['branch_id', installationScope.branchId], ['department_id', installationScope.departmentId]]) {
+      const existing = updates.find(([key]) => key === field);
+      if (existing) existing[1] = value;
+      else if (value) updates.push([field, value]);
+    }
     const fields = ['id', ...updates.map(([key]) => key)];
     const placeholders = fields.map(() => '?').join(', ');
     const values = [id, ...updates.map(([, value]) => sqlValue(value))];
@@ -1504,6 +2380,20 @@ app.patch('/api/installations/:id', requireCapability('installations.manage'), a
       }
     }
     if (!updates.length) return res.status(400).json({ error: 'No valid installation fields supplied.' });
+    if (updates.some(([key]) => ['client_id', 'branch_id', 'department_id'].includes(key))) {
+      const [existingRows] = await pool.query('SELECT client_id,branch_id,department_id FROM installations WHERE id = ? LIMIT 1', [id]);
+      if (!existingRows.length) return res.status(404).json({ error: 'Installation not found.' });
+      const nextScope = { ...existingRows[0], ...Object.fromEntries(updates) };
+      const installationScope = await validateClientBranchDepartment({
+        clientId: nextScope.client_id,
+        branchId: nextScope.branch_id,
+        departmentId: nextScope.department_id,
+      });
+      for (const [field, value] of [['branch_id', installationScope.branchId], ['department_id', installationScope.departmentId]]) {
+        const existing = updates.find(([key]) => key === field);
+        if (existing) existing[1] = value;
+      }
+    }
     const fields = updates.map(([key]) => `${key} = ?`).join(', ');
     const values = updates.map(([, value]) => sqlValue(value));
     await pool.query(`UPDATE installations SET ${fields} WHERE id = ?`, [...values, id]);
@@ -1515,42 +2405,57 @@ app.patch('/api/installations/:id', requireCapability('installations.manage'), a
 app.get('/api/client_assignments', async (req, res) => {
   try {
     const [rows] = await pool.query(`
-      SELECT a.*, c.client_name, c.branch as client_branch, 
-             ht.first_name as ht_f, ht.last_name as ht_l, 
-             st.first_name as st_f, st.last_name as st_l, 
-             i.status as installation_status
+      SELECT a.*, c.client_name, c.branch as client_branch, c.contact_person_name, c.contact_email, c.contact_phone, cb.branch_name, cd.department_name,
+             ht.first_name as ht_f, ht.last_name as ht_l,
+             st.first_name as st_f, st.last_name as st_l,
+             i.status as installation_status, i.kiosk_type, i.kiosk_count, i.counter_count, i.led_count,
+             i.service_points, i.ups_count, i.speakers, i.screen_with_size, i.media_controllers,
+             i.tablets, i.digital_signage_system
       FROM client_assignments a
-      LEFT JOIN clients c ON a.client_id = c.id
-      LEFT JOIN installations i ON a.installation_id = i.id
-      LEFT JOIN user_profiles ht ON a.hardware_technician_id = ht.id
-      LEFT JOIN user_profiles st ON a.software_technician_id = st.id
-      INNER JOIN (
-        SELECT client_id, MAX(created_at) as max_created
-        FROM client_assignments
-        GROUP BY client_id
-      ) latest ON a.client_id = latest.client_id AND a.created_at = latest.max_created
+      LEFT JOIN clients c ON ${sqlUuidEquals('a.client_id', 'c.id')}
+      LEFT JOIN client_branches cb ON ${sqlUuidEquals('a.branch_id', 'cb.id')}
+      LEFT JOIN client_departments cd ON ${sqlUuidEquals('a.department_id', 'cd.id')}
+      LEFT JOIN installations i ON ${sqlUuidEquals('a.installation_id', 'i.id')}
+      LEFT JOIN user_profiles ht ON ${sqlUuidEquals('a.hardware_technician_id', 'ht.id')}
+      LEFT JOIN user_profiles st ON ${sqlUuidEquals('a.software_technician_id', 'st.id')}
       ORDER BY a.created_at DESC
     `);
     res.json(rows.map(r => ({
       ...r,
       status: r.installation_status || r.status,
       client_name: r.client_name,
-      branch: r.branch || r.client_branch,
-      clients: { client_name: r.client_name, branch: r.branch || r.client_branch },
+      branch: r.branch_name || r.branch || r.client_branch,
+      department_name: r.department_name || null,
+      contact_person_name: r.contact_person_name || null,
+      contact_phone: r.contact_phone || null,
+      contact_email: r.contact_email || null,
+      clients: {
+        client_name: r.client_name,
+        branch: r.branch_name || r.branch || r.client_branch,
+        contact_person_name: r.contact_person_name || null,
+        contact_person_phone: r.contact_phone || null,
+        contact_person_email: r.contact_email || null,
+      },
       hardware_tech: { first_name: r.ht_f, last_name: r.ht_l },
       software_tech: { first_name: r.st_f, last_name: r.st_l }
     })));
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
-
 app.get('/api/client_assignments/:id', async (req, res) => {
   try {
     const [rows] = await pool.query(`
-      SELECT a.*, c.client_name, c.branch, ht.first_name as ht_f, ht.last_name as ht_l, st.first_name as st_f, st.last_name as st_l
+      SELECT a.*, c.client_name, c.branch AS client_branch, c.contact_person_name, c.contact_email, c.contact_phone, cb.branch_name, cd.department_name,
+             ht.first_name as ht_f, ht.last_name as ht_l, st.first_name as st_f, st.last_name as st_l,
+             i.status as installation_status, i.kiosk_type, i.kiosk_count, i.counter_count, i.led_count,
+             i.service_points, i.ups_count, i.speakers, i.screen_with_size, i.media_controllers,
+             i.tablets, i.digital_signage_system
       FROM client_assignments a
-      LEFT JOIN clients c ON a.client_id = c.id
-      LEFT JOIN user_profiles ht ON a.hardware_technician_id = ht.id
-      LEFT JOIN user_profiles st ON a.software_technician_id = st.id
+      LEFT JOIN clients c ON ${sqlUuidEquals('a.client_id', 'c.id')}
+      LEFT JOIN client_branches cb ON ${sqlUuidEquals('a.branch_id', 'cb.id')}
+      LEFT JOIN client_departments cd ON ${sqlUuidEquals('a.department_id', 'cd.id')}
+      LEFT JOIN installations i ON ${sqlUuidEquals('a.installation_id', 'i.id')}
+      LEFT JOIN user_profiles ht ON ${sqlUuidEquals('a.hardware_technician_id', 'ht.id')}
+      LEFT JOIN user_profiles st ON ${sqlUuidEquals('a.software_technician_id', 'st.id')}
       WHERE a.id = ?
     `, [req.params.id]);
     if (rows.length === 0) return res.status(404).json({ error: 'Assignment not found' });
@@ -1558,24 +2463,71 @@ app.get('/api/client_assignments/:id', async (req, res) => {
     res.json({
       ...r,
       client_name: r.client_name,
-      clients: { client_name: r.client_name, branch: r.branch },
+      branch: r.branch_name || r.branch || r.client_branch,
+      department_name: r.department_name || null,
+      contact_person_name: r.contact_person_name || null,
+      contact_phone: r.contact_phone || null,
+      contact_email: r.contact_email || null,
+      clients: {
+        client_name: r.client_name,
+        branch: r.branch_name || r.branch || r.client_branch,
+        contact_person_name: r.contact_person_name || null,
+        contact_person_phone: r.contact_phone || null,
+        contact_person_email: r.contact_email || null,
+      },
       hardware_tech: { first_name: r.ht_f, last_name: r.ht_l },
       software_tech: { first_name: r.st_f, last_name: r.st_l }
     });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
-
 app.post('/api/client_assignments', requireCapability('assignments.manage'), async (req, res) => {
   try {
     const id = uuidv4();
     const data = { ...req.body, assigned_by_user_id: req.user.id };
     const updates = allowedEntries(data, new Set([...ASSIGNMENT_FIELDS, 'assigned_by_user_id']));
+    if (!updates.some(([key]) => key === 'client_id')) return res.status(400).json({ error: 'client_id is required.' });
+    const assignmentScope = await validateClientBranchDepartment({
+      clientId: data.client_id,
+      branchId: data.branch_id,
+      departmentId: data.department_id,
+    });
+    for (const [field, value] of [['client_id', assignmentScope.clientId], ['branch_id', assignmentScope.branchId], ['department_id', assignmentScope.departmentId]]) {
+      const existing = updates.find(([key]) => key === field);
+      if (existing) existing[1] = value;
+      else if (value) updates.push([field, value]);
+    }
+    let branchLabel = data.branch || '';
+    if (assignmentScope.branchId) {
+      const [branchRows] = await pool.query('SELECT branch_name FROM client_branches WHERE id = ? LIMIT 1', [assignmentScope.branchId]);
+      branchLabel = branchRows[0]?.branch_name || branchLabel;
+      if (branchLabel) {
+        const existingBranch = updates.find(([key]) => key === 'branch');
+        if (existingBranch) existingBranch[1] = branchLabel;
+        else updates.push(['branch', branchLabel]);
+      }
+    }
+    let departmentLabel = '';
+    if (assignmentScope.departmentId) {
+      const [departmentRows] = await pool.query('SELECT department_name FROM client_departments WHERE id = ? LIMIT 1', [assignmentScope.departmentId]);
+      departmentLabel = departmentRows[0]?.department_name || '';
+    }
+    if (!updates.some(([key]) => key === 'installation_id')) {
+      const installationFilters = [sqlUuidParamEquals('client_id')];
+      const installationValues = [assignmentScope.clientId];
+      if (assignmentScope.branchId) { installationFilters.push(sqlUuidParamEquals('branch_id')); installationValues.push(assignmentScope.branchId); }
+      else installationFilters.push('branch_id IS NULL');
+      if (assignmentScope.departmentId) { installationFilters.push(sqlUuidParamEquals('department_id')); installationValues.push(assignmentScope.departmentId); }
+      else installationFilters.push('department_id IS NULL');
+      const [installationRows] = await pool.query(`SELECT id FROM installations WHERE ${installationFilters.join(' AND ')} ORDER BY created_at DESC LIMIT 1`, installationValues);
+      if (installationRows[0]?.id) updates.push(['installation_id', installationRows[0].id]);
+    }
     const fields = ['id', ...updates.map(([key]) => key)];
     const placeholders = fields.map(() => '?').join(', ');
     await pool.query(`INSERT INTO client_assignments (${fields.join(', ')}) VALUES (${placeholders})`, [id, ...updates.map(([, value]) => sqlValue(value))]);
     const [clients] = await pool.query('SELECT client_name,branch FROM clients WHERE id = ? LIMIT 1', [data.client_id]);
     const client = clients[0] || {};
-    const clientLabel = `${client.client_name || 'a client'}${data.branch || client.branch ? ` - ${data.branch || client.branch}` : ''}`;
+    const scopeLabel = [branchLabel || client.branch, departmentLabel].filter(Boolean).join(' / ');
+    const clientLabel = (client.client_name || 'a client') + (scopeLabel ? ' - ' + scopeLabel : '');
     const loginUrl = canonicalAppUrl(req);
     const notificationDelivery = await sendUsersNotification({
       pool,
@@ -1591,22 +2543,77 @@ app.post('/api/client_assignments', requireCapability('assignments.manage'), asy
       smsMessage: `RIANA CIMS: New assignment for ${clientLabel}. Sign in to review the details.`,
       details: { clientName: clientLabel },
     });
-    res.json({ id, ...data, notification_delivery: notificationDelivery });
+    res.json({ id, ...Object.fromEntries(updates), notification_delivery: notificationDelivery });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.patch('/api/client_assignments/:id', requireCapability('assignments.manage'), async (req, res) => {
+app.patch('/api/client_assignments/:id', async (req, res) => {
   try {
     const [beforeRows] = await pool.query('SELECT * FROM client_assignments WHERE id = ? LIMIT 1', [req.params.id]);
     if (!beforeRows.length) return res.status(404).json({ error: 'Assignment not found' });
     const before = beforeRows[0];
+    const canManageAssignments = hasCapability(req.user, 'assignments.manage');
+    const isAssignedTechnician = [before.hardware_technician_id, before.software_technician_id]
+      .filter(Boolean)
+      .some((technicianId) => String(technicianId) === String(req.user?.id));
+
+    if (!canManageAssignments && !isAssignedTechnician) {
+      return res.status(403).json({ error: 'Insufficient permissions.' });
+    }
+
     const updates = allowedEntries(req.body, ASSIGNMENT_FIELDS);
     if (!updates.length) return res.status(400).json({ error: 'No valid assignment fields supplied' });
+
+    if (updates.some(([key]) => ['client_id', 'branch_id', 'department_id'].includes(key))) {
+      const nextScope = { ...before, ...Object.fromEntries(updates) };
+      const assignmentScope = await validateClientBranchDepartment({
+        clientId: nextScope.client_id,
+        branchId: nextScope.branch_id,
+        departmentId: nextScope.department_id,
+      });
+      for (const [field, value] of [['client_id', assignmentScope.clientId], ['branch_id', assignmentScope.branchId], ['department_id', assignmentScope.departmentId]]) {
+        const existing = updates.find(([key]) => key === field);
+        if (existing) existing[1] = value;
+      }
+      if (assignmentScope.branchId) {
+        const [branchRows] = await pool.query('SELECT branch_name FROM client_branches WHERE id = ? LIMIT 1', [assignmentScope.branchId]);
+        const branchName = branchRows[0]?.branch_name;
+        if (branchName) {
+          const existingBranch = updates.find(([key]) => key === 'branch');
+          if (existingBranch) existingBranch[1] = branchName;
+          else updates.push(['branch', branchName]);
+        }
+      }
+    }
+    if (!canManageAssignments) {
+      const disallowedFields = updates.map(([key]) => key).filter((key) => !ASSIGNMENT_SELF_UPDATE_FIELDS.has(key));
+      if (disallowedFields.length) {
+        return res.status(403).json({ error: 'Assigned technicians can only update task status, progress, or notes.' });
+      }
+    }
+
+    const statusUpdate = updates.find(([key]) => key === 'status');
+    if (statusUpdate && !ASSIGNMENT_STATUSES.has(String(statusUpdate[1]))) {
+      return res.status(400).json({ error: 'Invalid assignment status.' });
+    }
+
+    const progressUpdate = updates.find(([key]) => key === 'progress_percentage');
+    if (progressUpdate) {
+      const progress = Number(progressUpdate[1]);
+      if (!Number.isInteger(progress) || progress < 0 || progress > 100) {
+        return res.status(400).json({ error: 'Progress must be an integer between 0 and 100.' });
+      }
+      progressUpdate[1] = progress;
+    }
+
     const fields = updates.map(([key]) => `${key} = ?`).join(', ');
     await pool.query(`UPDATE client_assignments SET ${fields} WHERE id = ?`, [...updates.map(([, value]) => sqlValue(value)), req.params.id]);
     const [afterRows] = await pool.query(
-      `SELECT a.*,c.client_name,c.branch AS client_branch FROM client_assignments a
-       LEFT JOIN clients c ON c.id = a.client_id WHERE a.id = ? LIMIT 1`,
+      `SELECT a.*,c.client_name,c.branch AS client_branch,cb.branch_name,cd.department_name FROM client_assignments a
+       LEFT JOIN clients c ON ${sqlUuidEquals('c.id', 'a.client_id')}
+       LEFT JOIN client_branches cb ON ${sqlUuidEquals('cb.id', 'a.branch_id')}
+       LEFT JOIN client_departments cd ON ${sqlUuidEquals('cd.id', 'a.department_id')}
+       WHERE a.id = ? LIMIT 1`,
       [req.params.id],
     );
     const after = afterRows[0];
@@ -1622,7 +2629,8 @@ app.patch('/api/client_assignments/:id', requireCapability('assignments.manage')
       const recipients = statusChanged
         ? [after.hardware_technician_id, after.software_technician_id]
         : newlyAssigned;
-      const clientLabel = `${after.client_name || 'a client'}${after.branch || after.client_branch ? ` - ${after.branch || after.client_branch}` : ''}`;
+      const scopeLabel = [after.branch_name || after.branch || after.client_branch, after.department_name].filter(Boolean).join(' / ');
+      const clientLabel = (after.client_name || 'a client') + (scopeLabel ? ' - ' + scopeLabel : '');
       const statusLabel = String(after.status || 'updated').replaceAll('_', ' ');
       const loginUrl = canonicalAppUrl(req);
       notificationDelivery = await sendUsersNotification({
@@ -1732,7 +2740,7 @@ app.post('/api/auth/reset-password', async (req, res) => {
 app.get('/api/user_profiles/:id', authMiddleware, async (req, res) => {
   try {
     const [rows] = await pool.query(`
-      SELECT u.id,u.email,u.role,u.designation,u.department_id,u.subsidiary_id,u.phone_number,
+      SELECT u.id,u.email,u.role,u.designation,u.department_id,u.subsidiary_id,u.phone_number,u.avatar_url,
         u.first_name,u.last_name,u.first_login,u.is_active,u.two_factor_enabled,u.two_factor_method,
         u.two_factor_phone,u.created_at,d.department_name,s.subsidiary_name, ${USER_MODULE_ROLES_SQL}, ${USER_PERMISSIONS_SQL}
       FROM user_profiles u
@@ -2070,9 +3078,25 @@ app.get('/api/industry_classifications', (req, res) => {
 app.get('/api/feedback_links', async (req, res) => {
   try {
     const { client_id } = req.query;
-    const query = client_id ? 'SELECT * FROM feedback_links WHERE client_id = ?' : 'SELECT * FROM feedback_links';
-    const [rows] = await pool.query(query, client_id ? [client_id] : []);
-    res.json(rows);
+    const values = client_id ? [client_id] : [];
+    const where = client_id ? `WHERE ${sqlUuidParamEquals('f.client_id')}` : '';
+    const [rows] = await pool.query(`
+      SELECT f.*, c.client_name, c.branch AS client_branch, cb.branch_name, cd.department_name,
+             (SELECT COUNT(*) FROM client_branches b2 WHERE ${sqlUuidEquals('b2.client_id', 'f.client_id')} AND b2.deleted_at IS NULL) AS branch_count,
+             (SELECT COUNT(*) FROM client_departments d2 WHERE ${sqlUuidEquals('d2.client_id', 'f.client_id')} AND d2.deleted_at IS NULL AND (f.branch_id IS NULL OR ${sqlUuidEquals('d2.branch_id', 'f.branch_id')})) AS department_count
+      FROM feedback_links f
+      LEFT JOIN clients c ON ${sqlUuidEquals('c.id', 'f.client_id')}
+      LEFT JOIN client_branches cb ON ${sqlUuidEquals('cb.id', 'f.branch_id')}
+      LEFT JOIN client_departments cd ON ${sqlUuidEquals('cd.id', 'f.department_id')}
+      ${where}
+      ORDER BY f.created_at DESC
+    `, values);
+    res.json(rows.map(row => ({
+      ...row,
+      branch_label: scopedBranchLabel(row),
+      department_label: scopedDepartmentLabel(row),
+      scope_label: scopedLabel(row),
+    })));
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
@@ -2081,13 +3105,23 @@ app.post('/api/feedback_links', requireAnyCapability('clients.manage', 'installa
     const id = uuidv4();
     const data = req.body;
     const token = crypto.randomBytes(32).toString('base64url');
+    const [installationRows] = data.installation_id
+      ? await pool.query('SELECT client_id,branch_id,department_id FROM installations WHERE id = ? LIMIT 1', [data.installation_id])
+      : [[]];
+    const installation = installationRows[0] || {};
+    const scope = await validateClientBranchDepartment({
+      clientId: data.client_id || installation.client_id,
+      branchId: data.branch_id || installation.branch_id,
+      departmentId: data.department_id || installation.department_id,
+      allowInactive: true,
+    });
     await pool.query(
-      'INSERT INTO feedback_links (id, client_id, installation_id, unique_token, expires_at, created_by_user_id) VALUES (?, ?, ?, ?, ?, ?)',
-      [id, data.client_id, data.installation_id || null, token, data.expires_at, req.user.id],
+      'INSERT INTO feedback_links (id, client_id, installation_id, branch_id, department_id, unique_token, expires_at, created_by_user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+      [id, scope.clientId, data.installation_id || null, scope.branchId, scope.departmentId, token, data.expires_at, req.user.id],
     );
     const [rows] = await pool.query('SELECT * FROM feedback_links WHERE id = ? LIMIT 1', [id]);
     res.status(201).json(rows[0]);
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) { res.status(err.status || 500).json({ error: err.message }); }
 });
 
 app.patch('/api/feedback_links/:id', requireAnyCapability('clients.manage', 'installations.manage'), async (req, res) => {
@@ -2100,11 +3134,37 @@ app.patch('/api/feedback_links/:id', requireAnyCapability('clients.manage', 'ins
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+
+app.get('/api/feedback_links/:id/preview', authMiddleware, requireAnyCapability('clients.manage', 'installations.manage'), async (req, res) => {
+  try {
+    const [rows] = await pool.query(
+      `SELECT f.id,f.unique_token,f.expires_at,f.is_used,f.email_sent,f.sms_sent,c.client_name,c.contact_person_name,c.contact_email,c.contact_phone,
+              c.branch AS client_branch, cb.branch_name, cd.department_name,
+              (SELECT COUNT(*) FROM client_branches b2 WHERE ${sqlUuidEquals('b2.client_id', 'f.client_id')} AND b2.deleted_at IS NULL) AS branch_count,
+              (SELECT COUNT(*) FROM client_departments d2 WHERE ${sqlUuidEquals('d2.client_id', 'f.client_id')} AND d2.deleted_at IS NULL AND (f.branch_id IS NULL OR ${sqlUuidEquals('d2.branch_id', 'f.branch_id')})) AS department_count
+       FROM feedback_links f
+       JOIN clients c ON ${sqlUuidEquals('c.id', 'f.client_id')}
+       LEFT JOIN client_branches cb ON ${sqlUuidEquals('cb.id', 'f.branch_id')}
+       LEFT JOIN client_departments cd ON ${sqlUuidEquals('cd.id', 'f.department_id')}
+       WHERE f.id = ? LIMIT 1`,
+      [req.params.id],
+    );
+    if (!rows.length) return res.status(404).json({ error: 'Feedback link not found' });
+    res.json({ ...rows[0], preview: buildFeedbackLinkPreview(req, rows[0]) });
+  } catch (err) { res.status(500).json({ error: 'Unable to preview feedback link.' }); }
+});
 app.post('/api/feedback_links/:id/send', authMiddleware, requireAnyCapability('clients.manage', 'installations.manage'), async (req, res) => {
   try {
     const [rows] = await pool.query(
-      `SELECT f.id,f.unique_token,f.expires_at,c.client_name,c.contact_person_name,c.contact_email,c.contact_phone
-       FROM feedback_links f JOIN clients c ON c.id = f.client_id WHERE f.id = ? LIMIT 1`,
+      `SELECT f.id,f.unique_token,f.expires_at,c.client_name,c.contact_person_name,c.contact_email,c.contact_phone,
+              c.branch AS client_branch, cb.branch_name, cd.department_name,
+              (SELECT COUNT(*) FROM client_branches b2 WHERE ${sqlUuidEquals('b2.client_id', 'f.client_id')} AND b2.deleted_at IS NULL) AS branch_count,
+              (SELECT COUNT(*) FROM client_departments d2 WHERE ${sqlUuidEquals('d2.client_id', 'f.client_id')} AND d2.deleted_at IS NULL AND (f.branch_id IS NULL OR ${sqlUuidEquals('d2.branch_id', 'f.branch_id')})) AS department_count
+       FROM feedback_links f
+       JOIN clients c ON ${sqlUuidEquals('c.id', 'f.client_id')}
+       LEFT JOIN client_branches cb ON ${sqlUuidEquals('cb.id', 'f.branch_id')}
+       LEFT JOIN client_departments cd ON ${sqlUuidEquals('cd.id', 'f.department_id')}
+       WHERE f.id = ? LIMIT 1`,
       [req.params.id],
     );
     if (!rows.length) return res.status(404).json({ error: 'Feedback link not found' });
@@ -2112,9 +3172,9 @@ app.post('/api/feedback_links/:id/send', authMiddleware, requireAnyCapability('c
     if (!feedback.contact_email && !feedback.contact_phone) {
       return res.status(400).json({ error: 'The client has no email address or phone number.' });
     }
-    const baseUrl = canonicalAppUrl(req).replace(/\/+$/, '');
-    const feedbackUrl = `${baseUrl}/feedback/${encodeURIComponent(feedback.unique_token)}`;
-    const message = `Please share your feedback about the RIANA installation for ${feedback.client_name}. The link expires on ${new Date(feedback.expires_at).toLocaleDateString('en-KE')}.`;
+    const preview = buildFeedbackLinkPreview(req, feedback);
+    const feedbackUrl = preview.feedback_url;
+    const message = preview.message;
     const deliveries = [];
     if (feedback.contact_email) {
       deliveries.push({ channel: 'email', promise: sendEmail({
@@ -2127,10 +3187,22 @@ app.post('/api/feedback_links/:id/send', authMiddleware, requireAnyCapability('c
       }) });
     }
     if (feedback.contact_phone) {
+      const feedbackMessage = `RIANA: Please rate your installation experience: ${feedbackUrl}`;
       deliveries.push({ channel: 'sms', promise: sendSms({
         phoneNumber: feedback.contact_phone,
-        message: `RIANA: Please rate your installation experience: ${feedbackUrl}`,
+        message: feedbackMessage,
       }) });
+      if (whatsappConfigured()) {
+        deliveries.push({ channel: 'whatsapp', promise: sendWhatsApp({
+          phoneNumber: feedback.contact_phone,
+          message: feedbackMessage,
+          recipientName: feedback.contact_person_name || feedback.client_name,
+          serviceName: 'Installation feedback',
+          bookingDate: new Date().toLocaleDateString('en-GB'),
+          notificationType: 'feedback_requested',
+          clientName: feedback.client_name,
+        }) });
+      }
     }
     const settled = await Promise.allSettled(deliveries.map(delivery => delivery.promise));
     const results = settled.map((result, index) => ({
@@ -2142,7 +3214,8 @@ app.post('/api/feedback_links/:id/send', authMiddleware, requireAnyCapability('c
     const smsSent = results.some(result => result.channel === 'sms' && result.success);
     await pool.query('UPDATE feedback_links SET email_sent = ?, sms_sent = ? WHERE id = ?', [emailSent, smsSent, feedback.id]);
     const failed = results.filter(result => !result.success);
-    res.status(failed.length === results.length ? 502 : 200).json({ success: failed.length === 0, email_sent: emailSent, sms_sent: smsSent, deliveries: results });
+    await logSuccess(pool, req, { action: 'feedback_link_sent', category: 'notification', module: 'Feedback', entity_type: 'feedback_link', entity_id: feedback.id, description: 'Feedback link delivery was attempted.', metadata: { email_sent: emailSent, sms_sent: smsSent } });
+    res.status(failed.length === results.length ? 502 : 200).json({ success: failed.length === 0, email_sent: emailSent, sms_sent: smsSent, deliveries: results, preview });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
@@ -2152,12 +3225,14 @@ app.get('/api/installation_feedback', async (req, res) => {
     const [rows] = await pool.query(`
       SELECT f.*, c.client_name, i.kiosk_type as installation_name
       FROM installation_feedback f
-      LEFT JOIN clients c ON f.client_id = c.id
-      LEFT JOIN installations i ON f.installation_id = i.id
+      LEFT JOIN clients c ON ${sqlUuidEquals('f.client_id', 'c.id')}
+      LEFT JOIN installations i ON ${sqlUuidEquals('f.installation_id', 'i.id')}
       ORDER BY f.created_at DESC
     `);
     res.json(rows.map(row => ({
       ...row,
+      client_comments: row.positive_feedback || row.improvement_suggestions || textFeedbackFromResponses(row.dynamic_responses)[0] || '',
+      client_improvement_suggestions: row.improvement_suggestions || '',
       dynamic_responses: typeof row.dynamic_responses === 'string'
         ? (() => { try { return JSON.parse(row.dynamic_responses); } catch { return {}; } })()
         : row.dynamic_responses,
@@ -2316,8 +3391,29 @@ app.get('/api/announcement_reads/:id', async (req, res) => {
 // HANDOVER UPLOADS
 app.get('/api/handover_uploads', async (req, res) => {
   try {
-    const [rows] = await pool.query('SELECT * FROM handover_uploads ORDER BY upload_date DESC');
-    res.json(rows);
+    const [rows] = await pool.query(`
+      SELECT h.*, c.client_name, c.branch AS client_branch, cb.branch_name, cd.department_name,
+             i.status AS installation_status, i.remarks AS installation_notes,
+             (SELECT COUNT(*) FROM client_branches b2 WHERE ${sqlUuidEquals('b2.client_id', 'h.client_id')} AND b2.deleted_at IS NULL) AS branch_count,
+             (SELECT COUNT(*) FROM client_departments d2 WHERE ${sqlUuidEquals('d2.client_id', 'h.client_id')} AND d2.deleted_at IS NULL AND (COALESCE(h.branch_id, i.branch_id) IS NULL OR ${sqlUuidEquals('d2.branch_id', 'COALESCE(h.branch_id, i.branch_id)')})) AS department_count
+      FROM handover_uploads h
+      LEFT JOIN clients c ON ${sqlUuidEquals('c.id', 'h.client_id')}
+      LEFT JOIN installations i ON ${sqlUuidEquals('i.id', 'h.installation_id')}
+      LEFT JOIN client_branches cb ON ${sqlUuidEquals('cb.id', 'COALESCE(h.branch_id, i.branch_id)')}
+      LEFT JOIN client_departments cd ON ${sqlUuidEquals('cd.id', 'COALESCE(h.department_id, i.department_id)')}
+      ORDER BY h.upload_date DESC
+    `);
+    res.json(rows.map(row => attachSecureHandoverUrls({
+      ...row,
+      branch: row.branch_name || row.client_branch,
+      branch_name: row.branch_name || row.client_branch,
+      department_name: row.department_name || null,
+      branch_label: scopedBranchLabel(row),
+      department_label: scopedDepartmentLabel(row),
+      scope_label: scopedLabel(row),
+      clients: { client_name: row.client_name, branch: row.branch_name || row.client_branch },
+      installations: { status: row.installation_status, remarks: row.installation_notes },
+    })));
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
@@ -2325,11 +3421,36 @@ app.post('/api/handover_uploads', async (req, res) => {
   try {
     const id = uuidv4();
     const data = req.body;
-    const resolved = resolveStoredFile(uploadsDir, data.file_path);
+    const storedPath = path.basename(normalizeStoredFileReference(data.file_path));
+    const resolved = resolveStoredFile(uploadsDir, storedPath);
     if (!resolved || !fs.existsSync(resolved)) return res.status(400).json({ error: 'Uploaded file does not exist.' });
-    await pool.query('INSERT INTO handover_uploads (id, client_id, installation_id, file_name, file_path, file_size, is_signed, notes, uploaded_by_user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)', [id, data.client_id, data.installation_id, data.file_name, path.basename(data.file_path), data.file_size, data.is_signed, data.notes, req.user.id]);
-    res.json({ success: true, id });
-  } catch (err) { res.status(500).json({ error: err.message }); }
+    const [installations] = data.installation_id
+      ? await pool.query('SELECT client_id,branch_id,department_id FROM installations WHERE id = ? LIMIT 1', [data.installation_id])
+      : [[]];
+    const installation = installations[0] || {};
+    const clientId = data.client_id || installation.client_id;
+    const scope = await validateClientBranchDepartment({
+      clientId,
+      branchId: data.branch_id || installation.branch_id,
+      departmentId: data.department_id || installation.department_id,
+    });
+    const versionGroupId = data.version_group_id || uuidv4();
+    await pool.query(
+      `INSERT INTO handover_uploads
+       (id, client_id, installation_id, branch_id, department_id, work_type, change_request_id, version_group_id, version_number, is_latest_version, status, file_name, file_path, file_size, is_signed, notes, uploaded_by_user_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, TRUE, 'uploaded', ?, ?, ?, ?, ?, ?)`,
+      [id, scope.clientId, data.installation_id || null, scope.branchId, scope.departmentId, data.work_type || 'installation', data.change_request_id || null, versionGroupId, Number(data.version_number || 1), data.file_name, storedPath, data.file_size, data.is_signed, data.notes, req.user.id]
+    );
+    if (data.installation_id) {
+      await pool.query(
+        `UPDATE installations
+         SET status = 'completed', completion_date = COALESCE(completion_date, CURDATE()), handover_file_path = ?, handover_status = ?
+         WHERE id = ?`,
+        [storedPath, data.is_signed ? 'signed' : 'uploaded', data.installation_id],
+      );
+    }
+    res.json({ success: true, id, file_path: storedPath, file_path_label: path.basename(storedPath), ...legacyFileAccessUrls(storedPath) });
+  } catch (err) { res.status(err.status || 500).json({ error: err.message }); }
 });
 
 // INSTALLATION BUDGETS
@@ -2401,7 +3522,7 @@ app.get('/api/technician_performance_scores', async (req, res) => {
 // SYSTEM LOGS
 app.get('/api/system_logs', requireCapability('reports.view'), async (req, res) => {
   try {
-    const [rows] = await pool.query('SELECT l.*, u.email FROM system_logs l LEFT JOIN user_profiles u ON l.user_id = u.id ORDER BY l.created_at DESC LIMIT 100');
+    const [rows] = await pool.query(`SELECT l.*, u.email FROM system_logs l LEFT JOIN user_profiles u ON ${sqlUuidEquals('l.user_id', 'u.id')} ORDER BY l.created_at DESC LIMIT 100`);
     res.json(rows);
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
@@ -2417,7 +3538,7 @@ app.post('/api/system_logs', async (req, res) => {
 
 // COMPANY SETTINGS
 app.get('/api/admin/email-configuration', requireCapability('company.manage'), (_req, res) => {
-  res.json(smtpStatus());
+  res.json({ ...smtpStatus(), sms: smsStatus(), whatsapp: whatsappStatus() });
 });
 
 app.post('/api/admin/email-configuration/test', requireCapability('company.manage'), async (req, res) => {
@@ -2471,7 +3592,7 @@ app.get('/api/installation_feedback/latest', async (req, res) => {
   try {
     const { client_id, installation_id } = req.query;
     const [rows] = await pool.query(
-      'SELECT * FROM installation_feedback WHERE client_id = ? AND installation_id = ? ORDER BY created_at DESC LIMIT 1',
+      'SELECT *, positive_feedback AS client_comments, improvement_suggestions AS client_improvement_suggestions FROM installation_feedback WHERE client_id = ? AND installation_id = ? ORDER BY created_at DESC LIMIT 1',
       [client_id, installation_id]
     );
     res.json(rows[0] || null);
@@ -2539,14 +3660,21 @@ app.get('/api/public/company-branding', async (_req, res) => {
 app.get('/api/public/feedback-links/:token', async (req, res) => {
   try {
     const [rows] = await pool.query(
-      `SELECT f.*,c.client_name,c.branch FROM feedback_links f
-       JOIN clients c ON f.client_id = c.id
-       WHERE f.unique_token = ? AND f.is_used = FALSE AND f.expires_at > NOW() LIMIT 1`,
+      `SELECT f.*, c.client_name, c.branch AS client_branch, cb.branch_name, cd.department_name,
+              (SELECT COUNT(*) FROM client_branches b2 WHERE ${sqlUuidEquals('b2.client_id', 'f.client_id')} AND b2.deleted_at IS NULL) AS branch_count,
+              (SELECT COUNT(*) FROM client_departments d2 WHERE ${sqlUuidEquals('d2.client_id', 'f.client_id')} AND d2.deleted_at IS NULL AND (f.branch_id IS NULL OR ${sqlUuidEquals('d2.branch_id', 'f.branch_id')})) AS department_count
+       FROM feedback_links f
+       JOIN clients c ON ${sqlUuidEquals('f.client_id', 'c.id')}
+       LEFT JOIN client_branches cb ON ${sqlUuidEquals('cb.id', 'f.branch_id')}
+       LEFT JOIN client_departments cd ON ${sqlUuidEquals('cd.id', 'f.department_id')}
+       WHERE f.unique_token = ? AND f.expires_at > NOW() LIMIT 1`,
       [req.params.token],
     );
     if (!rows.length) return res.status(404).json({ error: 'Valid link not found' });
     
     const row = rows[0];
+    if (row.is_used) return res.status(409).json({ error: 'Feedback has already been submitted for this link.', is_used: true, used_at: row.used_at });
+
     const maxAge = Math.max(1, new Date(row.expires_at).getTime() - Date.now());
     res.cookie('riana_feedback_token', req.params.token, {
       httpOnly: true,
@@ -2559,7 +3687,9 @@ app.get('/api/public/feedback-links/:token', async (req, res) => {
       ...row,
       client: {
         client_name: row.client_name,
-        branch: row.branch
+        branch: scopedBranchLabel(row),
+        department_name: scopedDepartmentLabel(row),
+        scope_label: scopedLabel(row)
       }
     });
   } catch (err) { res.status(500).json({ error: err.message }); }
@@ -2611,6 +3741,7 @@ app.post('/api/public/installation-feedback', async (req, res) => {
     await connection.commit();
     connection.release();
     connection = null;
+    res.clearCookie('riana_feedback_token', { path: '/api/public', sameSite: 'strict', secure: process.env.NODE_ENV === 'production' });
     res.json({ success: true });
   } catch (err) { 
     if (connection) {
@@ -2687,6 +3818,111 @@ app.post('/api/help/send-documentation', async (req, res) => {
   }
 });
 
+const buildAuditLogFilters = (query, forcedUserId = null) => {
+  const where = [];
+  const params = [];
+  if (forcedUserId) {
+    where.push('a.user_id = ?');
+    params.push(forcedUserId);
+  } else if (query.user_id) {
+    where.push('a.user_id = ?');
+    params.push(String(query.user_id));
+  }
+  for (const [field, column] of [
+    ['module', 'a.module'], ['action', 'a.action'], ['entity_type', 'a.entity_type'],
+    ['entity_id', 'a.entity_id'], ['status', 'a.status'], ['severity', 'a.severity'], ['ip_address', 'a.ip_address'],
+  ]) {
+    if (query[field]) {
+      where.push(`${column} = ?`);
+      params.push(String(query[field]).slice(0, 120));
+    }
+  }
+  if (query.from) {
+    where.push('a.created_at >= ?');
+    params.push(String(query.from));
+  }
+  if (query.to) {
+    where.push('a.created_at <= ?');
+    params.push(String(query.to));
+  }
+  if (query.search) {
+    where.push('(a.action LIKE ? OR a.description LIKE ? OR a.module LIKE ? OR a.entity_id LIKE ?)');
+    const term = `%${String(query.search).slice(0, 100)}%`;
+    params.push(term, term, term, term);
+  }
+  return { whereSql: where.length ? `WHERE ${where.join(' AND ')}` : '', params };
+};
+
+const auditListSelect = `
+  SELECT a.id,a.event_uuid,a.user_id,a.action,a.category,a.module,a.entity_type,a.entity_id,a.description,
+         a.ip_address,a.device,a.route,a.http_method,a.status,a.severity,a.created_at,
+         u.email,u.first_name,u.last_name
+  FROM audit_logs a
+  LEFT JOIN user_profiles u ON u.id = a.user_id
+`;
+
+app.get('/api/admin/audit-logs', authMiddleware, async (req, res) => {
+  try {
+    if (!isSuperAdmin(req)) {
+      await logDenied(pool, req, { action: 'audit_logs_view_denied', category: 'security', module: 'Audit', description: 'Non-superadmin attempted to view global audit logs.' });
+      return res.status(403).json({ error: 'Superadmin access is required.' });
+    }
+    const page = Math.max(1, Number(req.query.page || 1));
+    const limit = Math.min(100, Math.max(10, Number(req.query.limit || 50)));
+    const offset = (page - 1) * limit;
+    const { whereSql, params } = buildAuditLogFilters(req.query);
+    const [countRows] = await pool.query(`SELECT COUNT(*) AS total FROM audit_logs a ${whereSql}`, params);
+    const [rows] = await pool.query(`${auditListSelect} ${whereSql} ORDER BY a.created_at DESC LIMIT ? OFFSET ?`, [...params, limit, offset]);
+    await logSuccess(pool, req, { action: 'audit_logs_viewed', category: 'security', module: 'Audit', description: 'Global audit logs viewed by superadmin.', metadata: sanitizeAuditData(req.query) });
+    res.json({ rows, page, limit, total: Number(countRows[0]?.total || 0) });
+  } catch (err) {
+    res.status(500).json({ error: 'Unable to load audit logs.' });
+  }
+});
+
+app.get('/api/admin/audit-logs/export', authMiddleware, async (req, res) => {
+  try {
+    if (!isSuperAdmin(req)) {
+      await logDenied(pool, req, { action: 'audit_logs_export_denied', category: 'security', module: 'Audit', description: 'Non-superadmin attempted to export global audit logs.' });
+      return res.status(403).json({ error: 'Superadmin access is required.' });
+    }
+    const { whereSql, params } = buildAuditLogFilters(req.query);
+    const [rows] = await pool.query(`${auditListSelect} ${whereSql} ORDER BY a.created_at DESC LIMIT 5000`, params);
+    await logSuccess(pool, req, { action: 'audit_logs_exported', category: 'security', module: 'Audit', severity: 'notice', description: 'Global audit logs exported by superadmin.', metadata: sanitizeAuditData(req.query) });
+    const header = ['created_at','user','action','module','entity_type','entity_id','status','severity','ip_address','description'];
+    const escapeCsv = (value) => `"${String(value ?? '').replace(/"/g, '""')}"`;
+    const body = rows.map((row) => [
+      row.created_at,
+      [row.first_name, row.last_name].filter(Boolean).join(' ') || row.email || row.user_id || 'System',
+      row.action,row.module,row.entity_type,row.entity_id,row.status,row.severity,row.ip_address,row.description,
+    ].map(escapeCsv).join(',')).join('\n');
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', 'attachment; filename="riana-cims-audit-logs.csv"');
+    res.send(`${header.join(',')}\n${body}`);
+  } catch (err) {
+    res.status(500).json({ error: 'Unable to export audit logs.' });
+  }
+});
+
+app.get('/api/me/activity-logs', authMiddleware, async (req, res) => {
+  try {
+    const page = Math.max(1, Number(req.query.page || 1));
+    const limit = Math.min(50, Math.max(10, Number(req.query.limit || 25)));
+    const offset = (page - 1) * limit;
+    const safeQuery = { ...req.query, ip_address: undefined };
+    const { whereSql, params } = buildAuditLogFilters(safeQuery, req.user.id);
+    const [countRows] = await pool.query(`SELECT COUNT(*) AS total FROM audit_logs a ${whereSql}`, params);
+    const [rows] = await pool.query(
+      `SELECT a.id,a.event_uuid,a.action,a.category,a.module,a.entity_type,a.entity_id,a.description,a.device,a.status,a.severity,a.created_at
+       FROM audit_logs a ${whereSql} ORDER BY a.created_at DESC LIMIT ? OFFSET ?`,
+      [...params, limit, offset],
+    );
+    res.json({ rows, page, limit, total: Number(countRows[0]?.total || 0) });
+  } catch (err) {
+    res.status(500).json({ error: 'Unable to load your activity logs.' });
+  }
+});
+
 app.post('/api/chat/assistant', async (req, res) => {
   const message = String(req.body.message || '').trim();
   if (!message || message.length > 1000) return res.status(400).json({ error: 'Please enter a message between 1 and 1000 characters.' });
@@ -2716,6 +3952,8 @@ function notifyAllChatClients(data) {
   chatClients.forEach((_connections, userId) => notifyChatClients(userId, data));
 }
 
+const getOnlineChatUserCount = () => chatClients.size;
+
 app.get('/api/chat/stream', (req, res) => {
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache, no-transform');
@@ -2741,7 +3979,7 @@ app.get('/api/chat/stream', (req, res) => {
   const userConnections = chatClients.get(userKey) || new Map();
   userConnections.set(clientId, res);
   chatClients.set(userKey, userConnections);
-  notifyAllChatClients({ type: 'presence', userId: userKey, online: true });
+  notifyAllChatClients({ type: 'presence', userId: userKey, online: true, onlineUserCount: getOnlineChatUserCount() });
 
   // Set up heartbeat to keep connection alive
   const heartbeat = setInterval(() => {
@@ -2754,18 +3992,23 @@ app.get('/api/chat/stream', (req, res) => {
     userConnections.delete(clientId);
     if (userConnections.size === 0) {
       chatClients.delete(userKey);
-      notifyAllChatClients({ type: 'presence', userId: userKey, online: false });
+      const lastSeenAt = new Date().toISOString();
+      pool.query('UPDATE user_profiles SET last_seen_at = CURRENT_TIMESTAMP WHERE id = ?', [userKey])
+        .catch((error) => console.warn('[SSE] Unable to update last seen:', error.message));
+      notifyAllChatClients({ type: 'presence', userId: userKey, online: false, lastSeenAt, onlineUserCount: getOnlineChatUserCount() });
     }
   });
 });
 
 app.get('/api/chat/users', authMiddleware, async (req, res) => {
   try {
+    await markExpiredRingingCalls(req.user.id);
     const [rows] = await pool.query(`
-      SELECT u.id, u.email, u.first_name, u.last_name, u.role, u.designation,
+      SELECT u.id, u.email, u.first_name, u.last_name, u.role, u.designation, u.avatar_url, u.last_seen_at,
              (SELECT COUNT(*) FROM messages m WHERE m.sender_id = u.id AND m.receiver_id = ? AND m.is_read = FALSE) as unread_count
-      FROM user_profiles u 
-      WHERE u.id != ? AND u.is_active = 1
+      FROM user_profiles u
+      WHERE u.id != ? AND COALESCE(u.is_active, 1) = 1
+      ORDER BY COALESCE(u.first_name, u.email), COALESCE(u.last_name, '')
     `, [req.user.id, req.user.id]);
     res.json(rows.map((row) => ({ ...row, online: chatClients.has(String(row.id)) })));
   } catch (err) { res.status(500).json({ error: err.message }); }
@@ -2788,82 +4031,789 @@ app.post('/api/chat/typing', authMiddleware, async (req, res) => {
   }
 });
 
+const selectChatMessageSql = `
+  SELECT m.*,
+         s.first_name as sender_first_name, s.last_name as sender_last_name, s.avatar_url as sender_avatar_url,
+         r.first_name as receiver_first_name, r.last_name as receiver_last_name, r.avatar_url as receiver_avatar_url,
+         rm.content as reply_content, rm.message_kind as reply_message_kind,
+         rm.attachment_file_name as reply_attachment_file_name,
+         rs.first_name as reply_sender_first_name, rs.last_name as reply_sender_last_name
+  FROM messages m
+  JOIN user_profiles s ON m.sender_id = s.id
+  JOIN user_profiles r ON m.receiver_id = r.id
+  LEFT JOIN messages rm ON m.reply_to_message_id = rm.id
+  LEFT JOIN user_profiles rs ON rm.sender_id = rs.id
+`;
+
+
+const HOSTED_PLACEHOLDER_LINE_RE = /^[\s\u00a0]*(?:[oO0]|\u039f|\u03bf|\uff2f|\uff4f|\uff10|\u25cb|\u25ef)[\s\u00a0]*$/u;
+const stripHostedPlaceholderLines = (value) => String(value || '')
+  .replace(/\r\n?/g, '\n')
+  .split('\n')
+  .filter((line) => !HOSTED_PLACEHOLDER_LINE_RE.test(line))
+  .join('\n');
+const normalizeChatContent = (value) => stripHostedPlaceholderLines(value)
+  .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, '')
+  .trim();
+const chatContentHash = (value) => crypto.createHash('sha256').update(String(value || ''), 'utf8').digest('hex');
+
+const sanitizeChatMessageForUser = (message, userId) => {
+  const row = { ...message };
+  row.is_read = Boolean(row.is_read);
+  row.is_edited = Boolean(row.is_edited);
+  row.is_deleted_for_everyone = Boolean(row.is_deleted_for_everyone);
+  row.content = stripHostedPlaceholderLines(row.content).trim();
+  row.reply_content = stripHostedPlaceholderLines(row.reply_content).trim();
+  if (row.message_kind === 'call') row.content = '';
+  if (row.is_deleted_for_everyone) {
+    row.content = '';
+    row.attachment_file_name = null;
+    row.attachment_file_path = null;
+    row.attachment_content_type = null;
+    row.attachment_size = null;
+    row.reactions = [];
+    row.my_reaction = null;
+    row.can_edit = false;
+    row.can_delete_for_everyone = false;
+    return row;
+  }
+  row.reactions = Array.isArray(row.reactions) ? row.reactions : [];
+  const isSender = String(row.sender_id) === String(userId);
+  const isUnread = !row.is_read && !row.read_at;
+  const isTextLike = !row.message_kind || ['text', 'attachment'].includes(row.message_kind);
+  const createdAt = row.created_at ? new Date(row.created_at).getTime() : 0;
+  const withinDeleteWindow = MESSAGE_DELETE_FOR_EVERYONE_WINDOW_MINUTES <= 0
+    || (createdAt && Date.now() - createdAt <= MESSAGE_DELETE_FOR_EVERYONE_WINDOW_MINUTES * 60 * 1000);
+  row.can_edit = isSender && isUnread && isTextLike;
+  row.can_delete_for_everyone = isSender && isTextLike && withinDeleteWindow;
+  return row;
+};
+
+const attachCallParticipants = async (messages) => {
+  const callIds = messages.filter(message => message.message_kind === 'call').map(message => message.id);
+  if (!callIds.length) return messages;
+  const placeholders = callIds.map(() => '?').join(',');
+  const [rows] = await pool.query(
+    `SELECT cp.call_id,cp.user_id,cp.status,u.first_name,u.last_name,u.email
+     FROM call_participants cp
+     JOIN user_profiles u ON u.id = cp.user_id
+     WHERE cp.call_id IN (${placeholders})
+     ORDER BY cp.created_at ASC`,
+    callIds,
+  );
+  const byCall = new Map();
+  for (const row of rows) {
+    const list = byCall.get(row.call_id) || [];
+    list.push({ user_id: row.user_id, status: row.status, first_name: row.first_name, last_name: row.last_name, email: row.email });
+    byCall.set(row.call_id, list);
+  }
+  return messages.map(message => {
+    if (message.message_kind !== 'call') return message;
+    const participants = byCall.get(message.id) || [];
+    const participantIds = Array.from(new Set([message.sender_id, message.receiver_id, ...participants.map(participant => participant.user_id)].filter(Boolean)));
+    return {
+      ...message,
+      call_participants: participants,
+      call_participant_ids: participantIds,
+      call_participant_count: participantIds.length,
+    };
+  });
+};
+
+const enrichChatMessages = async (messages, userId) => {
+  if (!messages.length) return [];
+  const ids = messages.map((message) => message.id);
+  const placeholders = ids.map(() => '?').join(',');
+  const [reactionRows] = await pool.query(
+    `SELECT message_id,reaction_type,COUNT(*) AS count
+     FROM message_reactions
+     WHERE message_id IN (${placeholders})
+     GROUP BY message_id,reaction_type`,
+    ids,
+  );
+  const [myRows] = await pool.query(
+    `SELECT message_id,reaction_type
+     FROM message_reactions
+     WHERE user_id = ? AND message_id IN (${placeholders})`,
+    [userId, ...ids],
+  );
+  const counts = new Map();
+  for (const row of reactionRows) {
+    const list = counts.get(row.message_id) || [];
+    list.push({ reaction_type: row.reaction_type, count: Number(row.count || 0) });
+    counts.set(row.message_id, list);
+  }
+  const own = new Map(myRows.map((row) => [row.message_id, row.reaction_type]));
+  const withReactions = messages.map((message) => sanitizeChatMessageForUser({
+    ...message,
+    reactions: counts.get(message.id) || [],
+    my_reaction: own.get(message.id) || null,
+  }, userId));
+  return attachCallParticipants(withReactions);
+};
+
+const loadVisibleChatMessage = async (messageId, userId) => {
+  const [rows] = await pool.query(`${selectChatMessageSql}
+    WHERE m.id = ?
+      AND (m.sender_id = ? OR m.receiver_id = ?)
+      AND NOT EXISTS (SELECT 1 FROM message_user_deletions mud WHERE mud.message_id = m.id AND mud.user_id = ?)
+    LIMIT 1`, [messageId, userId, userId, userId]);
+  const enriched = await enrichChatMessages(rows, userId);
+  return enriched[0] || null;
+};
+
+const notifyMessageParticipants = (message, payload) => {
+  if (!message) return;
+  notifyChatClients(message.sender_id, payload);
+  notifyChatClients(message.receiver_id, payload);
+};
+
+const notifyCallParticipants = async (callId, payload) => {
+  const [callRows] = await pool.query('SELECT sender_id,receiver_id FROM messages WHERE id = ? LIMIT 1', [callId]);
+  const call = callRows[0];
+  if (!call) return;
+  const [participantRows] = await pool.query('SELECT user_id FROM call_participants WHERE call_id = ?', [callId]);
+  const participantIds = new Set(
+    [call.sender_id, call.receiver_id, ...participantRows.map((row) => row.user_id)]
+      .filter(Boolean)
+      .map((value) => String(value)),
+  );
+  participantIds.forEach((userId) => notifyChatClients(userId, payload));
+};
+
+const loadCallForUser = async (callId, userId) => {
+  const [rows] = await pool.query(`${selectChatMessageSql}
+    WHERE m.id = ?
+      AND m.message_kind = 'call'
+      AND (
+        m.sender_id = ?
+        OR m.receiver_id = ?
+        OR EXISTS (SELECT 1 FROM call_participants cp WHERE cp.call_id = m.id AND cp.user_id = ?)
+      )
+      AND NOT EXISTS (SELECT 1 FROM message_user_deletions mud WHERE mud.message_id = m.id AND mud.user_id = ?)
+    LIMIT 1`, [callId, userId, userId, userId, userId]);
+  const enriched = await enrichChatMessages(rows, userId);
+  return enriched[0] || null;
+};
+
+const publishCallUpdate = async (callId, missedNotification = false) => {
+  const [callRows] = await pool.query('SELECT sender_id,receiver_id FROM messages WHERE id = ? LIMIT 1', [callId]);
+  const call = callRows[0];
+  if (!call) return;
+  const [participantRows] = await pool.query('SELECT user_id FROM call_participants WHERE call_id = ?', [callId]);
+  const participantIds = new Set(
+    [call.sender_id, call.receiver_id, ...participantRows.map((row) => row.user_id)]
+      .filter(Boolean)
+      .map((value) => String(value)),
+  );
+  for (const userId of participantIds) {
+    const userView = await loadCallForUser(callId, userId);
+    if (!userView) continue;
+    notifyChatClients(userId, { type: 'call_updated', call: userView });
+    if (missedNotification && String(userId) !== String(call.sender_id) && userView.call_status === 'missed') {
+      notifyChatClients(userId, { type: 'missed_call', call: userView });
+    }
+  }
+};
+
+const markRingingCallMissed = async (callId) => {
+  const [result] = await pool.query(
+    `UPDATE messages
+     SET call_status = 'missed', call_ended_at = COALESCE(call_ended_at, NOW())
+     WHERE id = ?
+       AND message_kind = 'call'
+       AND call_status = 'ringing'
+       AND created_at < DATE_SUB(NOW(), INTERVAL ? SECOND)`,
+    [callId, CHAT_CALL_RING_TIMEOUT_SECONDS],
+  );
+  if (!result.affectedRows) return false;
+  await pool.query(
+    `UPDATE call_participants
+     SET status = 'missed', left_at = COALESCE(left_at, NOW()), updated_at = CURRENT_TIMESTAMP
+     WHERE call_id = ? AND status IN ('invited','ringing')`,
+    [callId],
+  );
+  await publishCallUpdate(callId, true);
+  return true;
+};
+
+const markExpiredRingingCalls = async (userId = null) => {
+  const params = [CHAT_CALL_RING_TIMEOUT_SECONDS];
+  let userFilter = '';
+  if (userId) {
+    userFilter = ` AND (m.receiver_id = ? OR EXISTS (SELECT 1 FROM call_participants cp WHERE cp.call_id = m.id AND cp.user_id = ?))`;
+    params.push(userId, userId);
+  }
+  const [rows] = await pool.query(
+    `SELECT m.id
+     FROM messages m
+     WHERE m.message_kind = 'call'
+       AND m.call_status = 'ringing'
+       AND m.created_at < DATE_SUB(NOW(), INTERVAL ? SECOND)
+       ${userFilter}
+     ORDER BY m.created_at ASC
+     LIMIT 50`,
+    params,
+  );
+  for (const row of rows) await markRingingCallMissed(row.id);
+};
+
+const scheduleMissedCallCheck = (callId) => {
+  const timer = setTimeout(() => {
+    markRingingCallMissed(callId).catch((error) => console.error('Missed call timeout failed:', error.message));
+  }, CHAT_CALL_RING_TIMEOUT_SECONDS * 1000);
+  if (typeof timer.unref === 'function') timer.unref();
+};
+const userCanAccessMessage = async (messageId, userId) => {
+  const [rows] = await pool.query(
+    `SELECT m.id,m.sender_id,m.receiver_id,m.message_kind,m.is_deleted_for_everyone
+     FROM messages m
+     LEFT JOIN call_participants cp ON cp.call_id = m.id AND cp.user_id = ?
+     WHERE m.id = ? AND (m.sender_id = ? OR m.receiver_id = ? OR cp.user_id IS NOT NULL)
+     LIMIT 1`,
+    [userId, messageId, userId, userId],
+  );
+  return rows[0] || null;
+};
+
 app.get('/api/chat/messages/:otherUserId', authMiddleware, async (req, res) => {
   try {
-    const { otherUserId } = req.params;
+    await markExpiredRingingCalls(req.user.id);
+    const otherUserId = String(req.params.otherUserId || '').trim();
     const [recipients] = await pool.query('SELECT id FROM user_profiles WHERE id = ? AND is_active = 1 LIMIT 1', [otherUserId]);
     if (!recipients.length || otherUserId === req.user.id) return res.status(404).json({ error: 'Active chat recipient not found.' });
-    const [rows] = await pool.query(`
-      SELECT m.*, 
-             s.first_name as sender_first_name, s.last_name as sender_last_name,
-             r.first_name as receiver_first_name, r.last_name as receiver_last_name
-      FROM messages m
-      JOIN user_profiles s ON m.sender_id = s.id
-      JOIN user_profiles r ON m.receiver_id = r.id
-      WHERE (m.sender_id = ? AND m.receiver_id = ?) 
-         OR (m.sender_id = ? AND m.receiver_id = ?)
+    const [rows] = await pool.query(`${selectChatMessageSql}
+      WHERE (
+          (m.sender_id = ? AND m.receiver_id = ?)
+          OR (m.sender_id = ? AND m.receiver_id = ?)
+          OR (m.message_kind = 'call' AND m.sender_id = ? AND EXISTS (SELECT 1 FROM call_participants cp WHERE cp.call_id = m.id AND cp.user_id = ?))
+          OR (m.message_kind = 'call' AND m.sender_id = ? AND EXISTS (SELECT 1 FROM call_participants cp WHERE cp.call_id = m.id AND cp.user_id = ?))
+        )
+        AND NOT EXISTS (SELECT 1 FROM message_user_deletions mud WHERE mud.message_id = m.id AND mud.user_id = ?)
       ORDER BY m.created_at ASC
-    `, [req.user.id, otherUserId, otherUserId, req.user.id]);
-    res.json(rows);
-  } catch (err) { res.status(500).json({ error: err.message }); }
+      LIMIT 500
+    `, [req.user.id, otherUserId, otherUserId, req.user.id, otherUserId, req.user.id, req.user.id, otherUserId, req.user.id]);
+    res.json(await enrichChatMessages(rows, req.user.id));
+  } catch (err) { res.status(500).json({ error: 'Unable to load messages.' }); }
+});
+
+app.get('/api/chat/missed-calls', authMiddleware, async (req, res) => {
+  try {
+    await markExpiredRingingCalls(req.user.id);
+    const [rows] = await pool.query(`${selectChatMessageSql}
+      WHERE m.message_kind = 'call'
+        AND m.call_status = 'missed'
+        AND m.created_at >= DATE_SUB(NOW(), INTERVAL ? DAY)
+        AND (
+          m.receiver_id = ?
+          OR EXISTS (SELECT 1 FROM call_participants cp WHERE cp.call_id = m.id AND cp.user_id = ? AND cp.status = 'missed')
+        )
+        AND NOT EXISTS (SELECT 1 FROM message_user_deletions mud WHERE mud.message_id = m.id AND mud.user_id = ?)
+        AND NOT EXISTS (SELECT 1 FROM missed_call_dismissals mcd WHERE mcd.call_id = m.id AND mcd.user_id = ?)
+      ORDER BY m.created_at DESC
+      LIMIT 10`,
+      [CHAT_MISSED_CALL_LOOKBACK_DAYS, req.user.id, req.user.id, req.user.id, req.user.id],
+    );
+    res.json(await enrichChatMessages(rows, req.user.id));
+  } catch (err) {
+    res.status(500).json({ error: 'Unable to load missed calls.' });
+  }
+});
+
+app.post('/api/chat/missed-calls/:callId/dismiss', authMiddleware, async (req, res) => {
+  try {
+    const callId = String(req.params.callId || '').trim();
+    const call = await userCanAccessMessage(callId, req.user.id);
+    if (!call || call.message_kind !== 'call' || call.call_status !== 'missed') {
+      return res.status(404).json({ error: 'Missed call not found.' });
+    }
+    const isRecipient = String(call.receiver_id) === String(req.user.id);
+    const [participantRows] = await pool.query(
+      'SELECT 1 FROM call_participants WHERE call_id = ? AND user_id = ? AND status = ? LIMIT 1',
+      [callId, req.user.id, 'missed'],
+    );
+    if (!isRecipient && !participantRows.length) return res.status(403).json({ error: 'You cannot dismiss this call.' });
+    await pool.query(
+      `INSERT INTO missed_call_dismissals (id,call_id,user_id) VALUES (?,?,?)
+       ON DUPLICATE KEY UPDATE dismissed_at = CURRENT_TIMESTAMP`,
+      [uuidv4(), callId, req.user.id],
+    );
+    await logSuccess(pool, req, {
+      action: 'missed_call_dismissed',
+      category: 'chat',
+      module: 'Chat',
+      entity_type: 'message',
+      entity_id: callId,
+      description: 'Missed call notification dismissed.',
+    });
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: 'Unable to dismiss missed call.' });
+  }
+});
+
+app.get('/api/chat/attachments/:filename', authMiddleware, async (req, res) => {
+  try {
+    const filename = normalizeStoredFileReference(req.params.filename);
+    if (!filename) return res.status(404).json({ error: 'Attachment not found.' });
+    const [rows] = await pool.query(
+      `SELECT id,attachment_file_name,attachment_file_path,attachment_content_type,sender_id,receiver_id,is_deleted_for_everyone
+       FROM messages WHERE attachment_file_path = ? LIMIT 1`,
+      [filename],
+    );
+    const attachment = rows[0];
+    const participant = attachment && (String(attachment.sender_id) === String(req.user.id) || String(attachment.receiver_id) === String(req.user.id));
+    if (!participant || attachment.is_deleted_for_everyone) return res.status(404).json({ error: 'Attachment not found.' });
+    const [hidden] = await pool.query('SELECT 1 FROM message_user_deletions WHERE message_id = ? AND user_id = ? LIMIT 1', [attachment.id, req.user.id]);
+    if (hidden.length) return res.status(404).json({ error: 'Attachment not found.' });
+    const resolved = resolveStoredFile(uploadsDir, filename);
+    if (!resolved || !fs.existsSync(resolved)) return res.status(404).json({ error: 'Attachment not found.' });
+    await logSuccess(pool, req, {
+      action: 'chat_attachment_downloaded',
+      category: 'data',
+      module: 'Chat',
+      entity_type: 'message',
+      entity_id: attachment.id,
+      description: 'Chat attachment accessed.',
+      metadata: { download: req.query.download === '1' },
+    });
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('Content-Type', attachment.attachment_content_type || 'application/octet-stream');
+    const disposition = req.query.download === '1' ? 'attachment' : 'inline';
+    res.setHeader('Content-Disposition', `${disposition}; filename="${String(attachment.attachment_file_name || filename).replace(/["\r\n]/g, '')}"`);
+    res.sendFile(resolved);
+  } catch (err) {
+    res.status(500).json({ error: 'Unable to load attachment.' });
+  }
 });
 
 app.post('/api/chat/messages', authMiddleware, async (req, res) => {
   try {
-    const receiver_id = String(req.body?.receiver_id || '').trim();
-    const content = String(req.body?.content || '').trim();
-    if (!receiver_id || receiver_id === req.user.id) return res.status(400).json({ error: 'Select another active user.' });
-    if (!content || content.length > 4000) return res.status(400).json({ error: 'Message must be between 1 and 4000 characters.' });
-    const [recipients] = await pool.query('SELECT id FROM user_profiles WHERE id = ? AND is_active = 1 LIMIT 1', [receiver_id]);
+    const receiverId = String(req.body?.receiver_id || '').trim();
+    const content = normalizeChatContent(req.body?.content);
+    const replyToMessageId = String(req.body?.reply_to_message_id || '').trim() || null;
+    const attachmentPayload = req.body?.attachment && typeof req.body.attachment === 'object' ? req.body.attachment : null;
+    if (!receiverId || receiverId === req.user.id) return res.status(400).json({ error: 'Select another active user.' });
+    if (content.length > 4000) return res.status(400).json({ error: 'Message cannot exceed 4000 characters.' });
+    if (!content && !attachmentPayload) return res.status(400).json({ error: 'Type a message or attach a file.' });
+    const [recipients] = await pool.query('SELECT id FROM user_profiles WHERE id = ? AND is_active = 1 LIMIT 1', [receiverId]);
     if (!recipients.length) return res.status(404).json({ error: 'Active chat recipient not found.' });
-    const id = uuidv4();
-    
-    await pool.query('INSERT INTO messages (id, sender_id, receiver_id, content) VALUES (?, ?, ?, ?)', 
-      [id, req.user.id, receiver_id, content]);
-    
-    const [newMessage] = await pool.query(`
-      SELECT m.*, s.first_name as sender_first_name, s.last_name as sender_last_name
-      FROM messages m
-      JOIN user_profiles s ON m.sender_id = s.id
-      WHERE m.id = ?
-    `, [id]);
 
-    notifyChatClients(receiver_id, { type: 'new_message', message: newMessage[0] });
-    
-    res.json(newMessage[0]);
+    if (replyToMessageId) {
+      const replyMessage = await userCanAccessMessage(replyToMessageId, req.user.id);
+      if (!replyMessage || replyMessage.is_deleted_for_everyone) return res.status(400).json({ error: 'The message being replied to is unavailable.' });
+      const replyParticipantIds = new Set([String(replyMessage.sender_id), String(replyMessage.receiver_id)]);
+      if (!replyParticipantIds.has(String(receiverId))) return res.status(400).json({ error: 'Replies must stay in the same conversation.' });
+    }
+
+    let attachment = null;
+    if (attachmentPayload) {
+      const { buffer, storedName, contentType } = safeChatAttachmentUpload({
+        fileName: attachmentPayload.fileName,
+        base64Data: attachmentPayload.base64Data,
+      });
+      const filePath = resolveStoredFile(uploadsDir, storedName);
+      await fsp.writeFile(filePath, buffer, { flag: 'wx', mode: 0o640 });
+      attachment = {
+        fileName: String(attachmentPayload.fileName || storedName).replace(/[\\/\0]/g, '').slice(0, 255) || storedName,
+        filePath: storedName,
+        contentType,
+        size: buffer.length,
+      };
+    }
+
+    const id = uuidv4();
+    const messageKind = attachment ? 'attachment' : 'text';
+    await pool.query(
+      `INSERT INTO messages
+       (id,sender_id,receiver_id,content,content_hash,message_kind,reply_to_message_id,attachment_file_name,attachment_file_path,attachment_content_type,attachment_size)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+      [id, req.user.id, receiverId, content, chatContentHash(content), messageKind, replyToMessageId, attachment?.fileName || null, attachment?.filePath || null, attachment?.contentType || null, attachment?.size || null],
+    );
+    await pool.query(
+      `INSERT INTO message_recipient_status (id,message_id,user_id,delivered_at) VALUES (?,?,?,CURRENT_TIMESTAMP)
+       ON DUPLICATE KEY UPDATE delivered_at = COALESCE(delivered_at, VALUES(delivered_at))`,
+      [uuidv4(), id, receiverId],
+    );
+    await logSuccess(pool, req, {
+      action: 'message_sent',
+      category: 'chat',
+      module: 'Chat',
+      entity_type: 'message',
+      entity_id: id,
+      description: 'Chat message sent.',
+      metadata: { receiver_id: receiverId, message_kind: messageKind, has_attachment: Boolean(attachment) },
+    });
+
+    const ownMessage = await loadVisibleChatMessage(id, req.user.id);
+    const recipientMessage = await loadVisibleChatMessage(id, receiverId);
+    notifyChatClients(receiverId, { type: 'new_message', message: recipientMessage });
+    res.json(ownMessage);
   } catch (err) {
     console.error('Chat message send failed:', err.message);
-    res.status(500).json({ error: 'Unable to send the message.' });
+    res.status(err.status || 500).json({ error: err.status ? err.message : 'Unable to send the message.' });
+  }
+});
+
+app.patch('/api/chat/messages/:messageId/edit', authMiddleware, async (req, res) => {
+  const connection = await pool.getConnection();
+  try {
+    const messageId = String(req.params.messageId || '').trim();
+    const content = normalizeChatContent(req.body?.content);
+    if (!content) return res.status(400).json({ error: 'Message content is required.' });
+    if (content.length > 4000) return res.status(400).json({ error: 'Message cannot exceed 4000 characters.' });
+
+    await connection.beginTransaction();
+    const [rows] = await connection.query('SELECT * FROM messages WHERE id = ? FOR UPDATE', [messageId]);
+    const message = rows[0];
+    if (!message || (String(message.sender_id) !== String(req.user.id) && String(message.receiver_id) !== String(req.user.id))) {
+      await connection.rollback();
+      await logDenied(pool, req, { action: 'message_edit_denied', category: 'chat', module: 'Chat', entity_type: 'message', entity_id: messageId, description: 'Unauthorized message edit attempt.' });
+      return res.status(404).json({ error: 'Message not found.' });
+    }
+    if (String(message.sender_id) !== String(req.user.id)) {
+      await connection.rollback();
+      await logDenied(pool, req, { action: 'message_edit_denied', category: 'chat', module: 'Chat', entity_type: 'message', entity_id: messageId, description: 'Non-sender attempted to edit a message.' });
+      return res.status(403).json({ error: 'Only the sender can edit this message.' });
+    }
+    if (message.is_deleted_for_everyone) {
+      await connection.rollback();
+      return res.status(400).json({ error: 'Deleted messages cannot be edited.' });
+    }
+    if (message.message_kind === 'call') {
+      await connection.rollback();
+      return res.status(400).json({ error: 'System-generated call messages cannot be edited.' });
+    }
+    const [readRows] = await connection.query(
+      `SELECT 1 FROM message_recipient_status WHERE message_id = ? AND user_id <> ? AND read_at IS NOT NULL LIMIT 1`,
+      [messageId, req.user.id],
+    );
+    if (message.is_read || message.read_at || readRows.length) {
+      await connection.rollback();
+      return res.status(409).json({ error: 'This message cannot be edited because it has already been read.' });
+    }
+    await connection.query(
+      'INSERT INTO message_edit_history (id,message_id,edited_by,previous_content,new_content_hash) VALUES (?,?,?,?,?)',
+      [uuidv4(), messageId, req.user.id, message.content || '', chatContentHash(content)],
+    );
+    await connection.query(
+      `UPDATE messages
+       SET content = ?, content_hash = ?, is_edited = TRUE, edited_at = CURRENT_TIMESTAMP
+       WHERE id = ? AND sender_id = ? AND is_deleted_for_everyone = FALSE AND is_read = FALSE AND read_at IS NULL`,
+      [content, chatContentHash(content), messageId, req.user.id],
+    );
+    await logSuccess(connection, req, {
+      action: 'message_edited',
+      category: 'chat',
+      module: 'Chat',
+      entity_type: 'message',
+      entity_id: messageId,
+      description: 'Chat message edited before recipient read it.',
+      old_values: { content_hash: chatContentHash(message.content || '') },
+      new_values: { content_hash: chatContentHash(content) },
+      metadata: { receiver_id: message.receiver_id },
+    });
+    await connection.commit();
+
+    const senderMessage = await loadVisibleChatMessage(messageId, message.sender_id);
+    const receiverMessage = await loadVisibleChatMessage(messageId, message.receiver_id);
+    if (senderMessage) notifyChatClients(message.sender_id, { type: 'message_updated', message: senderMessage });
+    if (receiverMessage) notifyChatClients(message.receiver_id, { type: 'message_updated', message: receiverMessage });
+    res.json(senderMessage);
+  } catch (err) {
+    await connection.rollback().catch(() => undefined);
+    console.error('Chat message edit failed:', err.message);
+    res.status(500).json({ error: 'Unable to edit the message.' });
+  } finally {
+    connection.release();
+  }
+});
+
+app.put('/api/chat/messages/:messageId/reaction', authMiddleware, async (req, res) => {
+  try {
+    const messageId = String(req.params.messageId || '').trim();
+    const reactionType = String(req.body?.reaction_type || '').trim();
+    if (!CHAT_REACTION_TYPES.has(reactionType)) return res.status(400).json({ error: 'Unsupported reaction type.' });
+    const message = await userCanAccessMessage(messageId, req.user.id);
+    if (!message || message.is_deleted_for_everyone) return res.status(404).json({ error: 'Message not found.' });
+    const [existing] = await pool.query('SELECT reaction_type FROM message_reactions WHERE message_id = ? AND user_id = ? LIMIT 1', [messageId, req.user.id]);
+    await pool.query(
+      `INSERT INTO message_reactions (id,message_id,user_id,reaction_type) VALUES (?,?,?,?)
+       ON DUPLICATE KEY UPDATE reaction_type = VALUES(reaction_type), updated_at = CURRENT_TIMESTAMP`,
+      [uuidv4(), messageId, req.user.id, reactionType],
+    );
+    await logSuccess(pool, req, {
+      action: existing.length ? 'message_reaction_changed' : 'message_reaction_added',
+      category: 'chat',
+      module: 'Chat',
+      entity_type: 'message',
+      entity_id: messageId,
+      description: existing.length ? 'Chat message reaction changed.' : 'Chat message reaction added.',
+      metadata: { reaction_type: reactionType },
+    });
+    const senderMessage = await loadVisibleChatMessage(messageId, message.sender_id);
+    const receiverMessage = await loadVisibleChatMessage(messageId, message.receiver_id);
+    if (senderMessage) notifyChatClients(message.sender_id, { type: 'message_updated', message: senderMessage });
+    if (receiverMessage) notifyChatClients(message.receiver_id, { type: 'message_updated', message: receiverMessage });
+    res.json(String(message.sender_id) === String(req.user.id) ? senderMessage : receiverMessage);
+  } catch (err) {
+    res.status(500).json({ error: 'Unable to update reaction.' });
+  }
+});
+
+app.delete('/api/chat/messages/:messageId/reaction', authMiddleware, async (req, res) => {
+  try {
+    const messageId = String(req.params.messageId || '').trim();
+    const message = await userCanAccessMessage(messageId, req.user.id);
+    if (!message) return res.status(404).json({ error: 'Message not found.' });
+    await pool.query('DELETE FROM message_reactions WHERE message_id = ? AND user_id = ?', [messageId, req.user.id]);
+    await logSuccess(pool, req, { action: 'message_reaction_removed', category: 'chat', module: 'Chat', entity_type: 'message', entity_id: messageId, description: 'Chat message reaction removed.' });
+    const senderMessage = await loadVisibleChatMessage(messageId, message.sender_id);
+    const receiverMessage = await loadVisibleChatMessage(messageId, message.receiver_id);
+    if (senderMessage) notifyChatClients(message.sender_id, { type: 'message_updated', message: senderMessage });
+    if (receiverMessage) notifyChatClients(message.receiver_id, { type: 'message_updated', message: receiverMessage });
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: 'Unable to remove reaction.' });
+  }
+});
+
+app.post('/api/chat/messages/:messageId/delete-for-me', authMiddleware, async (req, res) => {
+  try {
+    const messageId = String(req.params.messageId || '').trim();
+    const message = await userCanAccessMessage(messageId, req.user.id);
+    if (!message) return res.status(404).json({ error: 'Message not found.' });
+    await pool.query(
+      `INSERT INTO message_user_deletions (id,message_id,user_id) VALUES (?,?,?)
+       ON DUPLICATE KEY UPDATE deleted_at = CURRENT_TIMESTAMP`,
+      [uuidv4(), messageId, req.user.id],
+    );
+    await logSuccess(pool, req, { action: 'message_deleted_for_me', category: 'chat', module: 'Chat', entity_type: 'message', entity_id: messageId, description: 'Chat message hidden for the current user.' });
+    notifyChatClients(req.user.id, { type: 'message_hidden', messageId });
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: 'Unable to delete the message for you.' });
+  }
+});
+
+app.post('/api/chat/messages/:messageId/delete-for-everyone', authMiddleware, async (req, res) => {
+  const connection = await pool.getConnection();
+  try {
+    const messageId = String(req.params.messageId || '').trim();
+    const reason = String(req.body?.reason || '').trim().slice(0, 255) || null;
+    await connection.beginTransaction();
+    const [rows] = await connection.query('SELECT * FROM messages WHERE id = ? FOR UPDATE', [messageId]);
+    const message = rows[0];
+    if (!message || (String(message.sender_id) !== String(req.user.id) && String(message.receiver_id) !== String(req.user.id))) {
+      await connection.rollback();
+      return res.status(404).json({ error: 'Message not found.' });
+    }
+    const senderOwnsMessage = String(message.sender_id) === String(req.user.id);
+    if (!senderOwnsMessage && !isSuperAdmin(req)) {
+      await connection.rollback();
+      await logDenied(pool, req, { action: 'message_delete_everyone_denied', category: 'chat', module: 'Chat', entity_type: 'message', entity_id: messageId, description: 'Unauthorized delete-for-everyone attempt.' });
+      return res.status(403).json({ error: 'Only the sender can delete this message for everyone.' });
+    }
+    const createdAt = message.created_at ? new Date(message.created_at).getTime() : 0;
+    const expired = MESSAGE_DELETE_FOR_EVERYONE_WINDOW_MINUTES > 0 && createdAt && Date.now() - createdAt > MESSAGE_DELETE_FOR_EVERYONE_WINDOW_MINUTES * 60 * 1000;
+    if (expired && !isSuperAdmin(req)) {
+      await connection.rollback();
+      return res.status(409).json({ error: 'This message can no longer be deleted for everyone.' });
+    }
+    if (message.is_deleted_for_everyone) {
+      await connection.rollback();
+      return res.status(409).json({ error: 'This message was already deleted for everyone.' });
+    }
+    await connection.query(
+      `UPDATE messages
+       SET content = '', is_deleted_for_everyone = TRUE, deleted_for_everyone_at = CURRENT_TIMESTAMP,
+           deleted_for_everyone_by = ?, deletion_reason = ?, content_hash = ?
+       WHERE id = ?`,
+      [req.user.id, reason, chatContentHash(message.content || ''), messageId],
+    );
+    await connection.query('DELETE FROM message_reactions WHERE message_id = ?', [messageId]);
+    await logSuccess(connection, req, {
+      action: 'message_deleted_for_everyone',
+      category: 'chat',
+      module: 'Chat',
+      entity_type: 'message',
+      entity_id: messageId,
+      description: 'Chat message deleted for all participants.',
+      severity: 'warning',
+      metadata: { sender_id: message.sender_id, receiver_id: message.receiver_id, reason, original_content_hash: chatContentHash(message.content || '') },
+    });
+    await connection.commit();
+    const senderMessage = await loadVisibleChatMessage(messageId, message.sender_id);
+    const receiverMessage = await loadVisibleChatMessage(messageId, message.receiver_id);
+    if (senderMessage) notifyChatClients(message.sender_id, { type: 'message_updated', message: senderMessage });
+    if (receiverMessage) notifyChatClients(message.receiver_id, { type: 'message_updated', message: receiverMessage });
+    res.json(String(message.sender_id) === String(req.user.id) ? senderMessage : receiverMessage);
+  } catch (err) {
+    await connection.rollback().catch(() => undefined);
+    res.status(500).json({ error: 'Unable to delete the message for everyone.' });
+  } finally {
+    connection.release();
+  }
+});
+
+app.post('/api/chat/calls', authMiddleware, async (req, res) => {
+  const connection = await pool.getConnection();
+  try {
+    const requestedIds = Array.isArray(req.body?.receiver_ids) ? req.body.receiver_ids : [req.body?.receiver_id];
+    const receiverIds = Array.from(new Set(requestedIds.map(value => String(value || '').trim()).filter(id => id && id !== String(req.user.id)))).slice(0, 8);
+    const callType = req.body?.call_type === 'video' ? 'video' : 'audio';
+    if (!receiverIds.length) return res.status(400).json({ error: 'Select at least one active user.' });
+    const placeholders = receiverIds.map(() => '?').join(',');
+    const [recipients] = await connection.query(`SELECT id FROM user_profiles WHERE id IN (${placeholders}) AND is_active = 1`, receiverIds);
+    const activeRecipientIds = recipients.map(row => String(row.id));
+    if (!activeRecipientIds.length) return res.status(404).json({ error: 'Active chat recipient not found.' });
+    const primaryReceiverId = activeRecipientIds[0];
+    const id = uuidv4();
+    await connection.beginTransaction();
+    await connection.query(
+      `INSERT INTO messages (id,sender_id,receiver_id,content,message_kind,call_type,call_status)
+       VALUES (?,?,?,?,?,?,?)`,
+      [id, req.user.id, primaryReceiverId, activeRecipientIds.length > 1 ? (callType === 'video' ? 'Group video call' : 'Group phone call') : (callType === 'video' ? 'Video call' : 'Phone call'), 'call', callType, 'ringing'],
+    );
+    await connection.query(
+      `INSERT INTO call_participants (id,call_id,user_id,status,joined_at) VALUES (?,?,?,?,NOW())
+       ON DUPLICATE KEY UPDATE status=VALUES(status),joined_at=COALESCE(joined_at,VALUES(joined_at))`,
+      [uuidv4(), id, req.user.id, 'accepted'],
+    );
+    for (const receiverId of activeRecipientIds) {
+      await connection.query(
+        `INSERT INTO call_participants (id,call_id,user_id,status) VALUES (?,?,?,?)
+         ON DUPLICATE KEY UPDATE status=VALUES(status),updated_at=CURRENT_TIMESTAMP`,
+        [uuidv4(), id, receiverId, 'ringing'],
+      );
+      await connection.query(
+        `INSERT INTO message_recipient_status (id,message_id,user_id,delivered_at) VALUES (?,?,?,CURRENT_TIMESTAMP)
+         ON DUPLICATE KEY UPDATE delivered_at = COALESCE(delivered_at, VALUES(delivered_at))`,
+        [uuidv4(), id, receiverId],
+      );
+    }
+    await connection.commit();
+    const [callMessage] = await pool.query(`${selectChatMessageSql} WHERE m.id = ?`, [id]);
+    const [enriched] = await enrichChatMessages(callMessage, req.user.id);
+    for (const receiverId of activeRecipientIds) {
+      const [recipientView] = await enrichChatMessages(callMessage, receiverId);
+      notifyChatClients(receiverId, { type: 'incoming_call', call: recipientView });
+      notifyChatClients(receiverId, { type: 'new_message', message: recipientView });
+    }
+    scheduleMissedCallCheck(id);
+    res.json(enriched);
+  } catch (err) {
+    await connection.rollback().catch(() => undefined);
+    console.error('Chat call start failed:', err.message);
+    res.status(500).json({ error: 'Unable to start the call.' });
+  } finally {
+    connection.release();
+  }
+});
+
+app.patch('/api/chat/calls/:callId', authMiddleware, async (req, res) => {
+  try {
+    const callId = String(req.params.callId || '').trim();
+    const status = ['accepted', 'declined', 'ended', 'missed'].includes(req.body?.status) ? req.body.status : null;
+    if (!status) return res.status(400).json({ error: 'Invalid call status.' });
+    const call = await userCanAccessMessage(callId, req.user.id);
+    if (!call || call.message_kind !== 'call') return res.status(404).json({ error: 'Call not found.' });
+    await pool.query(
+      `INSERT INTO call_participants (id,call_id,user_id,status,joined_at,left_at) VALUES (?,?,?,?,?,?)
+       ON DUPLICATE KEY UPDATE status=VALUES(status),joined_at=COALESCE(joined_at,VALUES(joined_at)),left_at=VALUES(left_at),updated_at=CURRENT_TIMESTAMP`,
+      [uuidv4(), callId, req.user.id, status, status === 'accepted' ? new Date() : null, ['declined', 'ended', 'missed'].includes(status) ? new Date() : null],
+    );
+    const fields = ['call_status = ?'];
+    const values = [status];
+    if (status === 'accepted') fields.push('call_started_at = COALESCE(call_started_at, NOW())');
+    if (['declined', 'ended', 'missed'].includes(status)) fields.push('call_ended_at = COALESCE(call_ended_at, NOW())');
+    values.push(callId);
+    await pool.query(`UPDATE messages SET ${fields.join(', ')} WHERE id = ? AND message_kind = 'call'`, values);
+    const [callMessage] = await pool.query(`${selectChatMessageSql} WHERE m.id = ?`, [callId]);
+    const [updated] = await enrichChatMessages(callMessage, req.user.id);
+    await publishCallUpdate(callId);
+    res.json(updated);
+  } catch (err) {
+    res.status(500).json({ error: 'Unable to update the call.' });
+  }
+});
+
+app.post('/api/chat/call-signal', authMiddleware, async (req, res) => {
+  try {
+    const callId = String(req.body?.call_id || '').trim();
+    const receiverId = String(req.body?.receiver_id || '').trim();
+    const signalType = String(req.body?.signal_type || '').trim();
+    const payload = req.body?.payload;
+    if (!callId || !receiverId || !['offer', 'answer', 'ice-candidate'].includes(signalType)) {
+      return res.status(400).json({ error: 'Invalid call signal.' });
+    }
+    const call = await userCanAccessMessage(callId, req.user.id);
+    const [recipientRows] = await pool.query(
+      `SELECT 1 FROM messages m
+       LEFT JOIN call_participants cp ON cp.call_id = m.id AND cp.user_id = ?
+       WHERE m.id = ? AND (m.sender_id = ? OR m.receiver_id = ? OR cp.user_id IS NOT NULL) LIMIT 1`,
+      [receiverId, callId, receiverId, receiverId],
+    );
+    if (!call || call.message_kind !== 'call' || !recipientRows.length) {
+      return res.status(403).json({ error: 'Call signal recipient is invalid.' });
+    }
+    const signalId = uuidv4();
+    notifyChatClients(receiverId, {
+      type: 'call_signal',
+      signalId,
+      callId,
+      senderId: String(req.user.id),
+      signalType,
+      payload,
+    });
+    res.json({ success: true, signalId });
+  } catch (err) {
+    res.status(500).json({ error: 'Unable to send call signal.' });
   }
 });
 
 app.patch('/api/chat/messages/:messageId/read', authMiddleware, async (req, res) => {
   try {
     const { messageId } = req.params;
-    await pool.query('UPDATE messages SET is_read = TRUE, read_at = CURRENT_TIMESTAMP WHERE id = ? AND receiver_id = ?', 
-      [messageId, req.user.id]);
-    
+    const [result] = await pool.query(
+      'UPDATE messages SET is_read = TRUE, read_at = COALESCE(read_at, CURRENT_TIMESTAMP) WHERE id = ? AND receiver_id = ?',
+      [messageId, req.user.id],
+    );
+    await pool.query(
+      `INSERT INTO message_recipient_status (id,message_id,user_id,read_at,delivered_at) VALUES (?,?,?,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)
+       ON DUPLICATE KEY UPDATE read_at = COALESCE(read_at, VALUES(read_at)), delivered_at = COALESCE(delivered_at, VALUES(delivered_at))`,
+      [uuidv4(), messageId, req.user.id],
+    );
     const [msg] = await pool.query('SELECT sender_id FROM messages WHERE id = ?', [messageId]);
-    if (msg.length) {
+    if (msg.length && result.affectedRows) {
       notifyChatClients(msg[0].sender_id, { type: 'message_read', messageId });
     }
-    
     res.json({ success: true });
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) { res.status(500).json({ error: 'Unable to mark message as read.' }); }
 });
 
 app.patch('/api/chat/read-all/:senderId', authMiddleware, async (req, res) => {
   try {
     const { senderId } = req.params;
-    await pool.query('UPDATE messages SET is_read = TRUE, read_at = CURRENT_TIMESTAMP WHERE sender_id = ? AND receiver_id = ? AND is_read = FALSE', 
-      [senderId, req.user.id]);
-    
+    const [messagesToRead] = await pool.query(
+      'SELECT id FROM messages WHERE sender_id = ? AND receiver_id = ? AND is_read = FALSE',
+      [senderId, req.user.id],
+    );
+    await pool.query(
+      'UPDATE messages SET is_read = TRUE, read_at = COALESCE(read_at, CURRENT_TIMESTAMP) WHERE sender_id = ? AND receiver_id = ? AND is_read = FALSE',
+      [senderId, req.user.id],
+    );
+    for (const message of messagesToRead) {
+      await pool.query(
+        `INSERT INTO message_recipient_status (id,message_id,user_id,read_at,delivered_at) VALUES (?,?,?,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)
+         ON DUPLICATE KEY UPDATE read_at = COALESCE(read_at, VALUES(read_at)), delivered_at = COALESCE(delivered_at, VALUES(delivered_at))`,
+        [uuidv4(), message.id, req.user.id],
+      );
+    }
     notifyChatClients(senderId, { type: 'all_read', receiverId: req.user.id });
-    
     res.json({ success: true });
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) { res.status(500).json({ error: 'Unable to mark messages as read.' }); }
 });
-
 const cimsDist = path.join(__dirname, '../dist');
 app.get('/sw.js', (req, res, next) => {
   const host = String(req.get('host') || '').split(':')[0].toLowerCase();
@@ -2934,6 +4884,7 @@ app.use((error, _req, res, _next) => {
 app.use((req, res) => res.status(404).json({ error: 'Not found' }));
 
 const startServer = async () => {
+  await ensurePrivateUploadRoot(privateFileConfig);
   await initDb();
   await new Promise((resolve, reject) => {
     const server = app.listen(port, resolve);

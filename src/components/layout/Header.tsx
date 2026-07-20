@@ -1,8 +1,8 @@
 import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
-import { User, LogOut, Settings, Sun, Moon, MessageSquare, Menu } from "lucide-react";
+import { User, LogOut, Settings, Sun, Moon, MessageSquare, Menu, Phone, PhoneOff, Video, X } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -20,6 +20,7 @@ import { useChat } from "@/hooks/useChat";
 import { ChatModule } from "@/components/chat/ChatModule";
 import { getCompanyBrandingEventDetail, resolveCompanyLogoUrl } from "@/utils/logoUrl";
 import { formatRoleLabel } from "@/utils/roleLabel";
+import { resolveAvatarUrl } from "@/utils/avatar";
 
 const TRANSPARENT_RIANA_LOGO = "/Riana_mark_transparent.png";
 
@@ -35,15 +36,17 @@ interface HeaderProps {
   className?: string;
   setActiveModule?: (module: string) => void;
   onOpenMobileMenu?: () => void;
+  onProfileUpdate?: () => void | Promise<void>;
 }
 
-export const Header = ({ user, className, setActiveModule, onOpenMobileMenu }: HeaderProps) => {
+export const Header = ({ user, className, setActiveModule, onOpenMobileMenu, onProfileUpdate }: HeaderProps) => {
   const { logout } = useAuth();
   const { getCompanySettings } = useDatabase();
   const [logoPath, setLogoPath] = useState(TRANSPARENT_RIANA_LOGO);
   const [isProfileSettingsOpen, setIsProfileSettingsOpen] = useState(false);
   const [isChatOpen, setIsChatOpen] = useState(false);
   const chat = useChat(user);
+  const avatarSrc = resolveAvatarUrl(user.avatar_url);
   const [isDarkMode, setIsDarkMode] = useState(() => {
     if (typeof window !== 'undefined') {
       const savedTheme = localStorage.getItem('theme');
@@ -128,30 +131,6 @@ export const Header = ({ user, className, setActiveModule, onOpenMobileMenu }: H
       localStorage.setItem('theme', 'light');
     }
   };
-  
-  const getRoleColor = (role: string) => {
-    switch (role) {
-      case 'SuperAdmin':
-        return 'border-red-300 bg-red-600 text-white hover:bg-red-600';
-      case 'Admin':
-        return 'border-rose-300 bg-rose-600 text-white hover:bg-rose-600';
-      case 'Management':
-        return 'border-indigo-300 bg-indigo-600 text-white hover:bg-indigo-600';
-      case 'Finance':
-        return 'border-emerald-300 bg-emerald-700 text-white hover:bg-emerald-700';
-      case 'Teamlead':
-        return 'bg-primary';
-      case 'Developer':
-        return 'bg-violet-600';
-      case 'Sales':
-        return 'bg-amber-600';
-      case 'User':
-        return 'bg-secondary';
-      default:
-        return 'bg-muted';
-    }
-  };
-
   const getUserInitials = () => {
     if (user.first_name && user.last_name) {
       return `${user.first_name[0]}${user.last_name[0]}`.toUpperCase();
@@ -166,12 +145,26 @@ export const Header = ({ user, className, setActiveModule, onOpenMobileMenu }: H
     return user.email;
   };
 
+  const getChatDisplayName = (firstName?: string | null, lastName?: string | null, fallback = "A colleague") => {
+    const name = `${firstName || ""} ${lastName || ""}`.trim();
+    return name || fallback;
+  };
+
+  const openChatForCall = (otherUserId?: string | null) => {
+    if (otherUserId) chat.setActiveChatUserId(otherUserId);
+    setIsChatOpen(true);
+  };
+
+  const incomingCall = chat.incomingCall;
+  const missedCall = chat.missedCalls[0];
+  const messageBadgeCount = chat.totalUnread + (incomingCall ? 1 : 0) + chat.missedCalls.length;
+
   return (
     <header className={cn("enterprise-header text-white", className)}>
-      <div className="flex h-[64px] w-full items-center justify-between px-3 sm:h-[72px] sm:px-6">
-        <div className="flex w-full items-center justify-between gap-3">
+      <div className="flex h-16 w-full min-w-0 items-center justify-between px-2 sm:h-[72px] sm:px-4 xl:px-6">
+        <div className="flex min-w-0 w-full items-center justify-between gap-2 sm:gap-3">
           {/* Logo and Title - Responsive */}
-          <div className="flex min-w-0 items-center gap-2.5 sm:gap-4">
+          <div className="flex min-w-0 flex-1 items-center gap-2 sm:gap-4">
             <Button
               variant="ghost"
               size="icon"
@@ -193,19 +186,19 @@ export const Header = ({ user, className, setActiveModule, onOpenMobileMenu }: H
                 }}
               />
             </div>
-            <div className="hidden min-w-0 leading-none min-[390px]:block">
-              <h1 className="truncate text-lg font-bold leading-[1.1] tracking-normal sm:text-2xl xl:text-[29px]">RIANA CIMS</h1>
-              <p className="mt-1 truncate text-xs font-normal leading-tight text-white/85 sm:text-[15px] xl:text-base">Client Installation Management</p>
+            <div className="block min-w-0 max-w-[88px] leading-none min-[360px]:max-w-[112px] min-[420px]:max-w-none">
+              <h1 className="truncate text-[13px] font-bold leading-[1.1] tracking-normal min-[360px]:text-sm sm:text-2xl xl:text-[29px]">RIANA CIMS</h1>
+              <p className="mt-1 hidden truncate text-xs font-normal leading-tight text-white/85 min-[420px]:block sm:text-[15px] xl:text-base">Client Installation Management</p>
             </div>
           </div>
 
           {/* Action Buttons - Responsive */}
-          <div className="ml-auto flex flex-shrink-0 items-center gap-0.5 min-[390px]:gap-1.5 sm:gap-3 xl:gap-[22px]">
+          <div className="ml-auto flex shrink-0 items-center gap-0.5 sm:gap-2 xl:gap-4">
             {/* Notification Bell - Always visible */}
             <NotificationBell
               user={user}
               onNavigate={setActiveModule}
-              triggerClassName="h-10 w-10 text-white hover:bg-white/10 hover:text-white focus-visible:ring-white dark:text-white"
+              triggerClassName="h-9 w-9 sm:h-10 sm:w-10 text-white hover:bg-white/10 hover:text-white focus-visible:ring-white dark:text-white"
             />
 
             {/* Chat Button */}
@@ -213,13 +206,14 @@ export const Header = ({ user, className, setActiveModule, onOpenMobileMenu }: H
               variant="ghost"
               size="icon"
               onClick={() => setIsChatOpen(!isChatOpen)}
-              className="relative h-10 w-10 text-white transition-colors duration-200 hover:bg-white/10 focus-visible:ring-white"
+              className="relative h-9 w-9 text-white transition-colors duration-200 hover:bg-white/10 focus-visible:ring-white sm:h-10 sm:w-10"
               title="Open Chat"
+              aria-label="Open messages"
             >
               <MessageSquare className="h-5 w-5" />
-              {chat.totalUnread > 0 && (
-                <Badge className="absolute -top-1 -right-1 h-4 w-4 flex items-center justify-center p-0 bg-red-500 text-[10px] animate-pulse border-white border">
-                  {chat.totalUnread}
+              {messageBadgeCount > 0 && (
+                <Badge className="absolute -top-1 -right-1 flex h-4 min-w-4 items-center justify-center rounded-full border border-white bg-red-500 px-1 text-[10px] animate-pulse">
+                  {messageBadgeCount > 9 ? "9+" : messageBadgeCount}
                 </Badge>
               )}
             </Button>
@@ -229,7 +223,7 @@ export const Header = ({ user, className, setActiveModule, onOpenMobileMenu }: H
               variant="ghost"
               size="icon"
               onClick={toggleDarkMode}
-              className="h-10 w-10 text-white transition-colors duration-200 hover:bg-white/10 focus-visible:ring-white"
+              className="h-9 w-9 text-white transition-colors duration-200 hover:bg-white/10 focus-visible:ring-white sm:h-10 sm:w-10"
               title={isDarkMode ? "Switch to light mode" : "Switch to dark mode"}
             >
               {isDarkMode ? (
@@ -239,16 +233,22 @@ export const Header = ({ user, className, setActiveModule, onOpenMobileMenu }: H
               )}
             </Button>
             
-            {/* Role Badge - Hidden on mobile */}
-            <Badge className={`hidden h-[30px] rounded-full border px-3.5 text-xs font-semibold shadow-sm sm:inline-flex ${getRoleColor(user.role)}`}>
-              {formatRoleLabel(user.role)}
-            </Badge>
+            {/* Signed-in identity - Hidden on smaller screens */}
+            <div className="hidden min-w-[128px] max-w-[220px] flex-col items-end leading-tight lg:flex">
+              <span className="max-w-full truncate text-sm font-semibold text-white">
+                {getUserDisplayName()}
+              </span>
+              <span className="mt-0.5 max-w-full truncate text-[11px] font-medium text-white/75">
+                {user.designation || formatRoleLabel(user.role)}
+              </span>
+            </div>
             
             {/* User Menu Dropdown */}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="ghost" className="relative h-10 w-10 overflow-hidden rounded-full border-2 border-white/35 p-0 text-white shadow-[0_3px_10px_rgba(0,0,0,0.16)] transition-colors hover:bg-white/10 focus-visible:ring-white sm:h-12 sm:w-12">
                   <Avatar className="h-full w-full">
+                    <AvatarImage src={avatarSrc} alt={getUserDisplayName()} />
                     <AvatarFallback className="bg-gradient-to-br from-primary-foreground to-white text-sm font-bold text-primary sm:text-lg">
                       {getUserInitials()}
                     </AvatarFallback>
@@ -263,7 +263,7 @@ export const Header = ({ user, className, setActiveModule, onOpenMobileMenu }: H
                       {user.email}
                     </p>
                     <p className="text-xs text-muted-foreground">
-                      {formatRoleLabel(user.role)} • {user.designation || 'No designation'}
+                      {formatRoleLabel(user.role)} | {user.designation || 'No designation'}
                     </p>
                   </div>
                 </div>
@@ -291,11 +291,72 @@ export const Header = ({ user, className, setActiveModule, onOpenMobileMenu }: H
         isOpen={isProfileSettingsOpen}
         onClose={() => setIsProfileSettingsOpen(false)}
         user={user}
+        onProfileUpdate={onProfileUpdate}
       />
 
+      {!isChatOpen && incomingCall && (
+        <div className="fixed inset-x-3 bottom-4 z-40 animate-in slide-in-from-bottom-4 sm:left-auto sm:right-4 sm:w-[min(92vw,420px)]">
+          <div className="overflow-hidden rounded-2xl border border-white/20 bg-background/95 text-foreground shadow-2xl backdrop-blur-xl">
+            <div className="flex items-center gap-3 border-b border-primary/10 bg-primary/10 px-4 py-3">
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-primary text-white shadow-riana">
+                {incomingCall.call_type === "video" ? <Video className="h-5 w-5" /> : <Phone className="h-5 w-5" />}
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-bold">Incoming {incomingCall.call_type === "video" ? "video" : "phone"} call</p>
+                <p className="truncate text-xs text-muted-foreground">{getChatDisplayName(incomingCall.sender_first_name, incomingCall.sender_last_name)} is calling</p>
+              </div>
+              <Button variant="ghost" size="icon" className="h-8 w-8 rounded-full" onClick={() => chat.clearCallState()} aria-label="Hide call notification">
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+            <div className="flex flex-wrap gap-2 p-3">
+              <Button size="sm" className="flex-1 rounded-full" onClick={() => openChatForCall(incomingCall.sender_id)}>
+                <Phone className="mr-2 h-4 w-4" />Open call
+              </Button>
+              <Button size="sm" variant="destructive" className="flex-1 rounded-full" onClick={() => void chat.updateCallStatus(incomingCall.id, "declined")}>
+                <PhoneOff className="mr-2 h-4 w-4" />Decline
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {!isChatOpen && !incomingCall && missedCall && (
+        <div className="fixed inset-x-3 bottom-4 z-40 animate-in slide-in-from-bottom-4 sm:left-auto sm:right-4 sm:w-[min(92vw,390px)]">
+          <div className="rounded-2xl border border-primary/15 bg-background/95 p-4 text-foreground shadow-2xl backdrop-blur-xl">
+            <div className="flex items-start gap-3">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-destructive/10 text-destructive">
+                <PhoneOff className="h-5 w-5" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-bold">Missed {missedCall.call_type === "video" ? "video" : "phone"} call</p>
+                <p className="mt-0.5 truncate text-xs text-muted-foreground">From {getChatDisplayName(missedCall.sender_first_name, missedCall.sender_last_name)}</p>
+              </div>
+              <Button variant="ghost" size="icon" className="h-8 w-8 rounded-full" onClick={() => chat.dismissMissedCall(missedCall.id)} aria-label="Dismiss missed call">
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+            <div className="mt-3 flex gap-2">
+              <Button size="sm" variant="outline" className="flex-1 rounded-full" onClick={() => openChatForCall(missedCall.sender_id)}>
+                <MessageSquare className="mr-2 h-4 w-4" />Open chat
+              </Button>
+              <Button size="sm" variant="ghost" className="rounded-full" onClick={() => chat.dismissMissedCall(missedCall.id)}>Dismiss</Button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {isChatOpen && (
-        <div className="fixed inset-x-2 bottom-2 z-50 h-[min(600px,calc(100dvh-80px))] animate-in slide-in-from-bottom-5 sm:inset-x-auto sm:bottom-4 sm:right-4 sm:w-[90vw] sm:max-w-[400px] md:max-w-4xl">
-           <ChatModule currentUser={user} chat={chat} onClose={() => setIsChatOpen(false)} />
+        <div
+          className="fixed inset-x-2 bottom-[calc(4.25rem+env(safe-area-inset-bottom))] top-[calc(4rem+env(safe-area-inset-top))] z-40 bg-black/25 p-0 backdrop-blur-[2px] animate-in fade-in sm:inset-0 sm:z-50 sm:flex sm:items-end sm:justify-end sm:bg-black/35 sm:p-3 md:p-4"
+          onMouseDown={() => setIsChatOpen(false)}
+        >
+          <div
+            className="h-full w-full animate-in slide-in-from-bottom-5 sm:h-[min(760px,calc(100dvh-96px))] md:w-[min(94vw,1120px)]"
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <ChatModule currentUser={user} chat={chat} onClose={() => setIsChatOpen(false)} />
+          </div>
         </div>
       )}
     </header>

@@ -13,6 +13,7 @@ export interface User {
   department_name?: string;
   subsidiary_name?: string;
   phone_number?: string;
+  avatar_url?: string | null;
   first_name?: string;
   last_name?: string;
   password?: string;
@@ -76,6 +77,10 @@ export interface Client {
   contact_person_name: string;
   contact_person_phone: string;
   contact_person_email?: string;
+  contact_phone_masked?: string;
+  contact_email_masked?: string;
+  contact_person_phone_masked?: string;
+  contact_person_email_masked?: string;
   contact_person_department?: string;
   current_vendor?: string;
   start_date: string;
@@ -90,7 +95,11 @@ export interface Client {
 export interface Installation {
   id: string;
   client_id: string;
+  branch_id?: string | null;
+  department_id?: string | null;
   branch?: string;
+  branch_name?: string | null;
+  department_name?: string | null;
   kiosk_type: string;
 
   kiosk_count: number;
@@ -196,4 +205,38 @@ export interface DashboardStats {
   totalInstallations: number;
   totalUsers: number;
   recentLogs: SystemLog[];
+}
+
+export interface ClientBranch {
+  id: string;
+  client_id: string;
+  branch_name: string;
+  branch_code?: string | null;
+  contact_person_name?: string | null;
+  contact_email?: string | null;
+  contact_phone?: string | null;
+  physical_address?: string | null;
+  status: 'active' | 'inactive';
+  notes?: string | null;
+  department_count?: number;
+  installation_count?: number;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface ClientDepartment {
+  id: string;
+  client_id: string;
+  branch_id: string;
+  department_name: string;
+  department_code?: string | null;
+  branch_name?: string | null;
+  contact_person_name?: string | null;
+  contact_email?: string | null;
+  contact_phone?: string | null;
+  status: 'active' | 'inactive';
+  notes?: string | null;
+  installation_count?: number;
+  created_at?: string;
+  updated_at?: string;
 }

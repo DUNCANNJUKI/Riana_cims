@@ -39,3 +39,18 @@ test('welcome template escapes content and rejects unsafe theme and URL values',
   assert.match(html, /&lt;script&gt;/);
   assert.match(html, /#0D8390/i);
 });
+test('welcome template avoids mojibake artifacts', () => {
+  const html = buildWelcomeEmailHtml({
+    recipientEmail: 'user@riana.co',
+    recipientName: 'User',
+    username: 'user@riana.co',
+    role: 'User',
+    loginUrl: 'https://cims.example.test/',
+    setupUrl: 'https://cims.example.test/reset-password?token=safe',
+    branding: { name: 'RIANA CIMS', primaryColor: '#0D8390', secondaryColor: '#2563EB', fontFamily: 'Arial' },
+  });
+  assert.match(html, /<meta charset="UTF-8">/);
+  assert.match(html, /Your account is ready - here are your login details/);
+  assert.match(html, /YOUR LOGIN CREDENTIALS/);
+  assert.doesNotMatch(html, /Ã|Â|â|ð|Å|Œ|€/);
+});

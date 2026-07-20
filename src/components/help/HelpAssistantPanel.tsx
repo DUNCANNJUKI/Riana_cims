@@ -42,12 +42,12 @@ export const HelpAssistantPanel = ({ user }: HelpAssistantPanelProps) => {
           </div>
           <div>
             <h2 id="assistant-title" className="text-lg font-semibold text-foreground">RIANA Assistant</h2>
-            <p className="text-sm text-muted-foreground">Guidance for approved CIMS workflows</p>
+            <p className="text-sm text-muted-foreground">Guidance for approved CIMS modules and workflows</p>
           </div>
         </div>
         <div className="mt-4 flex gap-2 rounded-lg border border-primary/15 bg-primary/5 p-3 text-xs leading-relaxed text-muted-foreground">
           <Info className="mt-0.5 h-4 w-4 shrink-0 text-primary" aria-hidden="true" />
-          <p>The assistant explains how to use RIANA CIMS. It does not expose source code, credentials, private infrastructure, or database details.</p>
+          <p>The assistant explains how to use RIANA CIMS across modules, roles, workflows, reports, notifications, and support. It does not expose source code, credentials, private infrastructure, or database details.</p>
         </div>
       </div>
 
@@ -107,7 +107,7 @@ export const HelpAssistantPanel = ({ user }: HelpAssistantPanelProps) => {
           <Input
             value={input}
             onChange={(event) => setInput(event.target.value)}
-            placeholder="Ask about a workflow, report, role, or notification"
+            placeholder="Ask about any CIMS module, workflow, role, report, or notification"
             maxLength={1000}
             disabled={isSending}
             aria-label="Ask RIANA Assistant"

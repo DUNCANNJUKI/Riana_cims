@@ -12,7 +12,9 @@
     "dev": "node --watch index.js",
     "test": "node --test security/*.test.js routes/*.test.js services/*.test.js",
     "test:security": "node --test security/security.test.js",
-    "security:init": "node scripts/ensure-runtime-secret.cjs"
+    "security:init": "node scripts/ensure-runtime-secret.cjs",
+    "files:inspect": "node scripts/inspect-file-storage.cjs",
+    "files:backup": "node scripts/backup-private-files.cjs"
   },
   "dependencies": {
     "bcryptjs": "^3.0.3",
@@ -24,6 +26,7 @@
     "mysql2": "^3.11.3",
     "node-cron": "^4.2.1",
     "nodemailer": "^9.0.3",
+    "sharp": "^0.35.3",
     "uuid": "^11.1.1"
   }
 }

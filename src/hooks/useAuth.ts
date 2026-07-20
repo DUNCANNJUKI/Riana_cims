@@ -19,6 +19,7 @@ export const useAuth = () => {
           isAuthenticated: true,
           isLoading: false
         });
+        return data.user;
       } else {
         throw new Error('User data not found');
       }
@@ -31,6 +32,7 @@ export const useAuth = () => {
         isAuthenticated: false,
         isLoading: false
       });
+      return null;
     }
   };
 
@@ -67,6 +69,7 @@ export const useAuth = () => {
     setAuthToken(data.token);
     localStorage.setItem('riana_user', JSON.stringify(data.user));
     setAuthState({ user: data.user, isAuthenticated: true, isLoading: false });
+        return data.user;
   };
 
   const login = async (email: string, password: string): Promise<any> => {
@@ -160,6 +163,7 @@ export const useAuth = () => {
     verifyTwoFactor,
     logout,
     updateFirstLogin,
-    changePassword
+    changePassword,
+    refreshUserProfile: fetchUserProfile
   };
 };

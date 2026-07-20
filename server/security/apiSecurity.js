@@ -3,6 +3,7 @@ const fs = require('fs');
 const path = require('path');
 const jwt = require('jsonwebtoken');
 const { v4: uuidv4 } = require('uuid');
+const { logAuditEvent, sanitizeAuditData } = require('../services/auditService');
 
 const INSECURE_JWT_SECRETS = new Set(['', 'super-secret-key-change-in-prod', 'replace-with-a-long-random-secret']);
 
@@ -38,7 +39,7 @@ const createSessionAuthenticator = ({ pool, jwtSecret }) => async (req, res, nex
   try {
     const decoded = jwt.verify(token, jwtSecret, { algorithms: ['HS256'] });
     const [rows] = await pool.query(
-      `SELECT u.id,u.email,u.role,u.is_active,u.first_login,u.session_version,
+      `SELECT u.id,u.email,u.role,u.is_active,u.first_login,u.session_version,u.subsidiary_id,
          COALESCE((SELECT GROUP_CONCAT(up.permission_id SEPARATOR ',') FROM user_permissions up WHERE up.user_id=u.id),'') AS extra_permissions
        FROM user_profiles u WHERE u.id = ? LIMIT 1`,
       [decoded.id],
@@ -52,6 +53,7 @@ const createSessionAuthenticator = ({ pool, jwtSecret }) => async (req, res, nex
       id: user.id,
       email: user.email,
       role: user.role,
+      subsidiary_id: user.subsidiary_id || null,
       sv: Number(user.session_version || 0),
       extra_permissions: String(user.extra_permissions || '').split(',').filter(Boolean),
     };
@@ -80,12 +82,13 @@ const createGlobalApiPolicy = (authenticate) => (req, res, next) => (
 );
 
 const SENSITIVE_PATHS = [
-  /^\/api\/(?:crms\/)?auth\/(?:login|verify-2fa|forgot-password|reset-password)$/,
+  /^\/api\/(?:crms\/)?auth\/(?:login|verify-2fa|forgot-password|reset-password|avatar)$/,
   /^\/api\/upload$/,
   /^\/api\/public\//,
   /^\/api\/admin\/backup/,
   /^\/api\/admin\/email-configuration/,
   /^\/api\/(?:chat\/assistant|help\/send-documentation)$/,
+  /^\/api\/chat\/(?:messages|calls|call-signal)/,
 ];
 
 const createSensitiveRateLimiter = ({ limit = 20, windowMs = 5 * 60 * 1000 } = {}) => {
@@ -114,7 +117,7 @@ const securityHeaders = (_req, res, next) => {
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('X-Frame-Options', 'DENY');
   res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
-  res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+  res.setHeader('Permissions-Policy', 'camera=(self), microphone=(self), geolocation=()');
   res.setHeader('Content-Security-Policy', "default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; script-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'");
   if (_req.path.startsWith('/api/')) res.setHeader('Cache-Control', 'no-store');
   next();
@@ -207,10 +210,20 @@ const resolveStoredFile = (uploadsDir, filename) => {
 
 const auditSecurityEvent = async (pool, req, action, details = {}, outcome = 'success') => {
   try {
+    await logAuditEvent(pool, req, {
+      action,
+      category: 'security',
+      module: 'CIMS',
+      entity_type: 'security_event',
+      description: `Security event: ${action}`,
+      metadata: sanitizeAuditData(details),
+      status: outcome === 'failure' ? 'failure' : 'success',
+      severity: outcome === 'failure' ? 'warning' : 'notice',
+    });
     await pool.query(
       `INSERT INTO security_audit_events
        (id,actor_user_id,module,action,outcome,source_ip,details) VALUES (?,?,?,?,?,?,?)`,
-      [uuidv4(), req.user?.id || null, 'CIMS', action, outcome, req.ip || null, JSON.stringify(details)],
+      [uuidv4(), req.user?.id || null, 'CIMS', action, outcome, req.ip || null, JSON.stringify(sanitizeAuditData(details))],
     );
   } catch (error) {
     console.error('Security audit write failed:', error.message);

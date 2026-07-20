@@ -13,8 +13,10 @@ import { User } from "@/types";
 import { format, isToday, isYesterday, differenceInDays } from "date-fns";
 import { playNotificationSound, playAnnouncementSound, playAssignmentSound } from "@/utils/notificationSound";
 import { cn } from "@/lib/utils";
+import { can } from "@/security/accessControl";
 
 import { useNavigate } from 'react-router-dom';
+import { OPERATIONAL_REFRESH_INTERVAL_MS } from "@/utils/refreshIntervals";
 
 interface Notification {
   id: string;
@@ -50,14 +52,15 @@ export const NotificationBell = ({ user, onNavigate, triggerClassName }: Notific
   const previousCountRef = useRef<number>(0);
   const isInitialLoadRef = useRef<boolean>(true);
   const previousIdsRef = useRef<Set<string>>(new Set());
+  const assignmentModule = can(user, 'assignments.view') ? 'assignments' : 'technician-dashboard';
 
   useEffect(() => {
     loadPendingItems();
     
-    // Set up polling for "realtime" functionality with local backend
+    // Keep background refresh gentle; explicit user actions still update immediately.
     const interval = setInterval(() => {
       if (document.visibilityState === 'visible') loadPendingItems(false);
-    }, 45000);
+    }, OPERATIONAL_REFRESH_INTERVAL_MS);
     
     return () => clearInterval(interval);
   }, [user.id]);
@@ -85,7 +88,7 @@ export const NotificationBell = ({ user, onNavigate, triggerClassName }: Notific
           message: notification.message,
           timestamp: new Date(notification.created_at),
           read: Boolean(notification.read),
-          link: isDeveloperRequest ? 'developers' : isAssignment ? 'assignments' : 'dashboard',
+          link: isDeveloperRequest ? 'developers' : isAssignment ? assignmentModule : 'dashboard',
           actionUrl: actionUrl || undefined,
           requestId: notification.request_id || undefined,
         });
@@ -94,7 +97,7 @@ export const NotificationBell = ({ user, onNavigate, triggerClassName }: Notific
 
       const userAssignments = (assignments || []).filter((a: any) => 
         (a.hardware_technician_id === user.id || a.software_technician_id === user.id) &&
-        ['pending', 'in_progress', 'assigned'].includes(a.status)
+        ['pending', 'in_progress', 'assigned', 'waiting'].includes(a.status)
       );
 
       const missionHandovers = (installations || []).filter((i: any) => 
@@ -130,10 +133,10 @@ export const NotificationBell = ({ user, onNavigate, triggerClassName }: Notific
           id: `assignment-${assignment.id}`,
           type: 'assignment',
           title: 'Active Assignment',
-          message: `You have an active assignment for ${assignment.client_name || 'Unknown Client'}${assignment.branch ? ` - ${assignment.branch}` : ''}`,
+          message: `You have an active assignment for ${assignment.client_name || 'Unknown Client'}${[assignment.branch, assignment.department_name].filter(Boolean).length ? ` - ${[assignment.branch, assignment.department_name].filter(Boolean).join(' / ')}` : ''}`,
           timestamp: new Date(assignment.created_at),
           read: false,
-          link: 'assignments'
+          link: assignmentModule
         });
       });
 
@@ -298,30 +301,31 @@ export const NotificationBell = ({ user, onNavigate, triggerClassName }: Notific
           variant="ghost" 
           size="icon" 
           className={cn(
-            "relative h-9 w-9 sm:h-10 sm:w-10 text-foreground hover:bg-accent hover:text-accent-foreground dark:text-foreground",
+            "relative h-10 w-10 rounded-full border border-transparent text-foreground transition-all hover:border-primary/20 hover:bg-primary/10 hover:text-primary dark:text-foreground",
+            totalCount > 0 && "bg-primary/10 text-primary animate-pulse-glow",
             triggerClassName,
           )}
         >
           <Bell className="h-4 w-4 sm:h-5 sm:w-5" />
           {totalCount > 0 && (
             <Badge 
-              className="absolute -top-1 -right-1 h-4 w-4 sm:h-5 sm:w-5 flex items-center justify-center p-0 bg-destructive text-destructive-foreground text-[10px] sm:text-xs"
+              className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full border-2 border-background bg-destructive px-1 text-[10px] font-bold text-destructive-foreground shadow-sm"
             >
               {totalCount > 9 ? '9+' : totalCount}
             </Badge>
           )}
         </Button>
       </PopoverTrigger>
-      <PopoverContent className="w-[calc(100vw-16px)] sm:w-96 p-0 max-h-[80vh]" align="end" sideOffset={8}>
-        <div className="flex items-center justify-between p-3 sm:p-4 border-b">
+      <PopoverContent className="max-h-[80vh] w-[calc(100vw-16px)] overflow-hidden rounded-2xl border-primary/10 p-0 shadow-2xl sm:w-[26rem]" align="end" sideOffset={8}>
+        <div className="flex items-center justify-between border-b border-primary/10 bg-gradient-to-br from-primary/10 via-background to-background p-4">
           <div>
-            <h3 className="font-semibold text-sm sm:text-base">Notifications</h3>
+            <h3 className="text-sm font-bold text-foreground sm:text-base">Notifications</h3>
             <p className="text-xs text-muted-foreground">
               {unreadCount > 0 ? `${unreadCount} unread` : 'All caught up!'}
             </p>
           </div>
           {unreadCount > 0 && (
-            <Button variant="ghost" size="sm" onClick={markAllAsRead} className="text-xs">
+            <Button variant="ghost" size="sm" onClick={markAllAsRead} className="rounded-full text-xs hover:bg-primary/10 hover:text-primary">
               Mark all read
             </Button>
           )}
@@ -329,11 +333,11 @@ export const NotificationBell = ({ user, onNavigate, triggerClassName }: Notific
 
         {/* Pending Counters Summary - Responsive Grid */}
         {totalCount > 0 && (
-          <div className="p-2 sm:p-3 bg-muted/50 border-b grid grid-cols-3 gap-1 sm:gap-2 text-center">
+          <div className="grid grid-cols-3 gap-2 border-b border-primary/10 bg-muted/35 p-3 text-center">
             {pendingCounts.pendingAssignments > 0 && (
               <div 
-                className="cursor-pointer hover:bg-muted p-1.5 sm:p-2 rounded transition-colors"
-                onClick={() => { onNavigate?.('assignments'); setIsOpen(false); }}
+                className="cursor-pointer rounded-xl border border-transparent p-2 transition-all hover:border-primary/15 hover:bg-background hover:shadow-sm"
+                onClick={() => { onNavigate?.(assignmentModule); setIsOpen(false); }}
               >
                 <div className="text-base sm:text-lg font-bold text-primary">{pendingCounts.pendingAssignments}</div>
                 <div className="text-[10px] sm:text-xs text-muted-foreground">Assignments</div>
@@ -341,7 +345,7 @@ export const NotificationBell = ({ user, onNavigate, triggerClassName }: Notific
             )}
             {pendingCounts.pendingInstallations > 0 && (
               <div 
-                className="cursor-pointer hover:bg-muted p-1.5 sm:p-2 rounded transition-colors"
+                className="cursor-pointer rounded-xl border border-transparent p-2 transition-all hover:border-primary/15 hover:bg-background hover:shadow-sm"
                 onClick={() => { onNavigate?.('installations'); setIsOpen(false); }}
               >
                 <div className="text-base sm:text-lg font-bold text-warning">{pendingCounts.pendingInstallations}</div>
@@ -350,7 +354,7 @@ export const NotificationBell = ({ user, onNavigate, triggerClassName }: Notific
             )}
             {pendingCounts.pendingHandovers > 0 && (
               <div 
-                className="cursor-pointer hover:bg-muted p-1.5 sm:p-2 rounded transition-colors"
+                className="cursor-pointer rounded-xl border border-transparent p-2 transition-all hover:border-primary/15 hover:bg-background hover:shadow-sm"
                 onClick={() => { onNavigate?.('handover'); setIsOpen(false); }}
               >
                 <div className="text-base sm:text-lg font-bold text-success">{pendingCounts.pendingHandovers}</div>
@@ -372,42 +376,40 @@ export const NotificationBell = ({ user, onNavigate, triggerClassName }: Notific
               {notifications.map((notification) => (
                 <div
                   key={notification.id}
-                  className={`p-2.5 sm:p-3 hover:bg-muted/50 cursor-pointer transition-colors ${
-                    !notification.read ? 'bg-primary/5' : ''
-                  }`}
+                  className={cn("notification-card mx-2 my-1 cursor-pointer p-3", !notification.read && "notification-card-unread")}
                   onClick={() => handleNotificationClick(notification)}
                 >
-                  <div className="flex items-start gap-2 sm:gap-3">
-                    <div className="mt-0.5 flex-shrink-0">
+                  <div className="flex items-start gap-3">
+                    <div className="mt-0.5 flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-background shadow-sm ring-1 ring-border">
                       {getNotificationIcon(notification.type)}
                     </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center justify-between gap-1 sm:gap-2">
-                        <p className={`text-xs sm:text-sm font-medium truncate ${!notification.read ? 'text-foreground' : 'text-muted-foreground'}`}>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-start justify-between gap-2">
+                        <p className={cn("truncate text-sm font-semibold", !notification.read ? "text-foreground" : "text-muted-foreground")}>
                           {notification.title}
                         </p>
                         <Button
                           variant="ghost"
                           size="icon"
-                          className="h-5 w-5 sm:h-6 sm:w-6 shrink-0"
+                          className="h-7 w-7 shrink-0 rounded-full text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
                           onClick={(e) => {
                             e.stopPropagation();
                             clearNotification(notification.id);
                           }}
                         >
-                          <X className="h-2.5 w-2.5 sm:h-3 sm:w-3" />
+                          <X className="h-3 w-3" />
                         </Button>
                       </div>
-                      <p className="text-[10px] sm:text-xs text-muted-foreground line-clamp-2 mt-0.5">
+                      <p className="mt-0.5 line-clamp-2 text-xs leading-relaxed text-muted-foreground">
                         {notification.message}
                       </p>
-                      <p className="text-[10px] sm:text-xs text-muted-foreground/70 mt-1 flex items-center gap-1">
-                        <Clock className="h-2.5 w-2.5 sm:h-3 sm:w-3" />
+                      <p className="mt-2 flex items-center gap-1 text-[11px] font-medium text-muted-foreground/75">
+                        <Clock className="h-3 w-3" />
                         {formatTimestamp(notification.timestamp)}
                       </p>
                     </div>
                     {!notification.read && (
-                      <div className="w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full bg-primary shrink-0 mt-2" />
+                      <div className="mt-2 h-2 w-2 shrink-0 rounded-full bg-primary shadow-[0_0_0_4px_hsl(var(--primary)/0.12)]" />
                     )}
                   </div>
                 </div>
@@ -417,11 +419,11 @@ export const NotificationBell = ({ user, onNavigate, triggerClassName }: Notific
         </ScrollArea>
 
         {notifications.length > 0 && (
-          <div className="p-2 sm:p-3 border-t text-center">
+          <div className="border-t border-primary/10 bg-muted/25 p-3 text-center">
             <Button 
               variant="ghost" 
               size="sm" 
-              className="text-xs"
+              className="rounded-full text-xs"
               onClick={() => { onNavigate?.('dashboard'); setIsOpen(false); }}
             >
               View Dashboard

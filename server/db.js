@@ -34,12 +34,13 @@ if (process.env.NODE_ENV === 'production') {
 const pool = mysql.createPool({
   ...databaseConfig,
   waitForConnections: true,
-  connectionLimit: Number(process.env.DATABASE_POOL_SIZE || 30),
-  maxIdle: Number(process.env.DATABASE_POOL_IDLE || 15),
-  idleTimeout: 60000,
+  connectionLimit: Number(process.env.DATABASE_POOL_SIZE || 80),
+  maxIdle: Number(process.env.DATABASE_POOL_IDLE || 40),
+  idleTimeout: Number(process.env.DATABASE_IDLE_TIMEOUT_MS || 60000),
+  connectTimeout: Number(process.env.DATABASE_CONNECT_TIMEOUT_MS || 10000),
   enableKeepAlive: true,
   keepAliveInitialDelay: 0,
-  queueLimit: 0
+  queueLimit: Number(process.env.DATABASE_QUEUE_LIMIT || 2000)
 });
 
 module.exports = pool;

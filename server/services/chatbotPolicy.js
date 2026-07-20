@@ -1,4 +1,4 @@
-const SENSITIVE_TECHNICAL_REQUEST = /(?:source\s*code|database\s*(?:schema|credential|password)|sql\s*(?:query|dump)|api\s*(?:key|secret|endpoint)|infrastructure|server\s*configuration|environment\s*variable|access\s*token|jwt|private\s*key|deployment\s*configuration|hosting\s*credential|internal\s*file\s*path)/i;
+const SENSITIVE_TECHNICAL_REQUEST = /(?:source\s*code|repository|internal\s*(?:implementation|file|path)|database\s*(?:schema|credential|password|dump|backup|connection)|sql\s*(?:query|dump|script|migration)|api\s*(?:key|secret|endpoint|token)|infrastructure|server\s*configuration|environment\s*variable|\.env|access\s*token|jwt|private\s*key|smtp\s*(?:password|credential)|deployment\s*configuration|hosting\s*credential|internal\s*file\s*path)/i;
 
 const isSensitiveTechnicalRequest = (message) => SENSITIVE_TECHNICAL_REQUEST.test(String(message || ''));
 

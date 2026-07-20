@@ -19,6 +19,21 @@ export const clearAuthToken = () => {
   localStorage.removeItem('riana-auth-token');
 };
 
+const resolveApiEndpointUrl = (endpoint: string) => {
+  if (/^https?:\/\//i.test(endpoint)) return endpoint;
+  const normalizedEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
+  const normalizedBase = API_URL.replace(/\/$/, '');
+  const baseIsApiRoot = normalizedBase === '/api' || /\/api$/i.test(normalizedBase);
+
+  if (baseIsApiRoot && normalizedEndpoint.startsWith('/api/')) {
+    if (/^https?:\/\//i.test(normalizedBase)) {
+      return `${new URL(normalizedBase).origin}${normalizedEndpoint}`;
+    }
+    return normalizedEndpoint;
+  }
+
+  return `${normalizedBase}${normalizedEndpoint}`;
+};
 export const apiFetch = async (endpoint: string, options: RequestInit = {}, retries = 3) => {
   const token = getAuthToken();
   const headers = new Headers(options.headers || {});
@@ -29,7 +44,7 @@ export const apiFetch = async (endpoint: string, options: RequestInit = {}, retr
   }
 
   try {
-    const response = await fetch(`${API_URL}${endpoint}`, {
+    const response = await fetch(resolveApiEndpointUrl(endpoint), {
       ...options,
       cache: options.cache || 'no-store',
       credentials: options.credentials || 'include',
@@ -65,7 +80,7 @@ export const fetchAuthenticatedBlob = async (endpoint: string): Promise<Blob> =>
   const headers = new Headers();
   if (token) headers.set('Authorization', `Bearer ${token}`);
 
-  const response = await fetch(`${API_URL}${endpoint}`, {
+  const response = await fetch(resolveApiEndpointUrl(endpoint), {
     method: 'GET',
     credentials: 'include',
     headers,

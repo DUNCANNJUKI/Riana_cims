@@ -11,8 +11,9 @@ import { useToast } from "@/hooks/use-toast";
 import { User, HandoverUpload } from "@/types";
 import { generatePDFReport, generateCSVReport } from "@/utils/reportGenerator";
 import { PDFPreviewModal } from "@/components/common/PDFPreviewModal";
-import { apiClient } from "@/integrations/apiClient";
+import { apiClient, downloadAuthenticatedFile, previewAuthenticatedFile } from "@/integrations/apiClient";
 import { useDatabase } from "@/hooks/useDatabase";
+import { getBranchLabel, getDepartmentLabel } from "@/utils/scopeLabels";
 
 interface ReportsModuleProps {
   user: User;
@@ -110,6 +111,21 @@ export const ReportsModule = ({ user }: ReportsModuleProps) => {
 
   useEffect(() => {
     loadHandoverUploads();
+
+    const refreshWhenVisible = () => {
+      if (document.visibilityState === 'visible') loadHandoverUploads();
+    };
+    const refreshOnFocus = () => loadHandoverUploads();
+
+    window.addEventListener('data-updated', loadHandoverUploads);
+    window.addEventListener('focus', refreshOnFocus);
+    document.addEventListener('visibilitychange', refreshWhenVisible);
+
+    return () => {
+      window.removeEventListener('data-updated', loadHandoverUploads);
+      window.removeEventListener('focus', refreshOnFocus);
+      document.removeEventListener('visibilitychange', refreshWhenVisible);
+    };
   }, []);
 
   const loadHandoverUploads = async () => {
@@ -122,9 +138,16 @@ export const ReportsModule = ({ user }: ReportsModuleProps) => {
 
       const enrichedUploads = (uploads || []).map((upload: any) => {
         const client = clients?.find((c: any) => c.id === upload.client_id);
+        const scopedUpload = {
+          ...upload,
+          branch: upload.branch_name || upload.branch || upload.clients?.branch || client?.branch,
+          clients: upload.clients || { branch: client?.branch },
+        };
         return {
           ...upload,
-          client_name: client ? `${client.client_name}${client.branch ? ` - ${client.branch}` : ''}` : 'Unknown Client'
+          client_name: upload.client_name || upload.clients?.client_name || client?.client_name || 'Unknown Client',
+          branch_label: upload.branch_label || getBranchLabel(scopedUpload),
+          department_label: upload.department_label || getDepartmentLabel(scopedUpload),
         };
       });
 
@@ -180,33 +203,36 @@ export const ReportsModule = ({ user }: ReportsModuleProps) => {
         setPreviewTitle(reportName);
         setIsPreviewOpen(true);
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error generating preview:', error);
+      toast({
+        title: "Error Generating Preview",
+        description: error.message || "There was an error generating the report preview. Please try again.",
+        variant: "destructive",
+      });
     } finally {
       setIsPreviewing('');
     }
   };
 
-  const handlePreviewHandover = (upload: any) => {
-    const baseUrl = import.meta.env.VITE_API_BASE_URL || '';
-    const fileUrl = upload.file_path.startsWith('http') 
-      ? upload.file_path 
-      : `${baseUrl}/uploads/${upload.file_path}`;
-    window.open(fileUrl, '_blank');
+  const handlePreviewHandover = async (upload: any) => {
+    try {
+      if (!upload.secure_preview_url) throw new Error('Secure preview link is unavailable. Please refresh and try again.');
+      await previewAuthenticatedFile(upload.secure_preview_url);
+    } catch (error) {
+      console.error('Error previewing handover:', error);
+      toast({ title: 'Preview Failed', description: 'Unable to preview this handover document.', variant: 'destructive' });
+    }
   };
 
   const handleDownloadHandover = async (upload: any) => {
-    const baseUrl = import.meta.env.VITE_API_BASE_URL || '';
-    const fileUrl = upload.file_path.startsWith('http') 
-      ? upload.file_path 
-      : `${baseUrl}/uploads/${upload.file_path}`;
-    
-    const a = document.createElement('a');
-    a.href = fileUrl;
-    a.download = upload.file_name || 'handover.pdf';
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
+    try {
+      if (!upload.secure_download_url) throw new Error('Secure download link is unavailable. Please refresh and try again.');
+      await downloadAuthenticatedFile(upload.secure_download_url, upload.file_name || upload.file_path_label || 'handover.pdf');
+    } catch (error) {
+      console.error('Error downloading handover:', error);
+      toast({ title: 'Download Failed', description: 'Unable to download this handover document.', variant: 'destructive' });
+    }
   };
 
   const categories = Array.from(new Set(reportTemplates.map(report => report.category)));
@@ -377,6 +403,8 @@ export const ReportsModule = ({ user }: ReportsModuleProps) => {
                 <TableHeader>
                   <TableRow>
                     <TableHead>Client Name</TableHead>
+                    <TableHead>Branch</TableHead>
+                    <TableHead>Department</TableHead>
                     <TableHead>File Name</TableHead>
                     <TableHead>Upload Date</TableHead>
                     <TableHead>Status</TableHead>
@@ -387,6 +415,8 @@ export const ReportsModule = ({ user }: ReportsModuleProps) => {
                   {handoverUploads.map((upload) => (
                     <TableRow key={upload.id}>
                       <TableCell className="font-medium">{upload.client_name}</TableCell>
+                      <TableCell>{upload.branch_label || getBranchLabel(upload)}</TableCell>
+                      <TableCell>{upload.department_label || getDepartmentLabel(upload)}</TableCell>
                       <TableCell>{upload.file_name}</TableCell>
                       <TableCell>{new Date(upload.upload_date).toLocaleDateString()}</TableCell>
                       <TableCell>

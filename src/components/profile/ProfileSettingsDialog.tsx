@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -8,24 +8,28 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { User, Camera, Lock, Loader2, Eye, EyeOff, CheckCircle, ShieldCheck } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { Separator } from "@/components/ui/separator";
+import { Camera, CheckCircle, Eye, EyeOff, Fingerprint, Lock, Loader2, Mail, Phone, ShieldCheck, User } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiClient } from "@/integrations/apiClient";
 import { User as UserType } from "@/types";
 import { CountryPhoneInput } from "@/components/common/CountryPhoneInput";
+import { formatRoleLabel } from "@/utils/roleLabel";
+import { resolveAvatarUrl } from "@/utils/avatar";
 
 interface ProfileSettingsDialogProps {
   isOpen: boolean;
   onClose: () => void;
   user: UserType;
-  onProfileUpdate?: () => void;
+  onProfileUpdate?: () => void | Promise<void>;
 }
 
 export const ProfileSettingsDialog = ({ isOpen, onClose, user, onProfileUpdate }: ProfileSettingsDialogProps) => {
   const [activeTab, setActiveTab] = useState("profile");
   const [isUploading, setIsUploading] = useState(false);
   const [isChangingPassword, setIsChangingPassword] = useState(false);
-  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
+  const [avatarUrl, setAvatarUrl] = useState<string | undefined>(() => resolveAvatarUrl(user.avatar_url));
   const [oldPassword, setOldPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -33,30 +37,94 @@ export const ProfileSettingsDialog = ({ isOpen, onClose, user, onProfileUpdate }
   const [showNewPassword, setShowNewPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [twoFactorEnabled, setTwoFactorEnabled] = useState(false);
-  const [twoFactorMethod, setTwoFactorMethod] = useState<'email' | 'sms' | 'call'>('email');
-  const [twoFactorPhone, setTwoFactorPhone] = useState(user.phone_number || '');
+  const [twoFactorMethod, setTwoFactorMethod] = useState<"email" | "sms" | "call">("email");
+  const [twoFactorPhone, setTwoFactorPhone] = useState(user.phone_number || "");
   const [isSavingTwoFactor, setIsSavingTwoFactor] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
 
   useEffect(() => {
     if (!isOpen) return;
-    apiClient.get('/auth/2fa-settings').then((settings) => {
+    setAvatarUrl(resolveAvatarUrl(user.avatar_url));
+    apiClient.get("/auth/2fa-settings").then((settings) => {
       setTwoFactorEnabled(Boolean(settings.two_factor_enabled));
-      setTwoFactorMethod(settings.two_factor_method || 'email');
-      setTwoFactorPhone(settings.two_factor_phone || settings.phone_number || '');
+      setTwoFactorMethod(settings.two_factor_method || "email");
+      setTwoFactorPhone(settings.two_factor_phone || settings.phone_number || "");
     }).catch(() => undefined);
-  }, [isOpen]);
+  }, [isOpen, user.avatar_url]);
+
+  const getUserInitials = () => {
+    if (user.first_name && user.last_name) return `${user.first_name[0]}${user.last_name[0]}`.toUpperCase();
+    return user.email.charAt(0).toUpperCase();
+  };
+
+  const getUserFullName = () => {
+    if (user.first_name || user.last_name) return `${user.first_name || ""} ${user.last_name || ""}`.trim();
+    return user.email;
+  };
+
+  const readFileAsBase64 = (file: File) => new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || "").split(",")[1] || "");
+    reader.onerror = () => reject(new Error("Failed to read the selected file."));
+    reader.readAsDataURL(file);
+  });
+
+  const handleFileSelect = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    const allowedTypes = new Set(["image/jpeg", "image/png", "image/webp"]);
+    if (!allowedTypes.has(file.type)) {
+      toast({ title: "Invalid profile picture", description: "Use a JPG, PNG, or WebP image.", variant: "destructive" });
+      event.target.value = "";
+      return;
+    }
+
+    if (file.size > 5 * 1024 * 1024) {
+      toast({ title: "Profile picture is too large", description: "Upload an image smaller than 5 MB.", variant: "destructive" });
+      event.target.value = "";
+      return;
+    }
+
+    setIsUploading(true);
+    try {
+      const previewUrl = URL.createObjectURL(file);
+      setAvatarUrl(previewUrl);
+      const base64Data = await readFileAsBase64(file);
+      const uploadResponse = await apiClient.post("/auth/avatar", { fileName: file.name, base64Data });
+      const persistedUrl = resolveAvatarUrl(uploadResponse.avatar_url);
+      setAvatarUrl(persistedUrl);
+      URL.revokeObjectURL(previewUrl);
+      await onProfileUpdate?.();
+      toast({ title: "Profile picture updated", description: "Your new photo will appear in your profile and header." });
+    } catch (error) {
+      setAvatarUrl(resolveAvatarUrl(user.avatar_url));
+      toast({ title: "Upload failed", description: error instanceof Error ? error.message : "Failed to upload profile picture.", variant: "destructive" });
+    } finally {
+      setIsUploading(false);
+      event.target.value = "";
+    }
+  };
 
   const handleSaveTwoFactor = async () => {
+    if (twoFactorEnabled && twoFactorMethod !== "email" && !twoFactorPhone.trim()) {
+      toast({ title: "Verification phone required", description: "Add a phone number for SMS or voice-call verification.", variant: "destructive" });
+      return;
+    }
+
     setIsSavingTwoFactor(true);
     try {
-      await apiClient.patch('/auth/2fa-settings', {
+      const settings = await apiClient.patch("/auth/2fa-settings", {
         enabled: twoFactorEnabled,
         method: twoFactorMethod,
-        phone: twoFactorPhone,
+        phone: twoFactorMethod === "email" ? null : twoFactorPhone,
       });
-      toast({ title: "Two-factor authentication updated", description: twoFactorEnabled ? `Login codes will use ${twoFactorMethod}.` : "Two-factor authentication is disabled." });
+      setTwoFactorEnabled(Boolean(settings.enabled));
+      setTwoFactorMethod(settings.method || "email");
+      setTwoFactorPhone(settings.phone || "");
+      await onProfileUpdate?.();
+      toast({ title: "Two-factor authentication updated", description: settings.enabled ? `Login codes will use ${settings.method}.` : "Two-factor authentication is disabled." });
     } catch (error) {
       toast({ title: "Unable to update 2FA", description: error instanceof Error ? error.message : "Please try again.", variant: "destructive" });
     } finally {
@@ -64,458 +132,216 @@ export const ProfileSettingsDialog = ({ isOpen, onClose, user, onProfileUpdate }
     }
   };
 
-  const handleFileSelect = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-
-    // Validate file type
-    if (!file.type.startsWith('image/')) {
-      toast({
-        title: "Invalid File Type",
-        description: "Please select an image file (JPG, PNG, GIF)",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    // Validate file size (max 5MB)
-    if (file.size > 5 * 1024 * 1024) {
-      toast({
-        title: "File Too Large",
-        description: "Image size must be less than 5MB",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    setIsUploading(true);
-    try {
-      const reader = new FileReader();
-      reader.readAsDataURL(file);
-      
-      reader.onload = async () => {
-        try {
-          const base64Data = (reader.result as string).split(',')[1];
-          const uploadResponse = await apiClient.post('/upload', {
-            fileName: `avatar-${user.id}-${Date.now()}.${file.name.split('.').pop()}`,
-            base64Data
-          });
-
-          // Update user profile with avatar path
-          await apiClient.put(`/user_profiles/${user.id}`, {
-            ...user,
-            phone_number: user.phone_number || '', // Ensure we don't lose data
-            // We might need a separate field for avatar, but for now let's just use the response
-          });
-
-          setAvatarUrl(`${import.meta.env.VITE_API_BASE_URL}/uploads/${uploadResponse.filePath}`);
-          
-          toast({
-            title: "Profile Picture Updated",
-            description: "Your profile picture has been updated successfully",
-          });
-
-          onProfileUpdate?.();
-        } catch (error: any) {
-          console.error('Inner upload error:', error);
-          toast({
-            title: "Upload Failed",
-            description: error.message || "Failed to process profile picture",
-            variant: "destructive",
-          });
-        } finally {
-          setIsUploading(false);
-        }
-      };
-
-      reader.onerror = () => {
-        toast({
-          title: "Read Failed",
-          description: "Failed to read the selected file",
-          variant: "destructive",
-        });
-        setIsUploading(false);
-      };
-    } catch (error) {
-      console.error('Error uploading avatar:', error);
-      toast({
-        title: "Upload Failed",
-        description: "Failed to upload profile picture. Please try again.",
-        variant: "destructive",
-      });
-      setIsUploading(false);
-    }
-  };
-
   const handleChangePassword = async () => {
-    // Validation
     if (!oldPassword) {
-      toast({
-        title: "Error",
-        description: "Please enter your current password",
-        variant: "destructive",
-      });
+      toast({ title: "Current password required", description: "Enter your current password before saving.", variant: "destructive" });
       return;
     }
-
-    if (!newPassword) {
-      toast({
-        title: "Error",
-        description: "Please enter a new password",
-        variant: "destructive",
-      });
+    if (newPassword.length < 8) {
+      toast({ title: "Password is too short", description: "Use at least 8 characters.", variant: "destructive" });
       return;
     }
-
-    if (newPassword.length < 6) {
-      toast({
-        title: "Error",
-        description: "New password must be at least 6 characters",
-        variant: "destructive",
-      });
-      return;
-    }
-
     if (newPassword !== confirmPassword) {
-      toast({
-        title: "Error",
-        description: "New passwords do not match",
-        variant: "destructive",
-      });
+      toast({ title: "Passwords do not match", description: "Confirm the same new password.", variant: "destructive" });
       return;
     }
 
     setIsChangingPassword(true);
     try {
-      // First, verify the old password
-      const verifyResponse = await apiClient.post('/auth/verify-password', {
-        email: user.email,
-        password: oldPassword,
-      });
-
+      const verifyResponse = await apiClient.post("/auth/verify-password", { email: user.email, password: oldPassword });
       if (!verifyResponse.success) {
-        toast({
-          title: "Incorrect Password",
-          description: "The current password you entered is incorrect",
-          variant: "destructive",
-        });
+        toast({ title: "Incorrect password", description: "The current password you entered is incorrect.", variant: "destructive" });
         return;
       }
 
-      // Update the password
-      await apiClient.patch(`/user_profiles/${user.id}/password`, {
-        password: newPassword,
-      });
-
-      // Clear form
+      await apiClient.patch("/auth/password", { password: newPassword });
       setOldPassword("");
       setNewPassword("");
       setConfirmPassword("");
-
-      toast({
-        title: "Password Changed",
-        description: "Your password has been updated successfully. Please log in again.",
-      });
-
-      // Logout user after password change
+      toast({ title: "Password changed", description: "Your password was updated. Please sign in again." });
       setTimeout(() => {
-        localStorage.removeItem('riana_auth_token');
-        window.location.href = '/';
+        localStorage.removeItem("riana-auth-token");
+        localStorage.removeItem("riana_auth_token");
+        window.location.href = "/";
       }, 1500);
-
-      onProfileUpdate?.();
-    } catch (error: any) {
-      console.error('Error changing password:', error);
-      toast({
-        title: "Error",
-        description: error.response?.data?.error || "Failed to change password. Please try again.",
-        variant: "destructive",
-      });
+    } catch (error) {
+      toast({ title: "Password update failed", description: error instanceof Error ? error.message : "Failed to change password.", variant: "destructive" });
     } finally {
       setIsChangingPassword(false);
     }
   };
 
-  const getUserInitials = () => {
-    if (user.first_name && user.last_name) {
-      return `${user.first_name[0]}${user.last_name[0]}`.toUpperCase();
-    }
-    return user.email.charAt(0).toUpperCase();
-  };
-
-  const getUserFullName = () => {
-    if (user.first_name || user.last_name) {
-      return `${user.first_name || ''} ${user.last_name || ''}`.trim();
-    }
-    return user.email;
-  };
+  const methodLabel = twoFactorMethod === "email" ? "Email code" : twoFactorMethod === "sms" ? "SMS code" : "Voice call";
 
   return (
-    <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-lg">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <User className="h-5 w-5" />
+    <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="max-h-[92dvh] max-w-2xl overflow-y-auto p-0">
+        <DialogHeader className="border-b bg-muted/30 px-5 py-4 sm:px-6">
+          <DialogTitle className="flex items-center gap-2 text-xl">
+            <User className="h-5 w-5 text-primary" />
             Profile Settings
           </DialogTitle>
-          <DialogDescription>
-            Manage your profile picture and account security
-          </DialogDescription>
+          <DialogDescription>Manage your profile photo, sign-in security, and account protection.</DialogDescription>
         </DialogHeader>
 
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-          <TabsList className="grid w-full grid-cols-2">
-            <TabsTrigger value="profile" className="flex items-center gap-2">
-              <Camera className="h-4 w-4" />
-              Profile
-            </TabsTrigger>
-            <TabsTrigger value="security" className="flex items-center gap-2">
-              <Lock className="h-4 w-4" />
-              Security
-            </TabsTrigger>
-          </TabsList>
+        <div className="px-5 pb-5 sm:px-6">
+          <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+            <TabsList className="mt-4 grid h-11 w-full grid-cols-2 rounded-lg bg-muted/70 p-1">
+              <TabsTrigger value="profile" className="gap-2 rounded-md">
+                <Camera className="h-4 w-4" />
+                Profile
+              </TabsTrigger>
+              <TabsTrigger value="security" className="gap-2 rounded-md">
+                <ShieldCheck className="h-4 w-4" />
+                Security
+              </TabsTrigger>
+            </TabsList>
 
-          <TabsContent value="profile" className="space-y-4 mt-4">
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-lg">Profile Picture</CardTitle>
-                <CardDescription>
-                  Upload a new profile picture (JPG, PNG, max 5MB)
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="flex items-center gap-6">
-                  <div className="relative">
-                    <Avatar className="h-24 w-24 ring-4 ring-primary/20">
-                      <AvatarImage src={avatarUrl || undefined} alt={getUserFullName()} />
-                      <AvatarFallback className="bg-gradient-to-br from-primary to-primary/70 text-primary-foreground text-2xl font-bold">
-                        {getUserInitials()}
-                      </AvatarFallback>
-                    </Avatar>
-                    <Button
-                      size="icon"
-                      variant="secondary"
-                      className="absolute -bottom-2 -right-2 h-8 w-8 rounded-full shadow-lg"
-                      onClick={() => fileInputRef.current?.click()}
-                      disabled={isUploading}
-                    >
-                      {isUploading ? (
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                      ) : (
-                        <Camera className="h-4 w-4" />
-                      )}
-                    </Button>
-                    <input
-                      ref={fileInputRef}
-                      type="file"
-                      accept="image/*"
-                      className="hidden"
-                      onChange={handleFileSelect}
-                    />
+            <TabsContent value="profile" className="mt-5 space-y-4">
+              <Card className="overflow-hidden border-primary/10 shadow-sm">
+                <CardContent className="p-5">
+                  <div className="flex flex-col gap-5 sm:flex-row sm:items-center">
+                    <div className="relative w-fit">
+                      <Avatar className="h-28 w-28 border-4 border-background shadow-lg ring-2 ring-primary/30">
+                        <AvatarImage src={avatarUrl} alt={getUserFullName()} />
+                        <AvatarFallback className="bg-primary text-2xl font-bold text-primary-foreground">{getUserInitials()}</AvatarFallback>
+                      </Avatar>
+                      <Button
+                        type="button"
+                        size="icon"
+                        className="absolute -bottom-1 -right-1 h-9 w-9 rounded-full shadow-md"
+                        onClick={() => fileInputRef.current?.click()}
+                        disabled={isUploading}
+                        aria-label="Change profile picture"
+                      >
+                        {isUploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Camera className="h-4 w-4" />}
+                      </Button>
+                      <input ref={fileInputRef} type="file" accept="image/jpeg,image/png,image/webp" className="hidden" onChange={handleFileSelect} />
+                    </div>
+
+                    <div className="min-w-0 flex-1 space-y-3">
+                      <div>
+                        <h3 className="truncate text-xl font-semibold text-foreground">{getUserFullName()}</h3>
+                        <p className="truncate text-sm text-muted-foreground">{user.email}</p>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        <Badge variant="secondary">{formatRoleLabel(user.role)}</Badge>
+                        {user.designation && <Badge variant="outline">{user.designation}</Badge>}
+                        <Badge variant={twoFactorEnabled ? "default" : "outline"}>{twoFactorEnabled ? "2FA enabled" : "2FA off"}</Badge>
+                      </div>
+                      <Button type="button" variant="outline" className="w-full sm:w-auto" onClick={() => fileInputRef.current?.click()} disabled={isUploading}>
+                        {isUploading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Camera className="mr-2 h-4 w-4" />}
+                        {isUploading ? "Uploading..." : "Change Profile Picture"}
+                      </Button>
+                    </div>
                   </div>
-                  <div className="flex-1">
-                    <h3 className="font-semibold">{getUserFullName()}</h3>
-                    <p className="text-sm text-muted-foreground">{user.email}</p>
-                    <p className="text-sm text-muted-foreground">{user.role} • {user.designation || 'No designation'}</p>
-                  </div>
+                </CardContent>
+              </Card>
+
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="rounded-lg border bg-card p-4">
+                  <div className="mb-2 flex items-center gap-2 text-sm font-medium"><Mail className="h-4 w-4 text-primary" /> Email</div>
+                  <p className="truncate text-sm text-muted-foreground">{user.email}</p>
                 </div>
+                <div className="rounded-lg border bg-card p-4">
+                  <div className="mb-2 flex items-center gap-2 text-sm font-medium"><Phone className="h-4 w-4 text-primary" /> Phone</div>
+                  <p className="truncate text-sm text-muted-foreground">{user.phone_number || "Not set"}</p>
+                </div>
+              </div>
+            </TabsContent>
 
-                <div className="pt-4 border-t">
-                  <Button
-                    variant="outline"
-                    onClick={() => fileInputRef.current?.click()}
-                    disabled={isUploading}
-                    className="w-full"
-                  >
-                    {isUploading ? (
-                      <>
-                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                        Uploading...
-                      </>
-                    ) : (
-                      <>
-                        <Camera className="h-4 w-4 mr-2" />
-                        Change Profile Picture
-                      </>
+            <TabsContent value="security" className="mt-5 space-y-4">
+              <Card className="border-primary/10 shadow-sm">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2 text-lg"><Fingerprint className="h-5 w-5 text-primary" /> Two-Factor Authentication</CardTitle>
+                  <CardDescription>Require a one-time code after your password for CIMS and Developers access.</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="flex items-center justify-between rounded-lg border bg-muted/30 p-4">
+                    <div>
+                      <p className="font-medium">Enable 2FA</p>
+                      <p className="text-xs text-muted-foreground">Current method: {twoFactorEnabled ? methodLabel : "Not enabled"}</p>
+                    </div>
+                    <Switch checked={twoFactorEnabled} onCheckedChange={setTwoFactorEnabled} aria-label="Enable two-factor authentication" />
+                  </div>
+
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <div className="space-y-2">
+                      <Label>Verification method</Label>
+                      <Select value={twoFactorMethod} onValueChange={(value) => setTwoFactorMethod(value as "email" | "sms" | "call")}>
+                        <SelectTrigger><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="email">Email code</SelectItem>
+                          <SelectItem value="sms">SMS code</SelectItem>
+                          <SelectItem value="call">Voice call</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    {twoFactorMethod !== "email" && (
+                      <div className="space-y-2">
+                        <Label htmlFor="two-factor-phone">Verification phone</Label>
+                        <CountryPhoneInput id="two-factor-phone" value={twoFactorPhone} onChange={setTwoFactorPhone} />
+                      </div>
                     )}
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-lg flex items-center gap-2">
-                  <ShieldCheck className="h-5 w-5" /> Two-Factor Authentication
-                </CardTitle>
-                <CardDescription>
-                  Require a one-time code after your password for both CIMS and Developers access.
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="flex items-center justify-between rounded-lg border p-3">
-                  <div>
-                    <p className="font-medium">Enable 2FA</p>
-                    <p className="text-xs text-muted-foreground">Protect {user.email}</p>
                   </div>
-                  <Switch checked={twoFactorEnabled} onCheckedChange={setTwoFactorEnabled} />
-                </div>
 
-                <div className="space-y-2">
-                  <Label>Verification method</Label>
-                  <Select value={twoFactorMethod} onValueChange={(value) => setTwoFactorMethod(value as 'email' | 'sms' | 'call')}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="email">Email code</SelectItem>
-                      <SelectItem value="sms">SMS code</SelectItem>
-                      <SelectItem value="call">Voice call</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
+                  <Button type="button" className="w-full" onClick={handleSaveTwoFactor} disabled={isSavingTwoFactor || (twoFactorEnabled && twoFactorMethod !== "email" && !twoFactorPhone.trim())}>
+                    {isSavingTwoFactor ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ShieldCheck className="mr-2 h-4 w-4" />}
+                    Save 2FA Settings
+                  </Button>
+                </CardContent>
+              </Card>
 
-                {twoFactorMethod !== 'email' && (
+              <Card className="border-primary/10 shadow-sm">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2 text-lg"><Lock className="h-5 w-5 text-primary" /> Change Password</CardTitle>
+                  <CardDescription>Use at least 8 characters. You will be asked to sign in again after saving.</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
                   <div className="space-y-2">
-                    <Label htmlFor="two-factor-phone">Verification phone</Label>
-                    <CountryPhoneInput
-                      id="two-factor-phone"
-                      value={twoFactorPhone}
-                      onChange={setTwoFactorPhone}
-                    />
+                    <Label htmlFor="old-password">Current password</Label>
+                    <div className="relative">
+                      <Input id="old-password" type={showOldPassword ? "text" : "password"} value={oldPassword} onChange={(event) => setOldPassword(event.target.value)} className="pr-10" autoComplete="current-password" />
+                      <Button type="button" variant="ghost" size="icon" className="absolute right-0 top-0 h-full" onClick={() => setShowOldPassword((value) => !value)} aria-label="Toggle current password visibility">
+                        {showOldPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                      </Button>
+                    </div>
                   </div>
-                )}
 
-                <Button
-                  type="button"
-                  className="w-full"
-                  onClick={handleSaveTwoFactor}
-                  disabled={isSavingTwoFactor || (twoFactorEnabled && twoFactorMethod !== 'email' && !twoFactorPhone.trim())}
-                >
-                  {isSavingTwoFactor ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ShieldCheck className="mr-2 h-4 w-4" />}
-                  Save 2FA Settings
-                </Button>
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          <TabsContent value="security" className="space-y-4 mt-4">
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-lg">Change Password</CardTitle>
-                <CardDescription>
-                  Update your password by entering your current password first
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="space-y-2">
-                  <Label htmlFor="old-password">Current Password *</Label>
-                  <div className="relative">
-                    <Input
-                      id="old-password"
-                      type={showOldPassword ? "text" : "password"}
-                      value={oldPassword}
-                      onChange={(e) => setOldPassword(e.target.value)}
-                      placeholder="Enter current password"
-                      className="pr-10"
-                    />
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      className="absolute right-0 top-0 h-full px-3 hover:bg-transparent"
-                      onClick={() => setShowOldPassword(!showOldPassword)}
-                    >
-                      {showOldPassword ? (
-                        <EyeOff className="h-4 w-4 text-muted-foreground" />
-                      ) : (
-                        <Eye className="h-4 w-4 text-muted-foreground" />
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <div className="space-y-2">
+                      <Label htmlFor="new-password">New password</Label>
+                      <div className="relative">
+                        <Input id="new-password" type={showNewPassword ? "text" : "password"} value={newPassword} onChange={(event) => setNewPassword(event.target.value)} className="pr-10" autoComplete="new-password" />
+                        <Button type="button" variant="ghost" size="icon" className="absolute right-0 top-0 h-full" onClick={() => setShowNewPassword((value) => !value)} aria-label="Toggle new password visibility">
+                          {showNewPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                        </Button>
+                      </div>
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="confirm-password">Confirm password</Label>
+                      <div className="relative">
+                        <Input id="confirm-password" type={showConfirmPassword ? "text" : "password"} value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} className="pr-10" autoComplete="new-password" />
+                        <Button type="button" variant="ghost" size="icon" className="absolute right-0 top-0 h-full" onClick={() => setShowConfirmPassword((value) => !value)} aria-label="Toggle confirm password visibility">
+                          {showConfirmPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                        </Button>
+                      </div>
+                      {confirmPassword && newPassword === confirmPassword && (
+                        <p className="flex items-center gap-1 text-xs text-success"><CheckCircle className="h-3 w-3" /> Passwords match</p>
                       )}
-                    </Button>
+                    </div>
                   </div>
-                </div>
 
-                <div className="space-y-2">
-                  <Label htmlFor="new-password">New Password *</Label>
-                  <div className="relative">
-                    <Input
-                      id="new-password"
-                      type={showNewPassword ? "text" : "password"}
-                      value={newPassword}
-                      onChange={(e) => setNewPassword(e.target.value)}
-                      placeholder="Enter new password (min 6 characters)"
-                      className="pr-10"
-                    />
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      className="absolute right-0 top-0 h-full px-3 hover:bg-transparent"
-                      onClick={() => setShowNewPassword(!showNewPassword)}
-                    >
-                      {showNewPassword ? (
-                        <EyeOff className="h-4 w-4 text-muted-foreground" />
-                      ) : (
-                        <Eye className="h-4 w-4 text-muted-foreground" />
-                      )}
-                    </Button>
-                  </div>
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="confirm-password">Confirm New Password *</Label>
-                  <div className="relative">
-                    <Input
-                      id="confirm-password"
-                      type={showConfirmPassword ? "text" : "password"}
-                      value={confirmPassword}
-                      onChange={(e) => setConfirmPassword(e.target.value)}
-                      placeholder="Confirm new password"
-                      className="pr-10"
-                    />
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      className="absolute right-0 top-0 h-full px-3 hover:bg-transparent"
-                      onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                    >
-                      {showConfirmPassword ? (
-                        <EyeOff className="h-4 w-4 text-muted-foreground" />
-                      ) : (
-                        <Eye className="h-4 w-4 text-muted-foreground" />
-                      )}
-                    </Button>
-                  </div>
-                  {confirmPassword && newPassword === confirmPassword && (
-                    <p className="text-xs text-success flex items-center gap-1">
-                      <CheckCircle className="h-3 w-3" />
-                      Passwords match
-                    </p>
-                  )}
-                </div>
-
-                <div className="pt-4 border-t">
-                  <Button
-                    onClick={handleChangePassword}
-                    disabled={isChangingPassword || !oldPassword || !newPassword || !confirmPassword}
-                    className="w-full gradient-primary"
-                  >
-                    {isChangingPassword ? (
-                      <>
-                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                        Changing Password...
-                      </>
-                    ) : (
-                      <>
-                        <Lock className="h-4 w-4 mr-2" />
-                        Change Password
-                      </>
-                    )}
+                  <Separator />
+                  <Button type="button" className="w-full" onClick={handleChangePassword} disabled={isChangingPassword || !oldPassword || !newPassword || !confirmPassword}>
+                    {isChangingPassword ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Lock className="mr-2 h-4 w-4" />}
+                    Change Password
                   </Button>
-                </div>
-              </CardContent>
-            </Card>
-          </TabsContent>
-        </Tabs>
+                </CardContent>
+              </Card>
+            </TabsContent>
+          </Tabs>
+        </div>
       </DialogContent>
     </Dialog>
   );

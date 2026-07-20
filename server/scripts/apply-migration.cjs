@@ -3,6 +3,36 @@ const path = require('node:path');
 const mysql = require('mysql2/promise');
 require('dotenv').config({ path: path.join(__dirname, '../../.env.local') });
 
+const splitSqlStatements = (sql) => {
+  const statements = [];
+  let delimiter = ';';
+  let current = '';
+  for (const rawLine of sql.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (/^DELIMITER\s+/i.test(line)) {
+      delimiter = line.replace(/^DELIMITER\s+/i, '').trim() || ';';
+      continue;
+    }
+    current += rawLine + '\n';
+    if (current.trimEnd().endsWith(delimiter)) {
+      const trimmed = current.trimEnd();
+      const statement = trimmed.slice(0, trimmed.length - delimiter.length).trim();
+      if (statement) statements.push(statement);
+      current = '';
+    }
+  }
+  const trailing = current.trim();
+  if (trailing) statements.push(trailing);
+  return statements;
+};
+
+const executeMigrationFile = async (connection, filePath) => {
+  const statements = splitSqlStatements(fs.readFileSync(filePath, 'utf8'));
+  for (const statement of statements) {
+    await connection.query(statement);
+  }
+};
+
 async function run() {
   const migrationsDirectory = path.join(__dirname, '../migrations');
   const connection = await mysql.createConnection({
@@ -31,7 +61,7 @@ async function run() {
         skippedMigrations.push(migrationId);
         continue;
       }
-      await connection.query(fs.readFileSync(path.join(migrationsDirectory, file), 'utf8'));
+      await executeMigrationFile(connection, path.join(migrationsDirectory, file));
       await connection.query(
         'INSERT INTO migration_history (migration_id,description) VALUES (?,?) ON DUPLICATE KEY UPDATE description=VALUES(description)',
         [migrationId, `Applied from ${file}`],

@@ -5,6 +5,8 @@ import { addCimsDocumentHeader, addLetterheadToDocument, DOCUMENT_LAYOUT, resolv
 import { resolveDocumentSubsidiaryName } from "./brandIdentity";
 import { escalationTierEntries } from "./escalationMatrix";
 import { buildHandoverEquipmentRows } from "./equipmentConfiguration";
+import { apiClient } from "@/integrations/apiClient";
+import { getBranchLabel, getDepartmentLabel, getScopeFileSegment } from "./scopeLabels";
 
 const parseHexColor = (hex: string): [number, number, number] => {
   const clean = hex.replace('#', '');
@@ -23,6 +25,16 @@ export const generateInstallationReport = async (
   subsidiary?: Subsidiary,
   generatedBySubsidiaryName?: string | null,
 ): Promise<void> => {
+  const exportDate = new Date();
+  const completionDateIso = installation.completion_date || exportDate.toISOString().slice(0, 10);
+  const completedInstallation = { ...installation, status: 'completed' as const, completion_date: completionDateIso };
+  if (installation.id && (installation.status !== 'completed' || !installation.completion_date)) {
+    await apiClient.patch(`/installations/${installation.id}`, {
+      status: 'completed',
+      completion_date: completionDateIso,
+    });
+  }
+
   const doc = new jsPDF('p', 'mm', 'a4');
   const pageWidth = doc.internal.pageSize.getWidth();
   const pageHeight = doc.internal.pageSize.getHeight();
@@ -37,7 +49,6 @@ export const generateInstallationReport = async (
   const brand = resolveDocumentBrand(subsidiaryName);
 
   // Export date = today
-  const exportDate = new Date();
   const formattedExportDate = exportDate.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
 
   // Generate unique reference code
@@ -86,7 +97,7 @@ export const generateInstallationReport = async (
     }
   };
 
-  // ─── HEADER ─────────────────────────────────────────────────────────────
+  // â”€â”€â”€ HEADER â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   // Company Logo (left side)
   const logoSrc = (company as any).logo_path
     ? ((company as any).logo_path.startsWith('http')
@@ -109,7 +120,7 @@ export const generateInstallationReport = async (
 
   yPos = 58;
 
-  // ─── CLIENT INFORMATION ──────────────────────────────────────────────────
+  // â”€â”€â”€ CLIENT INFORMATION â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   doc.setDrawColor(...companyPrimaryColor);
   doc.setLineWidth(0.8);
   doc.line(margin, yPos, pageWidth - margin, yPos);
@@ -121,31 +132,44 @@ export const generateInstallationReport = async (
   const col2X = pageWidth / 2 + 5;
   const lineHeight = 6;
 
-  // Assigned date: prefer assigned_date, fall back to installation_start_date, then created_at
-  const rawAssignedDate = installation.assigned_date || (installation as any).installation_start_date || (installation as any).created_at;
-  const assignedDateFormatted = rawAssignedDate
-    ? new Date(rawAssignedDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
-    : formattedExportDate;  // ultimate fallback: export date
+  const rawStartDate = client.start_date || completedInstallation.assigned_date || (completedInstallation as any).installation_start_date || completedInstallation.created_at;
+  const startDateFormatted = rawStartDate
+    ? new Date(rawStartDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
+    : formattedExportDate;
 
-  // Completion date = export date (document was exported today for signing)
-  const completionDateFormatted = formattedExportDate;
+  const completionDateFormatted = completionDateIso
+    ? new Date(completionDateIso).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
+    : formattedExportDate;
+  const clientPhone = (client as any).contact_person_phone || (client as any).contact_phone || (client as any).contact_person_phone_masked || (client as any).contact_phone_masked || 'N/A';
+  const clientEmail = (client as any).contact_person_email || (client as any).contact_email || (client as any).contact_person_email_masked || (client as any).contact_email_masked || 'N/A';
+  const handoverScope = {
+    ...client,
+    ...completedInstallation,
+    branch: (completedInstallation as any).branch_name || completedInstallation.branch || client.branch,
+    branch_name: (completedInstallation as any).branch_name,
+    department_name: (completedInstallation as any).department_name,
+    branch_count: (completedInstallation as any).branch_count,
+    department_count: (completedInstallation as any).department_count,
+  };
+  const installationBranch = getBranchLabel(handoverScope);
+  const installationDepartment = getDepartmentLabel(handoverScope);
+  const scopeFileSegment = getScopeFileSegment(handoverScope);
 
   const clientDetails = [
     ['Client Name:', client.client_name || 'N/A'],
-    ['Branch:', client.branch || 'Main Branch'],
+    ['Branch:', installationBranch],
+    ['Department:', installationDepartment],
     ['Contact Person:', client.contact_person_name || 'N/A'],
-    ['Phone:', client.contact_person_phone || 'N/A'],
-    ['Email:', client.contact_person_email || 'N/A'],
+    ['Phone:', clientPhone],
+    ['Email:', clientEmail],
   ];
-
-  console.log('Generating report for:', { client, installation });
 
   const installDetails = [
     ['Industry:', client.industry_classification || 'N/A'],
     ['Contract Type:', client.contract_type || 'N/A'],
-    ['Assigned Date:', assignedDateFormatted],
+    ['Start Date:', startDateFormatted],
     ['Completion Date:', completionDateFormatted],
-    ['Status:', (installation.status || 'COMPLETE').toUpperCase()],
+    ['Status:', 'COMPLETE'],
   ];
 
   clientDetails.forEach((item, idx) => {
@@ -165,11 +189,11 @@ export const generateInstallationReport = async (
 
   yPos += clientDetails.length * lineHeight + 8;
 
-  // ─── EQUIPMENT DETAILS ───────────────────────────────────────────────────
+  // â”€â”€â”€ EQUIPMENT DETAILS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   ensureSpace(60);
   yPos = addSectionHeader('EQUIPMENT DETAILS', yPos);
 
-  const equipmentData = buildHandoverEquipmentRows(installation, subsidiary?.equipment_configuration)
+  const equipmentData = buildHandoverEquipmentRows(completedInstallation, subsidiary?.equipment_configuration)
     .map((row) => [row.label, row.displayValue, row.status]);
 
   autoTable(doc, {
@@ -194,15 +218,15 @@ export const generateInstallationReport = async (
 
   yPos = (doc as any).lastAutoTable.finalY + 8;
 
-  // ─── LED DISPLAY NAMES ───────────────────────────────────────────────────
-  const ledNames = (installation as any).led_names as string[] | string | null;
+  // â”€â”€â”€ LED DISPLAY NAMES â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  const ledNames = (completedInstallation as any).led_names as string[] | string | null;
   const parsedLedNames: string[] = Array.isArray(ledNames)
     ? ledNames
     : typeof ledNames === 'string'
       ? JSON.parse(ledNames)
       : [];
 
-  if ((installation.led_count || 0) > 0 && parsedLedNames.length > 0) {
+  if ((completedInstallation.led_count || 0) > 0 && parsedLedNames.length > 0) {
     ensureSpace(30);
     yPos = addSectionHeader('LED DISPLAY NAMES', yPos);
 
@@ -233,11 +257,11 @@ export const generateInstallationReport = async (
     yPos = (doc as any).lastAutoTable.finalY + 8;
   }
 
-  // ─── REMARKS ─────────────────────────────────────────────────────────────
+  // â”€â”€â”€ REMARKS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   ensureSpace(40);
   yPos = addSectionHeader('REMARKS & NOTES', yPos);
 
-  const remarks = installation.remarks || 'No additional notes provided.';
+  const remarks = completedInstallation.remarks || 'No additional notes provided.';
   const splitRemarks = doc.splitTextToSize(remarks, pageWidth - 2 * margin - 10);
   const remarksHeight = Math.max(15, splitRemarks.length * 5 + 5);
 
@@ -252,7 +276,7 @@ export const generateInstallationReport = async (
   
   yPos += remarksHeight + 5;
 
-  // ─── ESCALATION MATRIX ───────────────────────────────────────────────────
+  // â”€â”€â”€ ESCALATION MATRIX â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   let escalationMatrix: EscalationMatrix | null = null;
   
   // 1. Try subsidiary default matrix
@@ -267,8 +291,8 @@ export const generateInstallationReport = async (
   }
   
   // 2. Fallback to installation-specific matrix if available
-  if (!escalationMatrix && installation.escalation_matrix) {
-    escalationMatrix = installation.escalation_matrix;
+  if (!escalationMatrix && completedInstallation.escalation_matrix) {
+    escalationMatrix = completedInstallation.escalation_matrix;
   }
 
   if (escalationMatrix) {
@@ -299,7 +323,7 @@ export const generateInstallationReport = async (
     yPos = (doc as any).lastAutoTable.finalY + 8;
   }
 
-  // ─── SIGNATURE SECTION ───────────────────────────────────────────────────
+  // â”€â”€â”€ SIGNATURE SECTION â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   ensureSpace(50);
 
   const sigBoxWidth = (pageWidth - 2 * margin - 10) / 2;
@@ -327,7 +351,7 @@ export const generateInstallationReport = async (
   addText('Technician Signature', margin + sigBoxWidth + 10 + sigBoxWidth / 2, yPos + 29, { fontSize: 8, color: mutedColor, align: 'center' });
   addText(`Date: ${formattedExportDate}`, margin + sigBoxWidth + 10 + sigBoxWidth / 2, yPos + 33, { fontSize: 8, color: mutedColor, align: 'center' });
 
-  // ─── LETTERHEAD / WATERMARK ───────────────────────────────────────────────
+  // â”€â”€â”€ LETTERHEAD / WATERMARK â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   try {
     await addLetterheadToDocument(doc, logoSrc, '/letterhead-new.jpg', {
       subsidiaryName,
@@ -339,6 +363,6 @@ export const generateInstallationReport = async (
   }
 
   // Save PDF
-  const fileName = `E-Handover_${(client.client_name || 'Client').replace(/[^a-zA-Z0-9]/g, '_')}_${clientCode}.pdf`;
+  const fileName = `E-Handover_${(client.client_name || 'Client').replace(/[^a-zA-Z0-9]/g, '_')}_${scopeFileSegment}_${clientCode}.pdf`;
   doc.save(fileName);
 };

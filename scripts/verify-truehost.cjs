@@ -44,6 +44,30 @@ for (const directory of requiredDirectories) {
 for (const file of requiredFiles) {
   if (!fs.statSync(normalizedPath(file), { throwIfNoEntry: false })?.isFile()) fail(`Required file is missing: ${file}`);
 }
+const buildInfo = JSON.parse(fs.readFileSync(normalizedPath('BUILD_INFO.json'), 'utf8'));
+const liveUpdates = buildInfo.liveDatabaseUpdates;
+if (!Array.isArray(liveUpdates) || !liveUpdates.length) fail('BUILD_INFO.json must list at least one live database update.');
+for (const update of liveUpdates) {
+  if (!/^\d{8}_[a-z0-9_]+$/.test(update.migrationId || '')) fail(`Invalid live migration ID: ${update.migrationId}`);
+  if (!/^\d{8}_[a-z0-9_]+\.sql$/.test(update.sourceFile || '')) fail(`Invalid live migration source: ${update.sourceFile}`);
+  if (!/^LIVE_DB_UPDATE_\d{8}\.sql$/.test(update.packageFile || '')) fail(`Invalid packaged live update: ${update.packageFile}`);
+  const packagedUpdate = normalizedPath(update.packageFile);
+  if (!fs.statSync(packagedUpdate, { throwIfNoEntry: false })?.isFile()) fail(`Required live database update is missing: ${update.packageFile}`);
+  const sourceUpdate = path.join(root, 'hosting', 'Mysql_host', 'live_updates', update.sourceFile);
+  const sourceMigration = path.join(root, 'server', 'migrations', update.sourceFile);
+  if (!fs.statSync(sourceUpdate, { throwIfNoEntry: false })?.isFile()) fail(`Live database update source is missing: ${update.sourceFile}`);
+  if (!fs.statSync(sourceMigration, { throwIfNoEntry: false })?.isFile()) fail(`Matching server migration is missing: ${update.sourceFile}`);
+  if (fileHash(packagedUpdate) !== fileHash(sourceUpdate)) fail(`Packaged live update is stale: ${update.packageFile}`);
+  const migrationSql = fs.readFileSync(sourceMigration, 'utf8');
+  const liveSql = fs.readFileSync(packagedUpdate, 'utf8');
+  if (!liveSql.includes(update.migrationId)) fail(`Live update does not record migration ${update.migrationId}.`);
+  for (const match of migrationSql.matchAll(/ALTER\s+TABLE\s+`?([a-z0-9_]+)`?[\s\S]*?ADD\s+COLUMN(?:\s+IF\s+NOT\s+EXISTS)?\s+`?([a-z0-9_]+)`?\s+([a-z]+(?:\([^)]*\))?)/gi)) {
+    const [, table, column, type] = match;
+    const escapedType = type.replace(/[()]/g, '\\$&');
+    const intent = new RegExp('ALTER\\s+TABLE\\s+`?' + table + '`?[\\s\\S]*?ADD\\s+COLUMN(?:\\s+IF\\s+NOT\\s+EXISTS)?\\s+`?' + column + '`?\\s+' + escapedType, 'i');
+    if (!intent.test(liveSql)) fail(`Live update is not aligned with ${table}.${column} (${type}).`);
+  }
+}
 
 const topDirectories = fs.readdirSync(output, { withFileTypes: true }).filter((entry) => entry.isDirectory()).map((entry) => entry.name).sort();
 if (topDirectories.join(',') !== requiredDirectories.slice().sort().join(',')) {
@@ -65,15 +89,24 @@ if (/PassengerAppRoot|PassengerNodejs/i.test(htaccess)) {
 }
 
 const manifestLines = fs.readFileSync(normalizedPath('FILE_MANIFEST.sha256'), 'utf8').trim().split(/\r?\n/);
+const manifestedPaths = new Set();
 for (const line of manifestLines) {
   const match = /^([a-f0-9]{64})  (.+)$/.exec(line);
   if (!match) fail(`Invalid manifest line: ${line}`);
   const target = normalizedPath(match[2]);
   if (!fs.existsSync(target)) fail(`Manifest target is missing: ${match[2]}`);
   if (fileHash(target) !== match[1]) fail(`Manifest hash mismatch: ${match[2]}`);
+  if (manifestedPaths.has(match[2])) fail(`Duplicate manifest target: ${match[2]}`);
+  manifestedPaths.add(match[2]);
 }
+const expectedManifestPaths = allFiles
+  .filter((file) => path.basename(file) !== 'FILE_MANIFEST.sha256')
+  .map((file) => path.relative(output, file).split(path.sep).join('/'));
+for (const relative of expectedManifestPaths) {
+  if (!manifestedPaths.has(relative)) fail(`File is not covered by the manifest: ${relative}`);
+}
+if (manifestedPaths.size !== expectedManifestPaths.length) fail('Manifest contains unexpected entries.');
 
-const buildInfo = JSON.parse(fs.readFileSync(normalizedPath('BUILD_INFO.json'), 'utf8'));
 const preserveSuperAdmin = Boolean(buildInfo.bootstrapSuperAdmin?.active && buildInfo.bootstrapSuperAdmin?.passwordPresent);
 const sql = fs.readFileSync(normalizedPath('database/riana_cims_host.sql'), 'utf8');
 if (/^\s*(CREATE\s+DATABASE|USE\s+`)/im.test(sql)) fail('SQL must import into the database selected in cPanel.');
@@ -98,15 +131,26 @@ for (const alias of ['DB_HOST', 'DB_PORT', 'DB_NAME', 'DB_USER', 'DB_PASSWORD', 
 }
 const packagedEnvironment = fs.readFileSync(normalizedPath('app/.env.example'), 'utf8');
 for (const marker of [
-  'SMTP_HOST=mail.rianacims.name.ng',
-  'SMTP_PORT=465',
-  'SMTP_SECURE=true',
-  'SMTP_USER=info@rianacims.name.ng',
-  'SMTP_FROM_EMAIL=info@rianacims.name.ng',
+  'SMTP_HOST=smtp-mail.outlook.com',
+  'SMTP_PORT=587',
+  'SMTP_SECURE=false',
+  'SMTP_USER=notifications@qsys-ea.com',
+  'SMTP_FROM_EMAIL=notifications@qsys-ea.com',
+  'AFRICASTALKING_USERNAME=QSYS',
+  'AFRICASTALKING_SMS_URL=https://api.africastalking.com/version1/messaging',
+  'SMS_SENDER_ID=Q-SYS',
+  'BEEM_WHATSAPP_API_URL=https://apichatcore.beem.africa/v1/chat-send',
+  'BEEM_WHATSAPP_TEMPLATE_ID=479',
+  'PRIVATE_UPLOAD_ROOT=/home/CPANEL_USER/riana_private_uploads',
+  'FILE_BACKUP_ROOT=/home/CPANEL_USER/riana_private_file_backups',
 ]) {
-  if (!packagedEnvironment.includes(marker)) fail(`Packaged SMTP configuration is missing: ${marker}`);
+  if (!packagedEnvironment.includes(marker)) fail(`Packaged notification/private-storage configuration is missing: ${marker}`);
 }
-if (packagedEnvironment.includes('BREVO_')) fail('Packaged environment still contains the retired Brevo provider configuration.');
+if (packagedEnvironment.includes('BREVO_') || packagedEnvironment.includes('B_TEXTMAN_')) fail('Packaged environment still contains a retired notification provider configuration.');
+const deploymentGuide = fs.readFileSync(normalizedPath('TRUEHOST_DEPLOYMENT.md'), 'utf8');
+for (const marker of ['PRIVATE_UPLOAD_ROOT=/home/lxvtrfta/riana_private_uploads', 'FILE_BACKUP_ROOT=/home/lxvtrfta/riana_private_file_backups']) {
+  if (!deploymentGuide.includes(marker)) fail(`Deployment guide is missing private storage configuration: ${marker}`);
+}
 const packagedDatabaseConfig = fs.readFileSync(normalizedPath('app/server/db.js'), 'utf8');
 if (!packagedDatabaseConfig.includes("'DATABASE_PASSWORD', 'DB_PASSWORD', 'DB_PASS'")) {
   fail('Packaged database configuration does not support the Truehost DB_PASS alias.');

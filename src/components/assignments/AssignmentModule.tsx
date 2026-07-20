@@ -11,7 +11,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { UserPlus, Search, Shield, Users, Calendar, CalendarDays, Settings } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useDatabase } from "@/hooks/useDatabase";
-import { User, Client } from "@/types";
+import { User, Client, ClientBranch, ClientDepartment } from "@/types";
 import { apiClient } from "@/integrations/apiClient";
 import { can } from "@/security/accessControl";
 
@@ -23,6 +23,9 @@ interface ClientAssignment {
   id: string;
   client_id: string;
   branch: string;
+  branch_id?: string;
+  department_id?: string;
+  department_name?: string;
   hardware_technician_id?: string;
   software_technician_id?: string;
   installation_start_date: string;
@@ -34,6 +37,15 @@ interface ClientAssignment {
   updated_at: string;
 }
 
+const fallbackBranchForClient = (client: Client): ClientBranch => ({
+  id: `legacy-${client.id}`,
+  client_id: client.id,
+  branch_name: client.branch?.trim() || 'MAIN',
+  branch_code: client.branch?.trim() ? null : 'MAIN',
+  status: 'active',
+  department_count: 0,
+  installation_count: 0,
+});
 // Remove mock data - we'll use real data from the database
 
 export const AssignmentModule = ({ user }: AssignmentModuleProps) => {
@@ -46,7 +58,10 @@ export const AssignmentModule = ({ user }: AssignmentModuleProps) => {
   const [isAssignDialogOpen, setIsAssignDialogOpen] = useState(false);
   const [newAssignment, setNewAssignment] = useState<Partial<ClientAssignment>>({});
   const [selectedClient, setSelectedClient] = useState<Client | null>(null);
-  const [clientBranches, setClientBranches] = useState<string[]>([]);
+  const [clientBranches, setClientBranches] = useState<ClientBranch[]>([]);
+  const [clientDepartments, setClientDepartments] = useState<ClientDepartment[]>([]);
+  const [isLoadingClientBranches, setIsLoadingClientBranches] = useState(false);
+  const [isLoadingClientDepartments, setIsLoadingClientDepartments] = useState(false);
   const { toast } = useToast();
   const { getClients, getUsers, getAssignments, addAssignment, updateAssignment, loading } = useDatabase();
 
@@ -97,21 +112,85 @@ export const AssignmentModule = ({ user }: AssignmentModuleProps) => {
     return client?.client_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
            hardwareTech?.first_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
            softwareTech?.first_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-           assignment.branch?.toLowerCase().includes(searchTerm.toLowerCase());
+           assignment.branch?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+           assignment.department_name?.toLowerCase().includes(searchTerm.toLowerCase());
   });
 
-  const handleClientSelect = (clientId: string) => {
+  const handleClientSelect = async (clientId: string) => {
     const client = clients.find(c => c.id === clientId);
     setSelectedClient(client || null);
-    setNewAssignment({...newAssignment, client_id: clientId});
-    
-    // Get unique branches for this client (in real app, this would be from a proper branches table)
-    if (client) {
-      const branches = [client.branch].filter(Boolean);
-      setClientBranches(branches);
+    setNewAssignment((current) => ({ ...current, client_id: clientId, branch: '', branch_id: '', department_id: '' }));
+    setClientBranches([]);
+    setClientDepartments([]);
+
+    if (!client) {
+      return;
+    }
+
+    setIsLoadingClientBranches(true);
+    try {
+      const branches = await apiClient.get(`/clients/${clientId}/branches`);
+      const branchOptions: ClientBranch[] = (Array.isArray(branches) ? branches : [])
+        .filter((branch: any) => branch && (!branch.status || branch.status === 'active'))
+        .map((branch: any) => ({
+          ...branch,
+          branch_name: String(branch.branch_name || branch.name || '').trim(),
+        }))
+        .filter((branch: ClientBranch) => Boolean(branch.branch_name));
+      setClientBranches(branchOptions.length ? branchOptions : [fallbackBranchForClient(client)]);
+    } catch (error) {
+      console.error('Error loading client branches:', error);
+      setClientBranches([fallbackBranchForClient(client)]);
+      toast({
+        title: "Branch loading failed",
+        description: "Could not load the saved branches for this client. Please refresh and try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsLoadingClientBranches(false);
     }
   };
 
+
+  const loadDepartmentsForBranch = async (branchId: string) => {
+    setClientDepartments([]);
+    if (!branchId || branchId.startsWith('legacy-')) return [] as ClientDepartment[];
+
+    setIsLoadingClientDepartments(true);
+    try {
+      const departments = await apiClient.get(`/branches/${branchId}/departments`);
+      const departmentOptions: ClientDepartment[] = (Array.isArray(departments) ? departments : [])
+        .filter((department: any) => department && (!department.status || department.status === 'active'))
+        .map((department: any) => ({
+          ...department,
+          department_name: String(department.department_name || department.name || '').trim(),
+        }))
+        .filter((department: ClientDepartment) => Boolean(department.department_name));
+      setClientDepartments(departmentOptions);
+      return departmentOptions;
+    } catch (error) {
+      console.error('Error loading branch departments:', error);
+      toast({
+        title: "Department loading failed",
+        description: "Could not load departments for this branch. Please refresh and try again.",
+        variant: "destructive",
+      });
+      return [] as ClientDepartment[];
+    } finally {
+      setIsLoadingClientDepartments(false);
+    }
+  };
+
+  const handleBranchSelect = async (branchId: string) => {
+    const selectedBranch = clientBranches.find((branch) => branch.id === branchId);
+    setNewAssignment((current) => ({
+      ...current,
+      branch_id: branchId,
+      branch: selectedBranch?.branch_name || '',
+      department_id: '',
+    }));
+    await loadDepartmentsForBranch(branchId);
+  };
   const handleAssignClient = async () => {
     console.log('Assignment data:', newAssignment);
     
@@ -119,6 +198,15 @@ export const AssignmentModule = ({ user }: AssignmentModuleProps) => {
       toast({
         title: "Error",
         description: "Please fill in all required fields (client, branch, start date)",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (clientDepartments.length > 0 && !newAssignment.department_id) {
+      toast({
+        title: "Error",
+        description: "Please select the department for this branch assignment",
         variant: "destructive",
       });
       return;
@@ -139,6 +227,8 @@ export const AssignmentModule = ({ user }: AssignmentModuleProps) => {
       
       const assignmentData = {
         client_id: newAssignment.client_id,
+        branch_id: newAssignment.branch_id?.startsWith('legacy-') ? null : newAssignment.branch_id || null,
+        department_id: newAssignment.department_id || null,
         branch: newAssignment.branch,
         hardware_technician_id: newAssignment.hardware_technician_id || null,
         software_technician_id: newAssignment.software_technician_id || null,
@@ -151,23 +241,24 @@ export const AssignmentModule = ({ user }: AssignmentModuleProps) => {
 
       const result = await addAssignment(assignmentData);
 
-      // Update corresponding installation record to "in_progress" status
-      try {
-        await apiClient.patch(`/installations/update_by_client/${newAssignment.client_id}`, {
-          status: 'in_progress',
-          hardware_technician_id: newAssignment.hardware_technician_id || null,
-          software_technician_id: newAssignment.software_technician_id || null,
-          assigned_date: startDate,
-          scheduled_end_date: newAssignment.scheduled_end_date || null
-        });
-      } catch (installError) {
-        console.error('Error updating installation:', installError);
+      if (result?.installation_id) {
+        try {
+          await apiClient.patch(`/installations/${result.installation_id}`, {
+            status: 'in_progress',
+            hardware_technician_id: newAssignment.hardware_technician_id || null,
+            software_technician_id: newAssignment.software_technician_id || null,
+            assigned_date: startDate,
+            scheduled_end_date: newAssignment.scheduled_end_date || null
+          });
+        } catch (installError) {
+          console.error('Error updating linked installation:', installError);
+        }
       }
-
       await loadData();
       setNewAssignment({});
       setSelectedClient(null);
       setClientBranches([]);
+      setClientDepartments([]);
       setIsAssignDialogOpen(false);
       
       toast({
@@ -272,7 +363,7 @@ export const AssignmentModule = ({ user }: AssignmentModuleProps) => {
               New Assignment
             </Button>
           </DialogTrigger>
-          <DialogContent className="max-w-2xl">
+          <DialogContent className="max-w-3xl">
             <DialogHeader>
               <DialogTitle>Assign Technicians to Client Installation</DialogTitle>
               <DialogDescription>
@@ -280,7 +371,7 @@ export const AssignmentModule = ({ user }: AssignmentModuleProps) => {
               </DialogDescription>
             </DialogHeader>
             <div className="grid gap-4">
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
                 <div className="space-y-2">
                   <Label htmlFor="client">Client *</Label>
                   <Select value={newAssignment.client_id || ''} onValueChange={handleClientSelect}>
@@ -299,19 +390,42 @@ export const AssignmentModule = ({ user }: AssignmentModuleProps) => {
                 <div className="space-y-2">
                   <Label htmlFor="branch">Branch *</Label>
                   <Select 
-                    value={newAssignment.branch || ''} 
-                    onValueChange={(value) => setNewAssignment({...newAssignment, branch: value})}
-                    disabled={!selectedClient}
+                    value={newAssignment.branch_id || ''}
+                    onValueChange={(value) => void handleBranchSelect(value)}
+                    disabled={!selectedClient || isLoadingClientBranches || clientBranches.length === 0}
                   >
                     <SelectTrigger>
-                      <SelectValue placeholder="Select branch" />
+                      <SelectValue placeholder={!selectedClient ? "Select client first" : isLoadingClientBranches ? "Loading branches..." : "Select branch"} />
                     </SelectTrigger>
                     <SelectContent>
-                      {selectedClient && (
-                        <SelectItem value={selectedClient.branch || 'Main Branch'}>
-                          {selectedClient.branch || 'Main Branch'}
+                      {clientBranches.map((branch) => (
+                        <SelectItem key={branch.id} value={branch.id}>
+                          {branch.branch_name}{branch.branch_code ? ` (${branch.branch_code})` : ''}
                         </SelectItem>
-                      )}
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {selectedClient && !isLoadingClientBranches && clientBranches.length === 0 && (
+                    <p className="text-xs text-destructive">No active branches found for this client. Add a branch in Client Management first.</p>
+                  )}
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="department">Department</Label>
+                  <Select
+                    value={newAssignment.department_id || 'none'}
+                    onValueChange={(value) => setNewAssignment({...newAssignment, department_id: value === 'none' ? '' : value})}
+                    disabled={(!newAssignment.branch && !newAssignment.branch_id) || isLoadingClientDepartments || clientDepartments.length === 0}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder={!newAssignment.branch ? "Select branch first" : isLoadingClientDepartments ? "Loading departments..." : clientDepartments.length ? "Select department" : "No departments"} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">No department</SelectItem>
+                      {clientDepartments.map((department) => (
+                        <SelectItem key={department.id} value={department.id}>
+                          {department.department_name}{department.department_code ? ` (${department.department_code})` : ''}
+                        </SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                 </div>
@@ -395,6 +509,7 @@ export const AssignmentModule = ({ user }: AssignmentModuleProps) => {
                 setNewAssignment({});
                 setSelectedClient(null);
                 setClientBranches([]);
+                setClientDepartments([]);
               }}>
                 Cancel
               </Button>
@@ -446,7 +561,7 @@ export const AssignmentModule = ({ user }: AssignmentModuleProps) => {
                 <TableRow key={assignment.id}>
                   <TableCell>
                     <div className="font-medium">{getClientName(assignment.client_id)}</div>
-                    <div className="text-sm text-muted-foreground">{assignment.branch}</div>
+                    <div className="text-sm text-muted-foreground">{assignment.department_name ? `${assignment.branch} / ${assignment.department_name}` : assignment.branch}</div>
                   </TableCell>
                   <TableCell>
                     <div className="font-medium">{getTechnicianName(assignment.hardware_technician_id)}</div>

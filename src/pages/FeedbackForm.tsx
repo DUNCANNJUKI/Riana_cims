@@ -32,6 +32,8 @@ interface FeedbackLink {
   client: {
     client_name: string;
     branch: string | null;
+    department_name?: string | null;
+    scope_label?: string | null;
     industry_classification: string;
     contact_person_name: string;
   };
@@ -43,6 +45,7 @@ export const FeedbackForm = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSubmitted, setIsSubmitted] = useState(false);
+  const [isAlreadySubmitted, setIsAlreadySubmitted] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [questions, setQuestions] = useState<any[]>([]);
   const [dynamicResponses, setDynamicResponses] = useState<Record<string, any>>({});
@@ -81,13 +84,16 @@ export const FeedbackForm = () => {
     try {
       setIsLoading(true);
       
-      const response = await fetch(`${API_URL}/public/feedback-links/${token}`, { credentials: 'include' });
-      if (!response.ok) {
-        setError('Invalid or expired feedback link');
+      const response = await fetch(`${API_URL}/public/feedback-links/${encodeURIComponent(token)}`, { credentials: 'include' });
+      const data = await response.json().catch(() => ({}));
+      if (response.status === 409 && data.is_used) {
+        setIsAlreadySubmitted(true);
         return;
       }
-      
-      const data = await response.json();
+      if (!response.ok) {
+        setError(data.error || 'Invalid or expired feedback link');
+        return;
+      }
 
       // Check if link is expired
       if (new Date(data.expires_at) < new Date()) {
@@ -95,16 +101,6 @@ export const FeedbackForm = () => {
         return;
       }
 
-      // If used, try to load existing feedback
-      if (data.is_used) {
-        const feedbackResp = await fetch(`${API_URL}/installation_feedback/latest?client_id=${data.client_id}&installation_id=${data.installation_id}`);
-        if (feedbackResp.ok) {
-            const existingFeedback = await feedbackResp.json();
-            if (existingFeedback && existingFeedback.dynamic_responses) {
-              setDynamicResponses(existingFeedback.dynamic_responses);
-            }
-        }
-      }
 
       setFeedbackLink(data);
     } catch (error) {
@@ -134,10 +130,11 @@ export const FeedbackForm = () => {
         })
       });
 
-      if (!response.ok) throw new Error('Failed to submit feedback');
-
-      // Mark feedback link as used (simulated via public endpoint too)
-      await fetch(`${API_URL}/public/feedback-links/${token}/use`, { method: 'POST', credentials: 'include' });
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        if (response.status === 403 || response.status === 409) setIsAlreadySubmitted(true);
+        throw new Error(data.error || 'Failed to submit feedback');
+      }
 
       setIsSubmitted(true);
       toast({
@@ -261,6 +258,27 @@ export const FeedbackForm = () => {
     );
   }
 
+  if (isAlreadySubmitted) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background p-4">
+        <Card className="w-full max-w-md">
+          <CardHeader className="text-center">
+            <div className="mx-auto w-16 h-16 bg-success/10 rounded-full flex items-center justify-center mb-4">
+              <CheckCircle className="h-8 w-8 text-success" />
+            </div>
+            <CardTitle className="text-success">Feedback Already Submitted</CardTitle>
+            <CardDescription>This one-time feedback link has already been used.</CardDescription>
+          </CardHeader>
+          <CardContent className="text-center">
+            <p className="text-muted-foreground">
+              Thank you for rating your installation experience. To protect response integrity, each feedback link can only be submitted once.
+            </p>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-background p-4">
       <div className="max-w-4xl mx-auto">
@@ -268,7 +286,7 @@ export const FeedbackForm = () => {
           <h1 className="text-3xl font-bold text-primary mb-2">Installation Feedback</h1>
           <p className="text-muted-foreground">
             Help us improve by sharing your experience with {feedbackLink?.client.client_name}
-            {feedbackLink?.client.branch && ` - ${feedbackLink.client.branch}`}
+            {` - ${feedbackLink?.client.scope_label || feedbackLink?.client.branch || 'MAIN'}`}
           </p>
         </div>
 

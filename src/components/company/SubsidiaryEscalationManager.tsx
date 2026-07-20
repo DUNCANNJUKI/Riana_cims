@@ -27,6 +27,50 @@ interface Subsidiary {
   equipment_configuration: HandoverEquipmentItem[] | null;
 }
 
+interface TierFieldsProps {
+  tier: string;
+  tierNum: number;
+  matrix: EscalationMatrix;
+  userRole: User['role'];
+  onUpdateTier: (tier: string, field: keyof EscalationTier, value: string) => void;
+  onRemoveTier: (tier: string) => void;
+}
+
+const TierFields = ({ tier, tierNum, matrix, userRole, onUpdateTier, onRemoveTier }: TierFieldsProps) => (
+  <div className="space-y-3 p-4 border rounded-lg">
+    <div className="mb-3 flex items-center gap-2">
+      <Badge variant="outline" className="bg-primary/10">Tier {tierNum}</Badge>
+      <span className="text-sm text-muted-foreground">
+        {tierNum === 1 ? 'First point of contact' : tierNum === 2 ? 'Secondary escalation' : 'Final escalation'}
+      </span>
+      {userRole === 'SuperAdmin' && tierNum > 3 && (
+        <Button variant="ghost" size="sm" className="ml-auto" onClick={() => onRemoveTier(tier)} aria-label={`Remove tier ${tierNum}`}>
+          <Trash2 className="h-4 w-4 text-destructive" />
+        </Button>
+      )}
+    </div>
+    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+      <div className="space-y-1">
+        <Label className="text-xs">Name</Label>
+        <Input value={matrix[tier]?.name || ''} onChange={(e) => onUpdateTier(tier, 'name', e.target.value)} placeholder="Contact name" className="h-9" />
+      </div>
+      <div className="space-y-1">
+        <Label className="text-xs">Role</Label>
+        <Input value={matrix[tier]?.role || ''} onChange={(e) => onUpdateTier(tier, 'role', e.target.value)} placeholder="Job title" className="h-9" />
+      </div>
+      <div className="space-y-1">
+        <Label className="text-xs">Phone</Label>
+        <CountryPhoneInput value={matrix[tier]?.phone_number || ''} onChange={(value) => onUpdateTier(tier, 'phone_number', value)} />
+      </div>
+      <div className="space-y-1">
+        <Label className="text-xs">Email</Label>
+        <Input type="email" value={matrix[tier]?.email || ''} onChange={(e) => onUpdateTier(tier, 'email', e.target.value)} placeholder="email@company.com" className="h-9" />
+      </div>
+    </div>
+  </div>
+);
+
+
 export const SubsidiaryEscalationManager = ({ user }: { user: User }) => {
   const [subsidiaries, setSubsidiaries] = useState<Subsidiary[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -207,39 +251,6 @@ export const SubsidiaryEscalationManager = ({ user }: { user: User }) => {
     !editingEquipment.some((item) => item.field === catalogItem.field)
   );
 
-  const TierFields = ({ tier, tierNum }: { tier: string; tierNum: number }) => (
-    <div className="space-y-3 p-4 border rounded-lg">
-      <div className="mb-3 flex items-center gap-2">
-        <Badge variant="outline" className="bg-primary/10">Tier {tierNum}</Badge>
-        <span className="text-sm text-muted-foreground">
-          {tierNum === 1 ? 'First point of contact' : tierNum === 2 ? 'Secondary escalation' : 'Final escalation'}
-        </span>
-        {user.role === 'SuperAdmin' && tierNum > 3 && (
-          <Button variant="ghost" size="sm" className="ml-auto" onClick={() => removeTier(tier)} aria-label={`Remove tier ${tierNum}`}>
-            <Trash2 className="h-4 w-4 text-destructive" />
-          </Button>
-        )}
-      </div>
-      <div className="grid grid-cols-2 gap-3">
-        <div className="space-y-1">
-          <Label className="text-xs">Name</Label>
-          <Input value={editingMatrix[tier]?.name || ''} onChange={(e) => updateTier(tier, 'name', e.target.value)} placeholder="Contact name" className="h-9" />
-        </div>
-        <div className="space-y-1">
-          <Label className="text-xs">Role</Label>
-          <Input value={editingMatrix[tier]?.role || ''} onChange={(e) => updateTier(tier, 'role', e.target.value)} placeholder="Job title" className="h-9" />
-        </div>
-        <div className="space-y-1">
-          <Label className="text-xs">Phone</Label>
-          <CountryPhoneInput value={editingMatrix[tier]?.phone_number || ''} onChange={(value) => updateTier(tier, 'phone_number', value)} />
-        </div>
-        <div className="space-y-1">
-          <Label className="text-xs">Email</Label>
-          <Input type="email" value={editingMatrix[tier]?.email || ''} onChange={(e) => updateTier(tier, 'email', e.target.value)} placeholder="email@company.com" className="h-9" />
-        </div>
-      </div>
-    </div>
-  );
 
   return (
     <Card className="shadow-riana">
@@ -357,7 +368,7 @@ export const SubsidiaryEscalationManager = ({ user }: { user: User }) => {
               </TabsList>
               <TabsContent value="escalation" className="max-h-[56vh] space-y-4 overflow-y-auto pr-1">
                 {escalationTierEntries(editingMatrix).map(([tier]) => (
-                  <TierFields key={tier} tier={tier} tierNum={Number(tier.slice(4))} />
+                  <TierFields key={tier} tier={tier} tierNum={Number(tier.slice(4))} matrix={editingMatrix} userRole={user.role} onUpdateTier={updateTier} onRemoveTier={removeTier} />
                 ))}
                 {user.role === 'SuperAdmin' && (
                   <Button variant="outline" onClick={addTier}>

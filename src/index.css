@@ -71,7 +71,28 @@ All colors MUST be HSL.
     --border: 185 20% 91%;
     --input: 185 20% 96%;
     --ring: 185 83% 31%;
-
+    /* Communication module surfaces and overlay scale */
+    --comm-page: 190 28% 96%;
+    --comm-panel: 0 0% 100%;
+    --comm-panel-elevated: 185 35% 98%;
+    --comm-surface: 0 0% 100%;
+    --comm-border: 185 22% 86%;
+    --comm-border-strong: 185 26% 78%;
+    --comm-muted: 190 20% 92%;
+    --comm-shadow: 185 42% 24%;
+    --comm-placeholder: 200 14% 45%;
+    --comm-control: 185 55% 97%;
+    --comm-control-border: 185 42% 72%;
+    --comm-control-icon: 185 83% 28%;
+    --comm-input-ring: 185 83% 31%;
+    --z-content: 1;
+    --z-sticky: 20;
+    --z-dropdown: 50;
+    --z-chatbot: 30;
+    --z-drawer: 50;
+    --z-modal: 50;
+    --z-call-overlay: 55;
+    --z-notification: 60;
     --radius: 0.625rem;
 
     --sidebar-background: 185 30% 98%;
@@ -137,6 +158,19 @@ All colors MUST be HSL.
     --border: 217.2 32.6% 22%;
     --input: 217.2 32.6% 17.5%;
     --ring: 185 83% 41%;
+    --comm-page: 222 30% 7%;
+    --comm-panel: 220 24% 10%;
+    --comm-panel-elevated: 220 22% 13%;
+    --comm-surface: 220 20% 11%;
+    --comm-border: 217 28% 22%;
+    --comm-border-strong: 217 32% 31%;
+    --comm-muted: 218 24% 16%;
+    --comm-shadow: 0 0% 0%;
+    --comm-placeholder: 215 20% 70%;
+    --comm-control: 220 22% 15%;
+    --comm-control-border: 217 32% 35%;
+    --comm-control-icon: 185 83% 62%;
+    --comm-input-ring: 185 83% 50%;
     --sidebar-background: 222 30% 8%;
     --sidebar-foreground: 210 40% 92%;
     --sidebar-primary: 185 83% 41%;
@@ -394,31 +428,137 @@ All colors MUST be HSL.
 
   /* Professional Chat Styles */
   .glass-card {
-    background: rgba(255, 255, 255, 0.7);
+    background: hsl(var(--background));
     backdrop-filter: blur(12px);
     -webkit-backdrop-filter: blur(12px);
-    border: 1px solid rgba(255, 255, 255, 0.2);
+    border: 1px solid hsl(var(--border));
   }
 
   .dark .glass-card {
-    background: rgba(15, 23, 42, 0.7);
-    border: 1px solid rgba(255, 255, 255, 0.1);
+    background: hsl(var(--background));
+    border-color: hsl(var(--border));
+  }
+
+  .chat-shell {
+    background:
+      radial-gradient(circle at 0% 0%, hsl(var(--primary) / 0.10), transparent 32%),
+      linear-gradient(145deg, hsl(var(--comm-panel)), hsl(var(--comm-page)));
+    box-shadow: 0 22px 70px -32px hsl(var(--comm-shadow) / 0.45);
+  }
+
+  .call-panel {
+    background:
+      linear-gradient(135deg, hsl(var(--comm-panel-elevated) / 0.98), hsl(var(--primary) / 0.08)),
+      hsl(var(--comm-panel));
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+  }
+
+  .call-avatar-ring {
+    position: relative;
+  }
+
+  .call-avatar-ring::after {
+    content: "";
+    position: absolute;
+    inset: -7px;
+    border-radius: 9999px;
+    border: 1px solid hsl(var(--primary) / 0.34);
+    animation: pulse-glow 1.7s ease-in-out infinite;
   }
 
   .chat-bubble-me {
-    @apply rounded-2xl rounded-tr-sm bg-primary text-white shadow-md;
-    background-color: hsl(var(--primary)) !important;
+    @apply rounded-2xl rounded-br-md text-white shadow-sm;
+    background: linear-gradient(135deg, hsl(var(--primary)), hsl(var(--primary-dark))) !important;
   }
 
   .chat-bubble-other {
-    @apply rounded-2xl rounded-tl-sm bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-slate-100 border border-slate-200 dark:border-slate-700 shadow-sm;
+    @apply rounded-2xl rounded-bl-md shadow-sm;
+    background: linear-gradient(180deg, hsl(var(--comm-surface)), hsl(var(--comm-panel-elevated)));
+    border: 1.5px solid hsl(var(--comm-control-border));
+    color: hsl(var(--foreground));
+    box-shadow: 0 6px 18px -14px hsl(var(--comm-shadow) / 0.55);
+  }
+
+  .chat-message-avatar {
+    border: 1.5px solid hsl(var(--comm-control-border));
+    background: hsl(var(--comm-control));
+    box-shadow: 0 3px 10px hsl(var(--comm-shadow) / 0.12);
+  }
+
+  .chat-message-avatar img {
+    object-fit: cover;
+  }
+
+  .chat-message-avatar-fallback {
+    background: hsl(var(--primary) / 0.14);
+    color: hsl(var(--primary-dark));
+  }
+
+  .dark .chat-message-avatar-fallback {
+    background: hsl(var(--primary) / 0.16);
+    color: hsl(var(--primary-light));
   }
 
   .chat-sidebar-item {
-    @apply relative mx-2 mb-1 rounded-xl transition-all duration-300 border border-transparent hover:bg-black/5 dark:hover:bg-white/5;
+    @apply relative mb-1 rounded-xl border border-transparent transition-all duration-200 hover:shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary;
+  }
+
+  .chat-sidebar-item:hover {
+    background: hsl(var(--comm-muted));
   }
 
   .chat-sidebar-active {
-    @apply bg-primary/10 border-r-4 border-primary shadow-sm;
+    @apply shadow-sm;
+    background: hsl(var(--primary) / 0.12);
+    border-color: hsl(var(--primary) / 0.35);
+  }
+
+  .chat-composer {
+    position: relative;
+    z-index: var(--z-sticky);
+    background:
+      linear-gradient(180deg, hsl(var(--comm-panel-elevated)), hsl(var(--comm-panel)));
+  }
+
+  .chat-composer-tool {
+    border: 1.5px solid hsl(var(--comm-control-border)) !important;
+    background: hsl(var(--comm-control)) !important;
+    color: hsl(var(--comm-control-icon)) !important;
+    box-shadow: 0 2px 8px hsl(var(--comm-shadow) / 0.10);
+  }
+
+  .chat-composer-tool:hover {
+    background: hsl(var(--primary) / 0.10) !important;
+    border-color: hsl(var(--primary) / 0.50) !important;
+    color: hsl(var(--primary)) !important;
+  }
+
+  .chat-composer-tool:disabled {
+    opacity: 0.55;
+  }
+
+  .chat-composer-input {
+    border: 1.5px solid hsl(var(--comm-control-border));
+    background: hsl(var(--comm-surface));
+    box-shadow:
+      inset 0 0 0 1px hsl(var(--primary) / 0.06),
+      0 1px 2px hsl(var(--comm-shadow) / 0.08);
+  }
+
+  .chat-composer-input:focus-within {
+    border-color: hsl(var(--comm-input-ring));
+  }
+
+  .chat-composer-send {
+    color: hsl(var(--primary-foreground)) !important;
+  }
+
+  .notification-card {
+    @apply rounded-xl border border-transparent transition-all duration-200 hover:-translate-y-0.5 hover:border-primary/15 hover:bg-muted/60 hover:shadow-sm;
+  }
+
+  .notification-card-unread {
+    background: linear-gradient(135deg, hsl(var(--primary) / 0.10), hsl(var(--background)) 64%);
   }
 }

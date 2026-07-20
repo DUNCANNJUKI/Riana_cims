@@ -16,6 +16,8 @@ import { apiClient } from "@/integrations/apiClient";
 import { toast } from "sonner";
 import { resolveDocumentSubsidiaryName } from "@/utils/brandIdentity";
 import { can } from "@/security/accessControl";
+import { OPERATIONAL_REFRESH_INTERVAL_MS } from "@/utils/refreshIntervals";
+import { getBranchLabel, getDepartmentLabel, getScopeFileSegment } from "@/utils/scopeLabels";
 import {
   buildHandoverEquipmentRows,
   defaultHandoverEquipmentConfiguration,
@@ -70,10 +72,30 @@ export const EHandoverForm = ({ client, installation, user }: EHandoverFormProps
     client.subsidiaries?.subsidiary_name,
     user.subsidiary_name,
   );
+  const displayInstallation = useMemo(() => ({
+    ...liveInstallation,
+    status: 'completed' as const,
+    completion_date: liveInstallation.completion_date || new Date().toISOString().slice(0, 10),
+  }), [liveInstallation]);
   const equipmentRows = useMemo(
-    () => buildHandoverEquipmentRows(liveInstallation, equipmentConfiguration),
-    [liveInstallation, equipmentConfiguration],
+    () => buildHandoverEquipmentRows(displayInstallation, equipmentConfiguration),
+    [displayInstallation, equipmentConfiguration],
   );
+  const handoverScope = {
+    ...client,
+    ...displayInstallation,
+    branch: (displayInstallation as any).branch_name || (displayInstallation as any).branch || client.branch,
+    branch_name: (displayInstallation as any).branch_name,
+    department_name: (displayInstallation as any).department_name,
+    branch_count: (displayInstallation as any).branch_count,
+    department_count: (displayInstallation as any).department_count,
+  };
+  const branchLabel = getBranchLabel(handoverScope);
+  const departmentLabel = getDepartmentLabel(handoverScope);
+  const scopeFileSegment = getScopeFileSegment(handoverScope);
+  const clientPhone = (client as any).contact_person_phone || (client as any).contact_phone || (client as any).contact_person_phone_masked || (client as any).contact_phone_masked || 'N/A';
+  const clientEmail = (client as any).contact_person_email || (client as any).contact_email || (client as any).contact_person_email_masked || (client as any).contact_email_masked || 'N/A';
+  const startDateValue = client.start_date || displayInstallation.assigned_date || (displayInstallation as any).installation_start_date || displayInstallation.created_at;
 
   // Load installation data
   const loadInstallationData = useCallback(async () => {
@@ -103,10 +125,10 @@ export const EHandoverForm = ({ client, installation, user }: EHandoverFormProps
     loadEscalationMatrix();
     loadTechnicians();
 
-    // Set up polling for "realtime" functionality with local backend
+    // Keep background refresh gentle while the handover form is open.
     const interval = setInterval(() => {
       loadInstallationData();
-    }, 30000); // 30 seconds
+    }, OPERATIONAL_REFRESH_INTERVAL_MS);
     
     return () => clearInterval(interval);
   }, [installation.id, loadInstallationData]);
@@ -299,18 +321,19 @@ export const EHandoverForm = ({ client, installation, user }: EHandoverFormProps
 
       const clientDetails = [
         ['Client Name:', client.client_name],
-        ['Branch:', client.branch || 'Main Branch'],
+        ['Branch:', branchLabel],
+        ['Department:', departmentLabel],
         ['Contact Person:', client.contact_person_name],
-        ['Phone:', client.contact_person_phone],
-        ['Email:', client.contact_person_email || 'N/A'],
+        ['Phone:', clientPhone],
+        ['Email:', clientEmail],
       ];
 
       const installDetails = [
         ['Industry:', client.industry_classification],
         ['Contract Type:', client.contract_type],
-        ['Assigned Date:', liveInstallation.assigned_date ? new Date(liveInstallation.assigned_date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : 'Not Assigned'],
-        ['Completion Date:', liveInstallation.completion_date ? new Date(liveInstallation.completion_date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : 'In Progress'],
-        ['Status:', liveInstallation.status?.toUpperCase() || 'PENDING'],
+        ['Start Date:', startDateValue ? new Date(startDateValue).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : 'Not Assigned'],
+        ['Completion Date:', displayInstallation.completion_date ? new Date(displayInstallation.completion_date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : 'In Progress'],
+        ['Status:', 'COMPLETE'],
       ];
 
       clientDetails.forEach((item, idx) => {
@@ -418,7 +441,7 @@ export const EHandoverForm = ({ client, installation, user }: EHandoverFormProps
           const ledData = chunk.map((name, idx) => [
             `LED ${startIdx + idx + 1}`,
             name || `LED Display ${startIdx + idx + 1}`,
-            '✓ Installed & Verified'
+            'ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã¢â‚¬Â¦ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã¢â‚¬Å“ Installed & Verified'
           ]);
 
           autoTable(doc, {
@@ -540,9 +563,14 @@ export const EHandoverForm = ({ client, installation, user }: EHandoverFormProps
   const exportToPDF = async () => {
     setIsExporting(true);
     try {
+      const completionDate = displayInstallation.completion_date || new Date().toISOString().slice(0, 10);
+      if (liveInstallation.status !== 'completed' || !liveInstallation.completion_date) {
+        await apiClient.patch(`/installations/${installation.id}`, { status: 'completed', completion_date: completionDate });
+        setLiveInstallation(current => ({ ...current, status: 'completed', completion_date: completionDate }));
+      }
       const doc = await generatePDFDocument();
       const clientCode = generateClientCode();
-      const fileName = `E-Handover_${client.client_name.replace(/[^a-zA-Z0-9]/g, '_')}_${clientCode}.pdf`;
+      const fileName = `E-Handover_${client.client_name.replace(/[^a-zA-Z0-9]/g, '_')}_${scopeFileSegment}_${clientCode}.pdf`;
       doc.save(fileName);
     } catch (error) {
       console.error('Error generating PDF:', error);
@@ -602,9 +630,11 @@ export const EHandoverForm = ({ client, installation, user }: EHandoverFormProps
             </CardHeader>
             <CardContent className="space-y-2 text-sm">
               <div><span className="font-medium">Client:</span> {client.client_name}</div>
-              <div><span className="font-medium">Branch:</span> {client.branch || 'Main Branch'}</div>
+              <div><span className="font-medium">Branch:</span> {branchLabel}</div>
+              <div><span className="font-medium">Department:</span> {departmentLabel}</div>
               <div><span className="font-medium">Contact:</span> {client.contact_person_name}</div>
-              <div><span className="font-medium">Phone:</span> {client.contact_person_phone}</div>
+              <div><span className="font-medium">Phone:</span> {clientPhone}</div>
+              <div><span className="font-medium">Email:</span> {clientEmail}</div>
               <div><span className="font-medium">Industry:</span> {client.industry_classification}</div>
             </CardContent>
           </Card>
@@ -618,10 +648,10 @@ export const EHandoverForm = ({ client, installation, user }: EHandoverFormProps
             </CardHeader>
             <CardContent className="space-y-2 text-sm">
               <div><span className="font-medium">Contract:</span> {client.contract_type}</div>
-              <div><span className="font-medium">Assigned Date:</span> {liveInstallation.assigned_date ? new Date(liveInstallation.assigned_date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : 'Not Assigned'}</div>
-              <div><span className="font-medium">Completion:</span> {liveInstallation.completion_date ? new Date(liveInstallation.completion_date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : 'In Progress'}</div>
+              <div><span className="font-medium">Start Date:</span> {startDateValue ? new Date(startDateValue).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : 'Not Assigned'}</div>
+              <div><span className="font-medium">Completion:</span> {displayInstallation.completion_date ? new Date(displayInstallation.completion_date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : 'In Progress'}</div>
               <div><span className="font-medium">Scheduled End:</span> {liveInstallation.scheduled_end_date ? new Date(liveInstallation.scheduled_end_date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : 'N/A'}</div>
-              <div><span className="font-medium">Status:</span> <Badge className="ml-2">{liveInstallation.status}</Badge></div>
+              <div><span className="font-medium">Status:</span> <Badge className="ml-2">COMPLETE</Badge></div>
             </CardContent>
           </Card>
         </div>
@@ -783,7 +813,7 @@ export const EHandoverForm = ({ client, installation, user }: EHandoverFormProps
         isOpen={isPreviewOpen}
         onClose={handleClosePreview}
         pdfBlob={previewBlob}
-        fileName={`E-Handover_${client.client_name.replace(/[^a-zA-Z0-9]/g, '_')}.pdf`}
+        fileName={`E-Handover_${client.client_name.replace(/[^a-zA-Z0-9]/g, '_')}_${scopeFileSegment}.pdf`}
         title="E-Handover Form Preview"
         description={`Review the handover form for ${client.client_name}`}
       />

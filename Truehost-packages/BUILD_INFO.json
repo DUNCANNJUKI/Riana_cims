@@ -1,6 +1,6 @@
 {
-  "generatedAt": "2026-07-04T23:54:55.936Z",
-  "commit": "64cd11330b3e0cba8b51796af9a2d775ca7f9a07",
+  "generatedAt": "2026-07-20T08:40:45.132Z",
+  "commit": "62804f65ef269821bafc5a8c6312f7973ffd88d9",
   "truehostNodeVersion": "24.15.0",
   "supportedNodeVersion": ">=20",
   "applicationRoot": "rianacims.name.ng/app",
@@ -11,6 +11,38 @@
   "databaseFile": "database/riana_cims_host.sql",
   "databaseContainsLiveRecords": false,
   "databaseContainsLiveOperationalRecords": false,
+  "liveDatabaseUpdates": [
+    {
+      "migrationId": "20260705_subsidiary_handover_equipment",
+      "sourceFile": "20260705_subsidiary_handover_equipment.sql",
+      "packageFile": "LIVE_DB_UPDATE_20260705.sql"
+    },
+    {
+      "migrationId": "20260710_profile_avatar_chat_messages",
+      "sourceFile": "20260710_profile_avatar_chat_messages.sql",
+      "packageFile": "LIVE_DB_UPDATE_20260710.sql"
+    },
+    {
+      "migrationId": "20260714_chat_presence_missed_call_dismissals",
+      "sourceFile": "20260714_chat_presence_missed_call_dismissals.sql",
+      "packageFile": "LIVE_DB_UPDATE_20260714.sql"
+    },
+    {
+      "migrationId": "20260717_ehandover_completion_status",
+      "sourceFile": "20260717_ehandover_completion_status.sql",
+      "packageFile": "LIVE_DB_UPDATE_20260717.sql"
+    },
+    {
+      "migrationId": "20260718_client_branch_department_scope",
+      "sourceFile": "20260718_client_branch_department_scope.sql",
+      "packageFile": "LIVE_DB_UPDATE_20260718.sql"
+    },
+    {
+      "migrationId": "20260719_live_module_schema_repair",
+      "sourceFile": "20260719_live_module_schema_repair.sql",
+      "packageFile": "LIVE_DB_UPDATE_20260719.sql"
+    }
+  ],
   "bootstrapSuperAdmin": {
     "email": "superadmin@riana.co",
     "active": false,

@@ -43,42 +43,57 @@ interface HelpArticle {
 }
 
 const HELP_ARTICLES: HelpArticle[] = [
-  { id: 'getting-started', title: 'Getting started with RIANA CIMS', category: 'Getting Started', content: 'Sign in with your approved work account, complete any first-login password change, then use the sidebar to open modules available to your role. The dashboard summarizes your permitted operational data and notifications.' },
-  { id: 'roles', title: 'Roles, designations, and extra privileges', category: 'Access', content: 'Roles provide the default access model. Super Admin can assign role-specific designations, subsidiaries, Developers workspace access, and individual extra privileges. Extra privileges supplement the base role; Management remains unable to add, edit, or update installations.' },
-  { id: 'finance', title: 'Finance role: read-only operational access', category: 'Access', content: 'Finance users can view clients, installations, assigned technicians, installation progress, and all available reports. Create, edit, assignment, progress-update, upload, and delete controls remain unavailable unless Super Admin grants a permitted extra privilege.' },
-  { id: 'management', title: 'Management role boundaries', category: 'Access', content: 'CEO, MD, and Head of Sales designations receive broad administrative visibility and management functions. Management users cannot add, edit, update, or advance installations or installation progress.' },
-  { id: 'clients', title: 'Find and manage client records', category: 'Clients', content: 'Open Clients to search profiles, branches, contacts, contract types, and subsidiary ownership. Add, edit, and delete controls appear only when your account has client-management permission.' },
-  { id: 'installations', title: 'Track installations and assigned technicians', category: 'Installations', content: 'Use Installations for scope and equipment details, Assigned Technicians for technician allocation, and Installation Progress for delivery status. Read-only roles retain preview access without mutation controls.' },
-  { id: 'handover', title: 'Generate and complete an E-Handover', category: 'Installations', content: 'Generate the E-Handover from an installation, review the subsidiary-specific equipment table, and upload the signed document after client sign-off. Any numeric equipment quantity of zero is shown as Not installed in preview and PDF. SuperAdmin configures each subsidiary equipment list under Company Settings.' },
-  { id: 'reports', title: 'Preview, filter, and download reports', category: 'Reports', content: 'Open Reports, select the required report, apply available date, status, client, or developer filters, then choose Preview or Download. Report calculations and pagination are identical in preview and downloaded PDF.' },
-  { id: 'branding', title: 'RIANA and MAREZI document branding', category: 'Reports', content: 'RIANA reports use the standard transparent-mark header, watermark, and aligned footer. If either the client or generating user belongs to MAREZI, the approved MAREZI letterhead is applied automatically to previews and downloads.' },
+  { id: 'getting-started', title: 'Getting started with RIANA CIMS', category: 'Getting Started', content: 'Sign in with your approved work account, complete any required first-login password change, then use the sidebar to open modules available to your role. The dashboard shows permitted operational totals, announcements, and recent workflow context.' },
+  { id: 'navigation', title: 'Navigate the main workspace', category: 'Getting Started', content: 'Use the left sidebar for Dashboard, My Tasks, My Profile, Clients, Installations, Reports, Developers, Help & Support, and external systems. The top header contains notifications, chat, theme controls, and your signed-in identity menu.' },
+  { id: 'my-tasks', title: 'Use My Tasks as an assigned technician', category: 'My Work', content: 'Open My Tasks to view assignments where you are the hardware or software technician. You can update your own task status to Assigned, Waiting, In Progress, or Completed, add safe progress notes, and review schedule, contact, and equipment information.' },
+  { id: 'my-profile', title: 'What appears in My Profile', category: 'My Work', content: 'My Profile shows your account identity, contact details, department, subsidiary, active task count, completed task count, and current assignments. Supervisors can view richer technician performance history, badges, and statistics where those records exist.' },
+  { id: 'roles', title: 'Roles, designations, and extra privileges', category: 'Access', content: 'Roles provide default access. Super Admin can manage roles, designations, subsidiaries, module access, and extra privileges. Extra privileges supplement the base role unless a role has an explicit safety restriction.' },
+  { id: 'finance', title: 'Finance role: read-only operational access', category: 'Access', content: 'Finance users can view clients, installations, assigned technicians, installation progress, and reports. Create, edit, assignment, upload, delete, and progress-update controls remain unavailable unless an authorized administrator grants a permitted extra privilege.' },
+  { id: 'management', title: 'Management role boundaries', category: 'Access', content: 'Management users receive broad visibility for oversight, reports, analytics, finance, clients, assignments, and administration. They remain blocked from installation mutation and progress mutation to preserve operational separation of duties.' },
+  { id: 'clients', title: 'Find and manage client records', category: 'Clients', content: 'Open Clients to search profiles, branches, contacts, contract types, industry classification, subsidiary ownership, and related records. Add, edit, and delete controls appear only when your account has client-management permission.' },
+  { id: 'installations', title: 'Track installations and equipment scope', category: 'Installations', content: 'Use Installations to review kiosk type, counters, LED displays, screens, service points, UPS, speakers, tablets, media controllers, digital signage, amplifiers, HDMI/splitters, staff training, schedule, status, remarks, and escalation details.' },
+  { id: 'assignments', title: 'Assigned Technicians workflow', category: 'Installations', content: 'Assigned Technicians is the management view for allocating hardware and software technicians, setting assignment dates, tracking branch coverage, and reviewing status. Regular technicians should use My Tasks for their own status updates.' },
+  { id: 'progress', title: 'Installation Progress workflow', category: 'Installations', content: 'Installation Progress summarizes delivery state, progress percentage, waiting reasons, assigned dates, completion dates, and related remarks. Progress updates are permission-controlled so operational history remains accurate.' },
+  { id: 'handover', title: 'Generate and complete an E-Handover', category: 'Installations', content: 'Generate the E-Handover from an installation, review the subsidiary-specific equipment table, and upload the signed document after client sign-off. Equipment quantity zero is shown as Not installed in preview and PDF output.' },
+  { id: 'feedback', title: 'Client feedback links and responses', category: 'Feedback', content: 'Authorized users can create client feedback links for completed work. Feedback responses are tied to the client and installation, can be used in reports, and should be sent only to the intended client contact.' },
+  { id: 'reports', title: 'Preview, filter, and download reports', category: 'Reports', content: 'Open Reports, choose the required report, apply available filters such as date, status, client, technician, developer, or subsidiary, then preview or download. Preview and PDF output use the same filtered data.' },
+  { id: 'branding', title: 'RIANA and MAREZI document branding', category: 'Reports', content: 'RIANA reports use the standard transparent-mark header, watermark, and aligned footer. If either the client or generating user belongs to MAREZI, the approved MAREZI letterhead is applied automatically.' },
+  { id: 'analytics', title: 'Analytics and dashboards', category: 'Data & Reports', content: 'Analytics summarizes operational trends, completion status, technician performance, client activity, and workflow movement where your role permits access. Use it for oversight rather than record editing.' },
   { id: 'developer-pending', title: 'Track Developers work from Pending', category: 'Developers', content: 'Open Developers and choose Pending. Sales users see approval items, developers see assigned or clarification work, and team leads see approved requests waiting for assignment or follow-up.' },
-  { id: 'developer-notifications', title: 'Developers workflow notifications', category: 'Developers', content: 'Approval submissions, task assignments, clarification, and completion can trigger in-app, email, and SMS notifications. When a developer marks work complete, the user who assigned that work is notified.' },
-  { id: 'developer-reports', title: 'Filter Developers reports by developer', category: 'Developers', content: 'Open Developers Reports and use the developer-name filter before previewing or downloading. The selected filter is applied consistently to the displayed results and generated document.' },
-  { id: 'subsidiaries', title: 'Manage subsidiaries safely', category: 'Administration', content: 'Authorized administrators can add and edit subsidiaries in Company Settings. Deletion is blocked while users remain attached; reassign those users before attempting deletion again.' },
-  { id: 'recent-activity', title: 'Open Recent Activity', category: 'Navigation', content: 'Recent Activity remains hidden by default to keep the dashboard focused. Select Recents to reveal the activity panel and its related dashboard information.' },
-  { id: 'deletion-refresh', title: 'Lists after deleting a record', category: 'Navigation', content: 'After an authorized deletion succeeds, the affected view updates immediately from fresh server data. A manual browser refresh should not be required.' },
-  { id: 'notifications', title: 'Notifications, announcements, email, and SMS', category: 'Notifications', content: 'The notification bell contains workflow alerts assigned to your account. Depending on the event and configured contact channels, the same event may also be delivered by email or SMS.' },
+  { id: 'developer-workflow', title: 'Developers request lifecycle', category: 'Developers', content: 'Developers requests move through submission, approval, assignment, work started, clarification where needed, completion, reporting, and audit review. Notifications help the next responsible user know when action is required.' },
+  { id: 'developer-reports', title: 'Filter Developers reports', category: 'Developers', content: 'Open Developers Reports and use developer, status, date, priority, or request filters before previewing or downloading. The same filters are applied to both the displayed results and generated document.' },
+  { id: 'notifications', title: 'Notifications, announcements, email, and SMS', category: 'Notifications', content: 'The notification bell contains workflow alerts assigned to your account. Assignment alerts route regular users to My Tasks and managers to Assigned Technicians. Depending on event configuration, alerts may also send email or SMS.' },
+  { id: 'chat', title: 'Live user chat', category: 'Collaboration', content: 'Use the chat icon in the header or Help & Support to message active CIMS users. Chat supports replies, secure attachments, image previews, downloads, unread counts, typing state, message read state, and authenticated audio/video call signaling.' },
+  { id: 'announcements', title: 'Announcements and notice board', category: 'Collaboration', content: 'Announcements share internal updates with targeted users or roles. Unread announcements appear in the notification bell and dashboard context until marked as read.' },
+  { id: 'users', title: 'User administration and permissions', category: 'Administration', content: 'Authorized administrators can create users, update profiles, activate or deactivate accounts, assign designations, manage module roles, grant extra permissions, and reset passwords. Privileged role changes are restricted to Super Admin.' },
+  { id: 'company-settings', title: 'Company settings and branding', category: 'Administration', content: 'Company Settings controls organization name, logos, colors, notification preferences, contract settings, subsidiaries, equipment configurations, and other managed defaults. Changes affect reports, handovers, and visible branding.' },
+  { id: 'subsidiaries', title: 'Manage subsidiaries safely', category: 'Administration', content: 'Authorized administrators can add and edit subsidiaries and configure subsidiary equipment lists. Deletion is blocked while users remain attached; reassign those users before attempting deletion again.' },
+  { id: 'import', title: 'Import and data management', category: 'Administration', content: 'Import tools are restricted to authorized administrators. Validate source files, review mapping and duplicates, and confirm results before relying on imported operational data.' },
+  { id: 'backup', title: 'Backups and database maintenance', category: 'Administration', content: 'Backup and database maintenance controls are privileged. Use them for operational continuity, export verification, and troubleshooting while preserving auditability and data integrity.' },
+  { id: 'external-systems', title: 'External systems and RIANA OPTIMUS', category: 'External Systems', content: 'External system links such as RIANA OPTIMUS open approved related tools. Access depends on the destination system and may require separate authentication.' },
   { id: 'security', title: 'Sessions, passwords, and safe support', category: 'Security', content: 'Never share passwords, verification codes, tokens, or confidential client information. Password or privilege changes invalidate older sessions. The assistant provides user guidance but does not reveal source code, credentials, database details, private endpoints, or infrastructure.' },
-  { id: 'install-app', title: 'Install RIANA CIMS as an app', category: 'Getting Started', content: 'Open Install App from the resource section. On supported browsers, use the install prompt or browser menu to add RIANA CIMS to your desktop or home screen.' },
+  { id: 'troubleshooting', title: 'Troubleshoot common issues', category: 'Troubleshooting', content: 'If a page shows access denied, confirm your role and permissions. If a request fails, verify you are online and signed in. If stale content appears, hard refresh once. Contact an administrator for account access and RIANA Support for system issues.' },
+  { id: 'install-app', title: 'Install RIANA CIMS as an app', category: 'Getting Started', content: 'Open Install App from Help & Support. On supported browsers, use the install prompt or browser menu to add RIANA CIMS to your desktop or home screen.' },
 ];
 
 const RECOMMENDATIONS: Record<string, string[]> = {
-  SuperAdmin: ['roles', 'subsidiaries', 'branding', 'security'],
-  Admin: ['clients', 'installations', 'notifications', 'reports'],
-  Management: ['management', 'reports', 'recent-activity', 'branding'],
+  SuperAdmin: ['roles', 'users', 'company-settings', 'backup'],
+  Admin: ['clients', 'installations', 'assignments', 'notifications'],
+  Management: ['management', 'reports', 'analytics', 'branding'],
   Finance: ['finance', 'clients', 'installations', 'reports'],
-  Sales: ['clients', 'developer-pending', 'developer-notifications', 'reports'],
-  Developer: ['developer-pending', 'developer-notifications', 'developer-reports', 'security'],
-  Teamlead: ['developer-pending', 'installations', 'developer-reports', 'notifications'],
-  User: ['installations', 'handover', 'reports', 'notifications'],
+  Sales: ['clients', 'developer-pending', 'developer-workflow', 'reports'],
+  Developer: ['developer-pending', 'developer-workflow', 'notifications', 'security'],
+  Teamlead: ['developer-pending', 'assignments', 'developer-reports', 'notifications'],
+  User: ['my-tasks', 'my-profile', 'installations', 'notifications'],
 };
 
 const MANUAL_SECTIONS = [
-  ['Navigation', 'Use the sidebar for modules, the top header for notifications, messages, theme, and profile controls, and Help & Support for verified guidance.'],
-  ['Clients and installations', 'Client records contain business contacts and subsidiary ownership. Installation records contain equipment, assignment, scheduling, progress, and handover information.'],
-  ['Developers workflow', 'Requests move through submission, approval, assignment, commencement, clarification where required, and completion. Pending shows actions expected from the signed-in user.'],
+  ['Navigation', 'Use the sidebar for modules, the top header for notifications, chat, theme, and profile controls, and Help & Support for verified guidance.'],
+  ['My work', 'Regular users use My Tasks to update their assigned work and My Profile to review identity, contact details, active tasks, completed tasks, and current assignments.'],
+  ['Clients and installations', 'Client records contain business contacts and subsidiary ownership. Installation records contain equipment scope, assignment, scheduling, progress, escalation, feedback, and handover information.'],
+  ['Developers workflow', 'Requests move through submission, approval, assignment, commencement, clarification where required, completion, reporting, and audit review. Pending shows actions expected from the signed-in user.'],
   ['Reports and documents', 'Preview a report before download when available. RIANA or MAREZI branding is resolved automatically and report content remains role-protected.'],
+  ['Administration', 'Users, company settings, subsidiaries, imports, backups, announcements, and permissions are controlled by role and extra privileges. Sensitive administrative changes should be performed only by authorized staff.'],
   ['Security and support', 'Use only approved work accounts and support channels. Do not share credentials or request internal implementation details from the assistant.'],
 ];
 
@@ -140,7 +155,7 @@ export const HelpModule = ({ user }: HelpModuleProps) => {
     <div className="space-y-6 pb-8">
       <header>
         <h1 className="text-3xl font-bold tracking-tight text-foreground">Help &amp; Support</h1>
-        <p className="mt-1 text-sm text-muted-foreground sm:text-base">Find answers, learn workflows, or contact the right support channel.</p>
+        <p className="mt-1 text-sm text-muted-foreground sm:text-base">Find workflow guidance across RIANA CIMS, learn what your role can do, or contact the right support channel.</p>
       </header>
 
       <section className="space-y-4" aria-label="Help search and actions">
@@ -189,7 +204,7 @@ export const HelpModule = ({ user }: HelpModuleProps) => {
           <section className="rounded-xl border bg-card shadow-sm" aria-labelledby="knowledge-title">
             <div className="border-b px-5 py-4">
               <h2 id="knowledge-title" className="text-lg font-semibold">Knowledge base</h2>
-              <p className="text-sm text-muted-foreground">Verified guidance for current CIMS workflows</p>
+              <p className="text-sm text-muted-foreground">Verified guidance for current CIMS modules and workflows</p>
               <div className="mt-4 flex flex-wrap gap-2" aria-label="Help article categories">
                 {CATEGORIES.map((item) => (
                   <Button key={item} type="button" size="sm" variant={category === item ? 'default' : 'ghost'} onClick={() => setCategory(item)}>
@@ -267,7 +282,7 @@ export const HelpModule = ({ user }: HelpModuleProps) => {
       </section>
 
       <footer className="flex flex-col gap-2 border-t pt-4 text-xs text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex items-center gap-2"><Info className="h-4 w-4" /> RIANA CIMS <span aria-hidden="true">•</span> Version 5</div>
+        <div className="flex items-center gap-2"><Info className="h-4 w-4" /> RIANA CIMS <span aria-hidden="true">|</span> Version 5</div>
         <div className="flex items-center gap-2"><Users className="h-4 w-4" /> Signed in as {formatRoleLabel(user.role)}</div>
       </footer>
 
@@ -288,7 +303,7 @@ export const HelpModule = ({ user }: HelpModuleProps) => {
         <DialogContent className="max-w-2xl">
           <DialogHeader><DialogTitle>System Requirements</DialogTitle><DialogDescription>Recommended environment for reliable CIMS operation.</DialogDescription></DialogHeader>
           <div className="grid gap-4 sm:grid-cols-2">
-            <div className="rounded-lg border p-4"><Monitor className="h-5 w-5 text-primary" /><h3 className="mt-2 font-semibold">Desktop</h3><p className="mt-1 text-sm leading-6 text-muted-foreground">Current Chrome, Edge, Firefox, or Safari; 1366×768 minimum display; stable 5 Mbps connection; 4 GB RAM minimum.</p></div>
+            <div className="rounded-lg border p-4"><Monitor className="h-5 w-5 text-primary" /><h3 className="mt-2 font-semibold">Desktop</h3><p className="mt-1 text-sm leading-6 text-muted-foreground">Current Chrome, Edge, Firefox, or Safari; 1366x768 minimum display; stable 5 Mbps connection; 4 GB RAM minimum.</p></div>
             <div className="rounded-lg border p-4"><Smartphone className="h-5 w-5 text-primary" /><h3 className="mt-2 font-semibold">Mobile</h3><p className="mt-1 text-sm leading-6 text-muted-foreground">Android 10+ with Chrome or iOS 14+ with Safari. Install as a PWA for convenient home-screen access.</p></div>
           </div>
         </DialogContent>

@@ -11,7 +11,7 @@ import { toast } from "sonner";
 import { 
   User, Trophy, Star, TrendingUp, TrendingDown, Calendar, Clock, Target, 
   Award, Zap, Shield, Flame, Crown, Medal, Sparkles, ThumbsUp, Rocket, Heart,
-  CheckCircle, BarChart3, RefreshCw
+  CheckCircle, BarChart3, RefreshCw, Mail, Phone, Briefcase, Building2, ClipboardCheck
 } from "lucide-react";
 import { User as UserType } from "@/types";
 import { format, subMonths } from "date-fns";
@@ -167,6 +167,7 @@ export const TechnicianProfilePage = ({ user, technicianId }: TechnicianProfileP
   const [performanceHistory, setPerformanceHistory] = useState<PerformanceScore[]>([]);
   const [allScores, setAllScores] = useState<PerformanceScore[]>([]);
   const [earnedBadges, setEarnedBadges] = useState<AchievementBadge[]>([]);
+  const [myAssignments, setMyAssignments] = useState<any[]>([]);
   const [selectedPeriod, setSelectedPeriod] = useState("all_time");
 
   const targetTechnicianId = technicianId || user.id;
@@ -181,6 +182,15 @@ export const TechnicianProfilePage = ({ user, technicianId }: TechnicianProfileP
       // Load technician info from local API
       const techData = await apiClient.get(`/user_profiles/${targetTechnicianId}`);
       setTechnicianInfo(techData);
+
+      const assignmentsData = await apiClient.get('/client_assignments').catch(() => []);
+      const personalAssignments = Array.isArray(assignmentsData)
+        ? assignmentsData.filter((assignment: any) => (
+            String(assignment.hardware_technician_id || '') === String(targetTechnicianId)
+            || String(assignment.software_technician_id || '') === String(targetTechnicianId)
+          ))
+        : [];
+      setMyAssignments(personalAssignments);
 
       // Calculate date range based on period
       let startDate: Date;
@@ -236,6 +246,9 @@ export const TechnicianProfilePage = ({ user, technicianId }: TechnicianProfileP
   const avgScore = performanceHistory.length > 0 
     ? performanceHistory.reduce((sum, p) => sum + p.overall_score, 0) / performanceHistory.length 
     : 0;
+  const activeAssignments = myAssignments.filter((assignment) => assignment.status !== 'completed');
+  const completedAssignments = myAssignments.filter((assignment) => assignment.status === 'completed');
+  const displayName = `${technicianInfo?.first_name || user.first_name || ''} ${technicianInfo?.last_name || user.last_name || ''}`.trim() || technicianInfo?.email || user.email;
 
   if (loading) {
     return (
@@ -255,7 +268,7 @@ export const TechnicianProfilePage = ({ user, technicianId }: TechnicianProfileP
           </div>
           <div>
             <h1 className="text-2xl font-bold">
-              {technicianInfo?.first_name} {technicianInfo?.last_name}
+              {displayName}
             </h1>
             <p className="text-muted-foreground">{technicianInfo?.designation || "Field Specialist"}</p>
             {technicianInfo?.subsidiary && (
@@ -280,6 +293,106 @@ export const TechnicianProfilePage = ({ user, technicianId }: TechnicianProfileP
         )}
       </div>
 
+      {user.role === 'User' && (
+        <div className="space-y-4">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+            <Card>
+              <CardContent className="flex items-center gap-3 pt-6">
+                <div className="flex h-11 w-11 items-center justify-center rounded-full bg-primary/10">
+                  <Briefcase className="h-5 w-5 text-primary" />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-sm text-muted-foreground">Role</p>
+                  <p className="truncate font-semibold">{technicianInfo?.role || user.role}</p>
+                </div>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="flex items-center gap-3 pt-6">
+                <div className="flex h-11 w-11 items-center justify-center rounded-full bg-cyan-500/10">
+                  <ClipboardCheck className="h-5 w-5 text-cyan-600" />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-sm text-muted-foreground">Active Tasks</p>
+                  <p className="truncate font-semibold">{activeAssignments.length}</p>
+                </div>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="flex items-center gap-3 pt-6">
+                <div className="flex h-11 w-11 items-center justify-center rounded-full bg-emerald-500/10">
+                  <CheckCircle className="h-5 w-5 text-emerald-600" />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-sm text-muted-foreground">Completed Tasks</p>
+                  <p className="truncate font-semibold">{completedAssignments.length}</p>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-lg">Account Details</CardTitle>
+                <CardDescription>Your RIANA CIMS identity and contact information.</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-3 text-sm">
+                <div className="flex items-center justify-between gap-4 rounded-md bg-muted/40 p-3">
+                  <span className="flex items-center gap-2 text-muted-foreground"><Mail className="h-4 w-4" /> Email</span>
+                  <span className="truncate font-medium">{technicianInfo?.email || user.email}</span>
+                </div>
+                <div className="flex items-center justify-between gap-4 rounded-md bg-muted/40 p-3">
+                  <span className="flex items-center gap-2 text-muted-foreground"><Phone className="h-4 w-4" /> Phone</span>
+                  <span className="truncate font-medium">{technicianInfo?.phone_number || user.phone_number || 'Not provided'}</span>
+                </div>
+                <div className="flex items-center justify-between gap-4 rounded-md bg-muted/40 p-3">
+                  <span className="flex items-center gap-2 text-muted-foreground"><Building2 className="h-4 w-4" /> Department</span>
+                  <span className="truncate font-medium">{technicianInfo?.department_name || user.department_name || 'Not assigned'}</span>
+                </div>
+                <div className="flex items-center justify-between gap-4 rounded-md bg-muted/40 p-3">
+                  <span className="flex items-center gap-2 text-muted-foreground"><Building2 className="h-4 w-4" /> Subsidiary</span>
+                  <span className="truncate font-medium">{technicianInfo?.subsidiary_name || user.subsidiary_name || 'Not assigned'}</span>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-lg">My Current Assignments</CardTitle>
+                <CardDescription>Tasks assigned to you as hardware or software technician.</CardDescription>
+              </CardHeader>
+              <CardContent>
+                {activeAssignments.length === 0 ? (
+                  <div className="rounded-md border border-dashed p-6 text-center text-sm text-muted-foreground">
+                    No active assignments right now.
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {activeAssignments.slice(0, 5).map((assignment) => (
+                      <div key={assignment.id} className="rounded-md border p-3">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <p className="truncate font-medium">{assignment.client_name || 'Unnamed client'}</p>
+                            <p className="text-xs text-muted-foreground">{[assignment.branch || assignment.client_branch, assignment.department_name].filter(Boolean).join(' / ') || 'No branch listed'}</p>
+                          </div>
+                          <Badge variant="outline" className="shrink-0 capitalize">
+                            {String(assignment.status || 'assigned').replace('_', ' ')}
+                          </Badge>
+                        </div>
+                        <div className="mt-3 flex flex-col gap-2 text-xs text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
+                          <span className="flex items-center gap-1"><Calendar className="h-3.5 w-3.5" /> Start: {assignment.installation_start_date ? format(new Date(assignment.installation_start_date), 'MMM d, yyyy') : 'Not set'}</span>
+                          <span className="flex items-center gap-1"><Clock className="h-3.5 w-3.5" /> Due: {assignment.scheduled_end_date ? format(new Date(assignment.scheduled_end_date), 'MMM d, yyyy') : 'Not set'}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+        </div>
+      )}
       {user.role !== 'User' && (
         <>
           {/* Stats Cards */}
@@ -393,7 +506,7 @@ export const TechnicianProfilePage = ({ user, technicianId }: TechnicianProfileP
                               <div className="font-semibold">{badge.name}</div>
                               <div className="text-xs text-muted-foreground">{badge.description}</div>
                               <div className="text-xs mt-1 font-medium">
-                                {isEarned ? "✓ Earned" : "🔒 Locked"}
+                                {isEarned ? "Earned" : "Locked"}
                               </div>
                             </TooltipContent>
                           </Tooltip>

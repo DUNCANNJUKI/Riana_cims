@@ -38,8 +38,8 @@ export const ChatbotWidget = ({ user }: ChatbotWidgetProps) => {
 
   if (!isOpen) {
     return (
-      <div className="fixed bottom-4 right-4 z-50">
-        <Button onClick={() => setIsOpen(true)} size="icon" className="h-14 w-14 rounded-full shadow-lg transition-transform hover:scale-105" aria-label="Open RIANA Assistant">
+      <div className="fixed bottom-[calc(5rem+env(safe-area-inset-bottom))] right-[calc(1rem+env(safe-area-inset-right))] z-[var(--z-chatbot)] sm:bottom-[calc(1.25rem+env(safe-area-inset-bottom))]">
+        <Button onClick={() => setIsOpen(true)} size="icon" className="h-12 w-12 rounded-full shadow-lg transition-transform hover:scale-105 sm:h-14 sm:w-14" aria-label="Open RIANA Assistant" title="Open RIANA Assistant">
           <MessageCircle className="h-6 w-6" />
         </Button>
       </div>
@@ -47,8 +47,8 @@ export const ChatbotWidget = ({ user }: ChatbotWidgetProps) => {
   }
 
   return (
-    <div className="fixed bottom-4 right-4 z-50 w-[calc(100vw-2rem)] sm:w-96">
-      <Card className={`overflow-hidden border-primary/20 shadow-2xl ${isMinimized ? '' : 'h-[520px]'}`}>
+    <div className="fixed inset-x-3 bottom-[calc(5rem+env(safe-area-inset-bottom))] z-[var(--z-chatbot)] sm:inset-x-auto sm:bottom-[calc(1.25rem+env(safe-area-inset-bottom))] sm:right-[calc(1.25rem+env(safe-area-inset-right))] sm:w-96">
+      <Card className={`overflow-hidden border-primary/20 shadow-2xl ${isMinimized ? '' : 'h-[min(520px,calc(100dvh-7rem))]'}`}>
         <CardHeader className="border-b bg-primary px-4 py-3 text-primary-foreground">
           <div className="flex items-center justify-between gap-3">
             <CardTitle className="flex min-w-0 items-center gap-2 text-sm">

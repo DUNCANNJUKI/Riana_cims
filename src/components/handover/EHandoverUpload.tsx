@@ -10,18 +10,28 @@ import { Upload, FileText, Download, Eye, CheckCircle, Clock } from "lucide-reac
 import { useToast } from "@/hooks/use-toast";
 import { apiClient, downloadAuthenticatedFile, previewAuthenticatedFile } from "@/integrations/apiClient";
 import { Client, Installation, User } from "@/types";
+import { getBranchLabel, getDepartmentLabel, getScopeLabel } from "@/utils/scopeLabels";
 
 interface HandoverUpload {
   id: string;
   client_id: string;
   installation_id?: string;
   file_path: string;
+  file_path_label?: string;
+  secure_preview_url?: string;
+  secure_download_url?: string;
   file_name: string;
   file_size: number;
   uploaded_by_user_id: string;
   upload_date: string;
   is_signed: boolean;
   notes?: string;
+  branch_label?: string | null;
+  department_label?: string | null;
+  branch_name?: string | null;
+  department_name?: string | null;
+  branch_count?: number | string | null;
+  department_count?: number | string | null;
 }
 
 interface EHandoverUploadProps {
@@ -39,6 +49,16 @@ export const EHandoverUpload = ({ user, client, installation, onUploadComplete }
   const [isSigned, setIsSigned] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
+  const handoverScope = {
+    ...client,
+    ...installation,
+    branch: (installation as any)?.branch_name || (installation as any)?.branch || client.branch,
+    branch_name: (installation as any)?.branch_name,
+    department_name: (installation as any)?.department_name,
+    branch_count: (installation as any)?.branch_count,
+    department_count: (installation as any)?.department_count,
+  };
+  const scopeLabel = getScopeLabel(handoverScope);
 
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -77,6 +97,8 @@ export const EHandoverUpload = ({ user, client, installation, onUploadComplete }
             base64Data,
             client_id: client.id,
             installation_id: installation?.id,
+            branch_id: (installation as any)?.branch_id,
+            department_id: (installation as any)?.department_id,
             uploaded_by_user_id: user.id,
             is_signed: isSigned,
             notes: uploadNotes
@@ -157,32 +179,35 @@ export const EHandoverUpload = ({ user, client, installation, onUploadComplete }
     loadFiles();
   }, [client.id, installation?.id]);
 
-  const downloadFile = async (filePath: string, fileName: string) => {
+  const downloadFile = async (upload: HandoverUpload) => {
     try {
-      await downloadAuthenticatedFile(`/download?path=${encodeURIComponent(filePath)}`, fileName);
+      if (!upload.secure_download_url) throw new Error('Secure download link is unavailable. Please refresh and try again.');
+      const fileName = upload.file_name || upload.file_path_label || 'handover.pdf';
+      await downloadAuthenticatedFile(upload.secure_download_url, fileName);
 
       toast({
         title: "Download Started",
         description: "E-handover document is being downloaded",
       });
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error downloading file:', error);
       toast({
         title: "Download Failed",
-        description: "Failed to download the document",
+        description: error.message || "Failed to download the document",
         variant: "destructive",
       });
     }
   };
 
-  const previewFile = async (filePath: string) => {
+  const previewFile = async (upload: HandoverUpload) => {
     try {
-      await previewAuthenticatedFile(`/download?path=${encodeURIComponent(filePath)}&disposition=inline`);
-    } catch (error) {
+      if (!upload.secure_preview_url) throw new Error('Secure preview link is unavailable. Please refresh and try again.');
+      await previewAuthenticatedFile(upload.secure_preview_url);
+    } catch (error: any) {
       console.error('Error previewing file:', error);
       toast({
         title: "Preview Failed",
-        description: "Failed to preview the document",
+        description: error.message || "Failed to preview the document",
         variant: "destructive",
       });
     }
@@ -204,8 +229,7 @@ export const EHandoverUpload = ({ user, client, installation, onUploadComplete }
           E-Handover Documents
         </CardTitle>
         <CardDescription>
-          Upload signed E-handover forms for {client.client_name}
-          {client.branch && ` - ${client.branch}`}
+          Upload signed E-handover forms for {client.client_name} - {scopeLabel}
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -228,7 +252,7 @@ export const EHandoverUpload = ({ user, client, installation, onUploadComplete }
               <DialogHeader>
                 <DialogTitle>Upload E-Handover Document</DialogTitle>
                 <DialogDescription>
-                  Upload the signed E-handover form for {client.client_name}
+                  Upload the signed E-handover form for {client.client_name} - {scopeLabel}
                 </DialogDescription>
               </DialogHeader>
               <div className="space-y-4">
@@ -298,11 +322,13 @@ export const EHandoverUpload = ({ user, client, installation, onUploadComplete }
                     <p className="font-medium">{upload.file_name}</p>
                     <div className="flex items-center gap-2 text-sm text-muted-foreground">
                       <span>{formatFileSize(upload.file_size)}</span>
-                      <span>•</span>
+                      <span>â€¢</span>
                       <span>{new Date(upload.upload_date).toLocaleDateString()}</span>
+                      <span>Branch: {upload.branch_label || getBranchLabel(upload)}</span>
+                      <span>Department: {upload.department_label || getDepartmentLabel(upload)}</span>
                       {upload.is_signed && (
                         <>
-                          <span>•</span>
+                          <span>â€¢</span>
                           <Badge variant="secondary" className="text-xs">
                             <CheckCircle className="h-3 w-3 mr-1" />
                             Signed
@@ -320,14 +346,14 @@ export const EHandoverUpload = ({ user, client, installation, onUploadComplete }
                   <Button
                     variant="outline"
                     size="sm"
-                    onClick={() => previewFile(upload.file_path)}
+                    onClick={() => previewFile(upload)}
                   >
                     <Eye className="h-4 w-4" />
                   </Button>
                   <Button
                     variant="outline"
                     size="sm"
-                    onClick={() => downloadFile(upload.file_path, upload.file_name)}
+                    onClick={() => downloadFile(upload)}
                   >
                     <Download className="h-4 w-4" />
                   </Button>

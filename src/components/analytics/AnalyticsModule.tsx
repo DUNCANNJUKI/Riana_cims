@@ -11,6 +11,7 @@ import { FeedbackAnalytics } from "@/components/analytics/FeedbackAnalytics";
 import { Button } from "@/components/ui/button";
 import { apiClient } from "@/integrations/apiClient";
 import { calculateSatisfaction } from "@/utils/satisfaction";
+import { OPERATIONAL_REFRESH_INTERVAL_MS } from "@/utils/refreshIntervals";
 
 interface AnalyticsModuleProps {
   user: User;
@@ -34,11 +35,10 @@ export const AnalyticsModule = ({ user }: AnalyticsModuleProps) => {
   useEffect(() => {
     loadAnalyticsData();
     
-    // Set up real-time polling every 30 seconds
+    // Set up gentle background polling.
     const interval = setInterval(() => {
-      console.log('Real-time analytics refresh...');
       loadAnalyticsData();
-    }, 30000);
+    }, OPERATIONAL_REFRESH_INTERVAL_MS);
 
     return () => clearInterval(interval);
   }, []);

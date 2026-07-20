@@ -25,6 +25,7 @@ export const FeedbackLinkGenerator = ({ client, installation, onClose }: Feedbac
   const [generatedLink, setGeneratedLink] = useState<string>("");
   const [linkExpiry, setLinkExpiry] = useState<string>("30"); // days
   const [existingLink, setExistingLink] = useState<any>(null);
+  const [linkPreview, setLinkPreview] = useState<any>(null);
   const [isCheckingExisting, setIsCheckingExisting] = useState(true);
   const { toast } = useToast();
   const { user } = useAuth();
@@ -32,7 +33,29 @@ export const FeedbackLinkGenerator = ({ client, installation, onClose }: Feedbac
     getFeedbackLinks, 
     createFeedbackLink,
   } = useDatabase();
-  const buildFeedbackUrl = (token: string) => `${window.location.origin}/feedback/${encodeURIComponent(token)}`;
+  const buildClientSlug = (value?: string | null) => {
+    const slug = String(value || "")
+      .normalize("NFKD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "")
+      .slice(0, 80);
+    return slug || "client";
+  };
+  const buildFeedbackUrl = (token: string) => `${window.location.origin}/feedback/${encodeURIComponent(buildClientSlug(client.client_name))}/${encodeURIComponent(token)}`;
+
+  const loadLinkPreview = async (linkId: string) => {
+    try {
+      const result = await apiClient.get(`/feedback_links/${linkId}/preview`);
+      setLinkPreview(result.preview || null);
+      return result.preview || null;
+    } catch (error) {
+      console.error('Error loading feedback preview:', error);
+      setLinkPreview(null);
+      return null;
+    }
+  };
 
   // Check for existing active feedback link on mount
   useEffect(() => {
@@ -57,6 +80,7 @@ export const FeedbackLinkGenerator = ({ client, installation, onClose }: Feedbac
         const link = activeLinks[0];
         setExistingLink(link);
         setGeneratedLink(buildFeedbackUrl(link.unique_token));
+        void loadLinkPreview(link.id);
       }
     } catch (error) {
       console.error('Error checking existing link:', error);
@@ -92,6 +116,7 @@ export const FeedbackLinkGenerator = ({ client, installation, onClose }: Feedbac
 
       setGeneratedLink(buildFeedbackUrl(linkData.unique_token));
       setExistingLink(linkData);
+      void loadLinkPreview(linkData.id);
 
       toast({
         title: "Feedback Link Generated",
@@ -135,6 +160,7 @@ export const FeedbackLinkGenerator = ({ client, installation, onClose }: Feedbac
         email_sent: result.email_sent,
         sms_sent: result.sms_sent,
       } : current);
+      setLinkPreview(result.preview || linkPreview);
       const deliveredChannels = [result.email_sent ? 'email' : '', result.sms_sent ? 'SMS' : ''].filter(Boolean).join(' and ');
 
       toast({
@@ -221,6 +247,18 @@ export const FeedbackLinkGenerator = ({ client, installation, onClose }: Feedbac
                   </Button>
                 </div>
               </div>
+              {linkPreview && (
+                <div className="rounded-lg border bg-muted/30 p-3 text-sm">
+                  <p className="font-medium">Delivery Preview</p>
+                  <p className="mt-1 text-xs text-muted-foreground">To: {linkPreview.recipient_name} {linkPreview.recipient_email || linkPreview.recipient_phone ? `(${[linkPreview.recipient_email, linkPreview.recipient_phone].filter(Boolean).join(' / ')})` : ''}</p>
+                  <p className="mt-2 text-xs leading-relaxed">{linkPreview.message}</p>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {linkPreview.can_send_email && <Badge variant="secondary">Email ready</Badge>}
+                    {linkPreview.can_send_sms && <Badge variant="secondary">SMS ready</Badge>}
+                  </div>
+                </div>
+              )}
+
 
               <div className="flex gap-2">
                 <Button onClick={sendFeedbackToClient} variant="outline" className="flex-1 transition-all hover:scale-[1.02] active:scale-95">
@@ -266,6 +304,18 @@ export const FeedbackLinkGenerator = ({ client, installation, onClose }: Feedbac
                 </Button>
               </div>
             </div>
+              {linkPreview && (
+                <div className="rounded-lg border bg-muted/30 p-3 text-sm">
+                  <p className="font-medium">Delivery Preview</p>
+                  <p className="mt-1 text-xs text-muted-foreground">To: {linkPreview.recipient_name} {linkPreview.recipient_email || linkPreview.recipient_phone ? `(${[linkPreview.recipient_email, linkPreview.recipient_phone].filter(Boolean).join(' / ')})` : ''}</p>
+                  <p className="mt-2 text-xs leading-relaxed">{linkPreview.message}</p>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {linkPreview.can_send_email && <Badge variant="secondary">Email ready</Badge>}
+                    {linkPreview.can_send_sms && <Badge variant="secondary">SMS ready</Badge>}
+                  </div>
+                </div>
+              )}
+
 
             <div className="flex gap-2">
               <Button onClick={sendFeedbackToClient} variant="outline" className="flex-1 transition-all hover:scale-[1.02] active:scale-95">

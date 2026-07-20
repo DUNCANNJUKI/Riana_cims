@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { User } from "@/types";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
-import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
+import { Sheet, SheetContent } from "@/components/ui/sheet";
 import { Building2, Package, Users, Upload, FileText, BarChart3, HelpCircle, Home, History, TrendingUp, DollarSign, CalendarDays, Wrench, Megaphone, UserCircle, ChevronRight, Globe, Code2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -12,6 +13,7 @@ import { useLocation, useNavigate } from "react-router-dom";
 import { getCompanyBrandingEventDetail, resolveCompanyLogoUrl } from "@/utils/logoUrl";
 import { can, type Capability } from "@/security/accessControl";
 import { formatRoleLabel } from "@/utils/roleLabel";
+import { resolveAvatarUrl } from "@/utils/avatar";
 
 interface SidebarProps {
   user: User;
@@ -28,6 +30,7 @@ export const Sidebar = ({ user, activeModule, setActiveModule, isMobileOpen, onM
   const navigate = useNavigate();
   const location = useLocation();
   const [logoPath, setLogoPath] = useState("/Riana_logo.png");
+  const avatarSrc = resolveAvatarUrl(user.avatar_url);
   const developerModuleRole = user.module_roles?.crms;
   const effectiveDeveloperRole = developerModuleRole || user.role;
   const canAccessDevelopers = ['SuperAdmin', 'Admin', 'Management', 'Teamlead', 'Developer', 'Sales'].includes(effectiveDeveloperRole);
@@ -70,6 +73,8 @@ export const Sidebar = ({ user, activeModule, setActiveModule, isMobileOpen, onM
     { key: 'import', label: 'Import Data', icon: Upload, roles: [], capability: 'import.manage' as Capability, category: 'data' },
     { key: 'reports', label: 'Reports', icon: FileText, roles: [], capability: 'reports.view' as Capability, category: 'data' },
     { key: 'analytics', label: 'Analytics', icon: BarChart3, roles: [], capability: 'analytics.view' as Capability, category: 'data' },
+    { key: 'audit-logs', label: 'Audit Logs', icon: History, roles: ['SuperAdmin'], category: 'admin' },
+    { key: 'my-activity', label: 'My Activity', icon: History, roles: ['SuperAdmin', 'Admin', 'Management', 'Finance', 'Teamlead', 'Developer', 'Sales', 'User'], category: 'support' },
     { key: 'optimus', label: 'RIANA OPTIMUS', icon: Globe, roles: ['SuperAdmin', 'Admin', 'Management', 'Teamlead', 'User'], category: 'external' },
     { key: 'developers', label: 'Developers', icon: Code2, roles: ['SuperAdmin', 'Admin', 'Management', 'Teamlead', 'Developer', 'Sales'], category: 'developers' },
     { key: 'help', label: 'Help & Support', icon: HelpCircle, roles: ['SuperAdmin', 'Admin', 'Management', 'Finance', 'Teamlead', 'Developer', 'Sales', 'User'], category: 'support' },
@@ -136,8 +141,8 @@ export const Sidebar = ({ user, activeModule, setActiveModule, isMobileOpen, onM
   ].filter((item) => item.roles.includes(effectiveDeveloperRole));
 
   const SidebarContent = () => (
-    <div className="flex flex-col h-full">
-      <ScrollArea className="flex-1 px-2">
+    <div className="flex h-full min-h-0 flex-col">
+      <ScrollArea className="min-h-0 flex-1 px-2">
         <div className="space-y-4 py-4">
           {categories.map(category => {
             const items = getItemsByCategory(category.key);
@@ -212,9 +217,12 @@ export const Sidebar = ({ user, activeModule, setActiveModule, isMobileOpen, onM
       <div className="p-3 border-t border-border">
         <div className="bg-gradient-to-br from-primary/10 to-primary/5 dark:from-primary/20 dark:to-primary/10 rounded-lg p-3 space-y-2">
           <div className="flex items-center gap-2">
-            <div className="h-8 w-8 rounded-full bg-primary/20 flex items-center justify-center">
-              <UserCircle className="h-5 w-5 text-primary" />
-            </div>
+            <Avatar className="h-8 w-8 border border-primary/20">
+              <AvatarImage src={avatarSrc} alt={user.first_name ? `${user.first_name} ${user.last_name || ''}`.trim() : user.email} />
+              <AvatarFallback className="bg-primary/15 text-xs font-semibold text-primary">
+                {user.first_name && user.last_name ? `${user.first_name[0]}${user.last_name[0]}`.toUpperCase() : user.email.charAt(0).toUpperCase()}
+              </AvatarFallback>
+            </Avatar>
             <div className="min-w-0 flex-1">
               <p className="text-sm font-medium text-foreground truncate">
                 {user.first_name ? `${user.first_name} ${user.last_name || ''}`.trim() : user.email}
@@ -257,7 +265,7 @@ export const Sidebar = ({ user, activeModule, setActiveModule, isMobileOpen, onM
 
       {/* Mobile Sidebar Sheet */}
       <Sheet open={isMobileOpen} onOpenChange={(open) => !open && onMobileClose?.()}>
-        <SheetContent side="left" className="w-[280px] sm:w-[320px] p-0">
+        <SheetContent side="left" className="w-[min(86vw,320px)] p-0">
           <SidebarContent />
         </SheetContent>
       </Sheet>

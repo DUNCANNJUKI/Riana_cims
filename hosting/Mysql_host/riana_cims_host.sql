@@ -1,5 +1,5 @@
 -- RIANA CIMS MySQL hosting database
--- Generated 2026-07-04T23:53:00.196Z
+-- Generated 2026-07-20T08:40:01.661Z
 -- Complete schema with sanitized reference data; no credentials or customer records.
 SET NAMES utf8mb4;
 SET FOREIGN_KEY_CHECKS = 0;
@@ -39,6 +39,47 @@ CREATE TABLE `announcement_reads` (
   CONSTRAINT `announcement_reads_ibfk_2` FOREIGN KEY (`user_id`) REFERENCES `user_profiles` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+DROP TABLE IF EXISTS `audit_logs`;
+CREATE TABLE `audit_logs` (
+  `id` varchar(36) NOT NULL,
+  `event_uuid` varchar(36) NOT NULL,
+  `user_id` varchar(36) DEFAULT NULL,
+  `impersonator_user_id` varchar(36) DEFAULT NULL,
+  `action` varchar(120) NOT NULL,
+  `category` varchar(60) NOT NULL DEFAULT 'system',
+  `module` varchar(80) NOT NULL,
+  `entity_type` varchar(80) DEFAULT NULL,
+  `entity_id` varchar(100) DEFAULT NULL,
+  `description` varchar(1000) DEFAULT NULL,
+  `old_values` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL CHECK (json_valid(`old_values`)),
+  `new_values` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL CHECK (json_valid(`new_values`)),
+  `metadata` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL CHECK (json_valid(`metadata`)),
+  `ip_address` varchar(45) DEFAULT NULL,
+  `user_agent` text DEFAULT NULL,
+  `device` varchar(255) DEFAULT NULL,
+  `session_id` varchar(120) DEFAULT NULL,
+  `request_id` varchar(80) DEFAULT NULL,
+  `route` varchar(255) DEFAULT NULL,
+  `http_method` varchar(12) DEFAULT NULL,
+  `status` enum('success','failure','denied') NOT NULL DEFAULT 'success',
+  `severity` enum('info','notice','warning','critical') NOT NULL DEFAULT 'info',
+  `integrity_hash` char(64) DEFAULT NULL,
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_audit_event_uuid` (`event_uuid`),
+  KEY `idx_audit_logs_user_created` (`user_id`,`created_at`),
+  KEY `idx_audit_logs_action` (`action`),
+  KEY `idx_audit_logs_module_created` (`module`,`created_at`),
+  KEY `idx_audit_logs_entity` (`entity_type`,`entity_id`),
+  KEY `idx_audit_logs_created` (`created_at`),
+  KEY `idx_audit_logs_severity` (`severity`),
+  KEY `idx_audit_logs_status` (`status`),
+  KEY `idx_audit_logs_ip` (`ip_address`),
+  KEY `fk_audit_logs_impersonator` (`impersonator_user_id`),
+  CONSTRAINT `fk_audit_logs_impersonator` FOREIGN KEY (`impersonator_user_id`) REFERENCES `user_profiles` (`id`) ON DELETE SET NULL,
+  CONSTRAINT `fk_audit_logs_user` FOREIGN KEY (`user_id`) REFERENCES `user_profiles` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 DROP TABLE IF EXISTS `auth_two_factor_challenges`;
 CREATE TABLE `auth_two_factor_challenges` (
   `id` char(36) NOT NULL,
@@ -53,6 +94,23 @@ CREATE TABLE `auth_two_factor_challenges` (
   PRIMARY KEY (`id`),
   KEY `idx_2fa_user_active` (`user_id`,`verified_at`,`expires_at`),
   CONSTRAINT `fk_2fa_user` FOREIGN KEY (`user_id`) REFERENCES `user_profiles` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+DROP TABLE IF EXISTS `call_participants`;
+CREATE TABLE `call_participants` (
+  `id` varchar(36) NOT NULL,
+  `call_id` varchar(36) NOT NULL,
+  `user_id` varchar(36) NOT NULL,
+  `status` enum('invited','ringing','accepted','declined','ended','missed') NOT NULL DEFAULT 'ringing',
+  `joined_at` datetime DEFAULT NULL,
+  `left_at` datetime DEFAULT NULL,
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  `updated_at` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_call_participant` (`call_id`,`user_id`),
+  KEY `idx_call_participants_user_status` (`user_id`,`status`,`created_at`),
+  CONSTRAINT `fk_call_participants_call` FOREIGN KEY (`call_id`) REFERENCES `messages` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_call_participants_user` FOREIGN KEY (`user_id`) REFERENCES `user_profiles` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 DROP TABLE IF EXISTS `clients`;
@@ -85,6 +143,8 @@ DROP TABLE IF EXISTS `client_assignments`;
 CREATE TABLE `client_assignments` (
   `id` varchar(36) NOT NULL,
   `client_id` varchar(36) NOT NULL,
+  `branch_id` varchar(36) DEFAULT NULL,
+  `department_id` varchar(36) DEFAULT NULL,
   `branch` varchar(255) DEFAULT NULL,
   `hardware_technician_id` varchar(36) DEFAULT NULL,
   `software_technician_id` varchar(36) DEFAULT NULL,
@@ -102,8 +162,54 @@ CREATE TABLE `client_assignments` (
   KEY `idx_assignments_client_status` (`client_id`,`status`),
   KEY `idx_assignments_client_created` (`client_id`,`created_at`),
   KEY `idx_assignments_hardware_status` (`hardware_technician_id`,`status`),
-  KEY `idx_assignments_software_status` (`software_technician_id`,`status`)
+  KEY `idx_assignments_software_status` (`software_technician_id`,`status`),
+  KEY `idx_assignment_scope` (`client_id`,`branch_id`,`department_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+DROP TABLE IF EXISTS `client_branches`;
+CREATE TABLE `client_branches` (
+  `id` varchar(36) NOT NULL,
+  `client_id` varchar(36) NOT NULL,
+  `branch_name` varchar(150) NOT NULL,
+  `branch_code` varchar(60) DEFAULT NULL,
+  `contact_person_name` varchar(150) DEFAULT NULL,
+  `contact_email` varchar(255) DEFAULT NULL,
+  `contact_phone` varchar(30) DEFAULT NULL,
+  `physical_address` text DEFAULT NULL,
+  `status` varchar(30) NOT NULL DEFAULT 'active',
+  `notes` text DEFAULT NULL,
+  `created_by` varchar(36) DEFAULT NULL,
+  `updated_by` varchar(36) DEFAULT NULL,
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  `updated_at` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  `deleted_at` timestamp NULL DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_client_branches_name` (`client_id`,`branch_name`),
+  KEY `idx_client_branches_client_status` (`client_id`,`status`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+DROP TABLE IF EXISTS `client_departments`;
+CREATE TABLE `client_departments` (
+  `id` varchar(36) NOT NULL,
+  `client_id` varchar(36) NOT NULL,
+  `branch_id` varchar(36) NOT NULL,
+  `department_name` varchar(150) NOT NULL,
+  `department_code` varchar(60) DEFAULT NULL,
+  `contact_person_name` varchar(150) DEFAULT NULL,
+  `contact_email` varchar(255) DEFAULT NULL,
+  `contact_phone` varchar(30) DEFAULT NULL,
+  `status` varchar(30) NOT NULL DEFAULT 'active',
+  `notes` text DEFAULT NULL,
+  `created_by` varchar(36) DEFAULT NULL,
+  `updated_by` varchar(36) DEFAULT NULL,
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  `updated_at` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  `deleted_at` timestamp NULL DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_client_departments_name` (`branch_id`,`department_name`),
+  KEY `idx_client_departments_branch_status` (`branch_id`,`status`),
+  KEY `idx_client_departments_client_status` (`client_id`,`status`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 DROP TABLE IF EXISTS `companies`;
 CREATE TABLE `companies` (
@@ -149,6 +255,23 @@ CREATE TABLE `company_settings` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 INSERT INTO `company_settings` (`id`, `name`, `logo_path`, `font_color`, `primary_color`, `font_type`, `contract_types`, `backup_schedule`, `updated_at`, `backup_day`, `backup_time`, `tagline`, `website`, `email`, `phone`, `address`, `contract_durations`, `secondary_color`, `accent_color`, `timezone`, `date_format`, `enable_email_notifications`, `enable_sms_notifications`, `enable_push_notifications`, `auto_reminder_days`) VALUES (1, 'RIANA CIMS', '/Riana_logo.png', '#000000', '#1A91AB', 'Inter', '[\"AMC\",\"Once-off\",\"Subscription\"]', '0 2 * * *', '2026-03-21 23:06:17.000', 'Daily', '02:00', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 'Africa/Nairobi', 'DD/MM/YYYY', 1, 1, 1, 3);
+
+DROP TABLE IF EXISTS `contact_reveal_audit`;
+CREATE TABLE `contact_reveal_audit` (
+  `id` varchar(36) NOT NULL,
+  `user_id` varchar(36) DEFAULT NULL,
+  `entity_type` varchar(50) NOT NULL,
+  `entity_id` varchar(36) NOT NULL,
+  `field_name` varchar(80) NOT NULL,
+  `reason` varchar(255) DEFAULT NULL,
+  `ip_address` varchar(64) DEFAULT NULL,
+  `user_agent` varchar(255) DEFAULT NULL,
+  `revealed_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`id`),
+  KEY `idx_contact_reveal_entity` (`entity_type`,`entity_id`,`revealed_at`),
+  KEY `idx_contact_reveal_user` (`user_id`,`revealed_at`),
+  CONSTRAINT `fk_contact_reveal_user` FOREIGN KEY (`user_id`) REFERENCES `user_profiles` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 DROP TABLE IF EXISTS `crms_audit_logs`;
 CREATE TABLE `crms_audit_logs` (
@@ -283,7 +406,9 @@ CREATE TABLE `feedback_links` (
   PRIMARY KEY (`id`),
   UNIQUE KEY `unique_token` (`unique_token`),
   KEY `idx_client_id` (`client_id`),
-  KEY `idx_feedback_links_client_expiry` (`client_id`,`expires_at`)
+  KEY `idx_feedback_links_client_expiry` (`client_id`,`expires_at`),
+  KEY `idx_feedback_links_client_active` (`client_id`,`installation_id`,`is_used`,`expires_at`),
+  KEY `idx_feedback_links_token_expires` (`unique_token`,`expires_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 DROP TABLE IF EXISTS `feedback_questions`;
@@ -318,6 +443,15 @@ CREATE TABLE `handover_uploads` (
   `notes` text DEFAULT NULL,
   `uploaded_by_user_id` varchar(36) NOT NULL,
   `upload_date` timestamp NOT NULL DEFAULT current_timestamp(),
+  `branch_id` varchar(36) DEFAULT NULL,
+  `department_id` varchar(36) DEFAULT NULL,
+  `work_type` varchar(40) NOT NULL DEFAULT 'installation',
+  `change_request_id` varchar(36) DEFAULT NULL,
+  `version_group_id` varchar(36) DEFAULT NULL,
+  `version_number` int(11) NOT NULL DEFAULT 1,
+  `is_latest_version` tinyint(1) NOT NULL DEFAULT 1,
+  `status` varchar(30) NOT NULL DEFAULT 'uploaded',
+  `file_hash` char(64) DEFAULT NULL,
   PRIMARY KEY (`id`),
   KEY `idx_client_id` (`client_id`),
   KEY `idx_installation_id` (`installation_id`)
@@ -360,6 +494,8 @@ CREATE TABLE `installations` (
   `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
   `updated_at` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
   `handover_status` varchar(50) DEFAULT 'pending',
+  `branch_id` varchar(36) DEFAULT NULL,
+  `department_id` varchar(36) DEFAULT NULL,
   PRIMARY KEY (`id`),
   KEY `idx_client_id` (`client_id`),
   KEY `idx_status` (`status`),
@@ -414,7 +550,8 @@ CREATE TABLE `installation_feedback` (
   PRIMARY KEY (`id`),
   KEY `idx_installation_id` (`installation_id`),
   KEY `idx_client_id` (`client_id`),
-  KEY `idx_feedback_client_install_created` (`client_id`,`installation_id`,`created_at`)
+  KEY `idx_feedback_client_install_created` (`client_id`,`installation_id`,`created_at`),
+  KEY `idx_installation_feedback_client_install` (`client_id`,`installation_id`,`created_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 DROP TABLE IF EXISTS `installation_progress`;
@@ -439,11 +576,92 @@ CREATE TABLE `messages` (
   `is_read` tinyint(1) DEFAULT 0,
   `read_at` timestamp NULL DEFAULT NULL,
   `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  `message_kind` enum('text','attachment','call') NOT NULL DEFAULT 'text',
+  `reply_to_message_id` varchar(36) DEFAULT NULL,
+  `attachment_file_name` varchar(255) DEFAULT NULL,
+  `attachment_file_path` varchar(255) DEFAULT NULL,
+  `attachment_content_type` varchar(120) DEFAULT NULL,
+  `attachment_size` int(10) unsigned DEFAULT NULL,
+  `call_type` enum('audio','video') DEFAULT NULL,
+  `call_status` enum('ringing','accepted','declined','missed','ended') DEFAULT NULL,
+  `call_started_at` datetime DEFAULT NULL,
+  `call_ended_at` datetime DEFAULT NULL,
+  `is_edited` tinyint(1) DEFAULT 0,
+  `edited_at` timestamp NULL DEFAULT NULL,
+  `is_deleted_for_everyone` tinyint(1) DEFAULT 0,
+  `deleted_for_everyone_at` timestamp NULL DEFAULT NULL,
+  `deleted_for_everyone_by` varchar(36) DEFAULT NULL,
+  `deletion_reason` varchar(255) DEFAULT NULL,
+  `content_hash` char(64) DEFAULT NULL,
   PRIMARY KEY (`id`),
   KEY `idx_messages_inbox` (`receiver_id`,`is_read`,`created_at`),
   KEY `idx_messages_thread` (`sender_id`,`receiver_id`,`created_at`),
+  KEY `idx_messages_kind_created` (`message_kind`,`created_at`),
+  KEY `idx_messages_kind_call_status` (`message_kind`,`call_status`,`created_at`),
+  KEY `idx_messages_deleted_everyone` (`is_deleted_for_everyone`,`deleted_for_everyone_at`),
+  KEY `idx_messages_edited` (`is_edited`,`edited_at`),
+  KEY `idx_messages_reply` (`reply_to_message_id`),
+  KEY `idx_messages_attachment_path` (`attachment_file_path`),
+  KEY `idx_messages_call_status` (`call_status`),
   CONSTRAINT `messages_ibfk_1` FOREIGN KEY (`sender_id`) REFERENCES `user_profiles` (`id`) ON DELETE CASCADE,
   CONSTRAINT `messages_ibfk_2` FOREIGN KEY (`receiver_id`) REFERENCES `user_profiles` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+DROP TABLE IF EXISTS `message_edit_history`;
+CREATE TABLE `message_edit_history` (
+  `id` varchar(36) NOT NULL,
+  `message_id` varchar(36) NOT NULL,
+  `edited_by` varchar(36) DEFAULT NULL,
+  `previous_content` text DEFAULT NULL,
+  `new_content_hash` char(64) NOT NULL,
+  `edited_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`id`),
+  KEY `idx_message_edit_history_message` (`message_id`,`edited_at`),
+  KEY `idx_message_edit_history_user` (`edited_by`),
+  CONSTRAINT `fk_message_edit_history_message` FOREIGN KEY (`message_id`) REFERENCES `messages` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_message_edit_history_user` FOREIGN KEY (`edited_by`) REFERENCES `user_profiles` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+DROP TABLE IF EXISTS `message_reactions`;
+CREATE TABLE `message_reactions` (
+  `id` varchar(36) NOT NULL,
+  `message_id` varchar(36) NOT NULL,
+  `user_id` varchar(36) NOT NULL,
+  `reaction_type` enum('like','love','laugh','wow','sad','angry') NOT NULL,
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  `updated_at` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_message_reaction_user` (`message_id`,`user_id`),
+  KEY `idx_message_reactions_user` (`user_id`),
+  CONSTRAINT `fk_message_reactions_message` FOREIGN KEY (`message_id`) REFERENCES `messages` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_message_reactions_user` FOREIGN KEY (`user_id`) REFERENCES `user_profiles` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+DROP TABLE IF EXISTS `message_recipient_status`;
+CREATE TABLE `message_recipient_status` (
+  `id` varchar(36) NOT NULL,
+  `message_id` varchar(36) NOT NULL,
+  `user_id` varchar(36) NOT NULL,
+  `delivered_at` timestamp NULL DEFAULT NULL,
+  `read_at` timestamp NULL DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_message_recipient_status` (`message_id`,`user_id`),
+  KEY `idx_message_recipient_status_user_read` (`user_id`,`read_at`),
+  CONSTRAINT `fk_message_recipient_status_message` FOREIGN KEY (`message_id`) REFERENCES `messages` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_message_recipient_status_user` FOREIGN KEY (`user_id`) REFERENCES `user_profiles` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+DROP TABLE IF EXISTS `message_user_deletions`;
+CREATE TABLE `message_user_deletions` (
+  `id` varchar(36) NOT NULL,
+  `message_id` varchar(36) NOT NULL,
+  `user_id` varchar(36) NOT NULL,
+  `deleted_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_message_user_deletion` (`message_id`,`user_id`),
+  KEY `idx_message_user_deletions_user` (`user_id`,`deleted_at`),
+  CONSTRAINT `fk_message_user_deletions_message` FOREIGN KEY (`message_id`) REFERENCES `messages` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_message_user_deletions_user` FOREIGN KEY (`user_id`) REFERENCES `user_profiles` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 DROP TABLE IF EXISTS `migration_history`;
@@ -457,6 +675,26 @@ CREATE TABLE `migration_history` (
 INSERT INTO `migration_history` (`migration_id`, `description`, `applied_at`) VALUES ('20260621_security_foundation', 'Unified module RBAC, session revocation, security settings, and audit events', '2026-06-21 06:41:40.000');
 INSERT INTO `migration_history` (`migration_id`, `description`, `applied_at`) VALUES ('20260627_enterprise_roles_permissions', 'Applied from 20260627_enterprise_roles_permissions.sql', '2026-06-27 19:04:26.000');
 INSERT INTO `migration_history` (`migration_id`, `description`, `applied_at`) VALUES ('20260705_subsidiary_handover_equipment', 'Applied from 20260705_subsidiary_handover_equipment.sql', '2026-07-05 02:11:40.000');
+INSERT INTO `migration_history` (`migration_id`, `description`, `applied_at`) VALUES ('20260710_calls_feedback_contact_performance', 'Local test hotfix: group call participants, contact reveal audit, feedback/performance indexes', '2026-07-10 23:49:08.000');
+INSERT INTO `migration_history` (`migration_id`, `description`, `applied_at`) VALUES ('20260710_chat_audit_logging', 'Applied from 20260710_chat_audit_logging.sql', '2026-07-15 18:03:10.000');
+INSERT INTO `migration_history` (`migration_id`, `description`, `applied_at`) VALUES ('20260710_chat_audit_logging_audit_logs_hotfix', 'Created audit_logs table from saved 20260710 chat audit migration to unblock login', '2026-07-10 22:47:20.000');
+INSERT INTO `migration_history` (`migration_id`, `description`, `applied_at`) VALUES ('20260710_chat_support_tables_hotfix', 'Local test hotfix: chat edit, reaction, deletion, recipient status tables', '2026-07-10 23:49:08.000');
+INSERT INTO `migration_history` (`migration_id`, `description`, `applied_at`) VALUES ('20260710_profile_avatar_chat_messages', 'Applied from 20260710_profile_avatar_chat_messages.sql', '2026-07-15 18:03:10.000');
+INSERT INTO `migration_history` (`migration_id`, `description`, `applied_at`) VALUES ('20260714_chat_presence_missed_call_dismissals', 'Applied from 20260714_chat_presence_missed_call_dismissals.sql', '2026-07-15 18:03:10.000');
+INSERT INTO `migration_history` (`migration_id`, `description`, `applied_at`) VALUES ('20260715_private_file_management', 'Applied from 20260715_private_file_management.sql', '2026-07-15 18:03:10.000');
+
+DROP TABLE IF EXISTS `missed_call_dismissals`;
+CREATE TABLE `missed_call_dismissals` (
+  `id` varchar(36) NOT NULL,
+  `call_id` varchar(36) NOT NULL,
+  `user_id` varchar(36) NOT NULL,
+  `dismissed_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_missed_call_dismissal` (`call_id`,`user_id`),
+  KEY `idx_missed_call_dismissals_user` (`user_id`,`dismissed_at`),
+  CONSTRAINT `fk_missed_call_dismissal_call` FOREIGN KEY (`call_id`) REFERENCES `messages` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_missed_call_dismissal_user` FOREIGN KEY (`user_id`) REFERENCES `user_profiles` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 DROP TABLE IF EXISTS `modules`;
 CREATE TABLE `modules` (
@@ -515,6 +753,13 @@ INSERT INTO `permissions` (`id`, `module_id`, `code`, `description`) VALUES ('cr
 INSERT INTO `permissions` (`id`, `module_id`, `code`, `description`) VALUES ('crms:create', 'crms', 'create', 'Create change requests');
 INSERT INTO `permissions` (`id`, `module_id`, `code`, `description`) VALUES ('crms:implement', 'crms', 'implement', 'Update assigned implementation work');
 INSERT INTO `permissions` (`id`, `module_id`, `code`, `description`) VALUES ('crms:read', 'crms', 'read', 'Read permitted change requests');
+INSERT INTO `permissions` (`id`, `module_id`, `code`, `description`) VALUES ('files.delete', 'cims', 'files.delete', 'Delete private files');
+INSERT INTO `permissions` (`id`, `module_id`, `code`, `description`) VALUES ('files.download', 'cims', 'files.download', 'Download private files');
+INSERT INTO `permissions` (`id`, `module_id`, `code`, `description`) VALUES ('files.manage_all', 'cims', 'files.manage_all', 'Manage all private files');
+INSERT INTO `permissions` (`id`, `module_id`, `code`, `description`) VALUES ('files.replace', 'cims', 'files.replace', 'Replace private files');
+INSERT INTO `permissions` (`id`, `module_id`, `code`, `description`) VALUES ('files.restore', 'cims', 'files.restore', 'Restore deleted private files');
+INSERT INTO `permissions` (`id`, `module_id`, `code`, `description`) VALUES ('files.upload', 'cims', 'files.upload', 'Upload files');
+INSERT INTO `permissions` (`id`, `module_id`, `code`, `description`) VALUES ('files.view', 'cims', 'files.view', 'View private files');
 INSERT INTO `permissions` (`id`, `module_id`, `code`, `description`) VALUES ('finances.manage', 'cims', 'finances.manage', 'Add, edit, and delete installation budgets');
 INSERT INTO `permissions` (`id`, `module_id`, `code`, `description`) VALUES ('finances.view', 'cims', 'finances.view', 'View installation budgets');
 INSERT INTO `permissions` (`id`, `module_id`, `code`, `description`) VALUES ('import.manage', 'cims', 'import.manage', 'Import system data');
@@ -580,6 +825,13 @@ INSERT INTO `role_permissions` (`role_id`, `permission_id`) VALUES ('cims:SuperA
 INSERT INTO `role_permissions` (`role_id`, `permission_id`) VALUES ('cims:SuperAdmin', 'clients.manage');
 INSERT INTO `role_permissions` (`role_id`, `permission_id`) VALUES ('cims:SuperAdmin', 'clients.view');
 INSERT INTO `role_permissions` (`role_id`, `permission_id`) VALUES ('cims:SuperAdmin', 'company.manage');
+INSERT INTO `role_permissions` (`role_id`, `permission_id`) VALUES ('cims:SuperAdmin', 'files.delete');
+INSERT INTO `role_permissions` (`role_id`, `permission_id`) VALUES ('cims:SuperAdmin', 'files.download');
+INSERT INTO `role_permissions` (`role_id`, `permission_id`) VALUES ('cims:SuperAdmin', 'files.manage_all');
+INSERT INTO `role_permissions` (`role_id`, `permission_id`) VALUES ('cims:SuperAdmin', 'files.replace');
+INSERT INTO `role_permissions` (`role_id`, `permission_id`) VALUES ('cims:SuperAdmin', 'files.restore');
+INSERT INTO `role_permissions` (`role_id`, `permission_id`) VALUES ('cims:SuperAdmin', 'files.upload');
+INSERT INTO `role_permissions` (`role_id`, `permission_id`) VALUES ('cims:SuperAdmin', 'files.view');
 INSERT INTO `role_permissions` (`role_id`, `permission_id`) VALUES ('cims:SuperAdmin', 'finances.manage');
 INSERT INTO `role_permissions` (`role_id`, `permission_id`) VALUES ('cims:SuperAdmin', 'finances.view');
 INSERT INTO `role_permissions` (`role_id`, `permission_id`) VALUES ('cims:SuperAdmin', 'import.manage');
@@ -657,7 +909,7 @@ CREATE TABLE `subsidiaries` (
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-INSERT INTO `subsidiaries` (`id`, `subsidiary_name`, `created_at`, `default_escalation_matrix`, `equipment_configuration`) VALUES ('34f8ccb0-0e95-11f1-9abb-00155d187c00', 'MAREZI', '2026-02-20 22:48:53.000', NULL, NULL);
+INSERT INTO `subsidiaries` (`id`, `subsidiary_name`, `created_at`, `default_escalation_matrix`, `equipment_configuration`) VALUES ('34f8ccb0-0e95-11f1-9abb-00155d187c00', 'MAREZI', '2026-02-20 22:48:53.000', NULL, '[{\"field\":\"kiosk_type\",\"label\":\"Kiosk Type\",\"installed_status\":\"Configured\"},{\"field\":\"kiosk_count\",\"label\":\"Kiosk Count\",\"installed_status\":\"Installed\"},{\"field\":\"counter_count\",\"label\":\"Tripleplay/Counters\",\"installed_status\":\"Installed\"},{\"field\":\"led_count\",\"label\":\"LED Displays\",\"installed_status\":\"Installed\"},{\"field\":\"screen_with_size\",\"label\":\"Screen Size\",\"installed_status\":\"Configured\"},{\"field\":\"service_points\",\"label\":\"Service Points\",\"installed_status\":\"Active\"},{\"field\":\"ups_count\",\"label\":\"UPS Units\",\"installed_status\":\"Installed\"},{\"field\":\"speakers\",\"label\":\"Speakers\",\"installed_status\":\"Installed\"},{\"field\":\"amplifiers\",\"label\":\"Amplifiers\",\"installed_status\":\"Configured\"},{\"field\":\"media_controllers\",\"label\":\"Media Controllers\",\"installed_status\":\"Configured\"},{\"field\":\"tablets\",\"label\":\"Tablets\",\"installed_status\":\"Setup Complete\"},{\"field\":\"digital_signage_system\",\"label\":\"Digital Signage\",\"installed_status\":\"Operational\"},{\"field\":\"hdmis\",\"label\":\"HDMI Cables\",\"installed_status\":\"Connected\"},{\"field\":\"splitters\",\"label\":\"Splitters\",\"installed_status\":\"Installed\"},{\"field\":\"staff_trained\",\"label\":\"Staff Trained\",\"installed_status\":\"Completed\"}]');
 INSERT INTO `subsidiaries` (`id`, `subsidiary_name`, `created_at`, `default_escalation_matrix`, `equipment_configuration`) VALUES ('34f8cf97-0e95-11f1-9abb-00155d187c00', 'USS', '2026-02-20 22:48:53.000', NULL, NULL);
 INSERT INTO `subsidiaries` (`id`, `subsidiary_name`, `created_at`, `default_escalation_matrix`, `equipment_configuration`) VALUES ('34f8d0a8-0e95-11f1-9abb-00155d187c00', 'VMS', '2026-02-20 22:48:53.000', NULL, NULL);
 
@@ -695,6 +947,78 @@ CREATE TABLE `technician_performance_scores` (
   KEY `technician_id` (`technician_id`),
   CONSTRAINT `technician_performance_scores_ibfk_1` FOREIGN KEY (`technician_id`) REFERENCES `user_profiles` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+DROP TABLE IF EXISTS `uploaded_files`;
+CREATE TABLE `uploaded_files` (
+  `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+  `tenant_id` varchar(36) DEFAULT NULL,
+  `organization_id` varchar(36) DEFAULT NULL,
+  `branch_id` varchar(100) DEFAULT NULL,
+  `uploaded_by` varchar(36) NOT NULL,
+  `original_name` varchar(255) NOT NULL,
+  `stored_name` varchar(255) NOT NULL,
+  `relative_path` varchar(500) NOT NULL,
+  `mime_type` varchar(150) NOT NULL,
+  `detected_mime_type` varchar(150) DEFAULT NULL,
+  `extension` varchar(20) DEFAULT NULL,
+  `file_size` bigint(20) unsigned NOT NULL,
+  `file_category` varchar(100) NOT NULL,
+  `related_entity_type` varchar(100) DEFAULT NULL,
+  `related_entity_id` varchar(64) DEFAULT NULL,
+  `visibility` enum('private','organization','public') NOT NULL DEFAULT 'private',
+  `status` enum('uploading','processing','active','failed','quarantined','deleted') NOT NULL DEFAULT 'processing',
+  `checksum_sha256` char(64) DEFAULT NULL,
+  `image_width` int(10) unsigned DEFAULT NULL,
+  `image_height` int(10) unsigned DEFAULT NULL,
+  `original_file_id` bigint(20) unsigned DEFAULT NULL,
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  `updated_at` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  `deleted_at` timestamp NULL DEFAULT NULL,
+  `deleted_by` varchar(36) DEFAULT NULL,
+  `deletion_reason` varchar(500) DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  KEY `idx_file_tenant` (`tenant_id`,`id`),
+  KEY `idx_file_organization` (`organization_id`,`id`),
+  KEY `idx_file_branch` (`branch_id`,`id`),
+  KEY `idx_file_owner` (`uploaded_by`),
+  KEY `idx_file_entity` (`related_entity_type`,`related_entity_id`),
+  KEY `idx_file_status` (`status`),
+  KEY `idx_file_checksum` (`checksum_sha256`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+DROP TABLE IF EXISTS `uploaded_file_variants`;
+CREATE TABLE `uploaded_file_variants` (
+  `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+  `file_id` bigint(20) unsigned NOT NULL,
+  `variant_type` enum('original','optimized','thumbnail') NOT NULL,
+  `stored_name` varchar(255) NOT NULL,
+  `relative_path` varchar(500) NOT NULL,
+  `mime_type` varchar(150) NOT NULL,
+  `file_size` bigint(20) unsigned NOT NULL,
+  `width` int(10) unsigned DEFAULT NULL,
+  `height` int(10) unsigned DEFAULT NULL,
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `unique_file_variant` (`file_id`,`variant_type`),
+  KEY `idx_uploaded_file_variants_file` (`file_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+DROP TABLE IF EXISTS `user_access_scopes`;
+CREATE TABLE `user_access_scopes` (
+  `id` varchar(36) NOT NULL,
+  `user_id` varchar(36) NOT NULL,
+  `scope_type` varchar(40) NOT NULL DEFAULT 'all_clients',
+  `client_id` varchar(36) DEFAULT NULL,
+  `branch_id` varchar(36) DEFAULT NULL,
+  `department_id` varchar(36) DEFAULT NULL,
+  `include_future_departments` tinyint(1) NOT NULL DEFAULT 1,
+  `created_by` varchar(36) DEFAULT NULL,
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  `updated_at` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_user_access_scope` (`user_id`,`scope_type`,`client_id`,`branch_id`,`department_id`),
+  KEY `idx_user_access_scope_user` (`user_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 DROP TABLE IF EXISTS `user_module_roles`;
 CREATE TABLE `user_module_roles` (
@@ -747,11 +1071,412 @@ CREATE TABLE `user_profiles` (
   `two_factor_method` enum('email','sms','call') NOT NULL DEFAULT 'email',
   `two_factor_phone` varchar(30) DEFAULT NULL,
   `session_version` int(10) unsigned NOT NULL DEFAULT 0,
+  `avatar_url` varchar(255) DEFAULT NULL,
+  `last_seen_at` timestamp NULL DEFAULT NULL,
   PRIMARY KEY (`id`),
   UNIQUE KEY `email` (`email`),
   KEY `idx_users_role_active` (`role`,`is_active`),
-  KEY `idx_users_active_role` (`is_active`,`role`)
+  KEY `idx_users_active_role` (`is_active`,`role`),
+  KEY `idx_user_profiles_active_role` (`is_active`,`role`,`created_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Pending idempotent migration: 20260717_ehandover_completion_status.sql
+-- RIANA CIMS live database update
+-- Date: 2026-07-17
+-- Feature: E-handover export completion status alignment
+-- Safe to rerun. This script adds missing handover columns and backfills
+-- completed installation status for installations with uploaded E-handovers.
+--
+-- BEFORE IMPORTING:
+-- 1. Create and verify a full production database backup.
+-- 2. Import after 20260714_chat_presence_missed_call_dismissals.sql.
+-- 3. In phpMyAdmin, select the existing RIANA CIMS production database.
+--
+-- ROLLBACK PLAN:
+-- 1. Roll back the application build first if needed.
+-- 2. Restore the verified database backup if the completion-status backfill must be reversed.
+
+SET NAMES utf8mb4;
+
+CREATE TABLE IF NOT EXISTS migration_history (
+  migration_id VARCHAR(100) NOT NULL,
+  description VARCHAR(255) NOT NULL,
+  applied_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (migration_id)
+);
+
+DELIMITER $$
+
+DROP PROCEDURE IF EXISTS riana_add_column_if_missing $$
+CREATE PROCEDURE riana_add_column_if_missing(
+  IN target_table VARCHAR(64),
+  IN target_column VARCHAR(64),
+  IN column_definition TEXT
+)
+BEGIN
+  DECLARE duplicate_column CONDITION FOR 1060;
+  DECLARE CONTINUE HANDLER FOR duplicate_column BEGIN END;
+
+  SET @riana_sql = CONCAT('ALTER TABLE `', target_table, '` ADD COLUMN ', column_definition);
+  PREPARE riana_stmt FROM @riana_sql;
+  EXECUTE riana_stmt;
+  DEALLOCATE PREPARE riana_stmt;
+END $$
+
+DELIMITER ;
+
+CALL riana_add_column_if_missing('installations', 'handover_file_path', '`handover_file_path` TEXT NULL');
+CALL riana_add_column_if_missing('installations', 'handover_status', '`handover_status` VARCHAR(50) DEFAULT ''pending''');
+
+UPDATE installations i
+JOIN (
+  SELECT
+    installation_id,
+    MAX(upload_date) AS latest_upload_date,
+    MAX(file_path) AS latest_file_path,
+    MAX(CASE WHEN is_signed = 1 THEN 1 ELSE 0 END) AS has_signed_upload
+  FROM handover_uploads
+  WHERE installation_id IS NOT NULL
+  GROUP BY installation_id
+) h ON h.installation_id = i.id
+SET
+  i.status = 'completed',
+  i.completion_date = COALESCE(i.completion_date, DATE(h.latest_upload_date), CURDATE()),
+  i.handover_file_path = COALESCE(i.handover_file_path, h.latest_file_path),
+  i.handover_status = CASE
+    WHEN h.has_signed_upload = 1 THEN 'signed'
+    ELSE COALESCE(i.handover_status, 'uploaded')
+  END;
+
+DROP PROCEDURE IF EXISTS riana_add_column_if_missing;
+
+INSERT INTO migration_history (migration_id, description)
+VALUES (
+  '20260717_ehandover_completion_status',
+  'Adds E-handover installation completion/status columns and backfills completed installations from uploads'
+)
+ON DUPLICATE KEY UPDATE
+  description = VALUES(description);
+
+SHOW COLUMNS FROM installations LIKE 'handover_file_path';
+SHOW COLUMNS FROM installations LIKE 'handover_status';
+SELECT COUNT(*) AS completed_ehandover_installations
+FROM installations i
+JOIN handover_uploads h ON h.installation_id = i.id
+WHERE i.status = 'completed';
+
+-- Pending idempotent migration: 20260718_client_branch_department_scope.sql
+-- Client branch/department hierarchy, access scope, and secure handover metadata.
+SET NAMES utf8mb4;
+-- Additive only: existing clients, installations, change requests, and handover uploads remain valid.
+
+CREATE TABLE IF NOT EXISTS client_branches (
+  id VARCHAR(36) PRIMARY KEY,
+  client_id VARCHAR(36) NOT NULL,
+  branch_name VARCHAR(150) NOT NULL,
+  branch_code VARCHAR(60) NULL,
+  contact_person_name VARCHAR(150) NULL,
+  contact_email VARCHAR(255) NULL,
+  contact_phone VARCHAR(30) NULL,
+  physical_address TEXT NULL,
+  status VARCHAR(30) NOT NULL DEFAULT 'active',
+  notes TEXT NULL,
+  created_by VARCHAR(36) NULL,
+  updated_by VARCHAR(36) NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  deleted_at TIMESTAMP NULL,
+  INDEX idx_client_branches_client_status (client_id,status),
+  UNIQUE KEY uq_client_branches_name (client_id,branch_name)
+);
+
+CREATE TABLE IF NOT EXISTS client_departments (
+  id VARCHAR(36) PRIMARY KEY,
+  client_id VARCHAR(36) NOT NULL,
+  branch_id VARCHAR(36) NOT NULL,
+  department_name VARCHAR(150) NOT NULL,
+  department_code VARCHAR(60) NULL,
+  contact_person_name VARCHAR(150) NULL,
+  contact_email VARCHAR(255) NULL,
+  contact_phone VARCHAR(30) NULL,
+  status VARCHAR(30) NOT NULL DEFAULT 'active',
+  notes TEXT NULL,
+  created_by VARCHAR(36) NULL,
+  updated_by VARCHAR(36) NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  deleted_at TIMESTAMP NULL,
+  INDEX idx_client_departments_branch_status (branch_id,status),
+  INDEX idx_client_departments_client_status (client_id,status),
+  UNIQUE KEY uq_client_departments_name (branch_id,department_name)
+);
+
+CREATE TABLE IF NOT EXISTS user_access_scopes (
+  id VARCHAR(36) PRIMARY KEY,
+  user_id VARCHAR(36) NOT NULL,
+  scope_type VARCHAR(40) NOT NULL DEFAULT 'all_clients',
+  client_id VARCHAR(36) NULL,
+  branch_id VARCHAR(36) NULL,
+  department_id VARCHAR(36) NULL,
+  include_future_departments BOOLEAN NOT NULL DEFAULT TRUE,
+  created_by VARCHAR(36) NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY uq_user_access_scope (user_id,scope_type,client_id,branch_id,department_id),
+  INDEX idx_user_access_scope_user (user_id)
+);
+
+DELIMITER $$
+
+DROP PROCEDURE IF EXISTS riana_add_column_if_missing $$
+CREATE PROCEDURE riana_add_column_if_missing(IN p_sql TEXT)
+BEGIN
+  DECLARE duplicate_column CONDITION FOR 1060;
+  DECLARE CONTINUE HANDLER FOR duplicate_column BEGIN END;
+
+  SET @riana_sql = p_sql;
+  PREPARE stmt FROM @riana_sql;
+  EXECUTE stmt;
+  DEALLOCATE PREPARE stmt;
+END $$
+
+DROP PROCEDURE IF EXISTS riana_add_index_if_missing $$
+CREATE PROCEDURE riana_add_index_if_missing(IN p_table VARCHAR(64), IN p_index VARCHAR(64), IN p_sql TEXT)
+BEGIN
+  DECLARE duplicate_key CONDITION FOR 1061;
+  DECLARE CONTINUE HANDLER FOR duplicate_key BEGIN END;
+
+  SET @riana_sql = p_sql;
+  PREPARE stmt FROM @riana_sql;
+  EXECUTE stmt;
+  DEALLOCATE PREPARE stmt;
+END $$
+
+DELIMITER ;
+
+CALL riana_add_column_if_missing('ALTER TABLE installations ADD COLUMN branch_id VARCHAR(36) NULL AFTER client_id');
+CALL riana_add_column_if_missing('ALTER TABLE installations ADD COLUMN department_id VARCHAR(36) NULL AFTER branch_id');
+CALL riana_add_index_if_missing('installations', 'idx_installations_branch_department', 'ALTER TABLE installations ADD INDEX idx_installations_branch_department (branch_id, department_id)');
+
+CALL riana_add_column_if_missing('ALTER TABLE crms_change_requests ADD COLUMN branch_id VARCHAR(36) NULL AFTER client_id');
+CALL riana_add_column_if_missing('ALTER TABLE crms_change_requests ADD COLUMN department_id VARCHAR(36) NULL AFTER branch_id');
+CALL riana_add_column_if_missing('ALTER TABLE crms_change_requests ADD COLUMN installation_id VARCHAR(36) NULL AFTER department_id');
+CALL riana_add_index_if_missing('crms_change_requests', 'idx_crms_change_requests_scope', 'ALTER TABLE crms_change_requests ADD INDEX idx_crms_change_requests_scope (client_id, branch_id, department_id)');
+CALL riana_add_index_if_missing('crms_change_requests', 'idx_crms_change_requests_installation', 'ALTER TABLE crms_change_requests ADD INDEX idx_crms_change_requests_installation (installation_id)');
+
+CALL riana_add_column_if_missing('ALTER TABLE handover_uploads ADD COLUMN branch_id VARCHAR(36) NULL AFTER installation_id');
+CALL riana_add_column_if_missing('ALTER TABLE handover_uploads ADD COLUMN department_id VARCHAR(36) NULL AFTER branch_id');
+CALL riana_add_column_if_missing('ALTER TABLE handover_uploads ADD COLUMN work_type VARCHAR(40) NOT NULL DEFAULT ''installation'' AFTER department_id');
+CALL riana_add_column_if_missing('ALTER TABLE handover_uploads ADD COLUMN change_request_id VARCHAR(36) NULL AFTER work_type');
+CALL riana_add_column_if_missing('ALTER TABLE handover_uploads ADD COLUMN version_group_id VARCHAR(36) NULL AFTER change_request_id');
+CALL riana_add_column_if_missing('ALTER TABLE handover_uploads ADD COLUMN version_number INT NOT NULL DEFAULT 1 AFTER version_group_id');
+CALL riana_add_column_if_missing('ALTER TABLE handover_uploads ADD COLUMN is_latest_version BOOLEAN NOT NULL DEFAULT TRUE AFTER version_number');
+CALL riana_add_column_if_missing('ALTER TABLE handover_uploads ADD COLUMN status VARCHAR(30) NOT NULL DEFAULT ''uploaded'' AFTER is_latest_version');
+CALL riana_add_column_if_missing('ALTER TABLE handover_uploads ADD COLUMN file_hash CHAR(64) NULL AFTER status');
+CALL riana_add_index_if_missing('handover_uploads', 'idx_handover_scope', 'ALTER TABLE handover_uploads ADD INDEX idx_handover_scope (client_id, branch_id, department_id, work_type)');
+CALL riana_add_index_if_missing('handover_uploads', 'idx_handover_version_group', 'ALTER TABLE handover_uploads ADD INDEX idx_handover_version_group (version_group_id, is_latest_version)');
+CALL riana_add_column_if_missing('ALTER TABLE client_assignments ADD COLUMN branch_id VARCHAR(36) NULL AFTER client_id');
+CALL riana_add_column_if_missing('ALTER TABLE client_assignments ADD COLUMN department_id VARCHAR(36) NULL AFTER branch_id');
+CALL riana_add_column_if_missing('ALTER TABLE client_assignments ADD COLUMN installation_id VARCHAR(36) NULL AFTER department_id');
+CALL riana_add_index_if_missing('client_assignments', 'idx_assignment_scope', 'ALTER TABLE client_assignments ADD INDEX idx_assignment_scope (client_id, branch_id, department_id)');
+
+INSERT IGNORE INTO client_branches
+  (id, client_id, branch_name, branch_code, status, notes)
+SELECT
+  UUID(),
+  c.id,
+  COALESCE(NULLIF(TRIM(c.branch), ''), 'MAIN'),
+  CASE WHEN NULLIF(TRIM(c.branch), '') IS NULL THEN 'MAIN' ELSE NULL END,
+  'active',
+  'Auto-created primary branch for existing client'
+FROM clients c
+WHERE NOT EXISTS (
+  SELECT 1
+  FROM client_branches b
+  WHERE CONVERT(b.client_id USING utf8mb4) COLLATE utf8mb4_unicode_ci = CONVERT(c.id USING utf8mb4) COLLATE utf8mb4_unicode_ci
+    AND b.deleted_at IS NULL
+);
+
+DROP PROCEDURE IF EXISTS riana_add_column_if_missing;
+DROP PROCEDURE IF EXISTS riana_add_index_if_missing;
+
+-- Pending idempotent migration: 20260719_live_module_schema_repair.sql
+-- Live module schema repair for Developers, feedback links, messaging presence, assignments, and finances.
+SET NAMES utf8mb4;
+
+CREATE TABLE IF NOT EXISTS migration_history (
+  migration_id VARCHAR(100) PRIMARY KEY,
+  description TEXT,
+  applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS client_branches (
+  id VARCHAR(36) PRIMARY KEY,
+  client_id VARCHAR(36) NOT NULL,
+  branch_name VARCHAR(150) NOT NULL,
+  branch_code VARCHAR(60) NULL,
+  contact_person_name VARCHAR(150) NULL,
+  contact_email VARCHAR(255) NULL,
+  contact_phone VARCHAR(30) NULL,
+  physical_address TEXT NULL,
+  status VARCHAR(30) NOT NULL DEFAULT 'active',
+  notes TEXT NULL,
+  created_by VARCHAR(36) NULL,
+  updated_by VARCHAR(36) NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  deleted_at TIMESTAMP NULL,
+  INDEX idx_client_branches_client_status (client_id,status),
+  UNIQUE KEY uq_client_branches_name (client_id,branch_name)
+);
+
+CREATE TABLE IF NOT EXISTS client_departments (
+  id VARCHAR(36) PRIMARY KEY,
+  client_id VARCHAR(36) NOT NULL,
+  branch_id VARCHAR(36) NOT NULL,
+  department_name VARCHAR(150) NOT NULL,
+  department_code VARCHAR(60) NULL,
+  contact_person_name VARCHAR(150) NULL,
+  contact_email VARCHAR(255) NULL,
+  contact_phone VARCHAR(30) NULL,
+  status VARCHAR(30) NOT NULL DEFAULT 'active',
+  notes TEXT NULL,
+  created_by VARCHAR(36) NULL,
+  updated_by VARCHAR(36) NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  deleted_at TIMESTAMP NULL,
+  INDEX idx_client_departments_branch_status (branch_id,status),
+  INDEX idx_client_departments_client_status (client_id,status),
+  UNIQUE KEY uq_client_departments_name (branch_id,department_name)
+);
+
+CREATE TABLE IF NOT EXISTS user_access_scopes (
+  id VARCHAR(36) PRIMARY KEY,
+  user_id VARCHAR(36) NOT NULL,
+  scope_type VARCHAR(40) NOT NULL DEFAULT 'all_clients',
+  client_id VARCHAR(36) NULL,
+  branch_id VARCHAR(36) NULL,
+  department_id VARCHAR(36) NULL,
+  include_future_departments BOOLEAN NOT NULL DEFAULT TRUE,
+  created_by VARCHAR(36) NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY uq_user_access_scope (user_id,scope_type,client_id,branch_id,department_id),
+  INDEX idx_user_access_scope_user (user_id)
+);
+
+CREATE TABLE IF NOT EXISTS installation_budgets (
+  id VARCHAR(36) PRIMARY KEY,
+  installation_id VARCHAR(36) NOT NULL,
+  total_budget FLOAT DEFAULT 0,
+  labor_cost FLOAT DEFAULT 0,
+  equipment_cost FLOAT DEFAULT 0,
+  transport_cost FLOAT DEFAULT 0,
+  miscellaneous_cost FLOAT DEFAULT 0,
+  notes TEXT,
+  created_by VARCHAR(36),
+  currency VARCHAR(10) DEFAULT 'KES',
+  branch VARCHAR(100),
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);
+
+DELIMITER $$
+
+DROP PROCEDURE IF EXISTS riana_add_column_if_missing $$
+CREATE PROCEDURE riana_add_column_if_missing(IN p_sql TEXT)
+BEGIN
+  DECLARE duplicate_column CONDITION FOR 1060;
+  DECLARE CONTINUE HANDLER FOR duplicate_column BEGIN END;
+
+  SET @riana_sql = p_sql;
+  PREPARE stmt FROM @riana_sql;
+  EXECUTE stmt;
+  DEALLOCATE PREPARE stmt;
+END $$
+
+DROP PROCEDURE IF EXISTS riana_add_index_if_missing $$
+CREATE PROCEDURE riana_add_index_if_missing(IN p_table VARCHAR(64), IN p_index VARCHAR(64), IN p_sql TEXT)
+BEGIN
+  DECLARE duplicate_key CONDITION FOR 1061;
+  DECLARE CONTINUE HANDLER FOR duplicate_key BEGIN END;
+
+  SET @riana_sql = p_sql;
+  PREPARE stmt FROM @riana_sql;
+  EXECUTE stmt;
+  DEALLOCATE PREPARE stmt;
+END $$
+
+DELIMITER ;
+
+CALL riana_add_column_if_missing('ALTER TABLE user_profiles ADD COLUMN avatar_url VARCHAR(255) NULL');
+CALL riana_add_column_if_missing('ALTER TABLE user_profiles ADD COLUMN last_seen_at TIMESTAMP NULL');
+CALL riana_add_index_if_missing('user_profiles', 'idx_user_profiles_active_role', 'ALTER TABLE user_profiles ADD INDEX idx_user_profiles_active_role (is_active, role, created_at)');
+
+CALL riana_add_column_if_missing('ALTER TABLE crms_change_requests ADD COLUMN branch_id VARCHAR(36) NULL AFTER client_id');
+CALL riana_add_column_if_missing('ALTER TABLE crms_change_requests ADD COLUMN department_id VARCHAR(36) NULL AFTER branch_id');
+CALL riana_add_column_if_missing('ALTER TABLE crms_change_requests ADD COLUMN installation_id VARCHAR(36) NULL AFTER department_id');
+CALL riana_add_index_if_missing('crms_change_requests', 'idx_crms_change_requests_scope', 'ALTER TABLE crms_change_requests ADD INDEX idx_crms_change_requests_scope (client_id, branch_id, department_id)');
+CALL riana_add_index_if_missing('crms_change_requests', 'idx_crms_change_requests_installation', 'ALTER TABLE crms_change_requests ADD INDEX idx_crms_change_requests_installation (installation_id)');
+
+CALL riana_add_column_if_missing('ALTER TABLE feedback_links ADD COLUMN branch_id VARCHAR(36) NULL AFTER client_id');
+CALL riana_add_column_if_missing('ALTER TABLE feedback_links ADD COLUMN department_id VARCHAR(36) NULL AFTER branch_id');
+CALL riana_add_index_if_missing('feedback_links', 'idx_feedback_links_scope', 'ALTER TABLE feedback_links ADD INDEX idx_feedback_links_scope (client_id, branch_id, department_id, is_used, expires_at)');
+CALL riana_add_index_if_missing('feedback_links', 'idx_feedback_links_token_expires', 'ALTER TABLE feedback_links ADD INDEX idx_feedback_links_token_expires (unique_token, expires_at)');
+
+CALL riana_add_column_if_missing('ALTER TABLE client_assignments ADD COLUMN branch_id VARCHAR(36) NULL AFTER client_id');
+CALL riana_add_column_if_missing('ALTER TABLE client_assignments ADD COLUMN department_id VARCHAR(36) NULL AFTER branch_id');
+CALL riana_add_column_if_missing('ALTER TABLE client_assignments ADD COLUMN installation_id VARCHAR(36) NULL AFTER department_id');
+CALL riana_add_column_if_missing('ALTER TABLE client_assignments ADD COLUMN branch VARCHAR(100) NULL AFTER notes');
+CALL riana_add_index_if_missing('client_assignments', 'idx_assignment_scope', 'ALTER TABLE client_assignments ADD INDEX idx_assignment_scope (client_id, branch_id, department_id)');
+
+CALL riana_add_column_if_missing('ALTER TABLE installations ADD COLUMN branch_id VARCHAR(36) NULL AFTER client_id');
+CALL riana_add_column_if_missing('ALTER TABLE installations ADD COLUMN department_id VARCHAR(36) NULL AFTER branch_id');
+CALL riana_add_index_if_missing('installations', 'idx_installations_branch_department', 'ALTER TABLE installations ADD INDEX idx_installations_branch_department (branch_id, department_id)');
+
+CALL riana_add_column_if_missing('ALTER TABLE installation_budgets ADD COLUMN currency VARCHAR(10) DEFAULT ''KES''');
+CALL riana_add_column_if_missing('ALTER TABLE installation_budgets ADD COLUMN branch VARCHAR(100) NULL');
+CALL riana_add_column_if_missing('ALTER TABLE installation_budgets ADD COLUMN created_by VARCHAR(36) NULL');
+CALL riana_add_index_if_missing('installation_budgets', 'idx_installation_budgets_installation', 'ALTER TABLE installation_budgets ADD INDEX idx_installation_budgets_installation (installation_id, created_at)');
+
+INSERT IGNORE INTO client_branches
+  (id, client_id, branch_name, branch_code, status, notes)
+SELECT
+  UUID(),
+  c.id,
+  COALESCE(NULLIF(TRIM(c.branch), ''), 'MAIN'),
+  CASE WHEN NULLIF(TRIM(c.branch), '') IS NULL THEN 'MAIN' ELSE NULL END,
+  'active',
+  'Auto-created primary branch for existing client'
+FROM clients c
+WHERE NOT EXISTS (
+  SELECT 1
+  FROM client_branches b
+  WHERE CONVERT(b.client_id USING utf8mb4) COLLATE utf8mb4_unicode_ci = CONVERT(c.id USING utf8mb4) COLLATE utf8mb4_unicode_ci
+    AND b.deleted_at IS NULL
+);
+
+DROP PROCEDURE IF EXISTS riana_add_column_if_missing;
+DROP PROCEDURE IF EXISTS riana_add_index_if_missing;
+
+INSERT INTO migration_history (migration_id, description)
+VALUES (
+  '20260719_live_module_schema_repair',
+  'Repairs live module schema for Developers, feedback links, messaging presence, assignments, and finances'
+)
+ON DUPLICATE KEY UPDATE
+  description = VALUES(description);
+
+SHOW COLUMNS FROM user_profiles LIKE 'last_seen_at';
+SHOW COLUMNS FROM feedback_links LIKE 'branch_id';
+SHOW COLUMNS FROM feedback_links LIKE 'department_id';
+SHOW COLUMNS FROM client_assignments LIKE 'branch_id';
+SHOW COLUMNS FROM client_assignments LIKE 'department_id';
+SHOW COLUMNS FROM crms_change_requests LIKE 'branch_id';
+SHOW COLUMNS FROM crms_change_requests LIKE 'department_id';
+SHOW TABLES LIKE 'installation_budgets';
+SELECT COUNT(*) AS clients_without_branch_rows FROM clients c WHERE NOT EXISTS (SELECT 1 FROM client_branches b WHERE CONVERT(b.client_id USING utf8mb4) COLLATE utf8mb4_unicode_ci = CONVERT(c.id USING utf8mb4) COLLATE utf8mb4_unicode_ci AND b.deleted_at IS NULL);
 
 -- Inactive bootstrap principal: it has no password and cannot sign in until explicitly activated.
 -- Set a private SUPERADMIN_PASSWORD during the one-time deployment bootstrap; never distribute a default password.

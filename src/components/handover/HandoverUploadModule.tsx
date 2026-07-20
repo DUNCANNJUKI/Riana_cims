@@ -12,6 +12,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useDatabase } from "@/hooks/useDatabase";
 import { apiClient, downloadAuthenticatedFile, previewAuthenticatedFile } from "@/integrations/apiClient";
 import { User, Client, Installation } from "@/types";
+import { getBranchLabel, getDepartmentLabel } from "@/utils/scopeLabels";
 
 interface HandoverUploadModuleProps {
   user: User;
@@ -62,7 +63,13 @@ export const HandoverUploadModule = ({ user }: HandoverUploadModuleProps) => {
 
   const filteredHandovers = handovers.filter(handover => {
     const client = clients.find(c => c.id === handover.client_id);
-    return client?.client_name?.toLowerCase().includes(searchTerm.toLowerCase());
+    const query = [
+      client?.client_name,
+      handover.file_name,
+      handover.branch_label || getBranchLabel(handover),
+      handover.department_label || getDepartmentLabel(handover),
+    ].filter(Boolean).join(' ').toLowerCase();
+    return query.includes(searchTerm.toLowerCase());
   });
 
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -135,6 +142,8 @@ export const HandoverUploadModule = ({ user }: HandoverUploadModuleProps) => {
             base64Data,
             client_id: selectedClientId,
             installation_id: installation.id,
+            branch_id: (installation as any).branch_id,
+            department_id: (installation as any).department_id,
             uploaded_by_user_id: user.id,
             is_signed: true,
             notes: 'Signed E-Handover form uploaded after installation completion'
@@ -197,8 +206,9 @@ export const HandoverUploadModule = ({ user }: HandoverUploadModuleProps) => {
   };
   const handleDownload = async (handover: any) => {
     try {
-      const fileName = handover.file_name || handover.file_path.split('/').pop() || 'handover-document';
-      await downloadAuthenticatedFile(`/download?path=${encodeURIComponent(handover.file_path)}`, fileName);
+      if (!handover.secure_download_url) throw new Error('Secure download link is unavailable. Please refresh and try again.');
+      const fileName = handover.file_name || handover.file_path_label || 'handover-document';
+      await downloadAuthenticatedFile(handover.secure_download_url, fileName);
       
       toast({
         title: "Download Started",
@@ -216,7 +226,8 @@ export const HandoverUploadModule = ({ user }: HandoverUploadModuleProps) => {
 
   const handlePreview = async (handover: any) => {
     try {
-      await previewAuthenticatedFile(`/download?path=${encodeURIComponent(handover.file_path)}&disposition=inline`);
+      if (!handover.secure_preview_url) throw new Error('Secure preview link is unavailable. Please refresh and try again.');
+      await previewAuthenticatedFile(handover.secure_preview_url);
     } catch (error: any) {
       console.error('Preview error:', error);
       toast({
@@ -358,6 +369,8 @@ export const HandoverUploadModule = ({ user }: HandoverUploadModuleProps) => {
             <TableHeader>
               <TableRow>
                 <TableHead>Client</TableHead>
+                <TableHead>Branch</TableHead>
+                <TableHead>Department</TableHead>
                 <TableHead>Document</TableHead>
                 <TableHead>Upload Date</TableHead>
                 <TableHead>Actions</TableHead>
@@ -368,10 +381,9 @@ export const HandoverUploadModule = ({ user }: HandoverUploadModuleProps) => {
                 <TableRow key={handover.id}>
                   <TableCell>
                     <div className="font-medium">{getClientName(handover.client_id)}</div>
-                    <div className="text-sm text-muted-foreground">
-                      {clients.find(c => c.id === handover.client_id)?.branch}
-                    </div>
                   </TableCell>
+                  <TableCell>{handover.branch_label || getBranchLabel(handover)}</TableCell>
+                  <TableCell>{handover.department_label || getDepartmentLabel(handover)}</TableCell>
                   <TableCell>
                     <div className="flex items-center gap-2">
                       <FileText className="h-4 w-4 text-muted-foreground" />

@@ -22,6 +22,7 @@ export interface User {
   email: string;
   role: UserRole;
   avatar?: string;
+  avatar_url?: string | null;
   department?: string;
 }
 

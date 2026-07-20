@@ -17,6 +17,13 @@ const CAPABILITY_DEFINITIONS = [
   { code: 'company.manage', group: 'Administration', label: 'Manage company settings and branding' },
   { code: 'subsidiaries.manage', group: 'Administration', label: 'Add, edit, and delete subsidiaries' },
   { code: 'backup.manage', group: 'Administration', label: 'View and create database backups' },
+  { code: 'files.upload', group: 'Files', label: 'Upload files' },
+  { code: 'files.view', group: 'Files', label: 'View private files' },
+  { code: 'files.download', group: 'Files', label: 'Download private files' },
+  { code: 'files.delete', group: 'Files', label: 'Delete private files' },
+  { code: 'files.restore', group: 'Files', label: 'Restore deleted private files' },
+  { code: 'files.replace', group: 'Files', label: 'Replace private files' },
+  { code: 'files.manage_all', group: 'Files', label: 'Manage all private files' },
 ];
 
 const ALL_CAPABILITIES = new Set(CAPABILITY_DEFINITIONS.map(({ code }) => code));
@@ -28,12 +35,13 @@ const ADMIN_CAPABILITIES = new Set([
   'assignments.view', 'assignments.manage', 'progress.view', 'progress.manage',
   'reports.view', 'finances.view', 'finances.manage', 'analytics.view',
   'announcements.manage', 'import.manage', 'users.manage',
+  'files.upload', 'files.view', 'files.download', 'files.delete', 'files.replace',
 ]);
 const TEAMLEAD_CAPABILITIES = new Set([
   'clients.view', 'clients.manage', 'installations.view', 'installations.manage',
   'assignments.view', 'assignments.manage', 'progress.view', 'progress.manage',
   'reports.view', 'finances.view', 'finances.manage', 'analytics.view',
-  'announcements.manage', 'import.manage',
+  'announcements.manage', 'import.manage', 'files.upload', 'files.view', 'files.download',
 ]);
 
 const ROLE_CAPABILITIES = {
@@ -44,7 +52,7 @@ const ROLE_CAPABILITIES = {
   Finance: VIEW_ONLY,
   Sales: new Set(['reports.view']),
   Developer: new Set(),
-  User: new Set(['clients.view', 'installations.view', 'installations.manage', 'reports.view']),
+  User: new Set(['clients.view', 'installations.view', 'installations.manage', 'reports.view', 'files.upload', 'files.view', 'files.download']),
 };
 const ROLE_DENIED_CAPABILITIES = {
   Management: new Set(['installations.manage', 'progress.manage']),

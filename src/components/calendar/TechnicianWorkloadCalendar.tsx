@@ -8,6 +8,7 @@ import { User } from "@/types";
 import { apiClient } from "@/integrations/apiClient";
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameMonth, isSameDay, addMonths, subMonths, isToday } from "date-fns";
 import { cn } from "@/lib/utils";
+import { OPERATIONAL_REFRESH_INTERVAL_MS } from "@/utils/refreshIntervals";
 
 interface TechnicianWorkloadCalendarProps {
   user: User;
@@ -53,10 +54,10 @@ export const TechnicianWorkloadCalendar = ({ user }: TechnicianWorkloadCalendarP
   useEffect(() => {
     loadData();
     
-    // Set up polling for "realtime" functionality with local backend
+    // Keep background refresh gentle; data-updated events still refresh immediately.
     const interval = setInterval(() => {
       loadData(false); // Silent refresh
-    }, 30000); // 30 seconds
+    }, OPERATIONAL_REFRESH_INTERVAL_MS);
     
     // Listen for manual data refresh events
     const handleRefresh = () => loadData(false);

@@ -3,7 +3,7 @@ const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
 const { v4: uuidv4 } = require('uuid');
 const { createChallenge, verifyChallenge } = require('../utils/twoFactor');
-const { getSmsBalance, sendEmail, sendSms } = require('../services/notifications');
+const { getSmsBalance, sendEmail, sendSms, sendWhatsApp, whatsappConfigured, whatsappStatus } = require('../services/notifications');
 const { sendUserNotification, sendUsersNotification } = require('../services/notificationDispatcher');
 const { canonicalAppUrl } = require('../security/apiSecurity');
 const { deliveryForCrmsEvent, resolveCompletionRecipientId } = require('./crmsNotificationPolicy');
@@ -42,9 +42,9 @@ const denyUnlessRole = (req, res, ...roles) => {
 };
 
 const REQUEST_UPDATE_FIELDS = {
-  SuperAdmin: new Set(['client_id','department','source','change_description','priority','status','modules_affected','estimated_completion_date','senior_developer_id','assigned_developer_id','approval_comment','is_chargeable','sales_remarks','commencement_date','completion_date']),
-  Admin: new Set(['client_id','department','source','change_description','priority','status','modules_affected','estimated_completion_date','senior_developer_id','assigned_developer_id','approval_comment','is_chargeable','sales_remarks','commencement_date','completion_date']),
-  Management: new Set(['client_id','department','source','change_description','priority','status','modules_affected','estimated_completion_date','senior_developer_id','assigned_developer_id','approval_comment','is_chargeable','sales_remarks','commencement_date','completion_date']),
+  SuperAdmin: new Set(['client_id','branch_id','department_id','installation_id','department','source','change_description','priority','status','modules_affected','estimated_completion_date','senior_developer_id','assigned_developer_id','approval_comment','is_chargeable','sales_remarks','commencement_date','completion_date']),
+  Admin: new Set(['client_id','branch_id','department_id','installation_id','department','source','change_description','priority','status','modules_affected','estimated_completion_date','senior_developer_id','assigned_developer_id','approval_comment','is_chargeable','sales_remarks','commencement_date','completion_date']),
+  Management: new Set(['client_id','branch_id','department_id','installation_id','department','source','change_description','priority','status','modules_affected','estimated_completion_date','senior_developer_id','assigned_developer_id','approval_comment','is_chargeable','sales_remarks','commencement_date','completion_date']),
   Sales: new Set(['status','approval_comment','is_chargeable','sales_remarks']),
   Teamlead: new Set(['priority','status','estimated_completion_date','senior_developer_id','assigned_developer_id','commencement_date','completion_date']),
   Developer: new Set(['status','commencement_date','completion_date']),
@@ -357,12 +357,16 @@ module.exports = function createCrmsRouter({ pool, jwtSecret }) {
   });
 
   const requestJoins = `SELECT cr.*,
-    IF(c.id IS NULL,NULL,JSON_OBJECT('id',c.id,'name',c.client_name,'branch',c.branch,'contact_person',c.contact_person_name,'contact_email',c.contact_email,'contact_phone',c.contact_phone,'contract_type',LOWER(c.contract_type),'subsidiary_id',c.subsidiary_id,'subsidiary_name',s.subsidiary_name)) client,
+    IF(c.id IS NULL,NULL,JSON_OBJECT('id',c.id,'name',c.client_name,'branch',COALESCE(cb.branch_name,c.branch),'contact_person',c.contact_person_name,'contact_email',c.contact_email,'contact_phone',c.contact_phone,'contract_type',LOWER(c.contract_type),'subsidiary_id',c.subsidiary_id,'subsidiary_name',s.subsidiary_name)) client,
     IF(ad.id IS NULL,NULL,JSON_OBJECT('id',ad.id,'name',CONCAT_WS(' ',ad.first_name,ad.last_name))) assigned_developer,
-    IF(sd.id IS NULL,NULL,JSON_OBJECT('id',sd.id,'name',CONCAT_WS(' ',sd.first_name,sd.last_name))) senior_developer
+    IF(sd.id IS NULL,NULL,JSON_OBJECT('id',sd.id,'name',CONCAT_WS(' ',sd.first_name,sd.last_name))) senior_developer,
+    IF(cb.id IS NULL,NULL,JSON_OBJECT('id',cb.id,'name',cb.branch_name,'status',cb.status)) branch_scope,
+    IF(cd.id IS NULL,NULL,JSON_OBJECT('id',cd.id,'name',cd.department_name,'status',cd.status,'branch_id',cd.branch_id)) department_scope
     FROM crms_change_requests cr
     LEFT JOIN clients c ON c.id COLLATE utf8mb4_general_ci=cr.client_id
     LEFT JOIN subsidiaries s ON s.id COLLATE utf8mb4_general_ci=c.subsidiary_id
+    LEFT JOIN client_branches cb ON cb.id COLLATE utf8mb4_general_ci=cr.branch_id
+    LEFT JOIN client_departments cd ON cd.id COLLATE utf8mb4_general_ci=cr.department_id
     LEFT JOIN user_profiles ad ON ad.id COLLATE utf8mb4_general_ci=cr.assigned_developer_id
     LEFT JOIN user_profiles sd ON sd.id COLLATE utf8mb4_general_ci=cr.senior_developer_id`;
   const formatRequest = (row) => ({
@@ -370,6 +374,8 @@ module.exports = function createCrmsRouter({ pool, jwtSecret }) {
     client: typeof row.client === 'string' ? JSON.parse(row.client) : row.client,
     assigned_developer: typeof row.assigned_developer === 'string' ? JSON.parse(row.assigned_developer) : row.assigned_developer,
     senior_developer: typeof row.senior_developer === 'string' ? JSON.parse(row.senior_developer) : row.senior_developer,
+    branch_scope: typeof row.branch_scope === 'string' ? JSON.parse(row.branch_scope) : row.branch_scope,
+    department_scope: typeof row.department_scope === 'string' ? JSON.parse(row.department_scope) : row.department_scope,
     modules_affected: typeof row.modules_affected === 'string' ? JSON.parse(row.modules_affected) : row.modules_affected,
   });
   router.get('/change_requests', async (req, res) => {
@@ -409,11 +415,12 @@ module.exports = function createCrmsRouter({ pool, jwtSecret }) {
       const id = uuidv4();
       const ticket = `CR-${Date.now().toString().slice(-8)}`;
       const r = req.body;
+      const scope = await validateRequestScope({ clientId: r.client_id, branchId: r.branch_id, departmentId: r.department_id, installationId: r.installation_id });
       await pool.query(
         `INSERT INTO crms_change_requests
-         (id,ticket_number,client_id,department,date_requested,source,change_description,priority,status,modules_affected,estimated_completion_date,senior_developer_id,assigned_developer_id,is_chargeable,sales_remarks,commencement_date,completion_date)
-         VALUES (?,?,?,?,CURDATE(),?,?,?,?,?,?,?,?,?,?,?,?)`,
-        [id,ticket,r.client_id,r.department,r.source,r.change_description,r.priority,r.status || 'pending_approval',JSON.stringify(r.modules_affected || []),r.estimated_completion_date,r.senior_developer_id,r.assigned_developer_id || null,!!r.is_chargeable,r.sales_remarks || null,r.commencement_date || null,r.completion_date || null],
+         (id,ticket_number,client_id,branch_id,department_id,installation_id,department,date_requested,source,change_description,priority,status,modules_affected,estimated_completion_date,senior_developer_id,assigned_developer_id,is_chargeable,sales_remarks,commencement_date,completion_date)
+         VALUES (?,?,?,?,?,?,?,CURDATE(),?,?,?,?,?,?,?,?,?,?,?,?)`,
+        [id,ticket,scope.clientId,scope.branchId,scope.departmentId,scope.installationId,r.department,r.source,r.change_description,r.priority,r.status || 'pending_approval',JSON.stringify(r.modules_affected || []),r.estimated_completion_date,r.senior_developer_id,r.assigned_developer_id || null,!!r.is_chargeable,r.sales_remarks || null,r.commencement_date || null,r.completion_date || null],
       );
       const [rows] = await pool.query(`${requestJoins} WHERE cr.id = ?`, [id]);
       const created = formatRequest(rows[0]);
@@ -575,6 +582,32 @@ module.exports = function createCrmsRouter({ pool, jwtSecret }) {
       const [users] = await pool.query(`SELECT id,phone_number FROM user_profiles WHERE ${lookup} AND is_active = TRUE LIMIT 1`, [identifier]);
       if (!users.length || !users[0].phone_number) return res.status(404).json({ error: 'Active SMS recipient not found.' });
       res.json({ success: true, ...(await sendSms({ phoneNumber: users[0].phone_number, message: req.body.message })) });
+    }
+    catch (error) { res.status(502).json({ success: false, error: error.message }); }
+  });
+  router.get('/notifications/whatsapp-status', async (req,res) => {
+    if (denyUnlessRole(req, res, 'Admin')) return;
+    res.json({ success: true, whatsapp: whatsappStatus() });
+  });
+  router.post('/notifications/send-whatsapp', async (req,res) => {
+    try {
+      if (denyUnlessRole(req, res, 'Admin')) return;
+      if (!whatsappConfigured()) return res.status(400).json({ success: false, error: 'WhatsApp notifications are not configured or disabled.' });
+      const identifier = req.body.userId || req.body.phoneNumber;
+      const lookup = req.body.userId ? 'id = ?' : 'phone_number = ?';
+      const [users] = await pool.query(`SELECT id,phone_number,first_name,last_name,email FROM user_profiles WHERE ${lookup} AND is_active = TRUE LIMIT 1`, [identifier]);
+      if (!users.length || !users[0].phone_number) return res.status(404).json({ error: 'Active WhatsApp recipient not found.' });
+      const recipient = users[0];
+      res.json({ success: true, ...(await sendWhatsApp({
+        phoneNumber: recipient.phone_number,
+        message: req.body.message || 'RIANA CIMS notification',
+        recipientName: fullName(recipient),
+        serviceName: req.body.serviceName || req.body.notificationType || 'RIANA CIMS',
+        bookingDate: req.body.bookingDate || new Date().toLocaleDateString('en-GB'),
+        notificationType: req.body.notificationType || 'general',
+        clientName: req.body.clientName,
+        templateParams: req.body.templateParams,
+      })) });
     }
     catch (error) { res.status(502).json({ success: false, error: error.message }); }
   });

@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Plus, Search, Package, Monitor, Smartphone, Wifi, Loader2, Upload } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useDatabase } from "@/hooks/useDatabase";
-import { Installation, Client, User, EscalationMatrix, Subsidiary } from "@/types";
+import { Installation, Client, User, EscalationMatrix, Subsidiary, ClientBranch, ClientDepartment } from "@/types";
 import { InstallationDetailsDialog } from "@/components/dialogs/InstallationDetailsDialog";
 import { EscalationMatrixDialog } from "@/components/dialogs/EscalationMatrixDialog";
 import { normalizeEscalationMatrix } from "@/utils/escalationMatrix";
@@ -20,6 +20,7 @@ import { EHandoverUpload } from "@/components/handover/EHandoverUpload";
 import { generateInstallationReport } from "@/utils/installationExport";
 import { InstallationActionsMenu } from "./InstallationActionsMenu";
 import { can } from "@/security/accessControl";
+import { apiClient } from "@/integrations/apiClient";
 
 interface InstallationsModuleProps {
   user: User;
@@ -34,6 +35,9 @@ export const InstallationsModule = ({ user }: InstallationsModuleProps) => {
   const [technicianFilter, setTechnicianFilter] = useState<string>("all");
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [newInstallation, setNewInstallation] = useState<Partial<Installation>>({});
+  const [installationBranches, setInstallationBranches] = useState<ClientBranch[]>([]);
+  const [installationDepartments, setInstallationDepartments] = useState<ClientDepartment[]>([]);
+  const [isHierarchyLoading, setIsHierarchyLoading] = useState(false);
   const [selectedInstallation, setSelectedInstallation] = useState<Installation | null>(null);
   const [isDetailsDialogOpen, setIsDetailsDialogOpen] = useState(false);
   const [isEscalationDialogOpen, setIsEscalationDialogOpen] = useState(false);
@@ -98,6 +102,103 @@ export const InstallationsModule = ({ user }: InstallationsModuleProps) => {
     }
   };
 
+  const normalizeBranches = (branches: any[]): ClientBranch[] => (Array.isArray(branches) ? branches : [])
+    .filter((branch) => branch && (!branch.status || branch.status === 'active'))
+    .map((branch) => ({
+      ...branch,
+      branch_name: String(branch.branch_name || branch.name || '').trim(),
+    }))
+    .filter((branch) => Boolean(branch.branch_name));
+
+  const normalizeDepartments = (departments: any[]): ClientDepartment[] => (Array.isArray(departments) ? departments : [])
+    .filter((department) => department && (!department.status || department.status === 'active'))
+    .map((department) => ({
+      ...department,
+      department_name: String(department.department_name || department.name || '').trim(),
+    }))
+    .filter((department) => Boolean(department.department_name));
+
+  const loadDepartmentsForBranch = async (branchId: string) => {
+    if (!branchId) {
+      setInstallationDepartments([]);
+      return [] as ClientDepartment[];
+    }
+
+    const departments = normalizeDepartments(await apiClient.get(`/branches/${branchId}/departments`));
+    setInstallationDepartments(departments);
+    return departments;
+  };
+
+  const loadBranchesForInstallationClient = async (clientId: string, preferredBranchId = '', preferredDepartmentId = '') => {
+    const client = clients.find((item) => item.id === clientId);
+    setIsHierarchyLoading(true);
+    setInstallationBranches([]);
+    setInstallationDepartments([]);
+
+    try {
+      const branches = normalizeBranches(await apiClient.get(`/clients/${clientId}/branches`));
+      setInstallationBranches(branches);
+
+      const mainBranch = branches.find((branch) => branch.branch_name.toLowerCase() === 'main');
+      const selectedBranch = branches.find((branch) => branch.id === preferredBranchId) || mainBranch || branches[0] || null;
+
+      if (!selectedBranch) {
+        setNewInstallation((current) => ({
+          ...current,
+          client_id: clientId,
+          branch_id: '',
+          department_id: '',
+          branch: client?.branch || '',
+        }));
+        return;
+      }
+
+      const departments = await loadDepartmentsForBranch(selectedBranch.id);
+      const selectedDepartment = departments.find((department) => department.id === preferredDepartmentId) || null;
+      setNewInstallation((current) => ({
+        ...current,
+        client_id: clientId,
+        branch_id: selectedBranch.id,
+        branch: selectedBranch.branch_name,
+        department_id: selectedDepartment?.id || '',
+      }));
+    } catch (error: any) {
+      console.error('Error loading client installation hierarchy:', error);
+      toast({
+        title: "Hierarchy loading failed",
+        description: error?.message || "Could not load branches and departments for this client.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsHierarchyLoading(false);
+    }
+  };
+
+  const handleInstallationClientSelect = async (clientId: string) => {
+    setNewInstallation((current) => ({ ...current, client_id: clientId, branch_id: '', department_id: '', branch: '' }));
+    if (!clientId || clientId === 'no-clients') return;
+    await loadBranchesForInstallationClient(clientId);
+  };
+
+  const handleInstallationBranchSelect = async (branchId: string) => {
+    const selectedBranch = installationBranches.find((branch) => branch.id === branchId);
+    setNewInstallation((current) => ({
+      ...current,
+      branch_id: branchId,
+      branch: selectedBranch?.branch_name || '',
+      department_id: '',
+    }));
+    setIsHierarchyLoading(true);
+    try {
+      await loadDepartmentsForBranch(branchId);
+    } catch (error: any) {
+      console.error('Error loading branch departments:', error);
+      toast({ title: "Department loading failed", description: error?.message || "Could not load departments for this branch.", variant: "destructive" });
+    } finally {
+      setIsHierarchyLoading(false);
+    }
+  };
+
 
   const filteredInstallations = installations.filter(installation => {
     const client = clients.find(c => c.id === installation.client_id);
@@ -126,10 +227,10 @@ export const InstallationsModule = ({ user }: InstallationsModuleProps) => {
   const technicians = users.filter(u => u.role === 'User' || u.role === 'Teamlead');
 
   const handleAddInstallation = async () => {
-    if (!newInstallation.client_id || !newInstallation.kiosk_type) {
+    if (!newInstallation.client_id || !newInstallation.branch_id || !newInstallation.kiosk_type) {
       toast({
         title: "Error",
-        description: "Please fill in all required fields (Client and Kiosk Type)",
+        description: "Please fill in all required fields (Client, Branch, and Kiosk Type)",
         variant: "destructive",
       });
       return;
@@ -142,6 +243,8 @@ export const InstallationsModule = ({ user }: InstallationsModuleProps) => {
 
       const installationData = {
         client_id: newInstallation.client_id!,
+        branch_id: newInstallation.branch_id || null,
+        department_id: newInstallation.department_id || null,
         kiosk_type: newInstallation.kiosk_type!,
         kiosk_count: newInstallation.kiosk_count || 0,
         counter_count: newInstallation.counter_count || 0,
@@ -174,6 +277,8 @@ export const InstallationsModule = ({ user }: InstallationsModuleProps) => {
       }
       await loadInitialData();
       setNewInstallation({});
+      setInstallationBranches([]);
+      setInstallationDepartments([]);
       setIsAddDialogOpen(false);
       toast({
         title: "Success",
@@ -303,8 +408,12 @@ export const InstallationsModule = ({ user }: InstallationsModuleProps) => {
   };
 
   const getClientName = (clientId: string) => {
-    const client = clients.find(c => c.id === clientId);
-    return client ? `${client.client_name}${client.branch ? ` - ${client.branch}` : ''}` : 'Unknown Client';
+    return clients.find(c => c.id === clientId)?.client_name || 'Unknown Client';
+  };
+
+  const getInstallationScopeLabel = (installation: Installation) => {
+    const branchName = installation.branch_name || installation.branch || clients.find(c => c.id === installation.client_id)?.branch || 'Main';
+    return installation.department_name ? `${branchName} / ${installation.department_name}` : branchName;
   };
 
   const getTechnicianName = (technicianId?: string) => {
@@ -341,9 +450,9 @@ export const InstallationsModule = ({ user }: InstallationsModuleProps) => {
   };
 
   const handleEditInstallation = (installation: Installation) => {
-    // Set the installation to edit mode
     setNewInstallation(installation);
     setIsAddDialogOpen(true);
+    void loadBranchesForInstallationClient(installation.client_id, installation.branch_id || '', installation.department_id || '');
   };
 
   const getSelectedClient = () => {
@@ -377,23 +486,15 @@ export const InstallationsModule = ({ user }: InstallationsModuleProps) => {
                 <Label htmlFor="client_id">Client *</Label>
                 <Select 
                   value={newInstallation.client_id || ''} 
-                  onValueChange={(value) => {
-                    setNewInstallation({
-                      ...newInstallation, 
-                      client_id: value
-                    });
-                  }}
+                  onValueChange={(value) => void handleInstallationClientSelect(value)}
                 >
                   <SelectTrigger>
                     <SelectValue placeholder="Select client" />
                   </SelectTrigger>
                   <SelectContent>
                     {(() => {
-                      // Get clients that don't already have installations (unless editing)
-                      const existingInstallationClientIds = installations.map(i => i.client_id);
-                      const availableClients = newInstallation.id 
-                        ? clients // If editing, show all clients
-                        : clients.filter(c => !existingInstallationClientIds.includes(c.id));
+                      // Clients can have multiple branch/department installations, so scope is selected after the client.
+                      const availableClients = clients;
                       
                       // For non-Admin/Teamlead users, only show assigned clients
                       const isRegularUser = user.role !== 'SuperAdmin' && user.role !== 'Admin' && user.role !== 'Teamlead';
@@ -416,17 +517,50 @@ export const InstallationsModule = ({ user }: InstallationsModuleProps) => {
                         <SelectItem value="no-clients" disabled>
                           {isRegularUser 
                             ? 'No assigned clients available' 
-                            : 'All clients already have installations'}
+                            : 'No clients available'}
                         </SelectItem>
                       );
                     })()}
                   </SelectContent>
                 </Select>
-                {newInstallation.client_id && (
-                  <div className="text-sm text-muted-foreground">
-                    Branch: {clients.find(c => c.id === newInstallation.client_id)?.branch || 'Main Branch'}
-                  </div>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="installation_branch_id">Branch *</Label>
+                <Select
+                  value={newInstallation.branch_id || ''}
+                  onValueChange={(value) => void handleInstallationBranchSelect(value)}
+                  disabled={!newInstallation.client_id || isHierarchyLoading || installationBranches.length === 0}
+                >
+                  <SelectTrigger id="installation_branch_id">
+                    <SelectValue placeholder={!newInstallation.client_id ? 'Select client first' : isHierarchyLoading ? 'Loading branches...' : 'Select branch'} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {installationBranches.map((branch) => (
+                      <SelectItem key={branch.id} value={branch.id}>{branch.branch_name}{branch.branch_code ? ` (${branch.branch_code})` : ''}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {newInstallation.client_id && !isHierarchyLoading && installationBranches.length === 0 && (
+                  <p className="text-xs text-destructive">No active branches found. Add the Main branch in Client Management before creating an installation.</p>
                 )}
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="installation_department_id">Department</Label>
+                <Select
+                  value={newInstallation.department_id || 'none'}
+                  onValueChange={(value) => setNewInstallation({...newInstallation, department_id: value === 'none' ? '' : value})}
+                  disabled={!newInstallation.branch_id || isHierarchyLoading || installationDepartments.length === 0}
+                >
+                  <SelectTrigger id="installation_department_id">
+                    <SelectValue placeholder={!newInstallation.branch_id ? 'Select branch first' : installationDepartments.length ? 'Select department' : 'No departments yet'} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">No department</SelectItem>
+                    {installationDepartments.map((department) => (
+                      <SelectItem key={department.id} value={department.id}>{department.department_name}{department.department_code ? ` (${department.department_code})` : ''}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
               <div className="space-y-2">
                 <Label htmlFor="kiosk_type">Kiosk Type *</Label>
@@ -769,6 +903,7 @@ export const InstallationsModule = ({ user }: InstallationsModuleProps) => {
                 <TableRow key={installation.id}>
                   <TableCell>
                     <div className="font-medium">{getClientName(installation.client_id)}</div>
+                    <div className="text-sm text-muted-foreground">{getInstallationScopeLabel(installation)}</div>
                   </TableCell>
                   <TableCell>
                     <div>

@@ -1,10 +1,26 @@
+const fs = require('fs');
+const path = require('path');
 const nodemailer = require('nodemailer');
 const { parsePhoneNumberFromString } = require('libphonenumber-js/max');
 const PROVIDER_TIMEOUT_MS = Number(process.env.NOTIFICATION_PROVIDER_TIMEOUT_MS || 10000);
 let smtpTransport;
 let lastSmtpStatus = { testedAt: null, success: null, action: null, error: null, response: null };
+let lastSmsStatus = { testedAt: null, success: null, action: null, error: null, response: null };
+let lastWhatsAppStatus = { testedAt: null, success: null, action: null, error: null, response: null };
 
 const providerSignal = () => AbortSignal.timeout(PROVIDER_TIMEOUT_MS);
+
+const booleanEnv = (name, defaultValue = false) => {
+  const value = process.env[name];
+  if (value === undefined || value === null || value === '') return defaultValue;
+  return /^(1|true|yes|on)$/i.test(String(value).trim());
+};
+
+const safeTemplateValue = (value, fallback = '') => String(value ?? fallback)
+  .replace(/[\r\n\t]+/g, ' ')
+  .replace(/\s{2,}/g, ' ')
+  .trim()
+  .slice(0, 512);
 
 const requiredEnv = (name) => {
   const value = process.env[name]?.trim();
@@ -112,6 +128,49 @@ const safeFontFamily = (value) => {
   const supported = new Set(['Arial', 'Inter', 'Roboto', 'Helvetica', 'Verdana', 'Tahoma']);
   return supported.has(String(value || '').trim()) ? String(value).trim() : 'Arial';
 };
+let cachedBundledLogo;
+const LOGO_CONTENT_TYPES = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.webp': 'image/webp' };
+const bundledLogo = () => {
+  if (cachedBundledLogo !== undefined) return cachedBundledLogo;
+  const candidates = [
+    path.join(__dirname, '../../public/Riana_logo.png'),
+    path.join(__dirname, '../../dist/Riana_logo.png'),
+    path.join(__dirname, '../../client/dist/Riana_logo.png'),
+  ];
+  const logoPath = candidates.find(candidate => fs.existsSync(candidate));
+  if (!logoPath) {
+    cachedBundledLogo = null;
+    return cachedBundledLogo;
+  }
+  const contentType = LOGO_CONTENT_TYPES[path.extname(logoPath).toLowerCase()] || 'image/png';
+  cachedBundledLogo = {
+    filename: path.basename(logoPath),
+    content: fs.readFileSync(logoPath),
+    contentType,
+  };
+  return cachedBundledLogo;
+};
+
+const emailBranding = (notification = {}) => {
+  const branding = notification.branding || {};
+  const companyName = String(branding.name || 'RIANA CIMS').trim().slice(0, 120) || 'RIANA CIMS';
+  const primaryColor = safeThemeColor(branding.primaryColor, '#0D8390');
+  const secondaryColor = safeThemeColor(branding.secondaryColor, '#2563EB');
+  const fontFamily = safeFontFamily(branding.fontFamily);
+  const logoUrl = safeHttpUrl(branding.logoUrl);
+  const bundled = Buffer.isBuffer(branding.logoContent) || logoUrl ? null : bundledLogo();
+  const logoContent = Buffer.isBuffer(branding.logoContent) ? branding.logoContent : bundled?.content || null;
+  return {
+    companyName,
+    primaryColor,
+    secondaryColor,
+    fontFamily,
+    logoSource: logoContent ? 'cid:system-logo' : logoUrl,
+    logoContent,
+    logoFilename: branding.logoFilename || bundled?.filename || 'system-logo.png',
+    logoContentType: branding.logoContentType || bundled?.contentType || 'image/png',
+  };
+};
 
 const emailSubjects = {
   request_created: 'New change request created',
@@ -135,6 +194,10 @@ const emailSubjects = {
 
 const buildNotificationHtml = (notification) => {
   const title = emailSubjects[notification.notificationType] || 'RIANA CIMS notification';
+  const branding = emailBranding(notification);
+  const logo = branding.logoSource
+    ? `<img src="${escapeHtml(branding.logoSource)}" width="118" alt="${escapeHtml(branding.companyName)} logo" style="display:block;width:118px;max-width:118px;height:auto;max-height:70px;margin:0 auto 14px;object-fit:contain;border:0;outline:none;text-decoration:none">`
+    : '';
   const rows = [
     ['Ticket', notification.ticketNumber], ['Client', notification.clientName],
     ['Request', notification.requestDescription], ['Approved by', notification.approverName],
@@ -142,14 +205,14 @@ const buildNotificationHtml = (notification) => {
     ['Username', notification.username], ['Temporary password', notification.password],
     ['Login URL', notification.loginUrl], ['Account setup', notification.setupUrl],
   ].filter(([, value]) => value);
-  return `<!doctype html><html><body style="margin:0;background:#f4f6f8;font-family:Arial,sans-serif;color:#172033">
-    <div style="max-width:640px;margin:32px auto;background:#fff;border-radius:12px;overflow:hidden;border:1px solid #e5e7eb">
-      <div style="padding:22px 28px;background:#0d8390;color:#fff"><strong>RIANA CIMS</strong></div>
-      <div style="padding:28px"><h2 style="margin-top:0">${escapeHtml(title)}</h2>
+  return `<!doctype html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head><body style="margin:0;background:#f3f6f9;font-family:${branding.fontFamily},Arial,sans-serif;color:#172033">
+    <div style="max-width:640px;margin:32px auto;background:#fff;border-radius:10px;overflow:hidden;border:1px solid #dce3ec">
+      <div style="padding:26px 28px;background:${branding.primaryColor};color:#fff;text-align:center">${logo}<strong style="display:block;font-size:13px;letter-spacing:.4px;text-transform:uppercase">${escapeHtml(branding.companyName)}</strong></div>
+      <div style="padding:28px"><h2 style="margin:0 0 18px;color:#172033;font-size:24px;line-height:1.25">${escapeHtml(title)}</h2>
         <p>Hello ${escapeHtml(notification.recipientName || 'there')},</p>
         ${rows.map(([label, value]) => `<p><strong>${escapeHtml(label)}:</strong> ${escapeHtml(value)}</p>`).join('')}
-        ${notification.actionUrl ? `<p style="margin-top:28px"><a href="${escapeHtml(notification.actionUrl)}" style="background:#0d8390;color:#fff;padding:12px 18px;border-radius:8px;text-decoration:none">Open RIANA CIMS</a></p>` : ''}
-      </div><div style="padding:16px 28px;border-top:1px solid #e5e7eb;text-align:center;color:#78879a;font-size:11px"><strong>RIANA CIMS</strong><br>Powered by Riana Atomations</div></div></body></html>`;
+        ${notification.actionUrl ? `<p style="margin-top:28px"><a href="${escapeHtml(notification.actionUrl)}" style="display:inline-block;background:${branding.primaryColor};color:#fff;padding:13px 20px;border-radius:7px;text-decoration:none;font-weight:700">Open ${escapeHtml(branding.companyName)}</a></p>` : ''}
+      </div><div style="padding:16px 28px;border-top:1px solid #e2e8f0;text-align:center;color:#78879a;font-size:11px;line-height:1.5"><strong>${escapeHtml(branding.companyName)}</strong><br>Powered by Riana Automations</div></div></body></html>`;
 };
 
 const detailRow = (icon, label, value, options = {}) => {
@@ -165,45 +228,43 @@ const detailRow = (icon, label, value, options = {}) => {
 };
 
 const buildWelcomeEmailHtml = (notification) => {
-  const branding = notification.branding || {};
-  const companyName = String(branding.name || 'RIANA CIMS').trim().slice(0, 120) || 'RIANA CIMS';
-  const primaryColor = safeThemeColor(branding.primaryColor, '#0D8390');
-  const secondaryColor = safeThemeColor(branding.secondaryColor, '#2563EB');
-  const fontFamily = safeFontFamily(branding.fontFamily);
+  const branding = emailBranding(notification);
+  const companyName = branding.companyName;
+  const primaryColor = branding.primaryColor;
+  const secondaryColor = branding.secondaryColor;
+  const fontFamily = branding.fontFamily;
   const loginUrl = safeHttpUrl(notification.loginUrl);
   const setupUrl = safeHttpUrl(notification.setupUrl);
-  const logoUrl = safeHttpUrl(branding.logoUrl);
-  const logoSource = branding.logoContent ? 'cid:system-logo' : logoUrl;
-  const logo = logoSource
-    ? `<img src="${escapeHtml(logoSource)}" width="116" alt="${escapeHtml(companyName)} logo" style="display:block;max-width:116px;max-height:72px;margin:0 auto 16px;object-fit:contain">`
+  const logo = branding.logoSource
+    ? `<img src="${escapeHtml(branding.logoSource)}" width="116" alt="${escapeHtml(companyName)} logo" style="display:block;max-width:116px;max-height:72px;margin:0 auto 16px;object-fit:contain">`
     : '';
   const greetingName = notification.recipientName || 'there';
   const rows = [
-    detailRow('🌐', 'Login URL', loginUrl, { url: loginUrl, color: primaryColor }),
-    detailRow('✉️', 'Email / Username', notification.username || notification.recipientEmail),
-    detailRow('🔐', 'Secure Password Setup', 'Create your password using the button below'),
-    detailRow('🎓', 'Role', notification.role || 'User'),
+    detailRow('URL', 'Login URL', loginUrl, { url: loginUrl, color: primaryColor }),
+    detailRow('MAIL', 'Email / Username', notification.username || notification.recipientEmail),
+    detailRow('KEY', 'Secure Password Setup', 'Create your password using the button below'),
+    detailRow('ROLE', 'Role', notification.role || 'User'),
   ].join('');
 
-  return `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+  return `<!doctype html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
   <body style="margin:0;padding:0;background:#f3f6f9;font-family:${fontFamily},Arial,sans-serif;color:#172033">
     <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#f3f6f9"><tr><td align="center" style="padding:24px 12px">
       <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:640px;background:#fff;border:1px solid #e2e8f0;border-radius:10px;overflow:hidden">
         <tr><td align="center" style="padding:28px 24px;background:${primaryColor};background-image:linear-gradient(135deg,${primaryColor},${secondaryColor});color:#fff">
           ${logo}<div style="font-size:22px;font-weight:800;line-height:1.25">Welcome to ${escapeHtml(companyName)}</div>
-          <div style="margin-top:8px;font-size:13px;opacity:.95">Your account is ready — here are your login details</div>
+          <div style="margin-top:8px;font-size:13px;opacity:.95">Your account is ready - here are your login details</div>
         </td></tr>
         <tr><td style="padding:28px 24px">
           <p style="margin:0 0 18px;font-size:14px"><strong>Hi ${escapeHtml(greetingName)},</strong></p>
           <p style="margin:0 0 20px;font-size:14px;line-height:1.65">Welcome to ${escapeHtml(companyName)}. Your account has been created by an administrator. Use the secure link below to create your password, then sign in and manage your work.</p>
           <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="padding:14px;background:#f8fafc;border:1px solid #dce3ec;border-radius:8px">
-            <tr><td style="padding:0 0 12px;color:#50627a;font-size:12px;font-weight:800;letter-spacing:.3px">🔑 YOUR LOGIN CREDENTIALS</td></tr>
+            <tr><td style="padding:0 0 12px;color:#50627a;font-size:12px;font-weight:800;letter-spacing:.3px">YOUR LOGIN CREDENTIALS</td></tr>
             ${rows}
           </table>
           <div style="padding-top:20px;text-align:center"><a href="${escapeHtml(setupUrl)}" style="display:inline-block;padding:13px 22px;border-radius:7px;background:${primaryColor};color:#fff;font-size:14px;font-weight:800;text-decoration:none">Create Your Password</a></div>
-          <p style="margin:16px 0 0;text-align:center;color:#68778b;font-size:12px;line-height:1.5">For your security, this setup link expires in 30 minutes. If it expires, use “Forgot your password?” on the login page.</p>
+          <p style="margin:16px 0 0;text-align:center;color:#68778b;font-size:12px;line-height:1.5">For your security, this setup link expires in 30 minutes. If it expires, use "Forgot your password?" on the login page.</p>
         </td></tr>
-        <tr><td style="padding:16px 24px;border-top:1px solid #e2e8f0;text-align:center;color:#78879a;font-size:11px"><strong>${escapeHtml(companyName)}</strong><br>Powered by Riana Atomations</td></tr>
+        <tr><td style="padding:16px 24px;border-top:1px solid #e2e8f0;text-align:center;color:#78879a;font-size:11px"><strong>${escapeHtml(companyName)}</strong><br>Powered by Riana Automations</td></tr>
       </table>
     </td></tr></table>
   </body></html>`;
@@ -238,7 +299,7 @@ const plainTextFor = (notification, subject) => [
   notification.actionUrl && `Open RIANA CIMS: ${notification.actionUrl}`,
   '',
   'RIANA CIMS',
-  'Powered by Riana Atomations',
+  'Powered by Riana Automations',
 ].filter(Boolean).join('\n\n');
 const safeAttachments = (attachments = []) => {
   if (!Array.isArray(attachments)) throw new Error('attachments must be an array');
@@ -281,11 +342,12 @@ async function sendEmail(notification) {
   const fromEmail = configuredFrom.address;
   const fromName = String(notification.fromName || configuredFrom.name).trim().replace(/[\r\n]/g, '').slice(0, 120);
   const recipientEmail = validatedMailbox(notification.recipientEmail, 'recipientEmail');
-  const logoAttachments = notification.notificationType === 'welcome' && Buffer.isBuffer(notification.branding?.logoContent)
+  const branding = emailBranding(notification);
+  const logoAttachments = Buffer.isBuffer(branding.logoContent)
     ? [{
-        filename: notification.branding.logoFilename || 'system-logo.png',
-        content: notification.branding.logoContent,
-        contentType: notification.branding.logoContentType || 'image/png',
+        filename: branding.logoFilename,
+        content: branding.logoContent,
+        contentType: branding.logoContentType,
         cid: 'system-logo',
       }]
     : [];
@@ -324,43 +386,155 @@ const normalizePhone = (phone) => {
   return parsed.number;
 };
 
-const bTextmanHeaders = () => {
-  const apiKey = requiredEnv('B_TEXTMAN_API_KEY');
-  return { accept: 'application/json', authorization: `Bearer ${apiKey}`, 'x-api-key': apiKey, 'content-type': 'application/json' };
+const africaTalkingConfiguration = () => ({
+  username: requiredEnv('AFRICASTALKING_USERNAME'),
+  apiKey: requiredEnv('AFRICASTALKING_API_KEY'),
+  smsUrl: process.env.AFRICASTALKING_SMS_URL?.trim() || 'https://api.africastalking.com/version1/messaging',
+  balanceUrl: process.env.AFRICASTALKING_BALANCE_URL?.trim() || 'https://api.africastalking.com/version1/user',
+  senderId: process.env.SMS_SENDER_ID?.trim() || process.env.AFRICASTALKING_SENDER_ID?.trim() || 'Q-SYS',
+});
+
+const africaTalkingHeaders = (apiKey) => ({
+  accept: 'application/json',
+  apiKey,
+  'content-type': 'application/x-www-form-urlencoded',
+});
+
+const smsStatus = () => {
+  try {
+    const config = africaTalkingConfiguration();
+    return {
+      provider: 'africas-talking',
+      configured: true,
+      username: config.username,
+      senderId: config.senderId,
+      smsUrl: config.smsUrl,
+      balanceUrl: config.balanceUrl,
+      ...lastSmsStatus,
+    };
+  } catch (error) {
+    return { provider: 'africas-talking', configured: false, ...lastSmsStatus, error: lastSmsStatus.error || error.message };
+  }
+};
+
+const africaTalkingRejected = (data) => {
+  const recipients = data?.SMSMessageData?.Recipients;
+  if (!Array.isArray(recipients) || !recipients.length) return data?.success === false || data?.ok === false;
+  return recipients.every((recipient) => {
+    const status = String(recipient.status || '').toLowerCase();
+    const code = Number(recipient.statusCode);
+    return status && status !== 'success' && code !== 100;
+  });
 };
 
 async function sendSms({ phoneNumber, message }) {
   if (!message?.trim()) throw new Error('message is required');
-  const baseUrl = requiredEnv('B_TEXTMAN_API_URL');
-  const sendPath = process.env.B_TEXTMAN_SEND_PATH?.trim() || 'send-sms';
-  const senderId = process.env.SMS_SENDER_ID?.trim() || 'RIANA';
-  const response = await fetch(joinUrl(baseUrl, sendPath), {
-    method: 'POST', headers: bTextmanHeaders(), signal: providerSignal(),
-    body: JSON.stringify({ recipient: normalizePhone(phoneNumber), message: message.trim(), sender_id: senderId }),
+  const config = africaTalkingConfiguration();
+  const recipient = normalizePhone(phoneNumber);
+  const body = new URLSearchParams({
+    username: config.username,
+    to: recipient,
+    message: message.trim(),
+    from: config.senderId,
+  });
+  const response = await fetch(config.smsUrl, {
+    method: 'POST',
+    headers: africaTalkingHeaders(config.apiKey),
+    signal: providerSignal(),
+    body,
   });
   const data = await parseProviderResponse(response);
-  const providerStatus = String(data.status || '').trim().toLowerCase();
-  const providerRejected = data.success === false || data.ok === false || ['failed', 'error', 'rejected'].includes(providerStatus);
-  if (!response.ok || providerRejected) {
-    throw new Error(`B-Textman delivery failed (${response.status}): ${data.message || data.error || providerStatus || 'provider error'}`);
+  if (!response.ok || africaTalkingRejected(data)) {
+    lastSmsStatus = { testedAt: new Date().toISOString(), success: false, action: 'send', error: data.message || data.errorMessage || data.error || 'provider error', response: data };
+    throw new Error(`Africa's Talking SMS delivery failed (${response.status}): ${lastSmsStatus.error}`);
   }
-  return { provider: 'b-textman', data };
+  lastSmsStatus = { testedAt: new Date().toISOString(), success: true, action: 'send', error: null, response: data };
+  return { provider: 'africas-talking', data };
 }
 
 async function getSmsBalance() {
-  const baseUrl = requiredEnv('B_TEXTMAN_API_URL');
-  const balancePath = requiredEnv('B_TEXTMAN_BALANCE_PATH');
-  const response = await fetch(joinUrl(baseUrl, balancePath), { headers: bTextmanHeaders(), signal: providerSignal() });
+  const config = africaTalkingConfiguration();
+  const url = new URL(config.balanceUrl);
+  url.searchParams.set('username', config.username);
+  const response = await fetch(url, { headers: { accept: 'application/json', apiKey: config.apiKey }, signal: providerSignal() });
   const data = await parseProviderResponse(response);
-  if (!response.ok) throw new Error(`B-Textman balance lookup failed (${response.status}): ${data.message || data.error || 'provider error'}`);
+  if (!response.ok) {
+    lastSmsStatus = { testedAt: new Date().toISOString(), success: false, action: 'balance', error: data.message || data.errorMessage || data.error || 'provider error', response: data };
+    throw new Error(`Africa's Talking balance lookup failed (${response.status}): ${lastSmsStatus.error}`);
+  }
+  lastSmsStatus = { testedAt: new Date().toISOString(), success: true, action: 'balance', error: null, response: data };
   return data;
+}
+
+const whatsappConfigured = () => Boolean(
+  process.env.BEEM_WHATSAPP_USER_ID?.trim()
+  && process.env.BEEM_WHATSAPP_AUTHORIZATION?.trim()
+  && booleanEnv('ENABLE_WHATSAPP_NOTIFICATIONS', true)
+);
+
+const whatsappStatus = () => ({
+  provider: 'beem-whatsapp',
+  configured: whatsappConfigured(),
+  apiUrl: process.env.BEEM_WHATSAPP_API_URL?.trim() || 'https://apichatcore.beem.africa/v1/chat-send',
+  templateId: Number(process.env.BEEM_WHATSAPP_TEMPLATE_ID || 479),
+  enabled: booleanEnv('ENABLE_WHATSAPP_NOTIFICATIONS', true),
+  ...lastWhatsAppStatus,
+});
+
+const whatsappAuthorization = () => {
+  const value = requiredEnv('BEEM_WHATSAPP_AUTHORIZATION');
+  return /^Basic\s+/i.test(value) ? value : `Basic ${value}`;
+};
+
+const buildWhatsAppTemplateParams = ({ recipientName, serviceName, bookingDate, templateParams, message, notificationType, clientName }) => {
+  if (templateParams && typeof templateParams === 'object' && !Array.isArray(templateParams)) {
+    return Object.fromEntries(Object.entries(templateParams).map(([key, value]) => [key, safeTemplateValue(value)]));
+  }
+  return {
+    param0: safeTemplateValue(recipientName, 'there'),
+    param1: safeTemplateValue(serviceName || clientName || notificationType || message, 'RIANA CIMS'),
+    param2: safeTemplateValue(bookingDate || new Date().toLocaleDateString('en-GB'), new Date().toLocaleDateString('en-GB')),
+  };
+};
+
+async function sendWhatsApp({ phoneNumber, message, recipientName, serviceName, bookingDate, templateParams, notificationType, clientName }) {
+  if (!whatsappConfigured()) return { provider: 'beem-whatsapp', skipped: true, reason: 'WhatsApp notifications are not configured or disabled' };
+  const mobile = normalizePhone(phoneNumber);
+  const apiUrl = process.env.BEEM_WHATSAPP_API_URL?.trim() || 'https://apichatcore.beem.africa/v1/chat-send';
+  const templateId = Number(process.env.BEEM_WHATSAPP_TEMPLATE_ID || 479);
+  if (!Number.isInteger(templateId) || templateId < 1) throw new Error('BEEM_WHATSAPP_TEMPLATE_ID must be a positive integer');
+  const payload = {
+    user_id: requiredEnv('BEEM_WHATSAPP_USER_ID'),
+    from_addr: mobile,
+    mediaType: 'text',
+    messageTemplateData: { isTemplateMessage: true, id: templateId },
+    link: [],
+    params: [buildWhatsAppTemplateParams({ recipientName, serviceName, bookingDate, templateParams, message, notificationType, clientName })],
+  };
+  const response = await fetch(apiUrl, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', authorization: whatsappAuthorization() },
+    signal: providerSignal(),
+    body: JSON.stringify(payload),
+  });
+  const data = await parseProviderResponse(response);
+  const providerStatus = String(data.status || data.messageStatus || '').toLowerCase();
+  const providerRejected = data.success === false || data.ok === false || ['failed', 'error', 'rejected'].includes(providerStatus);
+  if (!response.ok || providerRejected) {
+    lastWhatsAppStatus = { testedAt: new Date().toISOString(), success: false, action: 'send', error: data.message || data.error || providerStatus || 'provider error', response: data };
+    throw new Error(`Beem WhatsApp delivery failed (${response.status}): ${lastWhatsAppStatus.error}`);
+  }
+  lastWhatsAppStatus = { testedAt: new Date().toISOString(), success: true, action: 'send', error: null, response: data };
+  return { provider: 'beem-whatsapp', data };
 }
 
 async function sendVerificationCode({ channel, destination, code }) {
   if (channel === 'email') {
     return sendEmail({ recipientEmail: destination, recipientName: 'RIANA user', notificationType: 'login_verification', requestDescription: `Your verification code is ${code}. It expires in 10 minutes.` });
   }
-  return sendSms({ phoneNumber: destination, message: `RIANA verification code: ${code}. Expires in 10 minutes.` });
+  const message = `RIANA verification code: ${code}. Expires in 10 minutes.`;
+  if (channel === 'whatsapp') return sendWhatsApp({ phoneNumber: destination, message, recipientName: 'RIANA user', serviceName: 'Verification code', bookingDate: new Date().toLocaleDateString('en-GB'), notificationType: 'login_verification' });
+  return sendSms({ phoneNumber: destination, message });
 }
 
 async function sendWelcomeCredentials({ email, phoneNumber, name, role, loginUrl, setupUrl, branding, deliveryTest = false }) {
@@ -380,11 +554,12 @@ async function sendWelcomeCredentials({ email, phoneNumber, name, role, loginUrl
       branding,
       deliveryTest,
     }),
-    phoneNumber ? sendSms({ phoneNumber, message }) : Promise.resolve({ provider: 'b-textman', skipped: true, reason: 'No phone number' }),
+    phoneNumber ? sendSms({ phoneNumber, message }) : Promise.resolve({ provider: 'africas-talking', skipped: true, reason: 'No phone number' }),
+    phoneNumber ? sendWhatsApp({ phoneNumber, message, recipientName: name || email, serviceName: 'RIANA CIMS account setup', bookingDate: new Date().toLocaleDateString('en-GB'), notificationType: 'welcome' }) : Promise.resolve({ provider: 'beem-whatsapp', skipped: true, reason: 'No phone number' }),
   ]);
   return deliveries.map((delivery, index) => delivery.status === 'fulfilled'
     ? delivery.value
-    : { provider: index === 0 ? 'smtp' : 'b-textman', error: delivery.reason?.message || 'Delivery failed' });
+    : { provider: index === 0 ? 'smtp' : index === 1 ? 'africas-talking' : 'beem-whatsapp', error: delivery.reason?.message || 'Delivery failed' });
 }
 
-module.exports = { buildWelcomeEmailHtml, getSmsBalance, normalizePhone, sendEmail, sendSms, sendVerificationCode, sendWelcomeCredentials, smtpStatus, verifySmtpConnection };
+module.exports = { buildWelcomeEmailHtml, getSmsBalance, normalizePhone, sendEmail, sendSms, sendVerificationCode, sendWelcomeCredentials, sendWhatsApp, smsStatus, smtpStatus, verifySmtpConnection, whatsappConfigured, whatsappStatus };

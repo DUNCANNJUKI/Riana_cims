@@ -52,6 +52,7 @@ import { useToast } from "@/hooks/use-toast";
 import { apiClient } from "@/integrations/apiClient";
 import { User } from "@/types";
 import { format } from "date-fns";
+import { OPERATIONAL_REFRESH_INTERVAL_MS } from "@/utils/refreshIntervals";
 
 interface Announcement {
   id: string;
@@ -112,7 +113,7 @@ export const AnnouncementsManagementModule = ({ user }: AnnouncementsManagementM
       if (document.visibilityState === 'visible' && !isDialogOpenRef.current) {
         void loadAnnouncements(false);
       }
-    }, 30000);
+    }, OPERATIONAL_REFRESH_INTERVAL_MS);
 
     return () => {
       clearInterval(intervalId);

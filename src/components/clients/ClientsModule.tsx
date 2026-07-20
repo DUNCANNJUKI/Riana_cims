@@ -21,15 +21,22 @@ interface ClientsModuleProps {
   user: User;
 }
 
+const DEFAULT_MAIN_BRANCH = 'Main';
+
 export const ClientsModule = ({ user }: ClientsModuleProps) => {
   const canManageClients = can(user, 'clients.manage');
   const [clients, setClients] = useState<Client[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [newClient, setNewClient] = useState<Partial<Client>>({});
+  const [clientEntryMode, setClientEntryMode] = useState<'new-client' | 'branch' | 'department'>('new-client');
+  const [clientBranches, setClientBranches] = useState<any[]>([]);
+  const [branchForm, setBranchForm] = useState({ client_id: '', branch_name: '', branch_code: '', notes: '' });
+  const [departmentForm, setDepartmentForm] = useState({ client_id: '', branch_id: '', department_name: '', department_code: '', notes: '' });
   const [departments, setDepartments] = useState<any[]>([]);
   const [subsidiaries, setSubsidiaries] = useState<any[]>([]);
   const [selectedClient, setSelectedClient] = useState<Client | null>(null);
+  const [revealedContacts, setRevealedContacts] = useState<Record<string, string>>({});
   const [isDetailsDialogOpen, setIsDetailsDialogOpen] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const { toast } = useToast();
@@ -48,6 +55,21 @@ export const ClientsModule = ({ user }: ClientsModuleProps) => {
   }, []);
 
 
+  const loadClientBranches = async (sourceClients: Client[]) => {
+    const branchResults = await Promise.all(
+      sourceClients.map(async (client) => {
+        try {
+          const branches = await apiClient.get(`/clients/${client.id}/branches`);
+          return (branches || []).map((branch: any) => ({ ...branch, client_id: client.id }));
+        } catch (error) {
+          console.warn('Unable to load client branches:', client.id, error);
+          return [];
+        }
+      })
+    );
+    setClientBranches(branchResults.flat());
+  };
+
   const loadInitialData = async () => {
     try {
       const [clientsData, departmentsData, subsidiariesData] = await Promise.all([
@@ -59,6 +81,7 @@ export const ClientsModule = ({ user }: ClientsModuleProps) => {
       setClients(clientsData);
       setDepartments(departmentsData);
       setSubsidiaries(subsidiariesData);
+      await loadClientBranches(clientsData || []);
     } catch (error) {
       console.error('Error loading data:', error);
       toast({
@@ -75,20 +98,79 @@ export const ClientsModule = ({ user }: ClientsModuleProps) => {
     client.industry_classification.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
-  const handleAddClient = async () => {
-    if (!newClient.client_name || !newClient.contact_person_name || !newClient.department_id || !newClient.subsidiary_id) {
-      toast({
-        title: "Error",
-        description: "Please fill in all required fields",
-        variant: "destructive",
-      });
-      return;
-    }
+  const departmentBranchOptions = clientBranches.filter(branch => branch.client_id === departmentForm.client_id);
 
+  const resetAddDialog = () => {
+    setNewClient({});
+    setBranchForm({ client_id: '', branch_name: '', branch_code: '', notes: '' });
+    setDepartmentForm({ client_id: '', branch_id: '', department_name: '', department_code: '', notes: '' });
+    setClientEntryMode('new-client');
+  };
+
+  const closeAddDialog = () => {
+    resetAddDialog();
+    setIsAddDialogOpen(false);
+  };
+
+  const handleAddBranch = async () => {
+    if (!branchForm.client_id || !branchForm.branch_name.trim()) {
+      toast({ title: "Error", description: "Select a client and enter a branch name", variant: "destructive" });
+      return false;
+    }
+    await apiClient.post(`/clients/${branchForm.client_id}/branches`, {
+      branch_name: branchForm.branch_name.trim(),
+      branch_code: branchForm.branch_code.trim() || null,
+      notes: branchForm.notes.trim() || null,
+    });
+    return true;
+  };
+
+  const handleAddDepartment = async () => {
+    if (!departmentForm.client_id || !departmentForm.branch_id || !departmentForm.department_name.trim()) {
+      toast({ title: "Error", description: "Select a client and branch, then enter a department name", variant: "destructive" });
+      return false;
+    }
+    await apiClient.post(`/branches/${departmentForm.branch_id}/departments`, {
+      department_name: departmentForm.department_name.trim(),
+      department_code: departmentForm.department_code.trim() || null,
+      notes: departmentForm.notes.trim() || null,
+    });
+    return true;
+  };
+
+  const handleAddClient = async () => {
     try {
+      if (clientEntryMode === 'branch') {
+        const saved = await handleAddBranch();
+        if (!saved) return;
+        await loadInitialData();
+        closeAddDialog();
+        toast({ title: "Success", description: "Branch added successfully" });
+        return;
+      }
+
+      if (clientEntryMode === 'department') {
+        const saved = await handleAddDepartment();
+        if (!saved) return;
+        await loadInitialData();
+        closeAddDialog();
+        toast({ title: "Success", description: "Department added successfully" });
+        return;
+      }
+
+      if (!newClient.client_name || !newClient.contact_person_name || !newClient.subsidiary_id) {
+        toast({
+          title: "Error",
+          description: "Please fill in client name, contact person, and subsidiary",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      const branchName = DEFAULT_MAIN_BRANCH;
       const clientData = {
         client_name: newClient.client_name!,
-        branch: newClient.branch || null,
+        branch: branchName || null,
         contact_person_name: newClient.contact_person_name!,
         contact_phone: newClient.contact_person_phone || '',
         contact_email: newClient.contact_person_email || null,
@@ -97,30 +179,32 @@ export const ClientsModule = ({ user }: ClientsModuleProps) => {
         start_date: newClient.start_date || new Date().toISOString().split('T')[0],
         contract_type: newClient.contract_type || 'AMC',
         industry_classification: newClient.industry_classification || '',
-        department_id: newClient.department_id!,
+        department_id: null,
         subsidiary_id: newClient.subsidiary_id!,
         added_by_user_id: user.id
       };
 
-      await addClient(clientData);
-      await loadInitialData(); // Refresh the client list
-      setNewClient({});
-      setIsAddDialogOpen(false);
+      const createdClient = await addClient(clientData);
+      if (branchName && createdClient?.id) {
+        await apiClient.post(`/clients/${createdClient.id}/branches`, { branch_name: branchName });
+      }
+
+      await loadInitialData();
+      closeAddDialog();
       toast({
         title: "Success",
         description: "Client added successfully",
       });
     } catch (error: any) {
-      console.error('Error adding client:', error);
+      console.error('Error adding client data:', error);
       const serverMessage = error?.response?.data?.error || error?.message;
       toast({
         title: "Error",
-        description: serverMessage || "Failed to add client",
+        description: serverMessage || "Failed to save client data",
         variant: "destructive",
       });
     }
   };
-
   const handleViewDetails = (client: Client) => {
     setSelectedClient(client);
     setIsDetailsDialogOpen(true);
@@ -139,6 +223,7 @@ export const ClientsModule = ({ user }: ClientsModuleProps) => {
         contact_person_name: updatedClient.contact_person_name,
         contact_person_phone: updatedClient.contact_person_phone,
         contact_person_email: updatedClient.contact_person_email,
+        contact_person_department: updatedClient.contact_person_department,
         contract_type: updatedClient.contract_type,
         industry_classification: updatedClient.industry_classification,
         start_date: updatedClient.start_date,
@@ -157,6 +242,16 @@ export const ClientsModule = ({ user }: ClientsModuleProps) => {
     }
   };
 
+
+  const revealClientContact = async (clientId: string, field: 'contact_phone' | 'contact_email') => {
+    try {
+      const result = await apiClient.post(`/clients/${clientId}/reveal-contact`, { field, reason: 'User requested contact reveal from clients table' });
+      setRevealedContacts(current => ({ ...current, [`${clientId}:${field}`]: result.value || '' }));
+      toast({ title: 'Contact revealed', description: 'This reveal was logged for security auditing.' });
+    } catch (error) {
+      toast({ title: 'Reveal denied', description: error instanceof Error ? error.message : 'Unable to reveal contact information.', variant: 'destructive' });
+    }
+  };
   const [clientToDelete, setClientToDelete] = useState<string | null>(null);
   const [deletePassword, setDeletePassword] = useState("");
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
@@ -224,162 +319,181 @@ export const ClientsModule = ({ user }: ClientsModuleProps) => {
           <p className="text-muted-foreground">Manage your client database and information</p>
         </div>
         {canManageClients && (
-          <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
+          <Dialog open={isAddDialogOpen} onOpenChange={(open) => open ? setIsAddDialogOpen(true) : closeAddDialog()}>
             <DialogTrigger asChild>
               <Button className="gradient-primary">
                 <Plus className="h-4 w-4 mr-2" />
                 Add Client
               </Button>
             </DialogTrigger>
-          <DialogContent className="max-w-2xl">
-            <DialogHeader>
-              <DialogTitle>Add New Client</DialogTitle>
-              <DialogDescription>
-                Enter client information to add them to the system
-              </DialogDescription>
-            </DialogHeader>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="client_name">Client Name *</Label>
-                <Input
-                  id="client_name"
-                  value={newClient.client_name || ''}
-                  onChange={(e) => setNewClient({...newClient, client_name: e.target.value})}
-                  placeholder="Enter client name"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="branch">Branch</Label>
-                <Input
-                  id="branch"
-                  value={newClient.branch || ''}
-                  onChange={(e) => setNewClient({...newClient, branch: e.target.value})}
-                  placeholder="Enter branch name"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="contact_person_name">Contact Person *</Label>
-                <Input
-                  id="contact_person_name"
-                  value={newClient.contact_person_name || ''}
-                  onChange={(e) => setNewClient({...newClient, contact_person_name: e.target.value})}
-                  placeholder="Enter contact person name"
-                />
-              </div>
+            <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+              <DialogHeader>
+                <DialogTitle>
+                  {clientEntryMode === 'branch' ? 'Add Client Branch' : clientEntryMode === 'department' ? 'Add Branch Department' : 'Add New Client'}
+                </DialogTitle>
+                <DialogDescription>
+                  Choose whether you are creating a new client, adding a branch, or adding a department under an existing branch.
+                </DialogDescription>
+              </DialogHeader>
 
               <div className="space-y-2">
-                <Label htmlFor="contact_person_phone">Contact Phone</Label>
-                <CountryPhoneInput
-                  id="contact_person_phone"
-                  value={newClient.contact_person_phone || ''}
-                  onChange={(contact_person_phone) => setNewClient({...newClient, contact_person_phone})}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="contact_person_email">Contact Person Email</Label>
-                <Input
-                  id="contact_person_email"
-                  type="email"
-                  value={newClient.contact_person_email || ''}
-                  onChange={(e) => setNewClient({...newClient, contact_person_email: e.target.value})}
-                  placeholder="contact@company.com"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="department_id">Department *</Label>
-                <Select value={newClient.department_id || ''} onValueChange={(value) => setNewClient({...newClient, department_id: value})}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select department" />
+                <Label htmlFor="client_entry_mode">Client Action</Label>
+                <Select
+                  value={clientEntryMode}
+                  onValueChange={(value) => {
+                    const mode = value as 'new-client' | 'branch' | 'department';
+                    setClientEntryMode(mode);
+                    if (mode !== 'department') {
+                      setDepartmentForm({ client_id: '', branch_id: '', department_name: '', department_code: '', notes: '' });
+                    }
+                    if (mode !== 'branch') {
+                      setBranchForm({ client_id: '', branch_name: '', branch_code: '', notes: '' });
+                    }
+                  }}
+                >
+                  <SelectTrigger id="client_entry_mode">
+                    <SelectValue placeholder="Select client action" />
                   </SelectTrigger>
                   <SelectContent>
-                    {departments.map((dept) => (
-                      <SelectItem key={dept.id} value={dept.id}>{dept.department_name}</SelectItem>
-                    ))}
+                    <SelectItem value="new-client">Add new client</SelectItem>
+                    <SelectItem value="branch">Add branch to existing client</SelectItem>
+                    <SelectItem value="department">Add department to existing branch</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="subsidiary_id">Subsidiary *</Label>
-                <Select value={newClient.subsidiary_id || ''} onValueChange={(value) => setNewClient({...newClient, subsidiary_id: value})}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select subsidiary" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {subsidiaries.map((sub) => (
-                      <SelectItem key={sub.id} value={sub.id}>{sub.subsidiary_name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+
+              {clientEntryMode === 'new-client' && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="client_name">Client Name *</Label>
+                    <Input id="client_name" value={newClient.client_name || ''} onChange={(e) => setNewClient({...newClient, client_name: e.target.value})} placeholder="Enter client name" />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="branch">Primary Branch</Label>
+                    <Input id="branch" value={DEFAULT_MAIN_BRANCH} disabled className="bg-muted/60" />
+                    <p className="text-xs text-muted-foreground">Every new client starts with Main. Add more branches after saving the client.</p>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="contact_person_name">Contact Person *</Label>
+                    <Input id="contact_person_name" value={newClient.contact_person_name || ''} onChange={(e) => setNewClient({...newClient, contact_person_name: e.target.value})} placeholder="Enter contact person name" />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="contact_person_department">Contact Person Department</Label>
+                    <Input id="contact_person_department" value={newClient.contact_person_department || ''} onChange={(e) => setNewClient({...newClient, contact_person_department: e.target.value})} placeholder="e.g. IT, Operations, Finance" />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="contact_person_phone">Contact Phone</Label>
+                    <CountryPhoneInput id="contact_person_phone" value={newClient.contact_person_phone || ''} onChange={(contact_person_phone) => setNewClient({...newClient, contact_person_phone})} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="contact_person_email">Contact Person Email</Label>
+                    <Input id="contact_person_email" type="email" value={newClient.contact_person_email || ''} onChange={(e) => setNewClient({...newClient, contact_person_email: e.target.value})} placeholder="contact@company.com" />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="subsidiary_id">Subsidiary *</Label>
+                    <Select value={newClient.subsidiary_id || ''} onValueChange={(value) => setNewClient({...newClient, subsidiary_id: value})}>
+                      <SelectTrigger id="subsidiary_id"><SelectValue placeholder="Select subsidiary" /></SelectTrigger>
+                      <SelectContent>
+                        {subsidiaries.map((sub) => (<SelectItem key={sub.id} value={sub.id}>{sub.subsidiary_name}</SelectItem>))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="start_date">Start Date</Label>
+                    <Input id="start_date" type="date" value={newClient.start_date || ''} onChange={(e) => setNewClient({...newClient, start_date: e.target.value})} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="contract_type">Contract Type</Label>
+                    <Select value={newClient.contract_type || ''} onValueChange={(value) => setNewClient({...newClient, contract_type: value})}>
+                      <SelectTrigger id="contract_type"><SelectValue placeholder="Select contract type" /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="AMC">AMC</SelectItem>
+                        <SelectItem value="WARRANTY">WARRANTY</SelectItem>
+                        <SelectItem value="LEASE">LEASE</SelectItem>
+                        <SelectItem value="POC">POC</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="current_vendor">Current Vendor</Label>
+                    <Input id="current_vendor" value={newClient.current_vendor || ''} onChange={(e) => setNewClient({...newClient, current_vendor: e.target.value})} placeholder="Enter current vendor if any" />
+                  </div>
+                  <div className="sm:col-span-2 space-y-2">
+                    <Label htmlFor="industry_classification">Industry Classification</Label>
+                    <Select value={newClient.industry_classification || ''} onValueChange={(value) => setNewClient({...newClient, industry_classification: value})}>
+                      <SelectTrigger id="industry_classification"><SelectValue placeholder="Select industry classification" /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="Banking">Banking</SelectItem><SelectItem value="Healthcare">Healthcare</SelectItem><SelectItem value="Education">Education</SelectItem><SelectItem value="Government">Government</SelectItem><SelectItem value="Retail">Retail</SelectItem><SelectItem value="Technology">Technology</SelectItem><SelectItem value="Manufacturing">Manufacturing</SelectItem><SelectItem value="Hospitality">Hospitality</SelectItem><SelectItem value="Transportation">Transportation</SelectItem><SelectItem value="Telecommunications">Telecommunications</SelectItem><SelectItem value="Insurance">Insurance</SelectItem><SelectItem value="Real Estate">Real Estate</SelectItem><SelectItem value="Entertainment">Entertainment</SelectItem><SelectItem value="Utilities">Utilities</SelectItem><SelectItem value="Other">Other</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+              )}
+
+              {clientEntryMode === 'branch' && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="space-y-2 sm:col-span-2">
+                    <Label htmlFor="branch_client_id">Existing Client *</Label>
+                    <Select value={branchForm.client_id} onValueChange={(value) => setBranchForm({...branchForm, client_id: value})}>
+                      <SelectTrigger id="branch_client_id"><SelectValue placeholder="Select client" /></SelectTrigger>
+                      <SelectContent>{clients.map((client) => (<SelectItem key={client.id} value={client.id}>{client.client_name}</SelectItem>))}</SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="branch_name">Branch Name *</Label>
+                    <Input id="branch_name" value={branchForm.branch_name} onChange={(e) => setBranchForm({...branchForm, branch_name: e.target.value})} placeholder="Enter branch name" />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="branch_code">Branch Code</Label>
+                    <Input id="branch_code" value={branchForm.branch_code} onChange={(e) => setBranchForm({...branchForm, branch_code: e.target.value})} placeholder="Optional branch code" />
+                  </div>
+                  <div className="space-y-2 sm:col-span-2">
+                    <Label htmlFor="branch_notes">Notes</Label>
+                    <Textarea id="branch_notes" value={branchForm.notes} onChange={(e) => setBranchForm({...branchForm, notes: e.target.value})} placeholder="Optional branch notes" rows={3} />
+                  </div>
+                </div>
+              )}
+
+              {clientEntryMode === 'department' && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="department_client_id">Existing Client *</Label>
+                    <Select value={departmentForm.client_id} onValueChange={(value) => setDepartmentForm({...departmentForm, client_id: value, branch_id: ''})}>
+                      <SelectTrigger id="department_client_id"><SelectValue placeholder="Select client" /></SelectTrigger>
+                      <SelectContent>{clients.map((client) => (<SelectItem key={client.id} value={client.id}>{client.client_name}</SelectItem>))}</SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="department_branch_id">Existing Branch *</Label>
+                    <Select value={departmentForm.branch_id} onValueChange={(value) => setDepartmentForm({...departmentForm, branch_id: value})} disabled={!departmentForm.client_id || departmentBranchOptions.length === 0}>
+                      <SelectTrigger id="department_branch_id"><SelectValue placeholder={departmentForm.client_id ? 'Select branch' : 'Select client first'} /></SelectTrigger>
+                      <SelectContent>{departmentBranchOptions.map((branch) => (<SelectItem key={branch.id} value={branch.id}>{branch.branch_name}</SelectItem>))}</SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="department_name">Department Name *</Label>
+                    <Input id="department_name" value={departmentForm.department_name} onChange={(e) => setDepartmentForm({...departmentForm, department_name: e.target.value})} placeholder="Enter branch department" />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="department_code">Department Code</Label>
+                    <Input id="department_code" value={departmentForm.department_code} onChange={(e) => setDepartmentForm({...departmentForm, department_code: e.target.value})} placeholder="Optional department code" />
+                  </div>
+                  <div className="space-y-2 sm:col-span-2">
+                    <Label htmlFor="department_notes">Notes</Label>
+                    <Textarea id="department_notes" value={departmentForm.notes} onChange={(e) => setDepartmentForm({...departmentForm, notes: e.target.value})} placeholder="Optional department notes" rows={3} />
+                  </div>
+                </div>
+              )}
+
+              <div className="flex justify-end gap-2 mt-4">
+                <Button variant="outline" onClick={closeAddDialog} disabled={loading}>Cancel</Button>
+                <Button onClick={handleAddClient} className="gradient-primary" disabled={loading}>
+                  {loading ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
+                  {clientEntryMode === 'branch' ? 'Add Branch' : clientEntryMode === 'department' ? 'Add Department' : 'Add Client'}
+                </Button>
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="start_date">Start Date</Label>
-                <Input
-                  id="start_date"
-                  type="date"
-                  value={newClient.start_date || ''}
-                  onChange={(e) => setNewClient({...newClient, start_date: e.target.value})}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="contract_type">Contract Type</Label>
-                <Select value={newClient.contract_type || ''} onValueChange={(value) => setNewClient({...newClient, contract_type: value})}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select contract type" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="AMC">AMC</SelectItem>
-                    <SelectItem value="WARRANTY">WARRANTY</SelectItem>
-                    <SelectItem value="LEASE">LEASE</SelectItem>
-                    <SelectItem value="POC">POC</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="col-span-2 space-y-2">
-                <Label htmlFor="current_vendor">Current Vendor</Label>
-                <Input
-                  id="current_vendor"
-                  value={newClient.current_vendor || ''}
-                  onChange={(e) => setNewClient({...newClient, current_vendor: e.target.value})}
-                  placeholder="Enter current vendor if any"
-                />
-              </div>
-              <div className="col-span-2 space-y-2">
-                <Label htmlFor="industry_classification">Industry Classification</Label>
-                <Select value={newClient.industry_classification || ''} onValueChange={(value) => setNewClient({...newClient, industry_classification: value})}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select industry classification" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="Banking">Banking</SelectItem>
-                    <SelectItem value="Healthcare">Healthcare</SelectItem>
-                    <SelectItem value="Education">Education</SelectItem>
-                    <SelectItem value="Government">Government</SelectItem>
-                    <SelectItem value="Retail">Retail</SelectItem>
-                    <SelectItem value="Technology">Technology</SelectItem>
-                    <SelectItem value="Manufacturing">Manufacturing</SelectItem>
-                    <SelectItem value="Hospitality">Hospitality</SelectItem>
-                    <SelectItem value="Transportation">Transportation</SelectItem>
-                    <SelectItem value="Telecommunications">Telecommunications</SelectItem>
-                    <SelectItem value="Insurance">Insurance</SelectItem>
-                    <SelectItem value="Real Estate">Real Estate</SelectItem>
-                    <SelectItem value="Entertainment">Entertainment</SelectItem>
-                    <SelectItem value="Utilities">Utilities</SelectItem>
-                    <SelectItem value="Other">Other</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-            <div className="flex justify-end gap-2 mt-4">
-              <Button variant="outline" onClick={() => setIsAddDialogOpen(false)} disabled={loading}>
-                Cancel
-              </Button>
-              <Button onClick={handleAddClient} className="gradient-primary" disabled={loading}>
-                {loading ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
-                Add Client
-              </Button>
-            </div>
-          </DialogContent>
-        </Dialog>
+            </DialogContent>
+          </Dialog>
         )}
       </div>
 
@@ -431,10 +545,17 @@ export const ClientsModule = ({ user }: ClientsModuleProps) => {
                   </TableCell>
                   <TableCell>{client.contact_person_name}</TableCell>
                   <TableCell>
-                    {client.contact_person_phone && (
-                      <div className="flex items-center gap-1">
-                        <Phone className="h-3 w-3" />
-                        {client.contact_person_phone}
+                    {(client.contact_person_phone || client.contact_person_phone_masked || client.contact_phone_masked) && (
+                      <div className="flex items-center gap-2">
+                        <Phone className="h-3 w-3 shrink-0" />
+                        <span className="font-mono text-xs">
+                          {revealedContacts[`${client.id}:contact_phone`] || client.contact_person_phone_masked || client.contact_phone_masked || 'Hidden'}
+                        </span>
+                        {!revealedContacts[`${client.id}:contact_phone`] && (
+                          <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={() => void revealClientContact(client.id, 'contact_phone')}>
+                            <Eye className="mr-1 h-3 w-3" /> Unhide
+                          </Button>
+                        )}
                       </div>
                     )}
                   </TableCell>
@@ -507,6 +628,7 @@ export const ClientsModule = ({ user }: ClientsModuleProps) => {
         user={user}
         departments={departments}
         subsidiaries={subsidiaries}
+        onHierarchyChange={loadInitialData}
       />
 
       {/* Client Edit Dialog */}
@@ -519,6 +641,7 @@ export const ClientsModule = ({ user }: ClientsModuleProps) => {
         user={user}
         departments={departments}
         subsidiaries={subsidiaries}
+        onHierarchyChange={loadInitialData}
       />
 
       {/* Delete Confirmation Dialog */}
