@@ -4022,12 +4022,52 @@ app.delete('/api/feedback_questions/:id', requireCapability('company.manage'), a
 });
 
 // PUBLIC ENDPOINTS
+const toPublicBranding = (row = {}) => {
+  const logoPath = String(row.logo_path || '').trim();
+  const storedLogo = normalizeStoredFileReference(logoPath);
+  const publicLogoPath = storedLogo && !logoPath.startsWith('/') && !/^https?:/i.test(logoPath)
+    ? `/api/public/company-logo/${encodeURIComponent(storedLogo)}`
+    : (logoPath || '/Riana_logo_transparent.png');
+  return {
+    name: row.name || 'RIANA CIMS',
+    logo_path: publicLogoPath,
+    font_color: row.font_color || '#000000',
+    primary_color: row.primary_color || '#0D8390',
+    font_type: row.font_type || 'Inter',
+    updated_at: row.updated_at || null,
+  };
+};
+
 app.get('/api/public/company-branding', async (_req, res) => {
   try {
-    const [rows] = await pool.query('SELECT name,logo_path,font_color,primary_color,font_type FROM company_settings ORDER BY id LIMIT 1');
-    res.json(rows[0] || { name: 'RIANA CIMS', logo_path: '/Riana_logo.png', primary_color: '#0D8390' });
+    const [rows] = await pool.query('SELECT id,name,logo_path,font_color,primary_color,font_type,updated_at FROM company_settings ORDER BY id LIMIT 1');
+    res.json(toPublicBranding(rows[0]));
   } catch (_err) {
-    res.json({ name: 'RIANA CIMS', logo_path: '/Riana_logo.png', primary_color: '#0D8390' });
+    res.json(toPublicBranding());
+  }
+});
+
+app.get('/api/public/company-logo/:filename', async (req, res) => {
+  try {
+    const filename = normalizeStoredFileReference(req.params.filename);
+    if (!filename) return res.status(404).json({ error: 'Logo not found.' });
+
+    const compatiblePaths = [filename, `uploads/${filename}`, `/uploads/${filename}`];
+    const [rows] = await pool.query('SELECT id FROM company_settings WHERE logo_path IN (?, ?, ?) LIMIT 1', compatiblePaths);
+    if (!rows.length) return res.status(404).json({ error: 'Logo not found.' });
+
+    const resolved = resolveStoredFile(uploadsDir, filename);
+    const extension = path.extname(filename).toLowerCase();
+    if (!resolved || !LOGO_CONTENT_TYPES[extension] || !fs.existsSync(resolved)) {
+      return res.status(404).json({ error: 'Logo not found.' });
+    }
+
+    res.setHeader('Cache-Control', 'public, max-age=3600');
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.type(LOGO_CONTENT_TYPES[extension]);
+    res.sendFile(resolved);
+  } catch (_err) {
+    res.status(500).json({ error: 'Unable to load company logo.' });
   }
 });
 

@@ -100,6 +100,7 @@ const PUBLIC_API_RULES = [
   ['POST', /^\/crms\/auth\/(login|verify-2fa)$/],
   ['GET', /^\/feedback_questions$/],
   ['GET', /^\/public\/company-branding$/],
+  ['GET', /^\/public\/company-logo\/[^/]+$/],
   ['GET', /^\/public\/feedback-links\/[^/]+$/],
   ['POST', /^\/public\/installation-feedback$/],
   ['POST', /^\/public\/feedback-links\/[^/]+\/use$/],

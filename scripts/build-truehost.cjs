@@ -53,6 +53,69 @@ const listFiles = (directory) => {
   walk(directory);
   return files.sort((left, right) => left.localeCompare(right));
 };
+const parseSqlValues = (input) => {
+  const values = [];
+  let index = 0;
+  while (index < input.length) {
+    while (/\s|,/.test(input[index] || '')) index += 1;
+    if (index >= input.length) break;
+    if (input[index] === "'") {
+      index += 1;
+      let value = '';
+      while (index < input.length) {
+        const char = input[index];
+        if (char === '\\') {
+          value += input[index + 1] || '';
+          index += 2;
+          continue;
+        }
+        if (char === "'") {
+          index += 1;
+          break;
+        }
+        value += char;
+        index += 1;
+      }
+      values.push(value);
+      continue;
+    }
+    const start = index;
+    while (index < input.length && input[index] !== ',') index += 1;
+    const value = input.slice(start, index).trim();
+    values.push(/^null$/i.test(value) ? null : value);
+  }
+  return values;
+};
+
+const extractActiveCompanyLogo = (sql) => {
+  const companyInsert = sql.split(/\r?\n/).find((line) => /^INSERT INTO `company_settings`/i.test(line));
+  if (!companyInsert) return null;
+  const match = /^INSERT INTO `company_settings` \((.+?)\) VALUES \((.+)\);$/i.exec(companyInsert.trim());
+  if (!match) return null;
+  const columns = match[1].split(',').map((column) => column.trim().replace(/^`|`$/g, ''));
+  const values = parseSqlValues(match[2]);
+  const logoIndex = columns.indexOf('logo_path');
+  const logoPath = logoIndex >= 0 ? String(values[logoIndex] || '').trim() : '';
+  if (!logoPath || logoPath.startsWith('/') || /^(https?:|data:|blob:)/i.test(logoPath)) return null;
+  const filename = logoPath.replace(/^uploads\//i, '');
+  if (filename !== path.basename(filename) || !/^[a-z0-9][a-z0-9._-]*\.(?:png|jpe?g|gif|webp)$/i.test(filename)) {
+    throw new Error(`Unsupported company logo path in host export: ${logoPath}`);
+  }
+  return filename;
+};
+
+const copyActiveCompanyLogo = (hostSql) => {
+  const filename = extractActiveCompanyLogo(hostSql);
+  if (!filename) return null;
+  const source = path.join(root, 'server', 'uploads', filename);
+  if (!fs.statSync(source, { throwIfNoEntry: false })?.isFile()) {
+    throw new Error(`Active company logo is referenced by the host database but missing from server/uploads: ${filename}`);
+  }
+  const targetDirectory = path.join(application, 'server', 'uploads');
+  fs.mkdirSync(targetDirectory, { recursive: true });
+  fs.copyFileSync(source, path.join(targetDirectory, filename));
+  return `app/server/uploads/${filename}`;
+};
 
 function discoverLiveUpdates() {
   requirePath(liveUpdatesDirectory, 'Live database updates directory');
@@ -120,6 +183,7 @@ const truehostSql = hostSql
     '-- Complete schema with sanitized reference data and one inactive, passwordless SuperAdmin bootstrap principal.',
   );
 fs.writeFileSync(path.join(database, 'riana_cims_host.sql'), truehostSql, 'utf8');
+const packagedCompanyLogo = copyActiveCompanyLogo(hostSql);
 for (const update of liveUpdates) fs.copyFileSync(update.sourcePath, path.join(output, update.packageFile));
 
 const serverPackage = JSON.parse(fs.readFileSync(path.join(root, 'server', 'package.json'), 'utf8'));
@@ -241,7 +305,7 @@ PassengerNodejs /home/CPANEL_USER/nodevenv/rianacims.name.ng/app/24/bin/node
 
 const credentialPackagingStatement = preserveSuperAdmin
   ? 'The database package contains one active SuperAdmin account with its bcrypt password hash. Treat the SQL and database archive as secrets; neither is included in public_html or the Node application.'
-  : 'No live credentials, customer records, uploads, logs, runtime secrets, or backups are included.';
+  : 'No live credentials, customer records, operational uploads, logs, runtime secrets, or backups are included. The active company branding logo is included only when the sanitized settings seed references it.';
 const superAdminDeploymentStep = preserveSuperAdmin
   ? '8. The imported database already contains the active SuperAdmin and its bcrypt password hash. Do not add SUPERADMIN_PASSWORD to cPanel and do not run admin:ensure-superadmin unless you intentionally want to rotate the password.'
   : '8. Activate the bootstrap SuperAdmin once: temporarily add SUPERADMIN_EMAIL (default superadmin@riana.co) and a unique SUPERADMIN_PASSWORD in the Node app environment. The password must be 14+ characters with upper-case, lower-case, number, and symbol characters. In the application terminal run npm run admin:ensure-superadmin. Immediately remove both temporary variables before the final restart.';
@@ -266,7 +330,7 @@ This package is aligned to the cPanel configuration shown for **rianacims.name.n
 - Application URL: **https://rianacims.name.ng/**
 - Startup file: **passenger_app.js**
 
-No live credentials, customer records, uploads, logs, runtime secrets, or backups are included.
+No live credentials, customer records, operational uploads, logs, runtime secrets, or backups are included. The active company branding logo may be included when referenced by sanitized company settings.
 
 ## Folder mapping
 
@@ -312,7 +376,7 @@ Before an update, back up the database and the current \`app\` folder. Preserve 
 - Compare uploaded files with \`FILE_MANIFEST.sha256\` when diagnosing corruption.
 `;
 const deploymentGuide = deploymentGuideTemplate
-  .replace('No live credentials, customer records, uploads, logs, runtime secrets, or backups are included.', credentialPackagingStatement)
+  .replace('No live credentials, customer records, operational uploads, logs, runtime secrets, or backups are included. The active company branding logo may be included when referenced by sanitized company settings.', credentialPackagingStatement)
   .replace(/^8\. Activate the bootstrap SuperAdmin once:.*$/m, superAdminDeploymentStep)
   .replace('The imported database always contains one inactive, passwordless SuperAdmin bootstrap principal. It cannot authenticate until step 8 securely activates it. No universal/default password exists in this package.', superAdminImportStatement)
   .replace('- Keep the SuperAdmin bootstrap variables only for the one activation restart.', superAdminSecurityCheck);
@@ -335,6 +399,7 @@ const buildInfo = {
   databaseFile: 'database/riana_cims_host.sql',
   databaseContainsLiveRecords: preserveSuperAdmin,
   databaseContainsLiveOperationalRecords: false,
+  packagedCompanyLogo,
   liveDatabaseUpdates: liveUpdates.map(({ migrationId, sourceFile, packageFile }) => ({ migrationId, sourceFile, packageFile })),
   bootstrapSuperAdmin: {
     email: bootstrapSuperAdminEmail,
@@ -365,11 +430,16 @@ if (!/CREATE\s+TABLE\s+`?user_profiles`?/i.test(sql) || !/CREATE\s+TABLE\s+`?use
   throw new Error('Truehost database is missing required enterprise access-control tables.');
 }
 
-const forbiddenNames = new Set(['.env.local', '.runtime', 'node_modules', 'backups', 'uploads']);
+const allowedRuntimePackageFiles = new Set(packagedCompanyLogo ? [packagedCompanyLogo] : []);
+const forbiddenNames = new Set(['.env.local', '.runtime', 'node_modules', 'backups']);
 for (const file of listFiles(output)) {
-  const segments = path.relative(output, file).split(path.sep);
+  const relativePath = path.relative(output, file).split(path.sep).join('/');
+  const segments = relativePath.split('/');
   if (segments.some((segment) => forbiddenNames.has(segment))) {
-    throw new Error(`Forbidden runtime content was packaged: ${path.relative(output, file)}`);
+    throw new Error(`Forbidden runtime content was packaged: ${relativePath}`);
+  }
+  if (segments.includes('uploads') && !allowedRuntimePackageFiles.has(relativePath)) {
+    throw new Error(`Forbidden runtime upload was packaged: ${relativePath}`);
   }
 }
 

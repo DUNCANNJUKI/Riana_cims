@@ -1,6 +1,6 @@
 {
-  "generatedAt": "2026-07-27T23:05:36.940Z",
-  "commit": "1e018d6084dd099c60061866b472beeedc500534",
+  "generatedAt": "2026-07-27T23:21:19.988Z",
+  "commit": "96d6ed5ab56b38865ef618c00bb288308c83faf5",
   "truehostNodeVersion": "24.15.0",
   "supportedNodeVersion": ">=20",
   "applicationRoot": "rianacims.name.ng/app",
@@ -11,6 +11,7 @@
   "databaseFile": "database/riana_cims_host.sql",
   "databaseContainsLiveRecords": false,
   "databaseContainsLiveOperationalRecords": false,
+  "packagedCompanyLogo": "app/server/uploads/81558c19-3eeb-4c18-8367-40714cc8e9a0.png",
   "liveDatabaseUpdates": [
     {
       "migrationId": "20260705_subsidiary_handover_equipment",

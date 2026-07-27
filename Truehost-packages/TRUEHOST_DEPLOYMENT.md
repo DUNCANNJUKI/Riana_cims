@@ -8,7 +8,7 @@ This package is aligned to the cPanel configuration shown for **rianacims.name.n
 - Application URL: **https://rianacims.name.ng/**
 - Startup file: **passenger_app.js**
 
-No live credentials, customer records, uploads, logs, runtime secrets, or backups are included.
+No live credentials, customer records, operational uploads, logs, runtime secrets, or backups are included. The active company branding logo is included only when the sanitized settings seed references it.
 
 ## Folder mapping
 

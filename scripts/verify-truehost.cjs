@@ -19,7 +19,7 @@ const requiredFiles = [
   'FILE_MANIFEST.sha256',
   'TRUEHOST_DEPLOYMENT.md',
 ];
-const forbiddenSegments = new Set(['.env.local', '.runtime', 'node_modules', 'backups', 'uploads']);
+const forbiddenSegments = new Set(['.env.local', '.runtime', 'node_modules', 'backups']);
 const productionMarkers = ['http://localhost:8081/api', 'react/jsx-dev-runtime'];
 const bcryptHashPattern = /\$2[aby]\$\d{2}\$[./A-Za-z0-9]{53}/;
 
@@ -75,9 +75,15 @@ if (topDirectories.join(',') !== requiredDirectories.slice().sort().join(',')) {
 }
 
 const allFiles = listFiles(output);
+const allowedRuntimePackageFiles = new Set(buildInfo.packagedCompanyLogo ? [buildInfo.packagedCompanyLogo] : []);
+if (buildInfo.packagedCompanyLogo && !fs.statSync(normalizedPath(buildInfo.packagedCompanyLogo), { throwIfNoEntry: false })?.isFile()) {
+  fail(`Packaged company logo is missing: ${buildInfo.packagedCompanyLogo}`);
+}
 for (const file of allFiles) {
-  const segments = path.relative(output, file).split(path.sep);
-  if (segments.some((segment) => forbiddenSegments.has(segment))) fail(`Forbidden runtime content was packaged: ${path.relative(output, file)}`);
+  const relativePath = path.relative(output, file).split(path.sep).join('/');
+  const segments = relativePath.split('/');
+  if (segments.some((segment) => forbiddenSegments.has(segment))) fail(`Forbidden runtime content was packaged: ${relativePath}`);
+  if (segments.includes('uploads') && !allowedRuntimePackageFiles.has(relativePath)) fail(`Forbidden runtime upload was packaged: ${relativePath}`);
 }
 
 const htaccess = fs.readFileSync(normalizedPath('domain_root/.htaccess'), 'utf8');
