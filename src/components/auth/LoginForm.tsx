@@ -1,14 +1,15 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Lock, Mail, Eye, EyeOff, Phone } from "lucide-react";
-import { API_URL, apiClient } from "@/integrations/apiClient";
+import { apiClient } from "@/integrations/apiClient";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
-import { resolveCompanyLogoUrl } from "@/utils/logoUrl";
 import "./LoginForm.css";
+
+const LOGIN_LOGO_PATH = "/Riana_logo_transparent.png";
 
 export const LoginForm = () => {
   const [email, setEmail] = useState("");
@@ -22,22 +23,7 @@ export const LoginForm = () => {
   const [resetPhone, setResetPhone] = useState("");
   const { login, verifyTwoFactor, isLoading } = useAuth();
   const { toast } = useToast();
-  const [logoPath, setLogoPath] = useState("/Riana_logo_transparent.png");
-
-  useEffect(() => {
-    const loadSettings = async () => {
-      try {
-        const response = await fetch(`${API_URL}/public/company-branding`, { credentials: 'include' });
-        const settings = response.ok ? await response.json() : null;
-        if (settings?.logo_path) {
-          setLogoPath(resolveCompanyLogoUrl(settings.logo_path, settings.updated_at || settings.id));
-        }
-      } catch (error) {
-        // Not critical for login form
-      }
-    };
-    loadSettings();
-  }, []);
+  const [logoPath, setLogoPath] = useState(LOGIN_LOGO_PATH);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -131,8 +117,8 @@ export const LoginForm = () => {
                   alt="RIANA Group"
                   className="riana-login-card__logo"
                   onError={(e) => {
-                    if (e.currentTarget.src.includes(logoPath) && logoPath !== "/Riana_logo_transparent.png") {
-                      setLogoPath("/Riana_logo_transparent.png");
+                    if (e.currentTarget.src.includes(logoPath) && logoPath !== LOGIN_LOGO_PATH) {
+                      setLogoPath(LOGIN_LOGO_PATH);
                     }
                   }}
                 />
