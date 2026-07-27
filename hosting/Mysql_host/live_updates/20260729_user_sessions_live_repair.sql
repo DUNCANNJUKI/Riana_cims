@@ -24,9 +24,7 @@ CREATE TABLE IF NOT EXISTS user_sessions (
   revoke_reason VARCHAR(100) NULL,
   INDEX idx_user_sessions_user_id (user_id),
   INDEX idx_user_sessions_session_id (session_id),
-  INDEX idx_user_sessions_active (user_id, revoked_at, expires_at),
-  CONSTRAINT fk_user_sessions_user
-    FOREIGN KEY (user_id) REFERENCES user_profiles(id) ON DELETE CASCADE
+  INDEX idx_user_sessions_active (user_id, revoked_at, expires_at)
 );
 
 INSERT INTO migration_history (migration_id, description)
