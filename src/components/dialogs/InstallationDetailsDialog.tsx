@@ -85,8 +85,12 @@ export const InstallationDetailsDialog = ({
                   <div className="font-medium">{installation.kiosk_type}</div>
                 </div>
                 <div>
-                  <label className="text-sm font-medium text-muted-foreground">Screen Details</label>
+                  <label className="text-sm font-medium text-muted-foreground">Screen Size</label>
                   <div className="font-medium">{installation.screen_with_size || 'N/A'}</div>
+                </div>
+                <div>
+                  <label className="text-sm font-medium text-muted-foreground">Number of TVs</label>
+                  <div className="font-medium">{installation.screen_count || 0}</div>
                 </div>
               </div>
             </CardContent>

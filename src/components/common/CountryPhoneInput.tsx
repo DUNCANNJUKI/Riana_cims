@@ -53,6 +53,20 @@ export const CountryPhoneInput = ({
     if (inferredCountry && inferredCountry !== country) setCountry(inferredCountry);
   }, [inferredCountry, country]);
 
+  const displayValue = useMemo(() => {
+    const raw = String(value || '').trim();
+    if (!raw) return '';
+
+    const parsed = parsePhoneNumberFromString(raw, country);
+    if (parsed?.nationalNumber) return parsed.nationalNumber;
+
+    const cleaned = raw.replace(/[^\d+]/g, '');
+    const callingCode = getCountryCallingCode(country);
+    if (cleaned.startsWith(`+${callingCode}`)) return cleaned.slice(callingCode.length + 1);
+    if (cleaned.startsWith(callingCode)) return cleaned.slice(callingCode.length);
+    return cleaned.replace(/^\+/, '');
+  }, [country, value]);
+
   const updateNumber = (rawValue: string, selectedCountry = country) => {
     const cleaned = rawValue.replace(/[^\d+]/g, '');
     if (cleaned.startsWith('+')) {
@@ -88,9 +102,9 @@ export const CountryPhoneInput = ({
         type="tel"
         inputMode="tel"
         autoComplete="tel"
-        value={value}
+        value={displayValue}
         onChange={(event) => updateNumber(event.target.value)}
-        placeholder={`+${getCountryCallingCode(country)}`}
+        placeholder="Phone number"
         disabled={disabled}
         required={required}
         maxLength={20}

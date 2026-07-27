@@ -1,5 +1,5 @@
 const HANDOVER_EQUIPMENT_FIELDS = new Set([
-  'kiosk_type','kiosk_count','counter_count','led_count','screen_with_size','service_points',
+  'kiosk_type','kiosk_count','counter_count','led_count','screen_with_size','screen_count','service_points',
   'ups_count','speakers','amplifiers','media_controllers','tablets','digital_signage_system',
   'hdmis','splitters','staff_trained',
 ]);
@@ -7,7 +7,7 @@ const HANDOVER_EQUIPMENT_FIELDS = new Set([
 const normalizeEquipmentConfigurationPayload = (value) => {
   const source = typeof value === 'string' ? JSON.parse(value) : value;
   if (!Array.isArray(source) || source.length === 0 || source.length > HANDOVER_EQUIPMENT_FIELDS.size) {
-    throw new Error('Select between 1 and 15 supported E-handover equipment items.');
+    throw new Error('Select between 1 and 16 supported E-handover equipment items.');
   }
   const seen = new Set();
   return source.map((item) => {

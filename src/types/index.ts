@@ -45,6 +45,7 @@ export type HandoverEquipmentField =
   | 'counter_count'
   | 'led_count'
   | 'screen_with_size'
+  | 'screen_count'
   | 'service_points'
   | 'ups_count'
   | 'speakers'
@@ -111,6 +112,7 @@ export interface Installation {
   ups_count: number;
   speakers: number;
   screen_with_size: string;
+  screen_count: number;
   media_controllers: number;
   tablets: number;
   digital_signage_system: number;

@@ -25,6 +25,7 @@ const DEFAULT_MAIN_BRANCH = 'Main';
 
 export const ClientsModule = ({ user }: ClientsModuleProps) => {
   const canManageClients = can(user, 'clients.manage');
+  const canViewVendor = user.role === 'SuperAdmin' || canManageClients;
   const [clients, setClients] = useState<Client[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
@@ -167,7 +168,7 @@ export const ClientsModule = ({ user }: ClientsModuleProps) => {
         return;
       }
 
-      const branchName = DEFAULT_MAIN_BRANCH;
+      const branchName = String(newClient.branch || '').trim() || DEFAULT_MAIN_BRANCH;
       const clientData = {
         client_name: newClient.client_name!,
         branch: branchName || null,
@@ -229,6 +230,7 @@ export const ClientsModule = ({ user }: ClientsModuleProps) => {
         start_date: updatedClient.start_date,
         department_id: updatedClient.department_id,
         subsidiary_id: updatedClient.subsidiary_id,
+        current_vendor: updatedClient.current_vendor,
       });
 
       await loadInitialData();
@@ -370,8 +372,8 @@ export const ClientsModule = ({ user }: ClientsModuleProps) => {
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="branch">Primary Branch</Label>
-                    <Input id="branch" value={DEFAULT_MAIN_BRANCH} disabled className="bg-muted/60" />
-                    <p className="text-xs text-muted-foreground">Every new client starts with Main. Add more branches after saving the client.</p>
+                    <Input id="branch" value={newClient.branch || ''} onChange={(e) => setNewClient({...newClient, branch: e.target.value})} placeholder={DEFAULT_MAIN_BRANCH} />
+                    <p className="text-xs text-muted-foreground">Leave blank to use Main. Add more branches after saving the client.</p>
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="contact_person_name">Contact Person *</Label>
@@ -415,8 +417,8 @@ export const ClientsModule = ({ user }: ClientsModuleProps) => {
                     </Select>
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="current_vendor">Current Vendor</Label>
-                    <Input id="current_vendor" value={newClient.current_vendor || ''} onChange={(e) => setNewClient({...newClient, current_vendor: e.target.value})} placeholder="Enter current vendor if any" />
+                    <Label htmlFor="current_vendor">Previous Vendor</Label>
+                    <Input id="current_vendor" value={newClient.current_vendor || ''} onChange={(e) => setNewClient({...newClient, current_vendor: e.target.value})} placeholder="Enter previous vendor if any" />
                   </div>
                   <div className="sm:col-span-2 space-y-2">
                     <Label htmlFor="industry_classification">Industry Classification</Label>
@@ -524,6 +526,7 @@ export const ClientsModule = ({ user }: ClientsModuleProps) => {
             <TableHeader>
               <TableRow>
                 <TableHead>Client Name</TableHead>
+                {canViewVendor && <TableHead>Previous Vendor</TableHead>}
                 <TableHead>Contact Person</TableHead>
                 <TableHead>Phone</TableHead>
                 <TableHead>Contract Type</TableHead>
@@ -543,6 +546,7 @@ export const ClientsModule = ({ user }: ClientsModuleProps) => {
                       )}
                     </div>
                   </TableCell>
+                  {canViewVendor && <TableCell>{client.current_vendor || 'N/A'}</TableCell>}
                   <TableCell>{client.contact_person_name}</TableCell>
                   <TableCell>
                     {(client.contact_person_phone || client.contact_person_phone_masked || client.contact_phone_masked) && (

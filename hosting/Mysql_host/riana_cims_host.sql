@@ -1,5 +1,5 @@
 -- RIANA CIMS MySQL hosting database
--- Generated 2026-07-27T21:24:33.925Z
+-- Generated 2026-07-27T22:38:37.839Z
 -- Complete schema with sanitized reference data; no credentials or customer records.
 SET NAMES utf8mb4;
 SET FOREIGN_KEY_CHECKS = 0;
@@ -22,6 +22,7 @@ CREATE TABLE `announcements` (
   `created_by_user_id` varchar(36) DEFAULT NULL,
   PRIMARY KEY (`id`),
   KEY `subsidiary_id` (`subsidiary_id`),
+  KEY `idx_announcements_active_expiry` (`is_active`,`expires_at`),
   CONSTRAINT `announcements_ibfk_1` FOREIGN KEY (`subsidiary_id`) REFERENCES `subsidiaries` (`id`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
@@ -488,6 +489,7 @@ CREATE TABLE `installations` (
   `client_id` varchar(36) NOT NULL,
   `kiosk_type` varchar(100) DEFAULT NULL,
   `screen_with_size` varchar(100) DEFAULT NULL,
+  `screen_count` int(11) DEFAULT 0,
   `kiosk_count` int(11) NOT NULL DEFAULT 0,
   `counter_count` int(11) NOT NULL DEFAULT 0,
   `counter_names` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL CHECK (json_valid(`counter_names`)),
@@ -713,8 +715,10 @@ INSERT INTO `migration_history` (`migration_id`, `description`, `applied_at`) VA
 INSERT INTO `migration_history` (`migration_id`, `description`, `applied_at`) VALUES ('20260718_client_branch_department_scope', 'Applied from 20260718_client_branch_department_scope.sql', '2026-07-20 22:19:41.000');
 INSERT INTO `migration_history` (`migration_id`, `description`, `applied_at`) VALUES ('20260719_live_module_schema_repair', 'Applied from 20260719_live_module_schema_repair.sql', '2026-07-20 22:19:41.000');
 INSERT INTO `migration_history` (`migration_id`, `description`, `applied_at`) VALUES ('20260720_developer_request_scope_submit_fix', 'Applied from 20260720_developer_request_scope_submit_fix.sql', '2026-07-20 23:47:43.000');
+INSERT INTO `migration_history` (`migration_id`, `description`, `applied_at`) VALUES ('20260721_feedback_link_expiry_repair', 'Applied from 20260721_feedback_link_expiry_repair.sql', '2026-07-28 01:38:17.000');
 INSERT INTO `migration_history` (`migration_id`, `description`, `applied_at`) VALUES ('20260724_enterprise_maintenance_mode', 'Enterprise maintenance mode settings and access controls', '2026-07-24 14:58:17.000');
 INSERT INTO `migration_history` (`migration_id`, `description`, `applied_at`) VALUES ('20260724_notifications_and_single_sessions', 'Typed notifications and single active user sessions', '2026-07-24 15:33:43.000');
+INSERT INTO `migration_history` (`migration_id`, `description`, `applied_at`) VALUES ('20260728_installation_screen_count', 'Applied from 20260728_installation_screen_count.sql', '2026-07-28 01:38:18.000');
 
 DROP TABLE IF EXISTS `missed_call_dismissals`;
 CREATE TABLE `missed_call_dismissals` (
@@ -1134,56 +1138,7 @@ CREATE TABLE `user_sessions` (
   KEY `idx_user_sessions_session_id` (`session_id`),
   KEY `idx_user_sessions_active` (`user_id`,`revoked_at`,`expires_at`),
   CONSTRAINT `fk_user_sessions_user` FOREIGN KEY (`user_id`) REFERENCES `user_profiles` (`id`) ON DELETE CASCADE
-) ENGINE=InnoDB AUTO_INCREMENT=16 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
--- Pending idempotent migration: 20260721_feedback_link_expiry_repair.sql
--- Live-safe feedback link expiry repair.
--- Removes legacy ON UPDATE behavior from feedback_links.expires_at so delivery updates do not expire active links.
-SET NAMES utf8mb4;
-
-CREATE TABLE IF NOT EXISTS migration_history (
-  migration_id VARCHAR(100) PRIMARY KEY,
-  description TEXT,
-  applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE TABLE IF NOT EXISTS feedback_links (
-  id VARCHAR(36) PRIMARY KEY,
-  client_id VARCHAR(36) NOT NULL,
-  branch_id VARCHAR(36) NULL,
-  department_id VARCHAR(36) NULL,
-  installation_id VARCHAR(36) NULL,
-  unique_token VARCHAR(100) NOT NULL UNIQUE,
-  expires_at TIMESTAMP NOT NULL,
-  is_used BOOLEAN DEFAULT FALSE,
-  used_at TIMESTAMP NULL,
-  email_sent BOOLEAN DEFAULT FALSE,
-  sms_sent BOOLEAN DEFAULT FALSE,
-  created_by_user_id VARCHAR(36) NULL,
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  INDEX idx_feedback_links_scope (client_id,branch_id,department_id,is_used,expires_at),
-  INDEX idx_feedback_links_token_expires (unique_token,expires_at)
-);
-
-ALTER TABLE feedback_links MODIFY COLUMN expires_at TIMESTAMP NOT NULL;
-
-UPDATE feedback_links
-SET expires_at = DATE_ADD(created_at, INTERVAL 30 DAY)
-WHERE is_used = FALSE
-  AND (email_sent = TRUE OR sms_sent = TRUE)
-  AND created_at IS NOT NULL
-  AND created_at > DATE_SUB(NOW(), INTERVAL 30 DAY)
-  AND expires_at <= NOW();
-
-INSERT INTO migration_history (migration_id, description)
-VALUES (
-  '20260721_feedback_link_expiry_repair',
-  'Removes automatic expires_at updates from feedback links so links remain valid until their original deadline'
-)
-ON DUPLICATE KEY UPDATE
-  description = VALUES(description);
-
-SHOW COLUMNS FROM feedback_links LIKE 'expires_at';
+) ENGINE=InnoDB AUTO_INCREMENT=20 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Inactive bootstrap principal: it has no password and cannot sign in until explicitly activated.
 -- Set a private SUPERADMIN_PASSWORD during the one-time deployment bootstrap; never distribute a default password.

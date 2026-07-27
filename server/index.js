@@ -228,7 +228,7 @@ const normalizeClientPayload = (body = {}) => {
   return normalized;
 };
 const CLIENT_FIELDS = new Set(['client_name','industry_classification','current_vendor','tags','contact_person_name','contact_person_department','contact_email','contact_phone','account_manager_id','subsidiary_id','department_id','branch','start_date','contract_type']);
-const INSTALLATION_FIELDS = new Set(['client_id','branch_id','department_id','kiosk_type','kiosk_count','counter_count','counter_names','led_count','led_names','service_points','ups_count','speakers','screen_with_size','media_controllers','tablets','digital_signage_system','staff_trained','amplifiers','hdmis','splitters','handover_file_path','handover_status','account_manager_id','assigned_technician_id','hardware_technician_id','software_technician_id','status','remarks','assigned_date','completion_date','scheduled_end_date','extension_reason','escalation_matrix','waiting_reason']);
+const INSTALLATION_FIELDS = new Set(['client_id','branch_id','department_id','kiosk_type','kiosk_count','counter_count','counter_names','led_count','led_names','service_points','ups_count','speakers','screen_with_size','screen_count','media_controllers','tablets','digital_signage_system','staff_trained','amplifiers','hdmis','splitters','handover_file_path','handover_status','account_manager_id','assigned_technician_id','hardware_technician_id','software_technician_id','status','remarks','assigned_date','completion_date','scheduled_end_date','extension_reason','escalation_matrix','waiting_reason']);
 const ASSIGNMENT_FIELDS = new Set(['client_id','branch_id','department_id','installation_id','hardware_technician_id','software_technician_id','installation_start_date','scheduled_end_date','status','progress_percentage','notes','branch']);
 const ASSIGNMENT_SELF_UPDATE_FIELDS = new Set(['status','progress_percentage','notes']);
 const ASSIGNMENT_STATUSES = new Set(['assigned','waiting','in_progress','completed']);
@@ -970,6 +970,7 @@ const initDb = async () => {
       ups_count INT DEFAULT 0,
       speakers INT DEFAULT 0,
       screen_with_size VARCHAR(100),
+      screen_count INT DEFAULT 0,
       media_controllers INT DEFAULT 0,
       tablets INT DEFAULT 0,
       digital_signage_system INT DEFAULT 0,
@@ -1004,7 +1005,8 @@ const initDb = async () => {
     await pool.query(`ALTER TABLE installations
       ADD COLUMN IF NOT EXISTS branch_id VARCHAR(36) NULL,
       ADD COLUMN IF NOT EXISTS department_id VARCHAR(36) NULL,
-      ADD COLUMN IF NOT EXISTS handover_status VARCHAR(50) DEFAULT 'pending'`);
+      ADD COLUMN IF NOT EXISTS handover_status VARCHAR(50) DEFAULT 'pending',
+      ADD COLUMN IF NOT EXISTS screen_count INT DEFAULT 0`);
 
     // Client Assignments
     await pool.query(`CREATE TABLE IF NOT EXISTS client_assignments (
@@ -1316,6 +1318,9 @@ const initDb = async () => {
       }
       if (!columnNames.includes('escalation_matrix')) {
         await pool.query('ALTER TABLE installations ADD COLUMN escalation_matrix JSON AFTER scheduled_end_date');
+      }
+      if (!columnNames.includes('screen_count')) {
+        await pool.query('ALTER TABLE installations ADD COLUMN screen_count INT DEFAULT 0 AFTER screen_with_size');
       }
 
       const [clientColumns] = await pool.query('SHOW COLUMNS FROM clients');
@@ -2733,7 +2738,7 @@ app.get('/api/client_assignments', async (req, res) => {
              ht.first_name as ht_f, ht.last_name as ht_l,
              st.first_name as st_f, st.last_name as st_l,
              i.status as installation_status, i.kiosk_type, i.kiosk_count, i.counter_count, i.led_count,
-             i.service_points, i.ups_count, i.speakers, i.screen_with_size, i.media_controllers,
+             i.service_points, i.ups_count, i.speakers, i.screen_with_size, i.screen_count, i.media_controllers,
              i.tablets, i.digital_signage_system
       FROM client_assignments a
       LEFT JOIN clients c ON ${sqlUuidEquals('a.client_id', 'c.id')}
@@ -2771,7 +2776,7 @@ app.get('/api/client_assignments/:id', async (req, res) => {
       SELECT a.*, c.client_name, c.branch AS client_branch, c.contact_person_name, c.contact_email, c.contact_phone, cb.branch_name, cd.department_name,
              ht.first_name as ht_f, ht.last_name as ht_l, st.first_name as st_f, st.last_name as st_l,
              i.status as installation_status, i.kiosk_type, i.kiosk_count, i.counter_count, i.led_count,
-             i.service_points, i.ups_count, i.speakers, i.screen_with_size, i.media_controllers,
+             i.service_points, i.ups_count, i.speakers, i.screen_with_size, i.screen_count, i.media_controllers,
              i.tablets, i.digital_signage_system
       FROM client_assignments a
       LEFT JOIN clients c ON ${sqlUuidEquals('a.client_id', 'c.id')}

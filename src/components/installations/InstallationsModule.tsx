@@ -285,6 +285,7 @@ export const InstallationsModule = ({ user }: InstallationsModuleProps) => {
         ups_count: newInstallation.ups_count || 0,
         speakers: newInstallation.speakers || 0,
         screen_with_size: newInstallation.screen_with_size || '',
+        screen_count: newInstallation.screen_count || 0,
         media_controllers: newInstallation.media_controllers || 0,
         tablets: newInstallation.tablets || 0,
         digital_signage_system: newInstallation.digital_signage_system || 0,
@@ -750,13 +751,24 @@ export const InstallationsModule = ({ user }: InstallationsModuleProps) => {
                   placeholder="0"
                 />
               </div>
-              <div className="col-span-2 space-y-2">
-                <Label htmlFor="screen_with_size">Screen with Size</Label>
+              <div className="space-y-2">
+                <Label htmlFor="screen_with_size">Screen Size</Label>
                 <Input
                   id="screen_with_size"
                   value={newInstallation.screen_with_size || ''}
                   onChange={(e) => setNewInstallation({...newInstallation, screen_with_size: e.target.value})}
                   placeholder="e.g., 55&quot; 4K Display"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="screen_count">Number of TVs</Label>
+                <Input
+                  id="screen_count"
+                  type="number"
+                  min="0"
+                  value={newInstallation.screen_count || ''}
+                  onChange={(e) => setNewInstallation({...newInstallation, screen_count: parseInt(e.target.value) || 0})}
+                  placeholder="Number of TVs/screens"
                 />
               </div>
               <div className="space-y-2">

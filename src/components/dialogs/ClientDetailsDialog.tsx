@@ -9,6 +9,7 @@ import { Building2, CheckCircle2, GitBranch, Layers3, Loader2, Plus, RefreshCw }
 import { User, Client } from "@/types";
 import { apiClient } from "@/integrations/apiClient";
 import { useToast } from "@/hooks/use-toast";
+import { CountryPhoneInput } from "@/components/common/CountryPhoneInput";
 
 type ClientBranch = {
   id: string;
@@ -55,6 +56,7 @@ export const ClientDetailsDialog = ({
 }: ClientDetailsDialogProps) => {
   const { toast } = useToast();
   const canEdit = Boolean(client) && (user.role === 'SuperAdmin' || user.role === 'Admin') && isEditing;
+  const canViewVendor = user.role === 'SuperAdmin' || user.role === 'Admin' || user.role === 'Management';
   const editableClient = useMemo(() => {
     if (!client) return null;
     return {
@@ -66,6 +68,7 @@ export const ClientDetailsDialog = ({
       contract_type: client.contract_type || '',
       industry_classification: client.industry_classification || '',
       branch: client.branch || '',
+      current_vendor: client.current_vendor || '',
     };
   }, [client]);
 
@@ -229,6 +232,17 @@ export const ClientDetailsDialog = ({
                 )}
               </div>
 
+              {canViewVendor && (
+                <div className="space-y-2">
+                  <Label htmlFor="current_vendor">Previous Vendor</Label>
+                  {canEdit ? (
+                    <Input id="current_vendor" value={editedClient?.current_vendor || ''} onChange={(e) => setEditedClient(prev => prev ? {...prev, current_vendor: e.target.value} : null)} placeholder="Enter previous vendor if any" />
+                  ) : (
+                    <div className="p-2 bg-muted rounded">{client.current_vendor || 'N/A'}</div>
+                  )}
+                </div>
+              )}
+
               <div className="space-y-2">
                 <Label htmlFor="contact_person_name">Contact Person</Label>
                 {canEdit ? (
@@ -250,7 +264,7 @@ export const ClientDetailsDialog = ({
               <div className="space-y-2">
                 <Label htmlFor="contact_person_phone">Contact Phone</Label>
                 {canEdit ? (
-                  <Input id="contact_person_phone" value={editedClient?.contact_person_phone || ''} onChange={(e) => setEditedClient(prev => prev ? {...prev, contact_person_phone: e.target.value} : null)} />
+                  <CountryPhoneInput id="contact_person_phone" value={editedClient?.contact_person_phone || ''} onChange={(contact_person_phone) => setEditedClient(prev => prev ? {...prev, contact_person_phone} : null)} />
                 ) : (
                   <div className="p-2 bg-muted rounded">{client.contact_person_phone || client.contact_person_phone_masked || client.contact_phone_masked || 'N/A'}</div>
                 )}

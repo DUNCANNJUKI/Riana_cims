@@ -11,6 +11,7 @@ export const HANDOVER_EQUIPMENT_CATALOG: ReadonlyArray<HandoverEquipmentItem> = 
   { field: 'counter_count', label: 'Tripleplay/Counters', installed_status: 'Installed' },
   { field: 'led_count', label: 'LED Displays', installed_status: 'Installed' },
   { field: 'screen_with_size', label: 'Screen Size', installed_status: 'Configured' },
+  { field: 'screen_count', label: 'Number of TVs', installed_status: 'Installed' },
   { field: 'service_points', label: 'Service Points', installed_status: 'Active' },
   { field: 'ups_count', label: 'UPS Units', installed_status: 'Installed' },
   { field: 'speakers', label: 'Speakers', installed_status: 'Installed' },
@@ -59,6 +60,13 @@ export const normalizeHandoverEquipmentConfiguration = (
       installed_status: installedStatus || fallback.installed_status,
     });
   });
+  if (fallbackToDefault && seen.has('screen_with_size') && !seen.has('screen_count')) {
+    const fallback = catalogByField.get('screen_count')!;
+    const screenIndex = normalized.findIndex((item) => item.field === 'screen_with_size');
+    const screenCountItem = { ...fallback };
+    if (screenIndex >= 0) normalized.splice(screenIndex + 1, 0, screenCountItem);
+    else normalized.push(screenCountItem);
+  }
   return normalized;
 };
 

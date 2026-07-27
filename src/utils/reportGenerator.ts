@@ -314,6 +314,7 @@ const fetchReportData = async (reportType: string, dateRange?: { from: string; t
         const equipmentTotals = {
           'Kiosks': data?.reduce((sum: number, i: any) => sum + (i.kiosk_count || 0), 0) || 0,
           'LED Displays': data?.reduce((sum: number, i: any) => sum + (i.led_count || 0), 0) || 0,
+          'TVs/Screens': data?.reduce((sum: number, i: any) => sum + (i.screen_count || 0), 0) || 0,
           'Tablets': data?.reduce((sum: number, i: any) => sum + (i.tablets || 0), 0) || 0,
           'UPS Units': data?.reduce((sum: number, i: any) => sum + (i.ups_count || 0), 0) || 0,
           'Speakers': data?.reduce((sum: number, i: any) => sum + (i.speakers || 0), 0) || 0,
