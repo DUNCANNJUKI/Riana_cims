@@ -4,6 +4,7 @@ const path = require('path');
 const jwt = require('jsonwebtoken');
 const { v4: uuidv4 } = require('uuid');
 const { logAuditEvent, sanitizeAuditData } = require('../services/auditService');
+const { validateAuthenticatedSession } = require('./sessionStore');
 
 const INSECURE_JWT_SECRETS = new Set(['', 'super-secret-key-change-in-prod', 'replace-with-a-long-random-secret']);
 
@@ -45,27 +46,56 @@ const createSessionAuthenticator = ({ pool, jwtSecret }) => async (req, res, nex
       [decoded.id],
     );
     const user = rows[0];
-    if (!user?.is_active) return res.status(401).json({ error: 'Session is no longer active.' });
+    if (!user?.is_active) {
+      return res.status(401).json({
+        success: false,
+        code: 'ACCOUNT_DISABLED',
+        error: 'Session is no longer active.',
+        message: 'Your account is disabled. Contact an administrator.',
+      });
+    }
     if (Number(decoded.sv || 0) !== Number(user.session_version || 0)) {
-      return res.status(401).json({ error: 'Session has been revoked. Please sign in again.' });
+      return res.status(401).json({
+        success: false,
+        code: 'SESSION_REVOKED',
+        error: 'Session has been revoked. Please sign in again.',
+        message: 'Your session is no longer active. Please sign in again.',
+      });
+    }
+    const session = await validateAuthenticatedSession(pool, { userId: user.id, sessionId: decoded.sid, token });
+    if (!session.valid) {
+      return res.status(401).json({
+        success: false,
+        code: session.code,
+        error: session.message,
+        message: session.message,
+      });
     }
     req.user = {
       id: user.id,
       email: user.email,
       role: user.role,
       subsidiary_id: user.subsidiary_id || null,
+      sid: decoded.sid || null,
       sv: Number(user.session_version || 0),
       extra_permissions: String(user.extra_permissions || '').split(',').filter(Boolean),
     };
     req.currentUser = user;
     next();
-  } catch {
-    res.status(401).json({ error: 'Invalid or expired session.' });
+  } catch (error) {
+    const expired = error?.name === 'TokenExpiredError';
+    res.status(401).json({
+      success: false,
+      code: expired ? 'TOKEN_EXPIRED' : 'SESSION_REVOKED',
+      error: expired ? 'Your session has expired. Please sign in again.' : 'Invalid or expired session.',
+      message: expired ? 'Your session has expired. Please sign in again.' : 'Invalid or expired session.',
+    });
   }
 };
 
 const PUBLIC_API_RULES = [
   ['GET', /^\/health$/],
+  ['GET', /^\/maintenance\/status$/],
   ['POST', /^\/auth\/(login|verify-2fa|forgot-password|reset-password)$/],
   ['POST', /^\/crms\/auth\/(login|verify-2fa)$/],
   ['GET', /^\/feedback_questions$/],

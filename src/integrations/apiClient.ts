@@ -18,7 +18,50 @@ export const setAuthToken = (token: string) => {
 export const clearAuthToken = () => {
   localStorage.removeItem('riana-auth-token');
 };
+const AUTH_FAILURE_CODES = new Set(['SESSION_REPLACED', 'SESSION_REVOKED', 'TOKEN_EXPIRED', 'ACCOUNT_DISABLED']);
+const AUTH_MESSAGE_KEY = 'riana-auth-message';
+const NON_SESSION_401_ENDPOINTS = [/\/auth\/login$/i, /\/auth\/verify-2fa$/i, /\/auth\/verify-password$/i];
 
+const sessionMessageFor = (code?: string, fallback?: string) => {
+  if (code === 'SESSION_REPLACED') return 'Your account was signed in on another device. Please sign in again if this was not you.';
+  if (code === 'ACCOUNT_DISABLED') return 'Your account is disabled. Contact an administrator.';
+  if (code === 'TOKEN_EXPIRED') return 'Your session has expired. Please sign in again.';
+  return fallback || 'Your session is no longer active. Please sign in again.';
+};
+
+const endpointCanReturnBusiness401 = (endpoint: string) => NON_SESSION_401_ENDPOINTS.some((pattern) => pattern.test(endpoint));
+
+export const consumeAuthRedirectMessage = () => {
+  const message = sessionStorage.getItem(AUTH_MESSAGE_KEY);
+  if (message) sessionStorage.removeItem(AUTH_MESSAGE_KEY);
+  return message;
+};
+
+const clearLocalAuthState = () => {
+  clearAuthToken();
+  localStorage.removeItem('riana_user');
+  localStorage.removeItem('crms-user-session');
+  localStorage.removeItem('crms-user-id');
+  localStorage.removeItem('crms-user-role');
+  localStorage.removeItem('crms-auth-token');
+};
+
+const handleUnauthorizedResponse = (endpoint: string, token: string | null, errorData: any) => {
+  const code = typeof errorData?.code === 'string' ? errorData.code : undefined;
+  const shouldClearSession = AUTH_FAILURE_CODES.has(code || '') || (Boolean(token) && !endpointCanReturnBusiness401(endpoint));
+  if (!shouldClearSession) return;
+  clearLocalAuthState();
+  sessionStorage.setItem(AUTH_MESSAGE_KEY, sessionMessageFor(code, errorData?.message || errorData?.error));
+  if (window.location.pathname === '/') window.location.reload();
+  else window.location.assign('/');
+};
+
+const handleMaintenanceResponse = (errorData: any) => {
+  if (errorData?.code !== 'MAINTENANCE_MODE') return;
+  clearLocalAuthState();
+  sessionStorage.setItem(AUTH_MESSAGE_KEY, errorData?.message || 'System is currently under maintenance.');
+  if (window.location.pathname !== '/maintenance') window.location.assign('/maintenance');
+};
 const resolveApiEndpointUrl = (endpoint: string) => {
   if (/^https?:\/\//i.test(endpoint)) return endpoint;
   const normalizedEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
@@ -52,13 +95,13 @@ export const apiFetch = async (endpoint: string, options: RequestInit = {}, retr
     });
 
     if (!response.ok) {
-      if (response.status === 401) {
-        clearAuthToken();
-        localStorage.removeItem('riana_user');
-        window.location.href = '/';
-      }
       const errorData = await response.json().catch(() => ({}));
-      throw new Error(errorData.error || response.statusText || 'API Request Failed');
+      if (response.status === 401) handleUnauthorizedResponse(endpoint, token, errorData);
+      if (response.status === 503) handleMaintenanceResponse(errorData);
+      const error = new Error(errorData.error || errorData.message || response.statusText || 'API Request Failed');
+      (error as Error & { status?: number; code?: string }).status = response.status;
+      (error as Error & { status?: number; code?: string }).code = errorData.code;
+      throw error;
     }
 
     return response.json();
@@ -87,13 +130,13 @@ export const fetchAuthenticatedBlob = async (endpoint: string): Promise<Blob> =>
   });
 
   if (!response.ok) {
-    if (response.status === 401) {
-      clearAuthToken();
-      localStorage.removeItem('riana_user');
-      window.location.assign('/');
-    }
     const errorData = await response.json().catch(() => ({}));
-    throw new Error(errorData.error || response.statusText || 'File request failed');
+    if (response.status === 401) handleUnauthorizedResponse(endpoint, token, errorData);
+    if (response.status === 503) handleMaintenanceResponse(errorData);
+    const error = new Error(errorData.error || errorData.message || response.statusText || 'File request failed');
+    (error as Error & { status?: number; code?: string }).status = response.status;
+    (error as Error & { status?: number; code?: string }).code = errorData.code;
+    throw error;
   }
 
   return response.blob();

@@ -229,7 +229,7 @@ export const generateCompletionReportPDF = async (
   const brand = resolveDocumentBrand(subsidiaryName);
 
   // Keep the shared RIANA header; green remains a semantic completion accent.
-  await addCimsDocumentHeader(doc, {
+  const headerBottom = await addCimsDocumentHeader(doc, {
     subtitle: 'COMPLETION REPORT',
     documentTitle: `Ticket: ${request.ticket_number}`,
     accentColor: GREEN_PRIMARY,
@@ -239,17 +239,22 @@ export const generateCompletionReportPDF = async (
   // Reset text color
   doc.setTextColor(0, 0, 0);
 
-  // Status Badge
+  // Status Badge. Position it from the actual branded header height so MAREZI
+  // letterhead ticket text never collides with the completion state.
+  const badgeWidth = 50;
+  const badgeHeight = 10;
+  const badgeX = (doc.internal.pageSize.getWidth() - badgeWidth) / 2;
+  const badgeY = headerBottom + 3;
   doc.setFillColor(GREEN_PRIMARY[0], GREEN_PRIMARY[1], GREEN_PRIMARY[2]);
-  doc.roundedRect(80, 50, 50, 10, 2, 2, 'F');
+  doc.roundedRect(badgeX, badgeY, badgeWidth, badgeHeight, 2, 2, 'F');
   doc.setTextColor(255, 255, 255);
   doc.setFontSize(10);
   doc.setFont('helvetica', 'bold');
-  doc.text('COMPLETED', 105, 57, { align: 'center' });
+  doc.text('COMPLETED', doc.internal.pageSize.getWidth() / 2, badgeY + 7, { align: 'center' });
   doc.setTextColor(0, 0, 0);
 
   // Summary Section
-  const yPos = 70;
+  const yPos = badgeY + badgeHeight + 10;
   doc.setFontSize(12);
   doc.setFont('helvetica', 'bold');
   doc.setTextColor(...brand.primary);

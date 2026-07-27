@@ -46,8 +46,14 @@ export const SiteLoader = ({ isLoading, minDuration = 800 }: SiteLoaderProps) =>
           ))}
         </div>
 
-        <div className="h-1 w-52 overflow-hidden rounded-full bg-white/20">
-          <div className="h-full rounded-full bg-white animate-[progress_1.5s_ease-in-out_infinite]" />
+        <div className="flex h-4 items-center justify-center gap-2" aria-hidden="true">
+          {[0, 1, 2].map((dot) => (
+            <span
+              key={dot}
+              className="h-2.5 w-2.5 rounded-full bg-white shadow-[0_0_14px_rgba(255,255,255,0.45)] animate-bounce"
+              style={{ animationDelay: `${dot * 140}ms`, animationDuration: "820ms" }}
+            />
+          ))}
         </div>
 
         <p className="text-xs font-medium text-white/75">Loading system resources...</p>

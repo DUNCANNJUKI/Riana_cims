@@ -8,6 +8,7 @@ import NotFound from "./pages/NotFound";
 import { FeedbackForm } from "./pages/FeedbackForm";
 import { ResetPassword } from "./pages/ResetPassword";
 import InstallApp from "./pages/InstallApp";
+import { MaintenancePage } from "@/components/maintenance/MaintenancePage";
 
 import { GlobalErrorBoundary } from "@/components/common/GlobalErrorBoundary";
 
@@ -26,6 +27,7 @@ const App = () => (
           <Route path="/feedback/:clientSlug/:token" element={<FeedbackForm />} />
           <Route path="/feedback/:token" element={<FeedbackForm />} />
           <Route path="/reset-password" element={<ResetPassword />} />
+          <Route path="/maintenance" element={<MaintenancePage />} />
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
           <Route path="*" element={<NotFound />} />
         </Routes>

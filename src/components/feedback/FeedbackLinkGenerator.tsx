@@ -103,13 +103,15 @@ export const FeedbackLinkGenerator = ({ client, installation, onClose }: Feedbac
 
     setIsGenerating(true);
     try {
+      const expiryDays = parseInt(linkExpiry, 10);
       const expiresAt = new Date();
-      expiresAt.setDate(expiresAt.getDate() + parseInt(linkExpiry));
+      expiresAt.setDate(expiresAt.getDate() + expiryDays);
 
-      // Store feedback link in database - token is generated on backend
+      // Store feedback link in database - token and authoritative expiry are generated on backend.
       const linkData = await createFeedbackLink({
         client_id: client.id,
         installation_id: installation?.id || null,
+        expiry_days: expiryDays,
         expires_at: expiresAt.toISOString(),
         created_by_user_id: user?.id
       });
@@ -126,7 +128,7 @@ export const FeedbackLinkGenerator = ({ client, installation, onClose }: Feedbac
       console.error('Error generating feedback link:', error);
       toast({
         title: "Error",
-        description: "Failed to generate feedback link",
+        description: error instanceof Error ? error.message : "Failed to generate feedback link",
         variant: "destructive",
       });
     } finally {

@@ -18,6 +18,7 @@ import { DataManagementPanel } from "./DataManagementPanel";
 import { SubsidiaryEscalationManager } from "./SubsidiaryEscalationManager";
 import { FeedbackSettingsPanel } from "@/components/feedback/FeedbackSettingsPanel";
 import { SmtpSettingsPanel } from "./SmtpSettingsPanel";
+import { MaintenanceModePanel } from "./MaintenanceModePanel";
 import { useDatabase } from "@/hooks/useDatabase";
 import { apiClient } from "@/integrations/apiClient";
 import { dispatchCompanyBrandingUpdated, resolveCompanyLogoUrl } from "@/utils/logoUrl";
@@ -286,7 +287,7 @@ export const CompanySettingsModule = ({ user }: CompanySettingsModuleProps) => {
       </div>
 
       <Tabs defaultValue="company" className="w-full">
-        <TabsList className="grid h-auto w-full grid-cols-2 gap-1 sm:grid-cols-3 xl:grid-cols-6">
+        <TabsList className="grid h-auto w-full grid-cols-2 gap-1 sm:grid-cols-3 xl:grid-cols-7">
           <TabsTrigger value="company" className="flex items-center gap-2">
             <Building2 className="h-4 w-4" />
             Company Info
@@ -307,6 +308,12 @@ export const CompanySettingsModule = ({ user }: CompanySettingsModuleProps) => {
             <Mail className="h-4 w-4" />
             Email
           </TabsTrigger>
+          {user.role === 'SuperAdmin' && (
+            <TabsTrigger value="maintenance" className="flex items-center gap-2">
+              <Shield className="h-4 w-4" />
+              Maintenance
+            </TabsTrigger>
+          )}
           <TabsTrigger value="data" className="flex items-center gap-2">
             <Database className="h-4 w-4" />
             Data Management
@@ -467,6 +474,12 @@ export const CompanySettingsModule = ({ user }: CompanySettingsModuleProps) => {
         <TabsContent value="email" className="mt-6">
           <SmtpSettingsPanel />
         </TabsContent>
+
+        {user.role === 'SuperAdmin' && (
+          <TabsContent value="maintenance" className="mt-6">
+            <MaintenanceModePanel />
+          </TabsContent>
+        )}
 
         <TabsContent value="data" className="mt-6">
           <DataManagementPanel user={user} />

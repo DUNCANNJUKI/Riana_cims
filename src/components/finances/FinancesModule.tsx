@@ -40,7 +40,28 @@ interface Budget {
   subsidiary_name?: string;
 }
 
-type Currency = 'KES' | 'USD';
+const CURRENCIES = [
+  { code: 'KES', symbol: 'Kshs', name: 'Kenyan Shillings' },
+  { code: 'USD', symbol: '$', name: 'US Dollars' },
+  { code: 'EUR', symbol: 'EUR', name: 'Euro' },
+  { code: 'GBP', symbol: 'GBP', name: 'British Pounds' },
+  { code: 'UGX', symbol: 'USh', name: 'Ugandan Shillings' },
+  { code: 'TZS', symbol: 'TSh', name: 'Tanzanian Shillings' },
+  { code: 'RWF', symbol: 'RWF', name: 'Rwandan Francs' },
+  { code: 'ETB', symbol: 'ETB', name: 'Ethiopian Birr' },
+  { code: 'ZAR', symbol: 'ZAR', name: 'South African Rand' },
+  { code: 'NGN', symbol: 'NGN', name: 'Nigerian Naira' },
+  { code: 'AED', symbol: 'AED', name: 'UAE Dirhams' },
+  { code: 'INR', symbol: 'INR', name: 'Indian Rupees' },
+  { code: 'CNY', symbol: 'CNY', name: 'Chinese Yuan' },
+  { code: 'JPY', symbol: 'JPY', name: 'Japanese Yen' },
+] as const;
+
+type Currency = (typeof CURRENCIES)[number]['code'];
+type CurrencyOption = (typeof CURRENCIES)[number];
+
+const DEFAULT_CURRENCY: Currency = 'KES';
+const currencyLookup = new Map<string, CurrencyOption>(CURRENCIES.map(currency => [currency.code, currency]));
 
 export const FinancesModule = ({ user }: FinancesModuleProps) => {
   const canManageFinances = can(user, 'finances.manage');
@@ -50,7 +71,7 @@ export const FinancesModule = ({ user }: FinancesModuleProps) => {
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [selectedBudget, setSelectedBudget] = useState<Budget | null>(null);
-  const [selectedCurrency, setSelectedCurrency] = useState<Currency>('KES');
+  const [selectedCurrency, setSelectedCurrency] = useState<Currency>(DEFAULT_CURRENCY);
   const [companySettings, setCompanySettings] = useState<any>(null);
   const [filterPeriod, setFilterPeriod] = useState<'all' | 'year' | 'month' | 'week'>('all');
   const [formData, setFormData] = useState({
@@ -60,14 +81,22 @@ export const FinancesModule = ({ user }: FinancesModuleProps) => {
     transport_cost: 0,
     miscellaneous_cost: 0,
     notes: '',
-    currency: 'KES' as Currency
+    currency: DEFAULT_CURRENCY
   });
   const { toast } = useToast();
   const { getInstallations, getClients, getCompanySettings } = useDatabase();
   
-  const getCurrencySymbol = (currency: Currency) => currency === 'USD' ? '$' : 'Kshs';
+  const normalizeCurrency = (currency?: string | null): Currency => {
+    const code = String(currency || DEFAULT_CURRENCY).trim().toUpperCase();
+    return currencyLookup.has(code) ? (code as Currency) : DEFAULT_CURRENCY;
+  };
+
+  const getCurrencyOption = (currency?: string | null) => currencyLookup.get(normalizeCurrency(currency)) || currencyLookup.get(DEFAULT_CURRENCY)!;
+  const getCurrencySymbol = (currency?: string | null) => getCurrencyOption(currency).symbol;
+  const getCurrencyName = (currency?: string | null) => getCurrencyOption(currency).name;
   const formatCurrency = (amount: number, currency: Currency = selectedCurrency) => {
-    return `${getCurrencySymbol(currency)} ${amount.toLocaleString()}`;
+    const normalizedCurrency = normalizeCurrency(currency);
+    return `${getCurrencySymbol(normalizedCurrency)} ${amount.toLocaleString()}`;
   };
 
   // Filter budgets by period
@@ -90,15 +119,25 @@ export const FinancesModule = ({ user }: FinancesModuleProps) => {
     });
   };
 
-  // Calculate grand totals
+  // Calculate grand totals by currency so every supported currency is reported accurately.
   const calculateGrandTotals = () => {
     const filtered = getFilteredBudgets();
-    const kesBudgets = filtered.filter(b => b.currency === 'KES' || !b.currency);
-    const usdBudgets = filtered.filter(b => b.currency === 'USD');
-    
+    const totals = new Map<Currency, number>();
+
+    filtered.forEach(budget => {
+      const currency = normalizeCurrency(budget.currency);
+      totals.set(currency, (totals.get(currency) || 0) + (Number(budget.total_budget) || 0));
+    });
+
+    const currencyTotals = Array.from(totals.entries())
+      .sort(([left], [right]) => CURRENCIES.findIndex(currency => currency.code === left) - CURRENCIES.findIndex(currency => currency.code === right))
+      .map(([currency, total]) => ({ currency, total }));
+
     return {
-      kesTotal: kesBudgets.reduce((sum, b) => sum + b.total_budget, 0),
-      usdTotal: usdBudgets.reduce((sum, b) => sum + b.total_budget, 0),
+      currencyTotals: currencyTotals.length > 0 ? currencyTotals : [
+        { currency: 'KES' as Currency, total: 0 },
+        { currency: 'USD' as Currency, total: 0 },
+      ],
       count: filtered.length
     };
   };
@@ -109,18 +148,16 @@ export const FinancesModule = ({ user }: FinancesModuleProps) => {
 
   const loadData = async () => {
     try {
-      const [installationsData, clientsData, companyData] = await Promise.all([
+      const [installationsData, clientsData, companyData, budgetsData] = await Promise.all([
         getInstallations(),
         getClients(),
-        getCompanySettings()
+        getCompanySettings(),
+        apiClient.get('/budgets')
       ]);
       
       setInstallations(installationsData);
       setClients(clientsData);
       setCompanySettings(companyData);
-      
-      // Load budgets from local API
-      const budgetsData = await apiClient.get('/budgets');
       
       // Enrich budgets with client names
       const enrichedBudgets = (Array.isArray(budgetsData) ? budgetsData : []).map(budget => {
@@ -181,7 +218,7 @@ export const FinancesModule = ({ user }: FinancesModuleProps) => {
         transport_cost: 0,
         miscellaneous_cost: 0,
         notes: '',
-        currency: 'KES'
+        currency: DEFAULT_CURRENCY
       });
       
       toast({
@@ -262,17 +299,17 @@ export const FinancesModule = ({ user }: FinancesModuleProps) => {
       transport_cost: budget.transport_cost,
       miscellaneous_cost: budget.miscellaneous_cost,
       notes: budget.notes,
-      currency: (budget.currency as Currency) || 'KES'
+      currency: normalizeCurrency(budget.currency)
     });
-    setSelectedCurrency((budget.currency as Currency) || 'KES');
+    setSelectedCurrency(normalizeCurrency(budget.currency));
     setIsEditDialogOpen(true);
   };
 
   const downloadBudgetPDF = async (budget: Budget) => {
     const doc = new jsPDF();
     const pageWidth = doc.internal.pageSize.getWidth();
-    const currency = budget.currency || selectedCurrency;
-    const currencySymbol = getCurrencySymbol(currency as Currency);
+    const currency = normalizeCurrency(budget.currency || selectedCurrency);
+    const currencySymbol = getCurrencySymbol(currency);
     const currentDate = new Date();
     const formattedDate = currentDate.toLocaleDateString('en-GB', { 
       day: '2-digit', 
@@ -319,7 +356,7 @@ export const FinancesModule = ({ user }: FinancesModuleProps) => {
     doc.setFont('helvetica', 'bold');
     doc.text(`Client: ${budget.client_name}`, 20, 58);
     doc.setFont('helvetica', 'normal');
-    doc.text(`Currency: ${currency === 'USD' ? 'US Dollars ($)' : 'Kenyan Shillings (Kshs)'}`, 20, 78);
+    doc.text(`Currency: ${getCurrencyName(currency)} (${currencySymbol})`, 20, 78);
     if (budget.branch) {
       doc.text(`Branch: ${budget.branch}`, pageWidth - 20, 68, { align: 'right' });
     }
@@ -380,37 +417,28 @@ export const FinancesModule = ({ user }: FinancesModuleProps) => {
   return (
     <div className="space-y-6">
       {/* Grand Budget Summary */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <Card className="shadow-riana card-hover bg-gradient-to-br from-primary/10 to-primary/5">
-          <CardContent className="p-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-muted-foreground">Grand Total (KES)</p>
-                <p className="text-2xl font-bold text-primary">Kshs {grandTotals.kesTotal.toLocaleString()}</p>
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+        {grandTotals.currencyTotals.map(({ currency, total }) => (
+          <Card key={currency} className="shadow-riana card-hover bg-gradient-to-br from-primary/10 to-primary/5">
+            <CardContent className="p-4">
+              <div className="flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="text-sm text-muted-foreground truncate">Grand Total ({currency})</p>
+                  <p className="text-2xl font-bold text-primary truncate">{formatCurrency(total, currency)}</p>
+                </div>
+                <DollarSign className="h-10 w-10 text-primary/30 shrink-0" />
               </div>
-              <DollarSign className="h-10 w-10 text-primary/30" />
-            </div>
-          </CardContent>
-        </Card>
-        <Card className="shadow-riana card-hover bg-gradient-to-br from-green-500/10 to-green-500/5">
-          <CardContent className="p-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-muted-foreground">Grand Total (USD)</p>
-                <p className="text-2xl font-bold text-green-600">$ {grandTotals.usdTotal.toLocaleString()}</p>
-              </div>
-              <DollarSign className="h-10 w-10 text-green-500/30" />
-            </div>
-          </CardContent>
-        </Card>
+            </CardContent>
+          </Card>
+        ))}
         <Card className="shadow-riana card-hover bg-gradient-to-br from-amber-500/10 to-amber-500/5">
           <CardContent className="p-4">
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between gap-3">
               <div>
                 <p className="text-sm text-muted-foreground">Total Budgets</p>
                 <p className="text-2xl font-bold text-amber-600">{grandTotals.count}</p>
               </div>
-              <DollarSign className="h-10 w-10 text-amber-500/30" />
+              <DollarSign className="h-10 w-10 text-amber-500/30 shrink-0" />
             </div>
           </CardContent>
         </Card>
@@ -489,8 +517,11 @@ export const FinancesModule = ({ user }: FinancesModuleProps) => {
                       <SelectValue placeholder="Select currency" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="KES">Kshs (Kenyan Shillings)</SelectItem>
-                      <SelectItem value="USD">$ (US Dollars)</SelectItem>
+                      {CURRENCIES.map(currency => (
+                        <SelectItem key={currency.code} value={currency.code}>
+                          {currency.symbol} ({currency.name})
+                        </SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                 </div>
@@ -592,13 +623,14 @@ export const FinancesModule = ({ user }: FinancesModuleProps) => {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {budgets.map((budget) => {
-                const currencySymbol = getCurrencySymbol((budget.currency as Currency) || 'KES');
+              {filteredBudgets.map((budget) => {
+                const currency = normalizeCurrency(budget.currency);
+                const currencySymbol = getCurrencySymbol(currency);
                 return (
                   <TableRow key={budget.id}>
                     <TableCell className="font-medium">{budget.client_name}</TableCell>
                     <TableCell>{(budget as any).branch || 'N/A'}</TableCell>
-                    <TableCell>{budget.currency || 'KES'}</TableCell>
+                    <TableCell>{currency}</TableCell>
                     <TableCell>{currencySymbol} {budget.labor_cost.toLocaleString()}</TableCell>
                     <TableCell>{currencySymbol} {budget.equipment_cost.toLocaleString()}</TableCell>
                     <TableCell>{currencySymbol} {budget.transport_cost.toLocaleString()}</TableCell>
@@ -639,7 +671,7 @@ export const FinancesModule = ({ user }: FinancesModuleProps) => {
             </TableBody>
           </Table>
           
-          {budgets.length === 0 && (
+          {filteredBudgets.length === 0 && (
             <div className="text-center py-12">
               <DollarSign className="h-16 w-16 text-muted-foreground mx-auto mb-4" />
               <h3 className="text-lg font-medium mb-2">No budgets created yet</h3>
@@ -671,8 +703,11 @@ export const FinancesModule = ({ user }: FinancesModuleProps) => {
                   <SelectValue placeholder="Select currency" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="KES">Kshs (Kenyan Shillings)</SelectItem>
-                  <SelectItem value="USD">$ (US Dollars)</SelectItem>
+                  {CURRENCIES.map(currency => (
+                    <SelectItem key={currency.code} value={currency.code}>
+                      {currency.symbol} ({currency.name})
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>

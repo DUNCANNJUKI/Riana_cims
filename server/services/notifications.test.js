@@ -1,6 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { buildWelcomeEmailHtml, normalizePhone, sendWelcomeCredentials } = require('./notifications');
+const { buildNotificationHtml, buildWelcomeEmailHtml, normalizePhone, sendWelcomeCredentials } = require('./notifications');
+const { normalizeNotificationType, subjectForNotification } = require('./notificationTypes');
 
 test('normalizes local and international phone formats', () => {
   assert.equal(normalizePhone('0712 345 678'), '+254712345678');
@@ -53,4 +54,26 @@ test('welcome template avoids mojibake artifacts', () => {
   assert.match(html, /Your account is ready - here are your login details/);
   assert.match(html, /YOUR LOGIN CREDENTIALS/);
   assert.doesNotMatch(html, /Ã|Â|â|ð|Å|Œ|€/);
+});
+
+test('appreciation notifications use message labels and safe greetings', () => {
+  const html = buildNotificationHtml({
+    notificationType: 'APPRECIATION',
+    clientName: 'Lifecare',
+    requestDescription: 'Thank you for your feedback, we appreciate it.',
+  });
+  assert.match(html, /Thank you for your feedback/);
+  assert.match(html, /<strong>Client:<\/strong> Lifecare/);
+  assert.match(html, /<strong>Message:<\/strong> Thank you for your feedback, we appreciate it\./);
+  assert.match(html, /<p>Hello,<\/p>/);
+  assert.doesNotMatch(html, /<strong>Request:<\/strong>|undefined|null|Hello\s+,/i);
+});
+
+test('notification type config normalizes legacy and canonical subjects', () => {
+  assert.equal(normalizeNotificationType('thank-you', 'thank you for the response'), 'GENERAL');
+  assert.equal(normalizeNotificationType('', 'thank you for the response'), 'APPRECIATION');
+  assert.equal(normalizeNotificationType('assigned', 'A task was assigned'), 'ASSIGNMENT');
+  assert.equal(subjectForNotification({ notificationType: 'REQUEST', clientName: 'Lifecare' }), 'New request from Lifecare');
+  assert.equal(subjectForNotification({ notificationType: 'APPRECIATION' }), 'Thank you for your feedback');
+  assert.equal(subjectForNotification({ notificationType: 'assigned' }), 'Change request assigned');
 });

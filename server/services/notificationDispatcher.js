@@ -1,5 +1,6 @@
 const { v4: uuidv4 } = require('uuid');
 const { sendEmail, sendSms, sendWhatsApp, whatsappConfigured } = require('./notifications');
+const { normalizeNotificationType } = require('./notificationTypes');
 
 const USER_TYPES = new Set(['info', 'success', 'warning', 'error']);
 
@@ -29,11 +30,12 @@ async function deliverUserNotification({
   if (!users.length) return { userId, skipped: true, reason: 'User not found' };
 
   const user = users[0];
+  const normalizedNotificationType = normalizeNotificationType(notificationType, message);
   const notificationId = uuidv4();
   await pool.query(
     `INSERT INTO crms_notifications
-      (id,user_id,request_id,title,message,type,\`read\`,action_url,email_sent,sms_sent)
-     VALUES (?,?,?,?,?,?,FALSE,?,FALSE,FALSE)`,
+      (id,user_id,request_id,title,message,type,notification_type,\`read\`,action_url,email_sent,sms_sent)
+     VALUES (?,?,?,?,?,?,?,FALSE,?,FALSE,FALSE)`,
     [
       notificationId,
       user.id,
@@ -41,6 +43,7 @@ async function deliverUserNotification({
       title,
       message,
       USER_TYPES.has(type) ? type : 'info',
+      normalizedNotificationType,
       actionUrl,
     ],
   );
@@ -54,6 +57,7 @@ async function deliverUserNotification({
         recipientName: userName(user),
         notificationType,
         requestDescription: message,
+        subject: details.subject || undefined,
         actionUrl: emailActionUrl || actionUrl,
         ...details,
       }),

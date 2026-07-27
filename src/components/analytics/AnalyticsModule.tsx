@@ -47,9 +47,11 @@ export const AnalyticsModule = ({ user }: AnalyticsModuleProps) => {
     try {
       if (isManual) setIsLoading(true);
       setHasError(false);
-
-      const clients = await apiClient.get('/clients');
-      const installations = await apiClient.get('/installations');
+      const [clients, installations, feedbackData] = await Promise.all([
+        apiClient.get('/clients'),
+        apiClient.get('/installations'),
+        apiClient.get('/installation_feedback'),
+      ]);
 
       // Calculate clients by industry
       const industryMap = new Map<string, number>();
@@ -138,10 +140,6 @@ export const AnalyticsModule = ({ user }: AnalyticsModuleProps) => {
         }, 0);
         avgTime = totalDays / installationsWithDates.length;
       }
-
-      // Get feedback satisfaction
-      const feedbackData = await apiClient.get('/installation_feedback');
-      
       const satisfaction = calculateSatisfaction(feedbackData || []);
 
       const completedCount = completedInstallations.length;
@@ -459,7 +457,7 @@ export const AnalyticsModule = ({ user }: AnalyticsModuleProps) => {
               </CardHeader>
               <CardContent>
                 <div className="text-2xl sm:text-3xl font-bold text-primary">{performanceMetrics.clientSatisfaction}%</div>
-                <p className="text-[10px] sm:text-sm text-muted-foreground">Average valid 1-5 rating converted to %</p>
+                <p className="text-[10px] sm:text-sm text-muted-foreground">Valid 4-5 ratings as % of responses</p>
               </CardContent>
             </Card>
           </div>

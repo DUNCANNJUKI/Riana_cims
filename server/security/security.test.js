@@ -56,6 +56,7 @@ test('global API policy allows only explicit public paths', async () => {
     { method: 'GET', path: '/health' },
     { method: 'POST', path: '/auth/login' },
     { method: 'GET', path: '/public/feedback-links/token' },
+    { method: 'POST', path: '/public/installation-feedback' },
   ]) policy(req, response(), () => {});
   policy({ method: 'GET', path: '/clients' }, response(), () => {});
   policy({ method: 'POST', path: '/admin/backup' }, response(), () => {});

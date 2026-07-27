@@ -322,13 +322,13 @@ export const EHandoverUpload = ({ user, client, installation, onUploadComplete }
                     <p className="font-medium">{upload.file_name}</p>
                     <div className="flex items-center gap-2 text-sm text-muted-foreground">
                       <span>{formatFileSize(upload.file_size)}</span>
-                      <span>â€¢</span>
+                      <span aria-hidden="true">|</span>
                       <span>{new Date(upload.upload_date).toLocaleDateString()}</span>
                       <span>Branch: {upload.branch_label || getBranchLabel(upload)}</span>
                       <span>Department: {upload.department_label || getDepartmentLabel(upload)}</span>
                       {upload.is_signed && (
                         <>
-                          <span>â€¢</span>
+                          <span aria-hidden="true">|</span>
                           <Badge variant="secondary" className="text-xs">
                             <CheckCircle className="h-3 w-3 mr-1" />
                             Signed

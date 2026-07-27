@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { apiClient } from '@/integrations/apiClient';
 import { User } from '@/types';
 
@@ -7,6 +7,13 @@ export interface AssistantMessage {
   text: string;
   sender: 'user' | 'assistant';
   timestamp: Date;
+}
+
+interface AssistantContext {
+  entity?: string;
+  reference?: string;
+  status?: string;
+  branch?: string;
 }
 
 const DEFAULT_SUGGESTIONS = [
@@ -23,7 +30,7 @@ const messageId = () => (
 
 const greetingFor = (user?: User) => {
   const name = user?.first_name?.trim() || user?.email?.split('@')[0] || 'there';
-  return `Hello ${name}. I can guide you through RIANA CIMS workflows, reports, roles, notifications, and support options. What would you like help with?`;
+  return `Hello ${name}. How can I help with Riana CIMS today?`;
 };
 
 export const useCimsAssistant = (user?: User) => {
@@ -34,8 +41,21 @@ export const useCimsAssistant = (user?: User) => {
     timestamp: new Date(),
   }]);
   const [suggestions, setSuggestions] = useState(DEFAULT_SUGGESTIONS);
+  const [conversationContext, setConversationContext] = useState<AssistantContext | null>(null);
   const [isSending, setIsSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setMessages([{
+      id: messageId(),
+      text: greetingFor(user),
+      sender: 'assistant',
+      timestamp: new Date(),
+    }]);
+    setSuggestions(DEFAULT_SUGGESTIONS);
+    setConversationContext(null);
+    setError(null);
+  }, [user?.id]);
 
   const sendMessage = useCallback(async (rawMessage: string) => {
     const text = rawMessage.trim();
@@ -51,13 +71,16 @@ export const useCimsAssistant = (user?: User) => {
     setIsSending(true);
 
     try {
-      const data = await apiClient.post('/chat/assistant', { message: text });
+      const data = await apiClient.post('/chat/assistant', { message: text, context: conversationContext });
       setMessages((current) => [...current, {
         id: messageId(),
         text: String(data.reply || 'I could not find that guidance. Please contact RIANA Support.'),
         sender: 'assistant',
         timestamp: new Date(),
       }]);
+      if (data.context && typeof data.context === 'object') {
+        setConversationContext(data.context as AssistantContext);
+      }
       if (Array.isArray(data.suggestions)) {
         setSuggestions(data.suggestions.filter((item: unknown): item is string => typeof item === 'string').slice(0, 3));
       }
@@ -75,7 +98,7 @@ export const useCimsAssistant = (user?: User) => {
     } finally {
       setIsSending(false);
     }
-  }, [isSending]);
+  }, [conversationContext, isSending]);
 
   return { messages, suggestions, isSending, error, sendMessage };
 };

@@ -27,6 +27,14 @@ interface ImportResult {
   errorDetails?: string[];
 }
 
+const MAX_IMPORT_RECORDS = 1000;
+const CSV_ESCAPE_PATTERN = /[",\r\n]/;
+
+const toCsvValue = (value: unknown) => {
+  const text = value == null ? '' : String(value);
+  return CSV_ESCAPE_PATTERN.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+};
+
 export const ImportModule = ({ user }: ImportModuleProps) => {
   const [importHistory, setImportHistory] = useState<ImportResult[]>([]);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -49,12 +57,15 @@ export const ImportModule = ({ user }: ImportModuleProps) => {
   const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (file) {
-      if (!file.name.endsWith('.csv') && !file.name.endsWith('.xlsx') && !file.name.endsWith('.xls')) {
+      const fileName = file.name.toLowerCase();
+      if (!fileName.endsWith('.csv')) {
         toast({
           title: "Invalid File Type",
-          description: "Please select a CSV or Excel file (.csv, .xlsx, .xls)",
+          description: "Please select a CSV file (.csv)",
           variant: "destructive",
         });
+        event.target.value = '';
+        setSelectedFile(null);
         return;
       }
       setSelectedFile(file);
@@ -62,24 +73,76 @@ export const ImportModule = ({ user }: ImportModuleProps) => {
   };
 
   const parseCSV = (text: string): any[] => {
-    const lines = text.split('\n').filter(line => line.trim());
-    if (lines.length < 2) return [];
-    
-    const headers = lines[0].split(',').map(h => h.trim().toLowerCase().replace(/\s+/g, '_'));
-    const records: any[] = [];
-    
-    for (let i = 1; i < lines.length; i++) {
-      const values = lines[i].split(',').map(v => v.trim().replace(/^["']|["']$/g, ''));
-      if (values.length === headers.length) {
-        const record: any = {};
-        headers.forEach((header, index) => {
-          record[header] = values[index];
-        });
-        records.push(record);
+    const rows: string[][] = [];
+    let row: string[] = [];
+    let value = '';
+    let inQuotes = false;
+
+    const pushRow = () => {
+      if (row.some(cell => cell.trim().length > 0)) {
+        rows.push(row);
       }
+      row = [];
+    };
+
+    for (let i = 0; i < text.length; i++) {
+      const char = text[i];
+      const next = text[i + 1];
+
+      if (char === '"') {
+        if (inQuotes && next === '"') {
+          value += '"';
+          i++;
+        } else {
+          inQuotes = !inQuotes;
+        }
+        continue;
+      }
+
+      if (char === ',' && !inQuotes) {
+        row.push(value.trim());
+        value = '';
+        continue;
+      }
+
+      if ((char === '\n' || char === '\r') && !inQuotes) {
+        row.push(value.trim());
+        value = '';
+        pushRow();
+        if (char === '\r' && next === '\n') i++;
+        continue;
+      }
+
+      value += char;
     }
-    
-    return records;
+
+    if (inQuotes) {
+      throw new Error('CSV has an unclosed quoted field');
+    }
+
+    if (value.length > 0 || row.length > 0) {
+      row.push(value.trim());
+      pushRow();
+    }
+
+    if (rows.length < 2) return [];
+
+    const headers = rows[0].map(header => header.trim().toLowerCase().replace(/\s+/g, '_'));
+    if (headers.some(header => !header)) {
+      throw new Error('CSV header row contains an empty column name');
+    }
+
+    return rows.slice(1).map((values, index) => {
+      if (values.length !== headers.length) {
+        throw new Error(`Row ${index + 2} has ${values.length} columns but the header has ${headers.length}`);
+      }
+
+      const record: any = {};
+      headers.forEach((header, headerIndex) => {
+        record[header] = values[headerIndex];
+      });
+      return record;
+    });
   };
 
   const handleImport = async () => {
@@ -103,6 +166,9 @@ export const ImportModule = ({ user }: ImportModuleProps) => {
       const records = parseCSV(text);
       if (records.length === 0) {
         throw new Error('No valid records found in the file');
+      }
+      if (records.length > MAX_IMPORT_RECORDS) {
+        throw new Error(`CSV exceeds the ${MAX_IMPORT_RECORDS} record limit`);
       }
       
       setUploadProgress(50);
@@ -257,10 +323,7 @@ export const ImportModule = ({ user }: ImportModuleProps) => {
       
       let csvContent = headers.join(',') + '\n';
       data.forEach(row => {
-        const values = headers.map(h => {
-          const val = row[h] || '';
-          return typeof val === 'string' && val.includes(',') ? `"${val}"` : val;
-        });
+        const values = headers.map(h => toCsvValue(row[h]));
         csvContent += values.join(',') + '\n';
       });
       
@@ -342,7 +405,7 @@ export const ImportModule = ({ user }: ImportModuleProps) => {
               <Input
                 id="file_upload"
                 type="file"
-                accept=".csv,.xlsx,.xls"
+                accept=".csv"
                 onChange={handleFileSelect}
                 disabled={isUploading}
               />

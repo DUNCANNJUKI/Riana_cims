@@ -10,6 +10,9 @@ import { SiteLoader } from "@/components/common/SiteLoader";
 import { usePushNotifications } from "@/hooks/usePushNotifications";
 import { useOfflineSync } from "@/hooks/useOfflineSync";
 import { InactivityGuard } from "@/components/auth/InactivityGuard";
+import { MaintenanceBanner } from "@/components/maintenance/MaintenanceBanner";
+import { MaintenancePage } from "@/components/maintenance/MaintenancePage";
+import { useMaintenanceStatus } from "@/hooks/useMaintenanceStatus";
 import { useLocation } from "react-router-dom";
 
 const lazyNamed = <TModule extends Record<string, unknown>>(
@@ -43,6 +46,7 @@ const MyActivityModule = lazyNamed(() => import("@/components/audit/AuditLogsMod
 const Index = () => {
   const { user, isAuthenticated, isLoading, logout, refreshUserProfile } = useAuth();
   const location = useLocation();
+  const { maintenance } = useMaintenanceStatus({ pollMs: 60_000 });
 
   const [activeModule, setActiveModule] = useState('dashboard');
   const [showLoader, setShowLoader] = useState(true);
@@ -71,6 +75,10 @@ const Index = () => {
 
   if (!isAuthenticated || !user) {
     return <LoginForm />;
+  }
+
+  if (maintenance?.enabled && user.role !== 'SuperAdmin') {
+    return <MaintenancePage status={maintenance} />;
   }
 
   if (user.first_login) {
@@ -148,6 +156,9 @@ const Index = () => {
             onOpenMobileMenu={() => setIsMobileSidebarOpen(true)}
             onProfileUpdate={refreshUserProfile}
           />
+          {maintenance?.enabled && user.role === 'SuperAdmin' && (
+            <MaintenanceBanner maintenance={maintenance} />
+          )}
           {!isOnline && (
             <div className="bg-warning/10 px-3 py-1 text-center text-xs text-warning">
               Offline - changes will sync when the connection returns.
@@ -161,7 +172,7 @@ const Index = () => {
             </Suspense>
           </main>
           {/* Footer */}
-          <footer className="shrink-0 border-t border-border bg-muted/30 px-3 py-2 text-center sm:px-4 sm:py-3">
+          <footer className="cims-system-footer shrink-0 border-t border-border bg-muted/30 px-3 py-2 text-center sm:px-4 sm:py-3">
             <p className="truncate text-[10px] text-muted-foreground sm:text-xs">
               © {currentYear} RIANA Group. All rights reserved. | www.riana.co
             </p>

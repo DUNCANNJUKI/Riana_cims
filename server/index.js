@@ -18,8 +18,15 @@ const { normalizeEquipmentConfigurationPayload } = require('./services/subsidiar
 const { isSensitiveTechnicalRequest } = require('./services/chatbotPolicy');
 const { getAssistantResponse } = require('./services/chatbotKnowledge');
 const { createDatabaseBackup, listBackups, pruneBackups, getLastRun } = require('./services/databaseBackup');
+const {
+  createMaintenanceMiddleware,
+  getMaintenanceState,
+  invalidateMaintenanceCache,
+  maintenanceResponse,
+} = require('./services/maintenanceMode');
 const { createFileAccessToken, ensurePrivateUploadRoot, getPrivateFileConfig, readFileAccessToken } = require('./services/privateFileStorage');
 const { hashPassword, verifyPassword, verifyAndUpgradePassword } = require('./security/passwords');
+const { createSingleActiveSession, revokeCurrentSession, revokeUserSessions, sessionAuditRef } = require('./security/sessionStore');
 const {
   CAPABILITY_DEFINITIONS,
   getEffectiveCapabilities,
@@ -46,6 +53,7 @@ const {
 const app = express();
 const port = process.env.PORT || process.env.VITE_API_PORT || 3001;
 const JWT_SECRET = resolveJwtSecret();
+const CIMS_SESSION_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 const privateFileConfig = getPrivateFileConfig();
 const configuredCallRingTimeout = Number(process.env.CHAT_CALL_RING_TIMEOUT_SECONDS || 45);
 const CHAT_CALL_RING_TIMEOUT_SECONDS = Number.isFinite(configuredCallRingTimeout)
@@ -128,6 +136,20 @@ const buildFeedbackLinkPreview = (req, feedback) => {
     department_label: scopedDepartmentLabel(feedback),
     message: `Hello ${recipientName}, please rate your installation experience for ${clientLabel}. Your secure one-time feedback link is ${feedbackUrl}`,
   };
+};
+const normalizeFeedbackExpiryDays = (value) => {
+  const days = Number(value);
+  if (!Number.isFinite(days)) return null;
+  return Math.max(1, Math.min(180, Math.round(days)));
+};
+const resolveFeedbackExpiresAt = (data = {}) => {
+  const expiryDays = normalizeFeedbackExpiryDays(data.expiry_days ?? data.expires_in_days ?? data.link_expiry_days);
+  if (expiryDays) return new Date(Date.now() + expiryDays * 24 * 60 * 60 * 1000);
+
+  const requestedExpiry = new Date(data.expires_at);
+  if (Number.isFinite(requestedExpiry.getTime()) && requestedExpiry.getTime() > Date.now()) return requestedExpiry;
+
+  return new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
 };
 
 const normalizeEscalationMatrixPayload = (value, allowExtraTiers) => {
@@ -212,7 +234,7 @@ const ASSIGNMENT_SELF_UPDATE_FIELDS = new Set(['status','progress_percentage','n
 const ASSIGNMENT_STATUSES = new Set(['assigned','waiting','in_progress','completed']);
 const SUBSIDIARY_FIELDS = new Set(['subsidiary_name','default_escalation_matrix','equipment_configuration']);
 const FEEDBACK_LINK_FIELDS = new Set(['client_id','installation_id','branch_id','department_id','expires_at','is_used']);
-const COMPANY_FIELDS = new Set(['name','logo_path','tagline','website','email','phone','address','contract_types','contract_durations','font_color','primary_color','secondary_color','accent_color','font_type','timezone','date_format','enable_email_notifications','enable_sms_notifications','enable_push_notifications','auto_reminder_days','backup_schedule','backup_day','backup_time']);
+const COMPANY_FIELDS = new Set(['name','logo_path','tagline','website','email','phone','address','contract_types','contract_durations','font_color','primary_color','secondary_color','accent_color','font_type','timezone','date_format','enable_email_notifications','enable_sms_notifications','enable_push_notifications','auto_reminder_days','backup_schedule','backup_day','backup_time','maintenance_enabled','maintenance_reason','maintenance_message','estimated_completion','maintenance_enabled_by','maintenance_enabled_at','maintenance_disabled_by','maintenance_disabled_at','maintenance_allow_api_access','maintenance_force_logout','maintenance_notify_users','maintenance_backup_before_enable','maintenance_allow_super_admin_only']);
 const SYSTEM_ROLES = new Set(['SuperAdmin', 'Admin', 'Management', 'Finance', 'Developer', 'Teamlead', 'Sales', 'User']);
 const PRIVILEGED_ROLES = new Set(['SuperAdmin', 'Admin', 'Management']);
 const CRMS_ACCESS_ROLES = new Set(['SuperAdmin', 'Admin', 'Management', 'Teamlead', 'Developer', 'Sales']);
@@ -287,6 +309,7 @@ const applyModuleRoleAssignments = async ({ userId, moduleRoles, grantedBy }) =>
     );
   }
   await pool.query('UPDATE user_profiles SET session_version=session_version+1 WHERE id=?', [userId]);
+  await revokeUserSessions(pool, userId, 'ROLE_CHANGED');
 };
 
 const superAdminBootstrapEmail = () => String(process.env.SUPERADMIN_EMAIL || 'superadmin@riana.co').trim().toLowerCase();
@@ -459,11 +482,24 @@ const legacyFileAccessUrls = (filePath) => {
   };
 };
 
-const attachSecureHandoverUrls = (row) => ({
-  ...row,
-  ...legacyFileAccessUrls(row.file_path),
-  file_path_label: path.basename(normalizeStoredFileReference(row.file_path) || row.file_name || 'document'),
-});
+const legacyFileAvailability = (filePath) => {
+  const filename = normalizeStoredFileReference(filePath);
+  const resolved = filename && resolveStoredFile(uploadsDir, filename);
+  return {
+    filename,
+    available: Boolean(resolved && fs.existsSync(resolved)),
+  };
+};
+
+const attachSecureHandoverUrls = (row) => {
+  const availability = legacyFileAvailability(row.file_path);
+  return {
+    ...row,
+    ...legacyFileAccessUrls(row.file_path),
+    file_available: availability.available,
+    file_path_label: path.basename(availability.filename || row.file_name || 'document'),
+  };
+};
 
 const resolveLegacyDownloadFilename = (req) => {
   if (req.query.token) {
@@ -540,6 +576,7 @@ app.use('/api', cors((req, callback) => callback(null, buildCorsOptions(process.
 app.use(express.json({ limit: '15mb' }));
 app.use(createSensitiveRateLimiter({ limit: Number(process.env.SENSITIVE_RATE_LIMIT || 120), windowMs: Number(process.env.SENSITIVE_RATE_WINDOW_MS || 60 * 1000) }));
 app.use('/api', createGlobalApiPolicy(authMiddleware));
+app.use('/api', createMaintenanceMiddleware({ pool }));
 app.use('/uploads', authMiddleware, authorizeStoredFile, express.static(uploadsDir, {
   fallthrough: false,
   setHeaders: (res, filePath) => {
@@ -782,6 +819,25 @@ const initDb = async () => {
       INDEX idx_password_reset_active (user_id,used_at,expires_at)
     )`);
 
+    await pool.query(`CREATE TABLE IF NOT EXISTS user_sessions (
+      id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+      user_id VARCHAR(36) NOT NULL,
+      session_id VARCHAR(128) NOT NULL UNIQUE,
+      token_hash CHAR(64) NULL,
+      device_name VARCHAR(255) NULL,
+      browser_name VARCHAR(100) NULL,
+      ip_address VARCHAR(45) NULL,
+      user_agent TEXT NULL,
+      created_at DATETIME NOT NULL,
+      last_activity_at DATETIME NOT NULL,
+      expires_at DATETIME NULL,
+      revoked_at DATETIME NULL,
+      revoke_reason VARCHAR(100) NULL,
+      INDEX idx_user_sessions_user_id (user_id),
+      INDEX idx_user_sessions_session_id (session_id),
+      INDEX idx_user_sessions_active (user_id,revoked_at,expires_at),
+      CONSTRAINT fk_user_sessions_user FOREIGN KEY (user_id) REFERENCES user_profiles(id) ON DELETE CASCADE
+    )`);
     await pool.query(`CREATE TABLE IF NOT EXISTS crms_notifications (
       id VARCHAR(36) PRIMARY KEY,
       user_id VARCHAR(36) NOT NULL,
@@ -796,6 +852,26 @@ const initDb = async () => {
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       INDEX idx_crms_notifications_user_read (user_id,\`read\`)
     )`);
+    await pool.query("ALTER TABLE crms_notifications ADD COLUMN IF NOT EXISTS notification_type VARCHAR(32) NOT NULL DEFAULT 'GENERAL' AFTER type");
+    await pool.query("UPDATE crms_notifications SET notification_type = 'GENERAL' WHERE notification_type IS NULL OR notification_type = ''");
+
+    await pool.query(`ALTER TABLE company_settings
+      ADD COLUMN IF NOT EXISTS maintenance_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+      ADD COLUMN IF NOT EXISTS maintenance_reason VARCHAR(255) NULL,
+      ADD COLUMN IF NOT EXISTS maintenance_message TEXT NULL,
+      ADD COLUMN IF NOT EXISTS estimated_completion DATETIME NULL,
+      ADD COLUMN IF NOT EXISTS maintenance_enabled_by VARCHAR(36) NULL,
+      ADD COLUMN IF NOT EXISTS maintenance_enabled_at DATETIME NULL,
+      ADD COLUMN IF NOT EXISTS maintenance_disabled_by VARCHAR(36) NULL,
+      ADD COLUMN IF NOT EXISTS maintenance_disabled_at DATETIME NULL,
+      ADD COLUMN IF NOT EXISTS maintenance_allow_api_access BOOLEAN NOT NULL DEFAULT FALSE,
+      ADD COLUMN IF NOT EXISTS maintenance_force_logout BOOLEAN NOT NULL DEFAULT TRUE,
+      ADD COLUMN IF NOT EXISTS maintenance_notify_users BOOLEAN NOT NULL DEFAULT FALSE,
+      ADD COLUMN IF NOT EXISTS maintenance_backup_before_enable BOOLEAN NOT NULL DEFAULT TRUE,
+      ADD COLUMN IF NOT EXISTS maintenance_allow_super_admin_only BOOLEAN NOT NULL DEFAULT TRUE`);
+    await pool.query(`INSERT INTO company_settings (id, maintenance_enabled, maintenance_force_logout, maintenance_backup_before_enable, maintenance_allow_super_admin_only)
+      VALUES (1, FALSE, TRUE, TRUE, TRUE)
+      ON DUPLICATE KEY UPDATE id=id`);
 
     // Clients
     await pool.query(`CREATE TABLE IF NOT EXISTS clients (
@@ -1066,6 +1142,53 @@ const initDb = async () => {
       created_by_user_id VARCHAR(36),
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )`);
+
+    // Repair older local/live databases created before scoped feedback links.
+    // CREATE TABLE IF NOT EXISTS does not add columns to an existing table.
+    for (const [column, definition] of [
+      ['branch_id', 'VARCHAR(36) NULL AFTER client_id'],
+      ['department_id', 'VARCHAR(36) NULL AFTER branch_id'],
+      ['installation_id', 'VARCHAR(36) NULL AFTER department_id'],
+      ['is_used', 'BOOLEAN DEFAULT FALSE AFTER expires_at'],
+      ['used_at', 'TIMESTAMP NULL AFTER is_used'],
+      ['email_sent', 'BOOLEAN DEFAULT FALSE AFTER used_at'],
+      ['sms_sent', 'BOOLEAN DEFAULT FALSE AFTER email_sent'],
+      ['created_by_user_id', 'VARCHAR(36) NULL AFTER sms_sent'],
+      ['created_at', 'TIMESTAMP DEFAULT CURRENT_TIMESTAMP AFTER created_by_user_id'],
+    ]) {
+      try {
+        const [feedbackColumns] = await pool.query('SHOW COLUMNS FROM feedback_links LIKE ?', [column]);
+        if (!feedbackColumns.length) await pool.query(`ALTER TABLE feedback_links ADD COLUMN ${column} ${definition}`);
+      } catch (e) {
+        console.warn(`Unable to ensure feedback_links.${column}:`, e.message);
+      }
+    }
+    try {
+      const [feedbackScopeIndexes] = await pool.query("SHOW INDEX FROM feedback_links WHERE Key_name = 'idx_feedback_links_scope'");
+      if (!feedbackScopeIndexes.length) await pool.query('ALTER TABLE feedback_links ADD INDEX idx_feedback_links_scope (client_id,branch_id,department_id,is_used,expires_at)');
+    } catch (e) {
+      console.warn('Unable to ensure feedback_links scope index:', e.message);
+    }
+    try {
+      const [feedbackTokenIndexes] = await pool.query("SHOW INDEX FROM feedback_links WHERE Key_name = 'idx_feedback_links_token_expires'");
+      if (!feedbackTokenIndexes.length) await pool.query('ALTER TABLE feedback_links ADD INDEX idx_feedback_links_token_expires (unique_token,expires_at)');
+    } catch (e) {
+      console.warn('Unable to ensure feedback_links token index:', e.message);
+    }
+    try {
+      await pool.query('ALTER TABLE feedback_links MODIFY COLUMN expires_at TIMESTAMP NOT NULL');
+      await pool.query(`
+        UPDATE feedback_links
+        SET expires_at = DATE_ADD(created_at, INTERVAL 30 DAY)
+        WHERE is_used = FALSE
+          AND (email_sent = TRUE OR sms_sent = TRUE)
+          AND created_at IS NOT NULL
+          AND created_at > DATE_SUB(NOW(), INTERVAL 30 DAY)
+          AND expires_at <= NOW()
+      `);
+    } catch (e) {
+      console.warn('Unable to ensure immutable feedback_links.expires_at:', e.message);
+    }
 
     // Announcements
     await pool.query(`CREATE TABLE IF NOT EXISTS announcements (
@@ -1576,6 +1699,147 @@ app.get('/api/health', (_req, res) => res.json({
   corsPolicy: 'same-origin-host-v1',
 }));
 
+const toRequestBoolean = (body, key, fallback) => (
+  Object.prototype.hasOwnProperty.call(body || {}, key)
+    ? body[key] === true || body[key] === 1 || body[key] === '1' || /^true$/i.test(String(body[key]))
+    : fallback
+);
+
+const toMysqlDateTimeOrNull = (value) => {
+  const raw = String(value || '').trim();
+  if (!raw) return null;
+  const parsed = new Date(raw);
+  if (Number.isNaN(parsed.getTime())) {
+    throw Object.assign(new Error('Estimated completion must be a valid date and time.'), { status: 400 });
+  }
+  return parsed.toISOString().slice(0, 19).replace('T', ' ');
+};
+
+const normalizeMaintenanceRequest = (body = {}, previous = {}) => ({
+  enabled: toRequestBoolean(body, 'maintenance_enabled', toRequestBoolean(body, 'enabled', previous.enabled)),
+  reason: String(body.maintenance_reason ?? body.reason ?? previous.reason ?? '').trim().slice(0, 255),
+  message: String(body.maintenance_message ?? body.message ?? previous.message ?? '').trim().slice(0, 1000) || undefined,
+  estimated_completion: Object.prototype.hasOwnProperty.call(body, 'estimated_completion')
+    ? toMysqlDateTimeOrNull(body.estimated_completion)
+    : previous.estimated_completion,
+  allow_api_access: toRequestBoolean(body, 'maintenance_allow_api_access', toRequestBoolean(body, 'allow_api_access', previous.allow_api_access)),
+  force_logout: toRequestBoolean(body, 'maintenance_force_logout', toRequestBoolean(body, 'force_logout', previous.force_logout)),
+  notify_users: toRequestBoolean(body, 'maintenance_notify_users', toRequestBoolean(body, 'notify_users', previous.notify_users)),
+  backup_before_enable: toRequestBoolean(body, 'maintenance_backup_before_enable', toRequestBoolean(body, 'backup_before_enable', previous.backup_before_enable)),
+  allow_super_admin_only: true,
+});
+
+const activeNonSuperAdminUserIds = async () => {
+  const [users] = await pool.query("SELECT id FROM user_profiles WHERE is_active = TRUE AND role <> 'SuperAdmin'");
+  return users.map((user) => user.id);
+};
+
+app.get('/api/maintenance/status', async (_req, res) => {
+  try {
+    res.json({ success: true, maintenance: await getMaintenanceState(pool) });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.get('/api/admin/maintenance-mode', requireRole('SuperAdmin'), async (_req, res) => {
+  try {
+    res.json({ success: true, maintenance: await getMaintenanceState(pool, { force: true }) });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.put('/api/admin/maintenance-mode', requireRole('SuperAdmin'), async (req, res) => {
+  let backup = null;
+  let backupWarning = null;
+  try {
+    const previous = await getMaintenanceState(pool, { force: true });
+    const nextState = normalizeMaintenanceRequest(req.body, previous);
+    const isEnabling = !previous.enabled && nextState.enabled;
+    const isDisabling = previous.enabled && !nextState.enabled;
+
+    if (isEnabling && nextState.backup_before_enable) {
+      await logSuccess(pool, req, { action: 'maintenance_backup_started', category: 'maintenance', module: 'Maintenance Mode', description: 'Database backup started before enabling maintenance mode.' });
+      try {
+        backup = await createDatabaseBackup(pool);
+        pruneBackups();
+        await logSuccess(pool, req, { action: 'maintenance_backup_successful', category: 'maintenance', module: 'Maintenance Mode', description: 'Database backup completed before enabling maintenance mode.', metadata: backup, severity: 'notice' });
+      } catch (error) {
+        backupWarning = error.message;
+        await logFailure(pool, req, { action: 'maintenance_backup_failed', category: 'maintenance', module: 'Maintenance Mode', description: 'Database backup failed before enabling maintenance mode.', metadata: { error: error.message }, severity: 'warning' });
+      }
+    }
+
+    await pool.query(`UPDATE company_settings SET
+      maintenance_enabled = ?,
+      maintenance_reason = ?,
+      maintenance_message = ?,
+      estimated_completion = ?,
+      maintenance_allow_api_access = ?,
+      maintenance_force_logout = ?,
+      maintenance_notify_users = ?,
+      maintenance_backup_before_enable = ?,
+      maintenance_allow_super_admin_only = TRUE,
+      maintenance_enabled_by = CASE WHEN ? THEN ? ELSE maintenance_enabled_by END,
+      maintenance_enabled_at = CASE WHEN ? THEN NOW() ELSE maintenance_enabled_at END,
+      maintenance_disabled_by = CASE WHEN ? THEN ? ELSE maintenance_disabled_by END,
+      maintenance_disabled_at = CASE WHEN ? THEN NOW() ELSE maintenance_disabled_at END
+      WHERE id = 1`, [
+      nextState.enabled,
+      nextState.reason || null,
+      nextState.message || null,
+      nextState.estimated_completion || null,
+      nextState.allow_api_access,
+      nextState.force_logout,
+      nextState.notify_users,
+      nextState.backup_before_enable,
+      isEnabling, req.user.id,
+      isEnabling,
+      isDisabling, req.user.id,
+      isDisabling,
+    ]);
+
+    if (isEnabling && nextState.force_logout) {
+      const [result] = await pool.query(`UPDATE user_sessions us
+        JOIN user_profiles u ON u.id = us.user_id
+        SET us.revoked_at = NOW(), us.revoke_reason = 'MAINTENANCE_MODE'
+        WHERE u.role <> 'SuperAdmin' AND us.revoked_at IS NULL AND (us.expires_at IS NULL OR us.expires_at > NOW())`);
+      await logSuccess(pool, req, { action: 'maintenance_forced_logout', category: 'maintenance', module: 'Maintenance Mode', description: 'Active non-SuperAdmin sessions were revoked for maintenance mode.', metadata: { revokedSessions: result.affectedRows || 0 }, severity: 'notice' });
+    }
+
+    invalidateMaintenanceCache();
+    const current = await getMaintenanceState(pool, { force: true });
+    const action = isEnabling ? 'maintenance_enabled' : isDisabling ? 'maintenance_disabled' : 'maintenance_settings_updated';
+    await logSuccess(pool, req, {
+      action,
+      category: 'maintenance',
+      module: 'Maintenance Mode',
+      description: isEnabling ? 'Maintenance mode enabled.' : isDisabling ? 'Maintenance mode disabled.' : 'Maintenance mode settings updated.',
+      old_values: previous,
+      new_values: current,
+      severity: current.enabled ? 'warning' : 'notice',
+    });
+
+    if (nextState.notify_users && (isEnabling || isDisabling)) {
+      const userIds = await activeNonSuperAdminUserIds();
+      await sendUsersNotification({
+        pool,
+        userIds,
+        title: isEnabling ? 'System Maintenance' : 'Maintenance Complete',
+        message: isEnabling
+          ? `RIANA CIMS is entering scheduled maintenance.${current.estimated_completion ? ` Estimated completion: ${current.estimated_completion}` : ''}`
+          : 'RIANA CIMS maintenance is complete. You may now sign in normally.',
+        type: isEnabling ? 'warning' : 'success',
+        notificationType: 'maintenance',
+        email: false,
+        sms: false,
+        whatsapp: false,
+      });
+    }
+
+    res.json({ success: true, maintenance: current, backup, backupWarning });
+  } catch (err) {
+    res.status(err.status || 500).json({ error: err.message });
+  }
+});
+
 // Persistent notifications shared by CIMS and CRMS.
 app.get('/api/notifications', authMiddleware, async (req, res) => {
   try {
@@ -1656,16 +1920,29 @@ app.get('/api/download', async (req, res) => {
   try {
     const filename = resolveLegacyDownloadFilename(req);
     const filePath = resolveStoredFile(uploadsDir, filename);
-    if (!filePath || !fs.existsSync(filePath) || !(await storedFileIsRegistered(filename))) {
-      return res.status(404).json({ error: 'File not found.' });
+    if (!filePath || !fs.existsSync(filePath)) {
+      return res.status(404).json({
+        error: 'The handover file is missing from server storage. Restore the uploads backup or re-upload the signed document.',
+        code: 'HANDOVER_FILE_MISSING',
+      });
+    }
+    if (!(await storedFileIsRegistered(filename))) {
+      return res.status(404).json({ error: 'File not found.', code: 'FILE_NOT_REGISTERED' });
     }
     if (!req.query.token) res.setHeader('Deprecation', 'true');
     const disposition = req.query.disposition === 'inline' ? 'inline' : 'attachment';
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('Content-Disposition', `${disposition}; filename="${path.basename(filename).replace(/["\r\n]/g, '')}"`);
     res.sendFile(filePath);
-  } catch {
-    res.status(500).json({ error: 'Unable to download file.' });
+  } catch (err) {
+    const status = err.status && err.status < 500 ? err.status : 500;
+    if (err.code === 'FILE_ACCESS_DENIED') {
+      return res.status(status).json({
+        error: 'This file access link is invalid or expired. Refresh the handover list and try again.',
+        code: 'FILE_ACCESS_DENIED',
+      });
+    }
+    res.status(status).json({ error: status >= 500 ? 'Unable to download file.' : err.message, code: err.code || 'FILE_DOWNLOAD_FAILED' });
   }
 });
 
@@ -1815,17 +2092,30 @@ const safeUser = (user) => {
   return withEffectivePermissions(result);
 };
 
-const issueCimsSession = (res, user) => {
+const issueCimsSession = async (req, res, user) => {
   const sessionVersion = Number(user.session_version || 0);
-  const token = jwt.sign({ id: user.id, email: user.email, role: user.role, sv: sessionVersion }, JWT_SECRET, { algorithm: 'HS256', expiresIn: '7d' });
+  const sessionId = crypto.randomUUID();
+  const expiresAt = new Date(Date.now() + CIMS_SESSION_MAX_AGE_MS);
+  const token = jwt.sign(
+    { id: user.id, email: user.email, role: user.role, sv: sessionVersion, sid: sessionId },
+    JWT_SECRET,
+    { algorithm: 'HS256', expiresIn: '7d' },
+  );
+  const sessionResult = await createSingleActiveSession(pool, {
+    userId: user.id,
+    sessionId,
+    token,
+    req,
+    expiresAt,
+  });
   res.cookie('riana_session', token, {
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
     sameSite: 'strict',
-    maxAge: 7 * 24 * 60 * 60 * 1000,
+    maxAge: CIMS_SESSION_MAX_AGE_MS,
     path: '/',
   });
-  res.json({ user: safeUser(user), token });
+  return { sessionId, token, ...sessionResult };
 };
 
 app.post('/api/auth/login', async (req, res) => {
@@ -1854,14 +2144,24 @@ app.post('/api/auth/login', async (req, res) => {
       return res.status(401).json({ error: 'Invalid credentials' });
     }
 
+    const maintenance = await getMaintenanceState(pool);
+    if (maintenance.enabled && user.role !== 'SuperAdmin') {
+      await logDenied(pool, req, { user_id: user.id, action: 'login_blocked_maintenance', category: 'maintenance', module: 'Auth', description: 'Login was blocked because maintenance mode is active.', severity: 'warning' });
+      res.setHeader('Retry-After', '60');
+      return res.status(503).json(maintenanceResponse(maintenance));
+    }
+
     if (user.two_factor_enabled) {
       const challenge = await createChallenge(pool, user, JWT_SECRET);
       await logSuccess(pool, req, { user_id: user.id, action: 'login_2fa_challenge_created', category: 'authentication', module: 'Auth', description: 'Two-factor challenge created during login.' });
       return res.json({ requiresTwoFactor: true, ...challenge });
     }
-
-    await logSuccess(pool, req, { user_id: user.id, action: 'login_success', category: 'authentication', module: 'Auth', description: 'User logged in successfully.' });
-    issueCimsSession(res, user);
+    const sessionResult = await issueCimsSession(req, res, user);
+    await logSuccess(pool, req, { user_id: user.id, action: 'login_success', category: 'authentication', module: 'Auth', description: 'User logged in successfully.', session_id: sessionAuditRef(sessionResult.sessionId) });
+    if (sessionResult.revokedCount) {
+      await logSuccess(pool, req, { user_id: user.id, action: 'session_replaced', category: 'authentication', module: 'Auth', description: 'Previous active session was replaced by a new login.', metadata: { revokedSessions: sessionResult.revokedCount }, session_id: sessionAuditRef(sessionResult.sessionId), severity: 'notice' });
+    }
+    res.json({ user: safeUser(user), token: sessionResult.token });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
@@ -1879,8 +2179,18 @@ app.post('/api/auth/verify-2fa', async (req, res) => {
       WHERE u.id = ? AND u.is_active = TRUE
     `, [challenge.user_id]);
     if (!rows.length) return res.status(403).json({ error: 'User account is unavailable.' });
-    await logSuccess(pool, req, { user_id: rows[0].id, action: 'login_success', category: 'authentication', module: 'Auth', description: 'User completed two-factor login successfully.' });
-    issueCimsSession(res, rows[0]);
+    const maintenance = await getMaintenanceState(pool);
+    if (maintenance.enabled && rows[0].role !== 'SuperAdmin') {
+      await logDenied(pool, req, { user_id: rows[0].id, action: 'login_blocked_maintenance', category: 'maintenance', module: 'Auth', description: 'Two-factor login was blocked because maintenance mode is active.', severity: 'warning' });
+      res.setHeader('Retry-After', '60');
+      return res.status(503).json(maintenanceResponse(maintenance));
+    }
+    const sessionResult = await issueCimsSession(req, res, rows[0]);
+    await logSuccess(pool, req, { user_id: rows[0].id, action: 'login_success', category: 'authentication', module: 'Auth', description: 'User completed two-factor login successfully.', session_id: sessionAuditRef(sessionResult.sessionId) });
+    if (sessionResult.revokedCount) {
+      await logSuccess(pool, req, { user_id: rows[0].id, action: 'session_replaced', category: 'authentication', module: 'Auth', description: 'Previous active session was replaced by a new login.', metadata: { revokedSessions: sessionResult.revokedCount }, session_id: sessionAuditRef(sessionResult.sessionId), severity: 'notice' });
+    }
+    res.json({ user: safeUser(rows[0]), token: sessionResult.token });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
@@ -1955,6 +2265,19 @@ app.get('/api/auth/me', authMiddleware, async (req, res) => {
   } catch (err) { res.status(500).json({ error: 'Unable to load the current user.' }); }
 });
 
+app.get('/api/auth/session-status', authMiddleware, (req, res) => {
+  res.json({ success: true, active: true, user_id: req.user.id });
+});
+
+app.post('/api/auth/logout', authMiddleware, async (req, res) => {
+  try {
+    await revokeCurrentSession(pool, { userId: req.user.id, sessionId: req.user.sid, reason: 'LOGOUT' });
+    await logSuccess(pool, req, { user_id: req.user.id, action: 'logout', category: 'authentication', module: 'Auth', description: 'User logged out.', session_id: sessionAuditRef(req.user.sid) });
+    res.clearCookie('riana_session', { path: '/', sameSite: 'strict', secure: process.env.NODE_ENV === 'production' });
+    res.json({ success: true });
+  } catch (err) { res.status(500).json({ error: 'Unable to log out.' }); }
+});
+
 app.get('/api/user_profiles', authMiddleware, async (req, res) => {
   try {
     const [rows] = await pool.query(`
@@ -1976,6 +2299,7 @@ app.patch('/api/auth/password', authMiddleware, async (req, res) => {
     if (password.length < 8) return res.status(400).json({ error: 'Password must be at least 8 characters.' });
     const passwordHash = await hashPassword(password);
     await pool.query('UPDATE user_profiles SET password = ?, first_login = FALSE, session_version = session_version + 1 WHERE id = ?', [passwordHash, req.user.id]);
+    await revokeUserSessions(pool, req.user.id, 'PASSWORD_CHANGED');
     await logSuccess(pool, req, { action: 'password_changed', category: 'authentication', module: 'Auth', entity_type: 'user', entity_id: req.user.id, description: 'User changed their password.', severity: 'notice' });
     const loginUrl = canonicalAppUrl(req);
     const delivery = await sendUserNotification({
@@ -2710,6 +3034,7 @@ app.post('/api/auth/reset-password', async (req, res) => {
     }
     const passwordHash = await hashPassword(password);
     await connection.query('UPDATE user_profiles SET password = ?, first_login = FALSE, session_version = session_version + 1 WHERE id = ?', [passwordHash, tokens[0].user_id]);
+    await revokeUserSessions(connection, tokens[0].user_id, 'PASSWORD_RESET');
     await connection.query('UPDATE password_reset_tokens SET used_at = NOW() WHERE user_id = ? AND used_at IS NULL', [tokens[0].user_id]);
     await connection.commit();
     connection.release();
@@ -2860,6 +3185,7 @@ app.put('/api/user_profiles/:id', authMiddleware, async (req, res) => {
       const revokesSessions = updates.some(([key]) => key === 'role' || key === 'is_active');
       const fields = `${updates.map(([key]) => `${key} = ?`).join(', ')}${revokesSessions ? ', session_version = session_version + 1' : ''}`;
       await pool.query(`UPDATE user_profiles SET ${fields} WHERE id = ?`, [...updates.map(([, value]) => value), req.params.id]);
+      if (revokesSessions) await revokeUserSessions(pool, req.params.id, updates.some(([key, value]) => key === 'is_active' && !value) ? 'ACCOUNT_DISABLED' : 'ROLE_CHANGED');
     }
     if (roleUpdate) {
       await pool.query(
@@ -2912,6 +3238,7 @@ app.put('/api/user_profiles/:id/permissions', requireRole('SuperAdmin'), async (
       );
     }
     await connection.query('UPDATE user_profiles SET session_version=session_version+1 WHERE id=?', [req.params.id]);
+    await revokeUserSessions(connection, req.params.id, 'PERMISSIONS_CHANGED');
     await connection.commit();
     connection.release();
     connection = null;
@@ -2950,6 +3277,7 @@ app.patch('/api/user_profiles/:id/password', authMiddleware, async (req, res) =>
     if (password.length < 8) return res.status(400).json({ error: 'Password must be at least 8 characters.' });
     const passwordHash = await hashPassword(password);
     await pool.query('UPDATE user_profiles SET password = ?, first_login = TRUE, session_version = session_version + 1 WHERE id = ?', [passwordHash, req.params.id]);
+    await revokeUserSessions(pool, req.params.id, 'PASSWORD_RESET');
     const loginUrl = canonicalAppUrl(req);
     const delivery = await sendUserNotification({
       pool,
@@ -3115,13 +3443,23 @@ app.post('/api/feedback_links', requireAnyCapability('clients.manage', 'installa
       departmentId: data.department_id || installation.department_id,
       allowInactive: true,
     });
+    const expiresAt = resolveFeedbackExpiresAt(data);
     await pool.query(
       'INSERT INTO feedback_links (id, client_id, installation_id, branch_id, department_id, unique_token, expires_at, created_by_user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-      [id, scope.clientId, data.installation_id || null, scope.branchId, scope.departmentId, token, data.expires_at, req.user.id],
+      [id, scope.clientId, data.installation_id || null, scope.branchId, scope.departmentId, token, expiresAt, req.user.id],
     );
     const [rows] = await pool.query('SELECT * FROM feedback_links WHERE id = ? LIMIT 1', [id]);
     res.status(201).json(rows[0]);
-  } catch (err) { res.status(err.status || 500).json({ error: err.message }); }
+  } catch (err) {
+    const status = err.status && err.status < 500 ? err.status : 500;
+    console.error('Feedback link creation error:', err);
+    res.status(status).json({
+      error: status >= 500
+        ? 'Unable to generate feedback link. Restart the API server to apply schema updates, then try again.'
+        : err.message,
+      code: status >= 500 ? 'FEEDBACK_LINK_CREATE_FAILED' : err.code || 'FEEDBACK_LINK_INVALID',
+    });
+  }
 });
 
 app.patch('/api/feedback_links/:id', requireAnyCapability('clients.manage', 'installations.manage'), async (req, res) => {
@@ -3660,22 +3998,33 @@ app.get('/api/public/company-branding', async (_req, res) => {
 app.get('/api/public/feedback-links/:token', async (req, res) => {
   try {
     const [rows] = await pool.query(
-      `SELECT f.*, c.client_name, c.branch AS client_branch, cb.branch_name, cd.department_name,
+      `SELECT f.*, (f.expires_at <= NOW()) AS is_expired, GREATEST(TIMESTAMPDIFF(SECOND, NOW(), f.expires_at), 0) AS seconds_until_expiry,
+              c.client_name, c.branch AS client_branch, cb.branch_name, cd.department_name,
               (SELECT COUNT(*) FROM client_branches b2 WHERE ${sqlUuidEquals('b2.client_id', 'f.client_id')} AND b2.deleted_at IS NULL) AS branch_count,
               (SELECT COUNT(*) FROM client_departments d2 WHERE ${sqlUuidEquals('d2.client_id', 'f.client_id')} AND d2.deleted_at IS NULL AND (f.branch_id IS NULL OR ${sqlUuidEquals('d2.branch_id', 'f.branch_id')})) AS department_count
        FROM feedback_links f
        JOIN clients c ON ${sqlUuidEquals('f.client_id', 'c.id')}
        LEFT JOIN client_branches cb ON ${sqlUuidEquals('cb.id', 'f.branch_id')}
        LEFT JOIN client_departments cd ON ${sqlUuidEquals('cd.id', 'f.department_id')}
-       WHERE f.unique_token = ? AND f.expires_at > NOW() LIMIT 1`,
+       WHERE f.unique_token = ? LIMIT 1`,
       [req.params.token],
     );
-    if (!rows.length) return res.status(404).json({ error: 'Valid link not found' });
+    if (!rows.length) return res.status(404).json({ error: 'Feedback link was not found.', code: 'FEEDBACK_LINK_NOT_FOUND' });
     
     const row = rows[0];
-    if (row.is_used) return res.status(409).json({ error: 'Feedback has already been submitted for this link.', is_used: true, used_at: row.used_at });
+    if (row.is_used) {
+      return res.status(409).json({
+        error: 'Feedback already reviewed. This one-time feedback link has already been submitted.',
+        code: 'FEEDBACK_ALREADY_REVIEWED',
+        is_used: true,
+        used_at: row.used_at,
+      });
+    }
+    if (row.is_expired) {
+      return res.status(410).json({ error: 'This feedback link has expired.', code: 'FEEDBACK_LINK_EXPIRED' });
+    }
 
-    const maxAge = Math.max(1, new Date(row.expires_at).getTime() - Date.now());
+    const maxAge = Math.max(1000, Number(row.seconds_until_expiry || 0) * 1000);
     res.cookie('riana_feedback_token', req.params.token, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
@@ -3700,21 +4049,53 @@ app.post('/api/public/installation-feedback', async (req, res) => {
   try {
     const id = uuidv4();
     const data = req.body;
-    const token = parseCookies(req.headers.cookie || '').riana_feedback_token;
-    if (!token) return res.status(401).json({ error: 'A valid feedback session is required.' });
+    const cookieToken = parseCookies(req.headers.cookie || '').riana_feedback_token;
+    const submittedToken = String(data.feedback_token || '').trim();
+    const token = cookieToken || submittedToken;
+    if (!token) return res.status(401).json({ error: 'A valid feedback session is required.', code: 'FEEDBACK_SESSION_REQUIRED' });
+    if (cookieToken && submittedToken && cookieToken !== submittedToken) {
+      return res.status(403).json({ error: 'Feedback session does not match this link.', code: 'FEEDBACK_SESSION_MISMATCH' });
+    }
     connection = await pool.getConnection();
     await connection.beginTransaction();
     const [links] = await connection.query(
-      `SELECT id,client_id,installation_id FROM feedback_links
-       WHERE unique_token = ? AND is_used = FALSE AND expires_at > NOW() LIMIT 1 FOR UPDATE`,
+      `SELECT f.id,f.client_id,f.installation_id,f.is_used,f.used_at,f.expires_at,
+              (f.expires_at <= NOW()) AS is_expired,
+              c.client_name,c.contact_person_name,c.contact_email
+       FROM feedback_links f
+       JOIN clients c ON ${sqlUuidEquals('f.client_id', 'c.id')}
+       WHERE f.unique_token = ? LIMIT 1 FOR UPDATE`,
       [token],
     );
     const link = links[0];
-    if (!link || String(link.client_id) !== String(data.client_id) || String(link.installation_id || '') !== String(data.installation_id || '')) {
+    if (!link) {
       await connection.rollback();
       connection.release();
       connection = null;
-      return res.status(403).json({ error: 'Feedback link is invalid, expired, or does not match this installation.' });
+      return res.status(404).json({ error: 'Feedback link was not found.', code: 'FEEDBACK_LINK_NOT_FOUND' });
+    }
+    if (link.is_used) {
+      await connection.rollback();
+      connection.release();
+      connection = null;
+      return res.status(409).json({
+        error: 'Feedback already reviewed. This one-time feedback link has already been submitted.',
+        code: 'FEEDBACK_ALREADY_REVIEWED',
+        is_used: true,
+        used_at: link.used_at,
+      });
+    }
+    if (link.is_expired) {
+      await connection.rollback();
+      connection.release();
+      connection = null;
+      return res.status(410).json({ error: 'This feedback link has expired.', code: 'FEEDBACK_LINK_EXPIRED' });
+    }
+    if (String(link.client_id) !== String(data.client_id) || String(link.installation_id || '') !== String(data.installation_id || '')) {
+      await connection.rollback();
+      connection.release();
+      connection = null;
+      return res.status(403).json({ error: 'Feedback link does not match this installation.', code: 'FEEDBACK_LINK_MISMATCH' });
     }
     await connection.query(
       `INSERT INTO installation_feedback (
@@ -3737,19 +4118,48 @@ app.post('/api/public/installation-feedback', async (req, res) => {
       'UPDATE feedback_links SET is_used = TRUE, used_at = NOW() WHERE id = ? AND is_used = FALSE',
       [link.id],
     );
-    if (used.affectedRows !== 1) throw new Error('Feedback link was already consumed.');
+    if (used.affectedRows !== 1) {
+      await connection.rollback();
+      connection.release();
+      connection = null;
+      return res.status(409).json({
+        error: 'Feedback already reviewed. This one-time feedback link has already been submitted.',
+        code: 'FEEDBACK_ALREADY_REVIEWED',
+        is_used: true,
+      });
+    }
     await connection.commit();
     connection.release();
     connection = null;
     res.clearCookie('riana_feedback_token', { path: '/api/public', sameSite: 'strict', secure: process.env.NODE_ENV === 'production' });
-    res.json({ success: true });
+
+    let thankYouEmailSent = false;
+    let thankYouEmailError = null;
+    if (link.contact_email) {
+      try {
+        await sendEmail({
+          recipientEmail: link.contact_email,
+          recipientName: link.contact_person_name || link.client_name,
+          notificationType: 'feedback_thank_you',
+          clientName: link.client_name,
+          requestDescription: 'Thank you for your feedback, we appreciate.',
+          text: `Hello ${link.contact_person_name || link.client_name || 'there'},\n\nThank you for your feedback, we appreciate.\n\nRIANA CIMS`,
+        });
+        thankYouEmailSent = true;
+      } catch (emailError) {
+        thankYouEmailError = emailError.message || 'Thank-you email delivery failed';
+        console.error('Feedback thank-you email failed:', thankYouEmailError);
+      }
+    }
+
+    res.json({ success: true, thank_you_email_sent: thankYouEmailSent, thank_you_email_error: thankYouEmailError });
   } catch (err) { 
     if (connection) {
       await connection.rollback().catch(() => {});
       connection.release();
     }
     console.error('Feedback submission error:', err);
-    res.status(500).json({ error: 'Unable to submit feedback.' });
+    res.status(500).json({ error: 'Unable to submit feedback.', code: 'FEEDBACK_SUBMISSION_FAILED' });
   }
 });
 
@@ -3923,6 +4333,176 @@ app.get('/api/me/activity-logs', authMiddleware, async (req, res) => {
   }
 });
 
+const buildAssistantLookupTools = (req) => {
+  const canView = (viewCapability, manageCapability = viewCapability.replace('.view', '.manage')) => (
+    hasCapability(req.user, viewCapability) || hasCapability(req.user, manageCapability)
+  );
+  const lookupText = (value) => String(value || '').trim();
+  const likeText = (value) => `%${lookupText(value).toLowerCase()}%`;
+  const oneOrMany = (rows) => {
+    if (!rows?.length) return { status: 'not_found' };
+    if (rows.length > 1) return { status: 'multiple' };
+    return { status: 'found', record: rows[0] };
+  };
+
+  return {
+    async getInstallation({ identifier }) {
+      if (!canView('installations.view')) return { status: 'unauthorized' };
+      const needle = lookupText(identifier).toLowerCase();
+      try {
+        const rows = await queryInstallations();
+        const matches = rows
+          .map(formatInstallationRow)
+          .filter((row) => [row.id, row.client_name, row.branch_name, row.client_branch, row.branch, row.department_name]
+            .some((value) => String(value || '').toLowerCase().includes(needle)))
+          .slice(0, 2)
+          .map((row) => ({
+            id: row.id,
+            reference: row.id,
+            status: row.status,
+            branch: row.branch_name || row.client_branch || row.branch,
+            branch_name: row.branch_name || row.client_branch || row.branch,
+            client_name: row.client_name,
+            updated_at: row.updated_at,
+            created_at: row.created_at,
+          }));
+        return oneOrMany(matches);
+      } catch (error) {
+        console.error('Assistant installation lookup failed:', error.message);
+        return { status: 'error' };
+      }
+    },
+
+    async getClient({ identifier }) {
+      if (!canView('clients.view')) return { status: 'unauthorized' };
+      try {
+        const [rows] = await pool.query(
+          `SELECT id,client_name,branch,contract_type,industry_classification,created_at,updated_at
+           FROM clients
+           WHERE id = ? OR LOWER(client_name) LIKE ?
+           ORDER BY updated_at DESC, created_at DESC
+           LIMIT 2`,
+          [lookupText(identifier), likeText(identifier)],
+        );
+        return oneOrMany(rows);
+      } catch (error) {
+        console.error('Assistant client lookup failed:', error.message);
+        return { status: 'error' };
+      }
+    },
+
+    async getBranch({ identifier }) {
+      if (!canView('clients.view')) return { status: 'unauthorized' };
+      try {
+        const [rows] = await pool.query(
+          `SELECT b.id,b.branch_name,b.status,b.updated_at,c.client_name
+           FROM client_branches b
+           LEFT JOIN clients c ON ${sqlUuidEquals('c.id', 'b.client_id')}
+           WHERE b.deleted_at IS NULL AND (b.id = ? OR LOWER(b.branch_name) LIKE ?)
+           ORDER BY b.updated_at DESC
+           LIMIT 2`,
+          [lookupText(identifier), likeText(identifier)],
+        );
+        return oneOrMany(rows);
+      } catch (error) {
+        if (!['ER_NO_SUCH_TABLE', 'ER_BAD_FIELD_ERROR'].includes(error.code)) {
+          console.error('Assistant branch lookup failed:', error.message);
+          return { status: 'error' };
+        }
+        try {
+          const [rows] = await pool.query(
+            `SELECT id,branch AS branch_name,client_name,created_at AS updated_at
+             FROM clients
+             WHERE branch IS NOT NULL AND branch <> '' AND (id = ? OR LOWER(branch) LIKE ?)
+             ORDER BY created_at DESC
+             LIMIT 2`,
+            [lookupText(identifier), likeText(identifier)],
+          );
+          return oneOrMany(rows);
+        } catch (fallbackError) {
+          console.error('Assistant branch fallback failed:', fallbackError.message);
+          return { status: 'error' };
+        }
+      }
+    },
+
+    async getDepartment({ identifier }) {
+      if (!canView('clients.view')) return { status: 'unauthorized' };
+      try {
+        const [rows] = await pool.query(
+          `SELECT d.id,d.department_name,d.status,d.updated_at,b.branch_name,c.client_name
+           FROM client_departments d
+           LEFT JOIN client_branches b ON ${sqlUuidEquals('b.id', 'd.branch_id')}
+           LEFT JOIN clients c ON ${sqlUuidEquals('c.id', 'd.client_id')}
+           WHERE d.deleted_at IS NULL AND (d.id = ? OR LOWER(d.department_name) LIKE ?)
+           ORDER BY d.updated_at DESC
+           LIMIT 2`,
+          [lookupText(identifier), likeText(identifier)],
+        );
+        return oneOrMany(rows);
+      } catch (error) {
+        if (['ER_NO_SUCH_TABLE', 'ER_BAD_FIELD_ERROR'].includes(error.code)) return { status: 'not_available' };
+        console.error('Assistant department lookup failed:', error.message);
+        return { status: 'error' };
+      }
+    },
+
+    async getChangeRequest({ identifier }) {
+      if (!CRMS_ACCESS_ROLES.has(req.user?.role)) return { status: 'unauthorized' };
+      const value = lookupText(identifier);
+      const like = `%${value}%`;
+      try {
+        const [rows] = await pool.query(
+          `SELECT cr.id,cr.ticket_number AS reference,cr.ticket_number,cr.status,cr.assigned_developer_id,cr.updated_at,cr.created_at,c.client_name
+           FROM crms_change_requests cr
+           LEFT JOIN clients c ON c.id COLLATE utf8mb4_general_ci = cr.client_id
+           WHERE cr.id = ? OR cr.ticket_number = ? OR cr.ticket_number LIKE ?
+           ORDER BY cr.updated_at DESC, cr.created_at DESC
+           LIMIT 2`,
+          [value, value, like],
+        );
+        if (!rows.length) return { status: 'not_found' };
+        if (req.user.role === 'Developer') {
+          const visible = rows.filter((row) => String(row.assigned_developer_id || '') === String(req.user.id));
+          if (!visible.length) return { status: 'unauthorized' };
+          return oneOrMany(visible);
+        }
+        return oneOrMany(rows);
+      } catch (error) {
+        if (['ER_NO_SUCH_TABLE', 'ER_BAD_FIELD_ERROR'].includes(error.code)) return { status: 'not_available' };
+        console.error('Assistant change request lookup failed:', error.message);
+        return { status: 'error' };
+      }
+    },
+
+    async getHandover({ identifier }) {
+      if (!canView('installations.view') && !hasCapability(req.user, 'files.view')) return { status: 'unauthorized' };
+      const value = lookupText(identifier);
+      try {
+        const [rows] = await pool.query(
+          `SELECT h.id,h.id AS reference,h.status,h.upload_date,h.created_at,h.file_name,c.client_name,c.branch AS client_branch,cb.branch_name
+           FROM handover_uploads h
+           LEFT JOIN clients c ON ${sqlUuidEquals('c.id', 'h.client_id')}
+           LEFT JOIN client_branches cb ON ${sqlUuidEquals('cb.id', 'h.branch_id')}
+           WHERE h.id = ? OR h.installation_id = ? OR LOWER(h.file_name) LIKE ?
+           ORDER BY h.upload_date DESC
+           LIMIT 2`,
+          [value, value, likeText(value)],
+        );
+        return oneOrMany(rows.map((row) => ({ ...row, branch: row.branch_name || row.client_branch })));
+      } catch (error) {
+        if (['ER_NO_SUCH_TABLE', 'ER_BAD_FIELD_ERROR'].includes(error.code)) return { status: 'not_available' };
+        console.error('Assistant handover lookup failed:', error.message);
+        return { status: 'error' };
+      }
+    },
+
+    async getReport() {
+      if (!hasCapability(req.user, 'reports.view')) return { status: 'unauthorized' };
+      return { status: 'not_available' };
+    },
+  };
+};
 app.post('/api/chat/assistant', async (req, res) => {
   const message = String(req.body.message || '').trim();
   if (!message || message.length > 1000) return res.status(400).json({ error: 'Please enter a message between 1 and 1000 characters.' });
@@ -3931,12 +4511,25 @@ app.post('/api/chat/assistant', async (req, res) => {
   if (requestsInternalDetails) {
     return res.json({
       topic: 'restricted',
-      reply: "I can't provide source code, credentials, internal infrastructure, database details, private endpoints, or deployment configuration. I can help with safe user guidance such as navigation, roles, reports, installations, and support procedures.",
-      suggestions: ['How do I preview a report?', 'How do I find pending work?', 'How do I contact support?'],
+      reply: "I can't provide credentials, source code, internal infrastructure, database details, private endpoints, or deployment configuration.",
+      suggestions: [],
     });
   }
 
-  res.json(getAssistantResponse({ message, role: req.user.role }));
+  try {
+    const context = req.body && typeof req.body.context === 'object' && req.body.context !== null ? req.body.context : null;
+    const answer = await getAssistantResponse({
+      message,
+      role: req.user.role,
+      user: req.user,
+      context,
+      tools: buildAssistantLookupTools(req),
+    });
+    res.json(answer);
+  } catch (error) {
+    console.error('Assistant response failed:', error.message);
+    res.json({ topic: 'system_error', reply: "I couldn't retrieve that information right now. Please try again.", suggestions: [] });
+  }
 });
 
 // CHAT SYSTEM - indexed by user so broadcasts stay O(connections for that user)

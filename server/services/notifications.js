@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const nodemailer = require('nodemailer');
+const { labelForNotification, normalizeNotificationType, subjectForNotification } = require('./notificationTypes');
 const { parsePhoneNumberFromString } = require('libphonenumber-js/max');
 const PROVIDER_TIMEOUT_MS = Number(process.env.NOTIFICATION_PROVIDER_TIMEOUT_MS || 10000);
 let smtpTransport;
@@ -194,33 +195,35 @@ const emailSubjects = {
   password_changed: 'Your RIANA CIMS password was changed',
   password_reset: 'Reset your RIANA CIMS password',
   feedback_requested: 'RIANA installation feedback requested',
+  feedback_thank_you: 'Thank you for your feedback',
   support_guide: 'Your RIANA CIMS support guide',
   general: 'RIANA CIMS notification',
 };
 
 const buildNotificationHtml = (notification) => {
-  const title = emailSubjects[notification.notificationType] || 'RIANA CIMS notification';
+  const title = subjectForNotification(notification);
+  const contentLabel = labelForNotification(notification);
   const branding = emailBranding(notification);
   const logo = branding.logoSource
     ? `<img src="${escapeHtml(branding.logoSource)}" width="118" alt="${escapeHtml(branding.companyName)} logo" style="display:block;width:118px;max-width:118px;height:auto;max-height:70px;margin:0 auto 14px;object-fit:contain;border:0;outline:none;text-decoration:none">`
     : '';
+  const greetingName = String(notification.recipientName || '').trim();
   const rows = [
     ['Ticket', notification.ticketNumber], ['Client', notification.clientName],
-    ['Request', notification.requestDescription], ['Approved by', notification.approverName],
+    [contentLabel, notification.requestDescription], ['Approved by', notification.approverName],
     ['Developer', notification.developerName], ['Comment', notification.comment],
     ['Username', notification.username], ['Temporary password', notification.password],
     ['Login URL', notification.loginUrl], ['Account setup', notification.setupUrl],
-  ].filter(([, value]) => value);
+  ].filter(([, value]) => String(value ?? '').trim());
   return `<!doctype html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head><body style="margin:0;background:#f3f6f9;font-family:${branding.fontFamily},Arial,sans-serif;color:#172033">
     <div style="max-width:640px;margin:32px auto;background:#fff;border-radius:10px;overflow:hidden;border:1px solid #dce3ec">
       <div style="padding:26px 28px;background:${branding.primaryColor};color:#fff;text-align:center">${logo}<strong style="display:block;font-size:13px;letter-spacing:.4px;text-transform:uppercase">${escapeHtml(branding.companyName)}</strong></div>
       <div style="padding:28px"><h2 style="margin:0 0 18px;color:#172033;font-size:24px;line-height:1.25">${escapeHtml(title)}</h2>
-        <p>Hello ${escapeHtml(notification.recipientName || 'there')},</p>
+        <p>Hello${greetingName ? ` ${escapeHtml(greetingName)}` : ''},</p>
         ${rows.map(([label, value]) => `<p><strong>${escapeHtml(label)}:</strong> ${escapeHtml(value)}</p>`).join('')}
         ${notification.actionUrl ? `<p style="margin-top:28px"><a href="${escapeHtml(notification.actionUrl)}" style="display:inline-block;background:${branding.primaryColor};color:#fff;padding:13px 20px;border-radius:7px;text-decoration:none;font-weight:700">Open ${escapeHtml(branding.companyName)}</a></p>` : ''}
       </div><div style="padding:16px 28px;border-top:1px solid #e2e8f0;text-align:center;color:#78879a;font-size:11px;line-height:1.5"><strong>${escapeHtml(branding.companyName)}</strong><br>Powered by Riana Automations</div></div></body></html>`;
 };
-
 const detailRow = (icon, label, value, options = {}) => {
   const safeValue = escapeHtml(value);
   const content = options.url
@@ -293,20 +296,24 @@ const validatedMailboxList = (value, fieldName) => {
   const values = Array.isArray(value) ? value : [value];
   return values.map(email => ({ address: validatedMailbox(email, fieldName) }));
 };
-const plainTextFor = (notification, subject) => [
-  subject,
-  `Hello ${notification.recipientName || 'there'},`,
-  notification.requestDescription,
-  notification.ticketNumber && `Ticket: ${notification.ticketNumber}`,
-  notification.clientName && `Client: ${notification.clientName}`,
-  notification.username && `Username: ${notification.username}`,
-  notification.loginUrl && `Login URL: ${notification.loginUrl}`,
-  notification.setupUrl && `Account setup: ${notification.setupUrl}`,
-  notification.actionUrl && `Open RIANA CIMS: ${notification.actionUrl}`,
-  '',
-  'RIANA CIMS',
-  'Powered by Riana Automations',
-].filter(Boolean).join('\n\n');
+const plainTextFor = (notification, subject) => {
+  const greetingName = String(notification.recipientName || '').trim();
+  const contentLabel = labelForNotification(notification);
+  return [
+    subject,
+    `Hello${greetingName ? ` ${greetingName}` : ''},`,
+    notification.ticketNumber && `Ticket: ${notification.ticketNumber}`,
+    notification.clientName && `Client: ${notification.clientName}`,
+    notification.requestDescription && `${contentLabel}: ${notification.requestDescription}`,
+    notification.username && `Username: ${notification.username}`,
+    notification.loginUrl && `Login URL: ${notification.loginUrl}`,
+    notification.setupUrl && `Account setup: ${notification.setupUrl}`,
+    notification.actionUrl && `Open RIANA CIMS: ${notification.actionUrl}`,
+    '',
+    'RIANA CIMS',
+    'Powered by Riana Automations',
+  ].filter(Boolean).join('\n\n');
+};
 const safeAttachments = (attachments = []) => {
   if (!Array.isArray(attachments)) throw new Error('attachments must be an array');
   let totalBytes = 0;
@@ -358,7 +365,7 @@ async function sendEmail(notification) {
       }]
     : [];
   const attachments = safeAttachments([...logoAttachments, ...(notification.attachments || [])]);
-  const baseSubject = emailSubjects[notification.notificationType] || 'RIANA CIMS notification';
+  const baseSubject = subjectForNotification(notification);
   const subject = notification.deliveryTest ? `[TEST] ${baseSubject}` : baseSubject;
   const info = await sendMailWithRetry({
     from: { name: fromName, address: validatedMailbox(fromEmail, 'SMTP_FROM_EMAIL') },
@@ -568,4 +575,4 @@ async function sendWelcomeCredentials({ email, phoneNumber, name, role, loginUrl
     : { provider: index === 0 ? 'smtp' : index === 1 ? 'africas-talking' : 'beem-whatsapp', error: delivery.reason?.message || 'Delivery failed' });
 }
 
-module.exports = { buildWelcomeEmailHtml, getSmsBalance, normalizePhone, sendEmail, sendSms, sendVerificationCode, sendWelcomeCredentials, sendWhatsApp, smsStatus, smtpStatus, verifySmtpConnection, whatsappConfigured, whatsappStatus };
+module.exports = { buildNotificationHtml, buildWelcomeEmailHtml, labelForNotification, normalizeNotificationType, getSmsBalance, normalizePhone, sendEmail, sendSms, sendVerificationCode, sendWelcomeCredentials, sendWhatsApp, smsStatus, smtpStatus, verifySmtpConnection, whatsappConfigured, whatsappStatus };

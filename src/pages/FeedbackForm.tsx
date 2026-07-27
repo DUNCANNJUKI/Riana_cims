@@ -47,6 +47,7 @@ export const FeedbackForm = () => {
   const [isSubmitted, setIsSubmitted] = useState(false);
   const [isAlreadySubmitted, setIsAlreadySubmitted] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [errorTitle, setErrorTitle] = useState('Feedback Link Unavailable');
   const [questions, setQuestions] = useState<any[]>([]);
   const [dynamicResponses, setDynamicResponses] = useState<Record<string, any>>({});
   const { toast } = useToast();
@@ -86,18 +87,13 @@ export const FeedbackForm = () => {
       
       const response = await fetch(`${API_URL}/public/feedback-links/${encodeURIComponent(token)}`, { credentials: 'include' });
       const data = await response.json().catch(() => ({}));
-      if (response.status === 409 && data.is_used) {
+      if (response.status === 409 && (data.is_used || data.code === 'FEEDBACK_ALREADY_REVIEWED')) {
         setIsAlreadySubmitted(true);
         return;
       }
       if (!response.ok) {
+        setErrorTitle(response.status === 410 || data.code === 'FEEDBACK_LINK_EXPIRED' ? 'Feedback Link Expired' : 'Feedback Link Unavailable');
         setError(data.error || 'Invalid or expired feedback link');
-        return;
-      }
-
-      // Check if link is expired
-      if (new Date(data.expires_at) < new Date()) {
-        setError('This feedback link has expired');
         return;
       }
 
@@ -105,6 +101,7 @@ export const FeedbackForm = () => {
       setFeedbackLink(data);
     } catch (error) {
       console.error('Error validating feedback link:', error);
+      setErrorTitle('Feedback Link Unavailable');
       setError('Failed to validate feedback link');
     } finally {
       setIsLoading(false);
@@ -121,6 +118,7 @@ export const FeedbackForm = () => {
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
         body: JSON.stringify({
+            feedback_token: token,
             installation_id: feedbackLink.installation_id,
             client_id: feedbackLink.client_id,
             dynamic_responses: dynamicResponses,
@@ -132,14 +130,22 @@ export const FeedbackForm = () => {
 
       if (!response.ok) {
         const data = await response.json().catch(() => ({}));
-        if (response.status === 403 || response.status === 409) setIsAlreadySubmitted(true);
+        if (response.status === 409 || data.code === 'FEEDBACK_ALREADY_REVIEWED') {
+          setIsAlreadySubmitted(true);
+          return;
+        }
+        if (response.status === 410 || data.code === 'FEEDBACK_LINK_EXPIRED') {
+          setErrorTitle('Feedback Link Expired');
+          setError(data.error || 'This feedback link has expired');
+          return;
+        }
         throw new Error(data.error || 'Failed to submit feedback');
       }
 
       setIsSubmitted(true);
       toast({
         title: "Thank you!",
-        description: "Your feedback has been submitted successfully.",
+        description: "Thank you for your feedback, we appreciate.",
       });
     } catch (error) {
       console.error('Error submitting feedback:', error);
@@ -216,7 +222,7 @@ export const FeedbackForm = () => {
       <div className="min-h-screen flex items-center justify-center bg-background p-4">
         <Card className="w-full max-w-md">
           <CardHeader className="text-center">
-            <CardTitle className="text-destructive">Access Denied</CardTitle>
+            <CardTitle className="text-destructive">{errorTitle}</CardTitle>
           </CardHeader>
           <CardContent className="text-center">
             <p className="text-muted-foreground mb-4">{error}</p>
@@ -241,7 +247,7 @@ export const FeedbackForm = () => {
           </CardHeader>
           <CardContent className="text-center space-y-4">
             <p className="text-muted-foreground">
-              Your feedback has been submitted successfully. We appreciate your time and input.
+              Your feedback has been submitted successfully. Thank you for your feedback, we appreciate.
             </p>
             <div className="bg-muted/30 p-4 rounded-lg text-sm">
               <p className="font-medium">What happens next?</p>
@@ -266,12 +272,12 @@ export const FeedbackForm = () => {
             <div className="mx-auto w-16 h-16 bg-success/10 rounded-full flex items-center justify-center mb-4">
               <CheckCircle className="h-8 w-8 text-success" />
             </div>
-            <CardTitle className="text-success">Feedback Already Submitted</CardTitle>
-            <CardDescription>This one-time feedback link has already been used.</CardDescription>
+            <CardTitle className="text-success">Feedback Already Reviewed</CardTitle>
+            <CardDescription>This one-time feedback link has already been submitted.</CardDescription>
           </CardHeader>
           <CardContent className="text-center">
             <p className="text-muted-foreground">
-              Thank you for rating your installation experience. To protect response integrity, each feedback link can only be submitted once.
+              Feedback already reviewed. Thank you for rating your installation experience. To protect response integrity, each feedback link can only be submitted once.
             </p>
           </CardContent>
         </Card>

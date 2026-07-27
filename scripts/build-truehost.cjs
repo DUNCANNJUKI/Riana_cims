@@ -289,6 +289,8 @@ Do not upload the \`database\` folder, \`.env.local\`, or any SQL file to \`publ
 8. Activate the bootstrap SuperAdmin once: temporarily add \`SUPERADMIN_EMAIL\` (default \`${bootstrapSuperAdminEmail}\`) and a unique \`SUPERADMIN_PASSWORD\` in the Node app environment. The password must be 14+ characters with upper-case, lower-case, number, and symbol characters. In the application terminal run \`npm run admin:ensure-superadmin\`. Immediately remove both temporary variables before the final restart. This prevents later restarts from resetting the account password.
 9. Use **Restart** in **Setup Node.js App**, then open \`https://rianacims.name.ng/api/health\`. It must return \`{"status":"ok",...,"corsPolicy":"same-origin-host-v1"}\`; if the marker is absent, Passenger is still serving the previous backend. Then sign in and change/verify the SuperAdmin password, verify the dashboard, Developers workspace, reports, uploads, email, SMS, and WhatsApp.
 
+If E-Handover preview or download reports a missing file after an update, run \`node server/scripts/inspect-file-storage.cjs\` in the hosted app terminal and check \`counts.missingLegacyHandovers\`. Restore the matching \`app/server/uploads\` backup, or re-upload the signed handover documents listed in \`missingLegacyHandovers\`.
+
 The imported database always contains one inactive, passwordless SuperAdmin bootstrap principal. It cannot authenticate until step 8 securely activates it. No universal/default password exists in this package.
 
 ## Update or rollback

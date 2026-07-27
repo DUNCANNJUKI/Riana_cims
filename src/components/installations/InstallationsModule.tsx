@@ -80,10 +80,14 @@ export const InstallationsModule = ({ user }: InstallationsModuleProps) => {
         getSubsidiaries()
       ]);
       
-      // Remove duplicate assignments based on client_id and branch
+      // Remove exact duplicate assignment scopes while preserving branch/department-specific rows.
       const uniqueAssignments = assignmentsData?.filter((assignment: any, index: number, self: any[]) =>
         index === self.findIndex((a) => (
-          a.client_id === assignment.client_id && a.branch === assignment.branch
+          (a.installation_id || '') === (assignment.installation_id || '') &&
+          a.client_id === assignment.client_id &&
+          (a.branch_id || '') === (assignment.branch_id || '') &&
+          (a.department_id || '') === (assignment.department_id || '') &&
+          (a.branch || '') === (assignment.branch || '')
         ))
       ) || [];
       
@@ -200,17 +204,43 @@ export const InstallationsModule = ({ user }: InstallationsModuleProps) => {
   };
 
 
+  const normalizeScopeLabel = (value?: string | null) => String(value || '').trim().toLowerCase();
+
+  const getInstallationAssignment = (installation: Installation) => {
+    const client = clients.find(c => c.id === installation.client_id);
+    const installationBranch = normalizeScopeLabel(
+      (installation as any).branch_name || (installation as any).branch || client?.branch
+    );
+    const installationDepartment = normalizeScopeLabel((installation as any).department_name);
+
+    return assignments.find((assignment) => {
+      if (String(assignment.installation_id || '') === String(installation.id || '')) return true;
+      if (String(assignment.client_id || '') !== String(installation.client_id || '')) return false;
+
+      if ((installation as any).branch_id || assignment.branch_id) {
+        if (String(assignment.branch_id || '') !== String((installation as any).branch_id || '')) return false;
+      } else {
+        const assignmentBranch = normalizeScopeLabel(assignment.branch_name || assignment.branch || assignment.clients?.branch);
+        if (installationBranch && assignmentBranch && installationBranch !== assignmentBranch) return false;
+      }
+
+      if ((installation as any).department_id || assignment.department_id) {
+        if (String(assignment.department_id || '') !== String((installation as any).department_id || '')) return false;
+      } else {
+        const assignmentDepartment = normalizeScopeLabel(assignment.department_name);
+        if (installationDepartment && assignmentDepartment && installationDepartment !== assignmentDepartment) return false;
+      }
+
+      return true;
+    });
+  };
   const filteredInstallations = installations.filter(installation => {
     const client = clients.find(c => c.id === installation.client_id);
     const matchesSearch = installation.kiosk_type.toLowerCase().includes(searchTerm.toLowerCase()) ||
            installation.screen_with_size.toLowerCase().includes(searchTerm.toLowerCase()) ||
            (client?.client_name || '').toLowerCase().includes(searchTerm.toLowerCase());
     
-    // Get assignment for this installation
-    const assignment = assignments.find(a => 
-      a.client_id === installation.client_id && 
-      (!client?.branch || a.branch === client.branch)
-    );
+    const assignment = getInstallationAssignment(installation);
     
     // Technician filter
     const matchesTechnician = technicianFilter === 'all' || 
@@ -423,15 +453,6 @@ export const InstallationsModule = ({ user }: InstallationsModuleProps) => {
     return `${tech.first_name || ''} ${tech.last_name || ''}`.trim() || tech.email;
   };
 
-  const getInstallationAssignment = (installationClientId: string) => {
-    const client = clients.find(c => c.id === installationClientId);
-    // Match by both client_id and branch for accurate assignment
-    const assignment = assignments.find(a => 
-      a.client_id === installationClientId && 
-      (!client?.branch || a.branch === client.branch)
-    );
-    return assignment;
-  };
 
   const handleUploadHandover = (installation: Installation) => {
     setSelectedInstallationForHandover(installation);
@@ -951,7 +972,7 @@ export const InstallationsModule = ({ user }: InstallationsModuleProps) => {
                   </TableCell>
                   <TableCell>
                     {(() => {
-                      const assignment = getInstallationAssignment(installation.client_id);
+                      const assignment = getInstallationAssignment(installation);
                       return (
                         <div className="text-sm">
                           <div className="font-medium">

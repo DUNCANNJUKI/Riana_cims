@@ -1,5 +1,5 @@
 -- RIANA CIMS MySQL hosting database
--- Generated 2026-07-20T20:47:51.339Z
+-- Generated 2026-07-27T21:21:20.657Z
 -- Complete schema with sanitized reference data; no credentials or customer records.
 SET NAMES utf8mb4;
 SET FOREIGN_KEY_CHECKS = 0;
@@ -251,10 +251,23 @@ CREATE TABLE `company_settings` (
   `enable_sms_notifications` tinyint(1) DEFAULT 1,
   `enable_push_notifications` tinyint(1) DEFAULT 1,
   `auto_reminder_days` smallint(5) unsigned DEFAULT 3,
+  `maintenance_enabled` tinyint(1) NOT NULL DEFAULT 0,
+  `maintenance_reason` varchar(255) DEFAULT NULL,
+  `maintenance_message` text DEFAULT NULL,
+  `estimated_completion` datetime DEFAULT NULL,
+  `maintenance_enabled_by` varchar(36) DEFAULT NULL,
+  `maintenance_enabled_at` datetime DEFAULT NULL,
+  `maintenance_disabled_by` varchar(36) DEFAULT NULL,
+  `maintenance_disabled_at` datetime DEFAULT NULL,
+  `maintenance_allow_api_access` tinyint(1) NOT NULL DEFAULT 0,
+  `maintenance_force_logout` tinyint(1) NOT NULL DEFAULT 1,
+  `maintenance_notify_users` tinyint(1) NOT NULL DEFAULT 0,
+  `maintenance_backup_before_enable` tinyint(1) NOT NULL DEFAULT 1,
+  `maintenance_allow_super_admin_only` tinyint(1) NOT NULL DEFAULT 1,
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-INSERT INTO `company_settings` (`id`, `name`, `logo_path`, `font_color`, `primary_color`, `font_type`, `contract_types`, `backup_schedule`, `updated_at`, `backup_day`, `backup_time`, `tagline`, `website`, `email`, `phone`, `address`, `contract_durations`, `secondary_color`, `accent_color`, `timezone`, `date_format`, `enable_email_notifications`, `enable_sms_notifications`, `enable_push_notifications`, `auto_reminder_days`) VALUES (1, 'RIANA CIMS', '/Riana_logo.png', '#000000', '#1A91AB', 'Inter', '[\"AMC\",\"Once-off\",\"Subscription\"]', '0 2 * * *', '2026-07-20 21:31:20.000', 'Daily', '02:00', 'Innovative Technology Solutions', 'https://www.riana.co', 'info@riana.co', '+254 700 000 000', '6th Floor, Allianz Plaza, 96 Riverside Drive, Nairobi, Kenya', '{\"AMC\":\"12 months\",\"WARRANTY\":\"24 months\",\"LEASE\":\"36 months\",\"POC\":\"3 months\"}', '#10b981', '#f59e0b', 'Africa/Nairobi', 'DD/MM/YYYY', 1, 1, 1, 3);
+INSERT INTO `company_settings` (`id`, `name`, `logo_path`, `font_color`, `primary_color`, `font_type`, `contract_types`, `backup_schedule`, `updated_at`, `backup_day`, `backup_time`, `tagline`, `website`, `email`, `phone`, `address`, `contract_durations`, `secondary_color`, `accent_color`, `timezone`, `date_format`, `enable_email_notifications`, `enable_sms_notifications`, `enable_push_notifications`, `auto_reminder_days`, `maintenance_enabled`, `maintenance_reason`, `maintenance_message`, `estimated_completion`, `maintenance_enabled_by`, `maintenance_enabled_at`, `maintenance_disabled_by`, `maintenance_disabled_at`, `maintenance_allow_api_access`, `maintenance_force_logout`, `maintenance_notify_users`, `maintenance_backup_before_enable`, `maintenance_allow_super_admin_only`) VALUES (1, 'RIANA CIMS', '81558c19-3eeb-4c18-8367-40714cc8e9a0.png', '#000000', '#1A91AB', 'Inter', '[\"AMC\",\"Once-off\",\"Subscription\"]', '0 2 * * *', '2026-07-24 16:16:00.000', 'Daily', '02:00', 'Innovative Technology Solutions', 'https://www.riana.co', 'info@riana.co', '+254 700 000 000', '6th Floor, Allianz Plaza, 96 Riverside Drive, Nairobi, Kenya', '{\"AMC\":\"12 months\",\"WARRANTY\":\"24 months\",\"LEASE\":\"36 months\",\"POC\":\"3 months\"}', '#10b981', '#f59e0b', 'Africa/Nairobi', 'DD/MM/YYYY', 1, 1, 1, 3, 0, 'Database clean-up in progress', 'RIANA CIMS is temporarily unavailable while scheduled maintenance is in progress.', '2026-07-24 07:10:00.000', '00000000-0000-4000-8000-000000000001', '2026-07-24 16:11:13.000', '00000000-0000-4000-8000-000000000001', '2026-07-24 16:12:54.000', 1, 1, 0, 1, 1);
 
 DROP TABLE IF EXISTS `contact_reveal_audit`;
 CREATE TABLE `contact_reveal_audit` (
@@ -358,6 +371,7 @@ CREATE TABLE `crms_notifications` (
   `title` varchar(255) NOT NULL,
   `message` text NOT NULL,
   `type` enum('info','success','warning','error') NOT NULL DEFAULT 'info',
+  `notification_type` varchar(32) NOT NULL DEFAULT 'GENERAL',
   `read` tinyint(1) DEFAULT 0,
   `action_url` text DEFAULT NULL,
   `email_sent` tinyint(1) DEFAULT 0,
@@ -367,7 +381,8 @@ CREATE TABLE `crms_notifications` (
   PRIMARY KEY (`id`),
   KEY `request_id` (`request_id`),
   KEY `idx_crms_notifications_user_read` (`user_id`,`read`),
-  KEY `idx_crms_notifications_inbox` (`user_id`,`read`,`created_at`)
+  KEY `idx_crms_notifications_inbox` (`user_id`,`read`,`created_at`),
+  KEY `idx_crms_notifications_type_created` (`notification_type`,`created_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 DROP TABLE IF EXISTS `crms_user_links`;
@@ -698,6 +713,8 @@ INSERT INTO `migration_history` (`migration_id`, `description`, `applied_at`) VA
 INSERT INTO `migration_history` (`migration_id`, `description`, `applied_at`) VALUES ('20260718_client_branch_department_scope', 'Applied from 20260718_client_branch_department_scope.sql', '2026-07-20 22:19:41.000');
 INSERT INTO `migration_history` (`migration_id`, `description`, `applied_at`) VALUES ('20260719_live_module_schema_repair', 'Applied from 20260719_live_module_schema_repair.sql', '2026-07-20 22:19:41.000');
 INSERT INTO `migration_history` (`migration_id`, `description`, `applied_at`) VALUES ('20260720_developer_request_scope_submit_fix', 'Applied from 20260720_developer_request_scope_submit_fix.sql', '2026-07-20 23:47:43.000');
+INSERT INTO `migration_history` (`migration_id`, `description`, `applied_at`) VALUES ('20260724_enterprise_maintenance_mode', 'Enterprise maintenance mode settings and access controls', '2026-07-24 14:58:17.000');
+INSERT INTO `migration_history` (`migration_id`, `description`, `applied_at`) VALUES ('20260724_notifications_and_single_sessions', 'Typed notifications and single active user sessions', '2026-07-24 15:33:43.000');
 
 DROP TABLE IF EXISTS `missed_call_dismissals`;
 CREATE TABLE `missed_call_dismissals` (
@@ -1095,6 +1112,78 @@ CREATE TABLE `user_profiles` (
   KEY `idx_users_active_role` (`is_active`,`role`),
   KEY `idx_user_profiles_active_role` (`is_active`,`role`,`created_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+DROP TABLE IF EXISTS `user_sessions`;
+CREATE TABLE `user_sessions` (
+  `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+  `user_id` varchar(36) NOT NULL,
+  `session_id` varchar(128) NOT NULL,
+  `token_hash` char(64) DEFAULT NULL,
+  `device_name` varchar(255) DEFAULT NULL,
+  `browser_name` varchar(100) DEFAULT NULL,
+  `ip_address` varchar(45) DEFAULT NULL,
+  `user_agent` text DEFAULT NULL,
+  `created_at` datetime NOT NULL,
+  `last_activity_at` datetime NOT NULL,
+  `expires_at` datetime DEFAULT NULL,
+  `revoked_at` datetime DEFAULT NULL,
+  `revoke_reason` varchar(100) DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `session_id` (`session_id`),
+  KEY `idx_user_sessions_user_id` (`user_id`),
+  KEY `idx_user_sessions_session_id` (`session_id`),
+  KEY `idx_user_sessions_active` (`user_id`,`revoked_at`,`expires_at`),
+  CONSTRAINT `fk_user_sessions_user` FOREIGN KEY (`user_id`) REFERENCES `user_profiles` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB AUTO_INCREMENT=16 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Pending idempotent migration: 20260721_feedback_link_expiry_repair.sql
+-- Live-safe feedback link expiry repair.
+-- Removes legacy ON UPDATE behavior from feedback_links.expires_at so delivery updates do not expire active links.
+SET NAMES utf8mb4;
+
+CREATE TABLE IF NOT EXISTS migration_history (
+  migration_id VARCHAR(100) PRIMARY KEY,
+  description TEXT,
+  applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS feedback_links (
+  id VARCHAR(36) PRIMARY KEY,
+  client_id VARCHAR(36) NOT NULL,
+  branch_id VARCHAR(36) NULL,
+  department_id VARCHAR(36) NULL,
+  installation_id VARCHAR(36) NULL,
+  unique_token VARCHAR(100) NOT NULL UNIQUE,
+  expires_at TIMESTAMP NOT NULL,
+  is_used BOOLEAN DEFAULT FALSE,
+  used_at TIMESTAMP NULL,
+  email_sent BOOLEAN DEFAULT FALSE,
+  sms_sent BOOLEAN DEFAULT FALSE,
+  created_by_user_id VARCHAR(36) NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  INDEX idx_feedback_links_scope (client_id,branch_id,department_id,is_used,expires_at),
+  INDEX idx_feedback_links_token_expires (unique_token,expires_at)
+);
+
+ALTER TABLE feedback_links MODIFY COLUMN expires_at TIMESTAMP NOT NULL;
+
+UPDATE feedback_links
+SET expires_at = DATE_ADD(created_at, INTERVAL 30 DAY)
+WHERE is_used = FALSE
+  AND (email_sent = TRUE OR sms_sent = TRUE)
+  AND created_at IS NOT NULL
+  AND created_at > DATE_SUB(NOW(), INTERVAL 30 DAY)
+  AND expires_at <= NOW();
+
+INSERT INTO migration_history (migration_id, description)
+VALUES (
+  '20260721_feedback_link_expiry_repair',
+  'Removes automatic expires_at updates from feedback links so links remain valid until their original deadline'
+)
+ON DUPLICATE KEY UPDATE
+  description = VALUES(description);
+
+SHOW COLUMNS FROM feedback_links LIKE 'expires_at';
 
 -- Inactive bootstrap principal: it has no password and cannot sign in until explicitly activated.
 -- Set a private SUPERADMIN_PASSWORD during the one-time deployment bootstrap; never distribute a default password.

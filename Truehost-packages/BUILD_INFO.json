@@ -1,6 +1,6 @@
 {
-  "generatedAt": "2026-07-20T20:48:31.188Z",
-  "commit": "9dbabe2c41bf5126df83a24dff42752cf5f66ca1",
+  "generatedAt": "2026-07-27T21:22:24.943Z",
+  "commit": "e659e082fc91aa51243174e350d90e0fbe884499",
   "truehostNodeVersion": "24.15.0",
   "supportedNodeVersion": ">=20",
   "applicationRoot": "rianacims.name.ng/app",
@@ -46,6 +46,11 @@
       "migrationId": "20260720_developer_request_scope_submit_fix",
       "sourceFile": "20260720_developer_request_scope_submit_fix.sql",
       "packageFile": "LIVE_DB_UPDATE_20260720.sql"
+    },
+    {
+      "migrationId": "20260721_feedback_link_expiry_repair",
+      "sourceFile": "20260721_feedback_link_expiry_repair.sql",
+      "packageFile": "LIVE_DB_UPDATE_20260721.sql"
     }
   ],
   "bootstrapSuperAdmin": {

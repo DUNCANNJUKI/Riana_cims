@@ -6,8 +6,11 @@ const { createChallenge, verifyChallenge } = require('../utils/twoFactor');
 const { getSmsBalance, sendEmail, sendSms, sendWhatsApp, whatsappConfigured, whatsappStatus } = require('../services/notifications');
 const { sendUserNotification, sendUsersNotification } = require('../services/notificationDispatcher');
 const { canonicalAppUrl } = require('../security/apiSecurity');
+const { createSingleActiveSession, validateAuthenticatedSession } = require('../security/sessionStore');
+const { normalizeNotificationType } = require('../services/notificationTypes');
 const { deliveryForCrmsEvent, resolveCompletionRecipientId } = require('./crmsNotificationPolicy');
 
+const CRMS_SESSION_MAX_AGE_MS = 12 * 60 * 60 * 1000;
 const ALLOWED_ROLES = new Set(['SuperAdmin', 'Admin', 'Management', 'Teamlead', 'Developer', 'Sales']);
 const roleToCrms = (role) => ({ SuperAdmin: 'admin', Admin: 'admin', Management: 'admin', Teamlead: 'senior_developer', Developer: 'developer', Sales: 'sales' })[role];
 const roleFromCrms = (role) => ({ admin: 'Admin', senior_developer: 'Teamlead', developer: 'Developer', sales: 'Sales' })[role];
@@ -139,12 +142,22 @@ module.exports = function createCrmsRouter({ pool, jwtSecret }) {
     };
   };
 
-  const finishLogin = (res, user) => {
+  const finishLogin = async (req, res, user) => {
+    const sessionId = uuidv4();
+    const sessionVersion = Number(user.session_version || 0);
     const token = jwt.sign(
-      { id: user.id, email: user.email, role: user.role, scope: 'crms' },
+      { id: user.id, email: user.email, role: user.role, scope: 'crms', sv: sessionVersion, sid: sessionId },
       jwtSecret,
       { expiresIn: '12h' },
     );
+    await createSingleActiveSession({
+      pool,
+      userId: user.id,
+      sessionId,
+      token,
+      req,
+      expiresAt: new Date(Date.now() + CRMS_SESSION_MAX_AGE_MS),
+    });
     res.json({ success: true, user: profileShape(user), token });
   };
 
@@ -308,7 +321,7 @@ module.exports = function createCrmsRouter({ pool, jwtSecret }) {
         const challenge = await createChallenge(pool, user, jwtSecret);
         return res.json({ success: true, requiresTwoFactor: true, ...challenge });
       }
-      finishLogin(res, user);
+      await finishLogin(req, res, user);
     } catch (error) {
       res.status(500).json({ error: error.message });
     }
@@ -320,7 +333,7 @@ module.exports = function createCrmsRouter({ pool, jwtSecret }) {
       if (!challenge) return res.status(401).json({ error: 'Invalid or expired verification code.' });
       const [rows] = await pool.query('SELECT * FROM user_profiles WHERE id = ? AND is_active = TRUE LIMIT 1', [challenge.user_id]);
       if (!rows.length || !ALLOWED_ROLES.has(rows[0].role)) return res.status(403).json({ error: 'Access denied.' });
-      finishLogin(res, rows[0]);
+      await finishLogin(req, res, rows[0]);
     } catch (error) {
       res.status(500).json({ error: error.message });
     }
@@ -333,19 +346,23 @@ module.exports = function createCrmsRouter({ pool, jwtSecret }) {
       const decoded = jwt.verify(token, jwtSecret);
       if (!decoded.id) return res.status(401).json({ error: 'Invalid session.' });
       const [users] = await pool.query(
-        `SELECT u.id,u.email,CASE WHEN u.role = 'SuperAdmin' THEN 'SuperAdmin' ELSE COALESCE(r.code,u.role) END AS role,u.is_active
+        `SELECT u.id,u.email,CASE WHEN u.role = 'SuperAdmin' THEN 'SuperAdmin' ELSE COALESCE(r.code,u.role) END AS role,u.is_active,u.session_version
          FROM user_profiles u
          LEFT JOIN user_module_roles umr ON umr.user_id = u.id AND umr.module_id = 'crms'
          LEFT JOIN roles r ON r.id = umr.role_id
          WHERE u.id = ? LIMIT 1`,
         [decoded.id],
       );
-      if (!users.length || !users[0].is_active) return res.status(401).json({ error: 'Account is unavailable.' });
+      if (!users.length || !users[0].is_active) return res.status(401).json({ success: false, code: 'ACCOUNT_DISABLED', error: 'Account is unavailable.', message: 'Your account is disabled. Contact an administrator.' });
       if (!ALLOWED_ROLES.has(users[0].role)) return res.status(403).json({ error: 'Developers access denied.' });
-      req.user = { ...decoded, id: users[0].id, email: users[0].email, role: users[0].role };
+      if (Number(decoded.sv || 0) !== Number(users[0].session_version || 0)) return res.status(401).json({ success: false, code: 'SESSION_REVOKED', error: 'Session has been revoked. Please sign in again.', message: 'Your session is no longer active. Please sign in again.' });
+      const session = await validateAuthenticatedSession(pool, { userId: users[0].id, sessionId: decoded.sid, token });
+      if (!session.valid) return res.status(401).json({ success: false, code: session.code, error: session.message, message: session.message });
+      req.user = { ...decoded, id: users[0].id, email: users[0].email, role: users[0].role, sid: decoded.sid || null, sv: Number(users[0].session_version || 0) };
       next();
-    } catch {
-      res.status(401).json({ error: 'Invalid or expired session.' });
+    } catch (error) {
+      const expired = error?.name === 'TokenExpiredError';
+      res.status(401).json({ success: false, code: expired ? 'TOKEN_EXPIRED' : 'SESSION_REVOKED', error: expired ? 'Your session has expired. Please sign in again.' : 'Invalid or expired session.', message: expired ? 'Your session has expired. Please sign in again.' : 'Invalid or expired session.' });
     }
   });
 
@@ -707,7 +724,7 @@ module.exports = function createCrmsRouter({ pool, jwtSecret }) {
   router.post('/notifications', async (req,res) => {
     try {
       if (denyUnlessRole(req, res, 'Admin')) return;
-      const id=uuidv4(); const n=req.body; await pool.query('INSERT INTO crms_notifications (id,user_id,title,message,type,action_url,request_id) VALUES (?,?,?,?,?,?,?)',[id,n.user_id,n.title,n.message,n.type,n.action_url,n.request_id]); const [rows]=await pool.query('SELECT * FROM crms_notifications WHERE id=?',[id]); res.status(201).json(rows[0]);
+      const id=uuidv4(); const n=req.body; const notificationType = normalizeNotificationType(n.notificationType || n.notification_type, n.message); await pool.query('INSERT INTO crms_notifications (id,user_id,title,message,type,notification_type,action_url,request_id) VALUES (?,?,?,?,?,?,?,?)',[id,n.user_id,n.title,n.message,n.type,notificationType,n.action_url,n.request_id]); const [rows]=await pool.query('SELECT * FROM crms_notifications WHERE id=?',[id]); res.status(201).json(rows[0]);
     }
     catch (error) { res.status(500).json({ error:error.message }); }
   });

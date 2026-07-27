@@ -2,6 +2,15 @@ import { useState, useEffect } from 'react';
 import { User, AuthState } from '@/types';
 import { apiClient, setAuthToken, clearAuthToken, getAuthToken } from '@/integrations/apiClient';
 
+const clearStoredAuth = () => {
+  clearAuthToken();
+  localStorage.removeItem('riana_user');
+  localStorage.removeItem('crms-user-session');
+  localStorage.removeItem('crms-user-id');
+  localStorage.removeItem('crms-user-role');
+  localStorage.removeItem('crms-auth-token');
+};
+
 export const useAuth = () => {
   const [authState, setAuthState] = useState<AuthState>({
     user: null,
@@ -25,8 +34,7 @@ export const useAuth = () => {
       }
     } catch (error) {
       console.error('Error fetching user profile:', error);
-      clearAuthToken();
-      localStorage.removeItem('riana_user');
+      clearStoredAuth();
       setAuthState({
         user: null,
         isAuthenticated: false,
@@ -52,8 +60,7 @@ export const useAuth = () => {
         // Optionally refresh profile from server to ensure data is up to date
         fetchUserProfile();
       } catch {
-        clearAuthToken();
-        localStorage.removeItem('riana_user');
+        clearStoredAuth();
         setAuthState({
           user: null,
           isAuthenticated: false,
@@ -64,6 +71,30 @@ export const useAuth = () => {
       setAuthState(prev => ({ ...prev, isLoading: false }));
     }
   }, []);
+
+  useEffect(() => {
+    if (!authState.isAuthenticated) return;
+
+    const checkSession = () => {
+      if (!getAuthToken()) return;
+      void apiClient.get('/auth/session-status').catch(() => undefined);
+    };
+
+    const interval = window.setInterval(checkSession, 45_000);
+    const handleFocus = () => checkSession();
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') checkSession();
+    };
+
+    window.addEventListener('focus', handleFocus);
+    document.addEventListener('visibilitychange', handleVisibility);
+
+    return () => {
+      window.clearInterval(interval);
+      window.removeEventListener('focus', handleFocus);
+      document.removeEventListener('visibilitychange', handleVisibility);
+    };
+  }, [authState.isAuthenticated]);
 
   const completeLogin = (data: any) => {
     setAuthToken(data.token);
@@ -111,19 +142,14 @@ export const useAuth = () => {
   };
 
   const logout = (): void => {
-    clearAuthToken();
-    localStorage.removeItem('riana_user');
-    // Remove pre-unification session remnants during the migration window.
-    localStorage.removeItem('crms-user-session');
-    localStorage.removeItem('crms-user-id');
-    localStorage.removeItem('crms-user-role');
-    localStorage.removeItem('crms-auth-token');
+    const token = getAuthToken();
+    if (token) void apiClient.post('/auth/logout', {}).catch(() => undefined);
+    clearStoredAuth();
     setAuthState({
       user: null,
       isAuthenticated: false,
       isLoading: false
     });
-    // Redirect to login page to ensure all components reset
     window.location.href = '/';
   };
 

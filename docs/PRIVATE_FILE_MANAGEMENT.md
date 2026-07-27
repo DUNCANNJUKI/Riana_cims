@@ -59,6 +59,8 @@ mysqldump -u DB_USER -p DB_NAME > backup.sql
 tar -czf uploads-backup.tar.gz /path/to/private_uploads
 ```
 
+If hosted E-Handover preview or download shows a missing-file error, run the inspection script on the hosted Node app. Check `counts.missingLegacyHandovers` and `missingLegacyHandovers`. Those records point to database rows whose legacy files are absent from `server/uploads`; restore that uploads backup with the matching database backup, or re-upload the signed handover document.
+
 Recommended retention: 7 daily backups, 4 weekly backups, and 3 monthly backups. Restore both MySQL metadata and `private_uploads` together to a test location before production restore.
 
 ## Migration From Legacy Uploads

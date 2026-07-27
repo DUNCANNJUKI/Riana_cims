@@ -40,6 +40,8 @@ test('dispatcher persists in-app notification and records successful email and S
   assert.equal(result.smsSent, true);
   assert.deepEqual(deliveries.map((delivery) => delivery.channel), ['email', 'sms']);
   assert.match(queries[1].sql, /INSERT INTO crms_notifications/);
+  assert.match(queries[1].sql, /notification_type/);
+  assert.equal(queries[1].params[6], 'ASSIGNMENT');
   assert.match(queries[2].sql, /UPDATE crms_notifications SET email_sent = \?, sms_sent = \?/);
   assert.deepEqual(queries[2].params.slice(0, 2), [true, true]);
 });

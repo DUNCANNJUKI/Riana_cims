@@ -215,23 +215,41 @@ export const ReportsModule = ({ user }: ReportsModuleProps) => {
     }
   };
 
+  const getFreshHandoverUpload = async (upload: any) => {
+    const uploads = await apiClient.get('/handover_uploads');
+    const freshUpload = (uploads || []).find((candidate: any) => String(candidate.id) === String(upload.id));
+    if (!freshUpload) return upload;
+    setHandoverUploads(prev => prev.map(item => String(item.id) === String(freshUpload.id) ? { ...item, ...freshUpload } : item));
+    return { ...upload, ...freshUpload };
+  };
+
+  const assertHandoverFileReady = (upload: any) => {
+    if (upload.file_available === false) {
+      throw new Error('The handover file is missing from server storage. Restore the uploads backup or re-upload the signed document.');
+    }
+  };
+
   const handlePreviewHandover = async (upload: any) => {
     try {
-      if (!upload.secure_preview_url) throw new Error('Secure preview link is unavailable. Please refresh and try again.');
-      await previewAuthenticatedFile(upload.secure_preview_url);
-    } catch (error) {
+      const freshUpload = await getFreshHandoverUpload(upload);
+      assertHandoverFileReady(freshUpload);
+      if (!freshUpload.secure_preview_url) throw new Error('Secure preview link is unavailable. Please refresh and try again.');
+      await previewAuthenticatedFile(freshUpload.secure_preview_url);
+    } catch (error: any) {
       console.error('Error previewing handover:', error);
-      toast({ title: 'Preview Failed', description: 'Unable to preview this handover document.', variant: 'destructive' });
+      toast({ title: 'Preview Failed', description: error.message || 'Unable to preview this handover document.', variant: 'destructive' });
     }
   };
 
   const handleDownloadHandover = async (upload: any) => {
     try {
-      if (!upload.secure_download_url) throw new Error('Secure download link is unavailable. Please refresh and try again.');
-      await downloadAuthenticatedFile(upload.secure_download_url, upload.file_name || upload.file_path_label || 'handover.pdf');
-    } catch (error) {
+      const freshUpload = await getFreshHandoverUpload(upload);
+      assertHandoverFileReady(freshUpload);
+      if (!freshUpload.secure_download_url) throw new Error('Secure download link is unavailable. Please refresh and try again.');
+      await downloadAuthenticatedFile(freshUpload.secure_download_url, freshUpload.file_name || freshUpload.file_path_label || 'handover.pdf');
+    } catch (error: any) {
       console.error('Error downloading handover:', error);
-      toast({ title: 'Download Failed', description: 'Unable to download this handover document.', variant: 'destructive' });
+      toast({ title: 'Download Failed', description: error.message || 'Unable to download this handover document.', variant: 'destructive' });
     }
   };
 

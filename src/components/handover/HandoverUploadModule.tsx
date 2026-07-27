@@ -204,11 +204,27 @@ export const HandoverUploadModule = ({ user }: HandoverUploadModuleProps) => {
       setIsUploading(false);
     }
   };
+  const getFreshHandover = async (handover: any) => {
+    const uploads = await apiClient.get('/uploads');
+    const freshHandover = (uploads || []).find((candidate: any) => String(candidate.id) === String(handover.id));
+    if (!freshHandover) return handover;
+    setHandovers(prev => prev.map(item => String(item.id) === String(freshHandover.id) ? { ...item, ...freshHandover } : item));
+    return { ...handover, ...freshHandover };
+  };
+
+  const assertHandoverFileReady = (handover: any) => {
+    if (handover.file_available === false) {
+      throw new Error('The handover file is missing from server storage. Restore the uploads backup or re-upload the signed document.');
+    }
+  };
+
   const handleDownload = async (handover: any) => {
     try {
-      if (!handover.secure_download_url) throw new Error('Secure download link is unavailable. Please refresh and try again.');
-      const fileName = handover.file_name || handover.file_path_label || 'handover-document';
-      await downloadAuthenticatedFile(handover.secure_download_url, fileName);
+      const freshHandover = await getFreshHandover(handover);
+      assertHandoverFileReady(freshHandover);
+      if (!freshHandover.secure_download_url) throw new Error('Secure download link is unavailable. Please refresh and try again.');
+      const fileName = freshHandover.file_name || freshHandover.file_path_label || 'handover-document';
+      await downloadAuthenticatedFile(freshHandover.secure_download_url, fileName);
       
       toast({
         title: "Download Started",
@@ -226,8 +242,10 @@ export const HandoverUploadModule = ({ user }: HandoverUploadModuleProps) => {
 
   const handlePreview = async (handover: any) => {
     try {
-      if (!handover.secure_preview_url) throw new Error('Secure preview link is unavailable. Please refresh and try again.');
-      await previewAuthenticatedFile(handover.secure_preview_url);
+      const freshHandover = await getFreshHandover(handover);
+      assertHandoverFileReady(freshHandover);
+      if (!freshHandover.secure_preview_url) throw new Error('Secure preview link is unavailable. Please refresh and try again.');
+      await previewAuthenticatedFile(freshHandover.secure_preview_url);
     } catch (error: any) {
       console.error('Preview error:', error);
       toast({
