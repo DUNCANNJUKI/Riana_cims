@@ -1,5 +1,5 @@
 -- RIANA CIMS MySQL hosting database
--- Generated 2026-07-27T23:32:04.058Z
+-- Generated 2026-07-27T23:47:43.354Z
 -- Complete schema with sanitized reference data; no credentials or customer records.
 SET NAMES utf8mb4;
 SET FOREIGN_KEY_CHECKS = 0;
@@ -719,6 +719,7 @@ INSERT INTO `migration_history` (`migration_id`, `description`, `applied_at`) VA
 INSERT INTO `migration_history` (`migration_id`, `description`, `applied_at`) VALUES ('20260724_enterprise_maintenance_mode', 'Enterprise maintenance mode settings and access controls', '2026-07-24 14:58:17.000');
 INSERT INTO `migration_history` (`migration_id`, `description`, `applied_at`) VALUES ('20260724_notifications_and_single_sessions', 'Typed notifications and single active user sessions', '2026-07-24 15:33:43.000');
 INSERT INTO `migration_history` (`migration_id`, `description`, `applied_at`) VALUES ('20260728_installation_screen_count', 'Repairs maintenance settings columns, adds installation screen_count, and refreshes optimizer statistics', '2026-07-28 01:38:18.000');
+INSERT INTO `migration_history` (`migration_id`, `description`, `applied_at`) VALUES ('20260729_user_sessions_live_repair', 'Applied from 20260729_user_sessions_live_repair.sql', '2026-07-28 02:47:28.000');
 
 DROP TABLE IF EXISTS `missed_call_dismissals`;
 CREATE TABLE `missed_call_dismissals` (

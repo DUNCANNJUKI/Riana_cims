@@ -1,6 +1,6 @@
 {
-  "generatedAt": "2026-07-27T23:32:33.013Z",
-  "commit": "e5e89415dffb39894da18f87e495a53016cf4f9c",
+  "generatedAt": "2026-07-27T23:48:09.836Z",
+  "commit": "39f67d920bfe52b91e71c9eddaad6c8d18b8f758",
   "truehostNodeVersion": "24.15.0",
   "supportedNodeVersion": ">=20",
   "applicationRoot": "rianacims.name.ng/app",
@@ -57,6 +57,11 @@
       "migrationId": "20260728_installation_screen_count",
       "sourceFile": "20260728_installation_screen_count.sql",
       "packageFile": "LIVE_DB_UPDATE_20260728.sql"
+    },
+    {
+      "migrationId": "20260729_user_sessions_live_repair",
+      "sourceFile": "20260729_user_sessions_live_repair.sql",
+      "packageFile": "LIVE_DB_UPDATE_20260729.sql"
     }
   ],
   "bootstrapSuperAdmin": {
