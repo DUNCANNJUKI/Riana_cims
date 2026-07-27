@@ -24,6 +24,24 @@ END $$
 
 DELIMITER ;
 
+CALL riana_20260728_add_column_if_missing('ALTER TABLE company_settings ADD COLUMN maintenance_enabled BOOLEAN NOT NULL DEFAULT FALSE');
+CALL riana_20260728_add_column_if_missing('ALTER TABLE company_settings ADD COLUMN maintenance_reason VARCHAR(255) NULL');
+CALL riana_20260728_add_column_if_missing('ALTER TABLE company_settings ADD COLUMN maintenance_message TEXT NULL');
+CALL riana_20260728_add_column_if_missing('ALTER TABLE company_settings ADD COLUMN estimated_completion DATETIME NULL');
+CALL riana_20260728_add_column_if_missing('ALTER TABLE company_settings ADD COLUMN maintenance_enabled_by VARCHAR(36) NULL');
+CALL riana_20260728_add_column_if_missing('ALTER TABLE company_settings ADD COLUMN maintenance_enabled_at DATETIME NULL');
+CALL riana_20260728_add_column_if_missing('ALTER TABLE company_settings ADD COLUMN maintenance_disabled_by VARCHAR(36) NULL');
+CALL riana_20260728_add_column_if_missing('ALTER TABLE company_settings ADD COLUMN maintenance_disabled_at DATETIME NULL');
+CALL riana_20260728_add_column_if_missing('ALTER TABLE company_settings ADD COLUMN maintenance_allow_api_access BOOLEAN NOT NULL DEFAULT FALSE');
+CALL riana_20260728_add_column_if_missing('ALTER TABLE company_settings ADD COLUMN maintenance_force_logout BOOLEAN NOT NULL DEFAULT TRUE');
+CALL riana_20260728_add_column_if_missing('ALTER TABLE company_settings ADD COLUMN maintenance_notify_users BOOLEAN NOT NULL DEFAULT FALSE');
+CALL riana_20260728_add_column_if_missing('ALTER TABLE company_settings ADD COLUMN maintenance_backup_before_enable BOOLEAN NOT NULL DEFAULT TRUE');
+CALL riana_20260728_add_column_if_missing('ALTER TABLE company_settings ADD COLUMN maintenance_allow_super_admin_only BOOLEAN NOT NULL DEFAULT TRUE');
+
+INSERT INTO company_settings (id, maintenance_enabled, maintenance_force_logout, maintenance_backup_before_enable, maintenance_allow_super_admin_only)
+VALUES (1, FALSE, TRUE, TRUE, TRUE)
+ON DUPLICATE KEY UPDATE id = id;
+
 CALL riana_20260728_add_column_if_missing('ALTER TABLE installations ADD COLUMN screen_count INT DEFAULT 0 AFTER screen_with_size');
 
 DROP PROCEDURE IF EXISTS riana_20260728_add_column_if_missing;
@@ -95,6 +113,7 @@ BEGIN
   DECLARE current_table VARCHAR(64);
   DECLARE table_cursor CURSOR FOR SELECT table_name FROM riana_20260728_optimize_tables ORDER BY table_name;
   DECLARE CONTINUE HANDLER FOR NOT FOUND SET done = 1;
+  DECLARE CONTINUE HANDLER FOR SQLEXCEPTION BEGIN END;
 
   OPEN table_cursor;
 
@@ -104,22 +123,15 @@ BEGIN
       LEAVE table_loop;
     END IF;
 
-    IF EXISTS (
-      SELECT 1
-      FROM information_schema.TABLES
-      WHERE TABLE_SCHEMA = DATABASE()
-        AND TABLE_NAME = current_table
-    ) THEN
-      SET @riana_sql = CONCAT('ANALYZE TABLE `', REPLACE(current_table, '`', '``'), '`');
-      PREPARE stmt FROM @riana_sql;
-      EXECUTE stmt;
-      DEALLOCATE PREPARE stmt;
+    SET @riana_sql = CONCAT('ANALYZE TABLE `', REPLACE(current_table, '`', '``'), '`');
+    PREPARE stmt FROM @riana_sql;
+    EXECUTE stmt;
+    DEALLOCATE PREPARE stmt;
 
-      SET @riana_sql = CONCAT('OPTIMIZE TABLE `', REPLACE(current_table, '`', '``'), '`');
-      PREPARE stmt FROM @riana_sql;
-      EXECUTE stmt;
-      DEALLOCATE PREPARE stmt;
-    END IF;
+    SET @riana_sql = CONCAT('OPTIMIZE TABLE `', REPLACE(current_table, '`', '``'), '`');
+    PREPARE stmt FROM @riana_sql;
+    EXECUTE stmt;
+    DEALLOCATE PREPARE stmt;
   END LOOP;
 
   CLOSE table_cursor;
@@ -136,7 +148,7 @@ DROP TEMPORARY TABLE IF EXISTS riana_20260728_optimize_tables;
 INSERT INTO migration_history (migration_id, description)
 VALUES (
   '20260728_installation_screen_count',
-  'Adds screen_count to installations and refreshes optimizer statistics for application tables'
+  'Repairs maintenance settings columns, adds installation screen_count, and refreshes optimizer statistics'
 )
 ON DUPLICATE KEY UPDATE
   description = VALUES(description);

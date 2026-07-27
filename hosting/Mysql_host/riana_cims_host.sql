@@ -1,5 +1,5 @@
 -- RIANA CIMS MySQL hosting database
--- Generated 2026-07-27T22:38:37.839Z
+-- Generated 2026-07-27T23:05:09.346Z
 -- Complete schema with sanitized reference data; no credentials or customer records.
 SET NAMES utf8mb4;
 SET FOREIGN_KEY_CHECKS = 0;
@@ -718,7 +718,7 @@ INSERT INTO `migration_history` (`migration_id`, `description`, `applied_at`) VA
 INSERT INTO `migration_history` (`migration_id`, `description`, `applied_at`) VALUES ('20260721_feedback_link_expiry_repair', 'Applied from 20260721_feedback_link_expiry_repair.sql', '2026-07-28 01:38:17.000');
 INSERT INTO `migration_history` (`migration_id`, `description`, `applied_at`) VALUES ('20260724_enterprise_maintenance_mode', 'Enterprise maintenance mode settings and access controls', '2026-07-24 14:58:17.000');
 INSERT INTO `migration_history` (`migration_id`, `description`, `applied_at`) VALUES ('20260724_notifications_and_single_sessions', 'Typed notifications and single active user sessions', '2026-07-24 15:33:43.000');
-INSERT INTO `migration_history` (`migration_id`, `description`, `applied_at`) VALUES ('20260728_installation_screen_count', 'Applied from 20260728_installation_screen_count.sql', '2026-07-28 01:38:18.000');
+INSERT INTO `migration_history` (`migration_id`, `description`, `applied_at`) VALUES ('20260728_installation_screen_count', 'Repairs maintenance settings columns, adds installation screen_count, and refreshes optimizer statistics', '2026-07-28 01:38:18.000');
 
 DROP TABLE IF EXISTS `missed_call_dismissals`;
 CREATE TABLE `missed_call_dismissals` (
@@ -1138,7 +1138,7 @@ CREATE TABLE `user_sessions` (
   KEY `idx_user_sessions_session_id` (`session_id`),
   KEY `idx_user_sessions_active` (`user_id`,`revoked_at`,`expires_at`),
   CONSTRAINT `fk_user_sessions_user` FOREIGN KEY (`user_id`) REFERENCES `user_profiles` (`id`) ON DELETE CASCADE
-) ENGINE=InnoDB AUTO_INCREMENT=20 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=22 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Inactive bootstrap principal: it has no password and cannot sign in until explicitly activated.
 -- Set a private SUPERADMIN_PASSWORD during the one-time deployment bootstrap; never distribute a default password.

@@ -235,6 +235,32 @@ const ASSIGNMENT_STATUSES = new Set(['assigned','waiting','in_progress','complet
 const SUBSIDIARY_FIELDS = new Set(['subsidiary_name','default_escalation_matrix','equipment_configuration']);
 const FEEDBACK_LINK_FIELDS = new Set(['client_id','installation_id','branch_id','department_id','expires_at','is_used']);
 const COMPANY_FIELDS = new Set(['name','logo_path','tagline','website','email','phone','address','contract_types','contract_durations','font_color','primary_color','secondary_color','accent_color','font_type','timezone','date_format','enable_email_notifications','enable_sms_notifications','enable_push_notifications','auto_reminder_days','backup_schedule','backup_day','backup_time','maintenance_enabled','maintenance_reason','maintenance_message','estimated_completion','maintenance_enabled_by','maintenance_enabled_at','maintenance_disabled_by','maintenance_disabled_at','maintenance_allow_api_access','maintenance_force_logout','maintenance_notify_users','maintenance_backup_before_enable','maintenance_allow_super_admin_only']);
+const COMPANY_MAINTENANCE_COLUMNS = [
+  ['maintenance_enabled', 'BOOLEAN NOT NULL DEFAULT FALSE'],
+  ['maintenance_reason', 'VARCHAR(255) NULL'],
+  ['maintenance_message', 'TEXT NULL'],
+  ['estimated_completion', 'DATETIME NULL'],
+  ['maintenance_enabled_by', 'VARCHAR(36) NULL'],
+  ['maintenance_enabled_at', 'DATETIME NULL'],
+  ['maintenance_disabled_by', 'VARCHAR(36) NULL'],
+  ['maintenance_disabled_at', 'DATETIME NULL'],
+  ['maintenance_allow_api_access', 'BOOLEAN NOT NULL DEFAULT FALSE'],
+  ['maintenance_force_logout', 'BOOLEAN NOT NULL DEFAULT TRUE'],
+  ['maintenance_notify_users', 'BOOLEAN NOT NULL DEFAULT FALSE'],
+  ['maintenance_backup_before_enable', 'BOOLEAN NOT NULL DEFAULT TRUE'],
+  ['maintenance_allow_super_admin_only', 'BOOLEAN NOT NULL DEFAULT TRUE'],
+];
+
+const ensureCompanyMaintenanceColumns = async () => {
+  const [columns] = await pool.query('SHOW COLUMNS FROM company_settings');
+  const existing = new Set(columns.map((column) => column.Field));
+  for (const [column, definition] of COMPANY_MAINTENANCE_COLUMNS) {
+    if (!existing.has(column)) {
+      await pool.query(`ALTER TABLE company_settings ADD COLUMN ${column} ${definition}`);
+      existing.add(column);
+    }
+  }
+};
 const SYSTEM_ROLES = new Set(['SuperAdmin', 'Admin', 'Management', 'Finance', 'Developer', 'Teamlead', 'Sales', 'User']);
 const PRIVILEGED_ROLES = new Set(['SuperAdmin', 'Admin', 'Management']);
 const CRMS_ACCESS_ROLES = new Set(['SuperAdmin', 'Admin', 'Management', 'Teamlead', 'Developer', 'Sales']);
@@ -855,20 +881,25 @@ const initDb = async () => {
     await pool.query("ALTER TABLE crms_notifications ADD COLUMN IF NOT EXISTS notification_type VARCHAR(32) NOT NULL DEFAULT 'GENERAL' AFTER type");
     await pool.query("UPDATE crms_notifications SET notification_type = 'GENERAL' WHERE notification_type IS NULL OR notification_type = ''");
 
-    await pool.query(`ALTER TABLE company_settings
-      ADD COLUMN IF NOT EXISTS maintenance_enabled BOOLEAN NOT NULL DEFAULT FALSE,
-      ADD COLUMN IF NOT EXISTS maintenance_reason VARCHAR(255) NULL,
-      ADD COLUMN IF NOT EXISTS maintenance_message TEXT NULL,
-      ADD COLUMN IF NOT EXISTS estimated_completion DATETIME NULL,
-      ADD COLUMN IF NOT EXISTS maintenance_enabled_by VARCHAR(36) NULL,
-      ADD COLUMN IF NOT EXISTS maintenance_enabled_at DATETIME NULL,
-      ADD COLUMN IF NOT EXISTS maintenance_disabled_by VARCHAR(36) NULL,
-      ADD COLUMN IF NOT EXISTS maintenance_disabled_at DATETIME NULL,
-      ADD COLUMN IF NOT EXISTS maintenance_allow_api_access BOOLEAN NOT NULL DEFAULT FALSE,
-      ADD COLUMN IF NOT EXISTS maintenance_force_logout BOOLEAN NOT NULL DEFAULT TRUE,
-      ADD COLUMN IF NOT EXISTS maintenance_notify_users BOOLEAN NOT NULL DEFAULT FALSE,
-      ADD COLUMN IF NOT EXISTS maintenance_backup_before_enable BOOLEAN NOT NULL DEFAULT TRUE,
-      ADD COLUMN IF NOT EXISTS maintenance_allow_super_admin_only BOOLEAN NOT NULL DEFAULT TRUE`);
+    try {
+      await pool.query(`ALTER TABLE company_settings
+        ADD COLUMN IF NOT EXISTS maintenance_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+        ADD COLUMN IF NOT EXISTS maintenance_reason VARCHAR(255) NULL,
+        ADD COLUMN IF NOT EXISTS maintenance_message TEXT NULL,
+        ADD COLUMN IF NOT EXISTS estimated_completion DATETIME NULL,
+        ADD COLUMN IF NOT EXISTS maintenance_enabled_by VARCHAR(36) NULL,
+        ADD COLUMN IF NOT EXISTS maintenance_enabled_at DATETIME NULL,
+        ADD COLUMN IF NOT EXISTS maintenance_disabled_by VARCHAR(36) NULL,
+        ADD COLUMN IF NOT EXISTS maintenance_disabled_at DATETIME NULL,
+        ADD COLUMN IF NOT EXISTS maintenance_allow_api_access BOOLEAN NOT NULL DEFAULT FALSE,
+        ADD COLUMN IF NOT EXISTS maintenance_force_logout BOOLEAN NOT NULL DEFAULT TRUE,
+        ADD COLUMN IF NOT EXISTS maintenance_notify_users BOOLEAN NOT NULL DEFAULT FALSE,
+        ADD COLUMN IF NOT EXISTS maintenance_backup_before_enable BOOLEAN NOT NULL DEFAULT TRUE,
+        ADD COLUMN IF NOT EXISTS maintenance_allow_super_admin_only BOOLEAN NOT NULL DEFAULT TRUE`);
+    } catch (err) {
+      console.warn('Bulk maintenance schema patch failed, falling back to per-column repair:', err.message);
+    }
+    await ensureCompanyMaintenanceColumns();
     await pool.query(`INSERT INTO company_settings (id, maintenance_enabled, maintenance_force_logout, maintenance_backup_before_enable, maintenance_allow_super_admin_only)
       VALUES (1, FALSE, TRUE, TRUE, TRUE)
       ON DUPLICATE KEY UPDATE id=id`);
