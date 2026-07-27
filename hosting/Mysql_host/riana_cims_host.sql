@@ -1,5 +1,5 @@
 -- RIANA CIMS MySQL hosting database
--- Generated 2026-07-27T21:21:20.657Z
+-- Generated 2026-07-27T21:24:33.925Z
 -- Complete schema with sanitized reference data; no credentials or customer records.
 SET NAMES utf8mb4;
 SET FOREIGN_KEY_CHECKS = 0;
