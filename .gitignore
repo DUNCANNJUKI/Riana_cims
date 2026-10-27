@@ -48,3 +48,4 @@ Deployment-packages/database_private.zip
 *.njsproj
 *.sln
 *.sw?
+node_modules
