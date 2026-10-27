@@ -1,0 +1,669 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
+@import "tailwindcss";
+@config "../tailwind.config.ts";
+
+/* Definition of the design system. All colors, gradients, fonts, etc should be defined here. 
+All colors MUST be HSL.
+*/
+
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 222.2 84% 4.9%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 222.2 84% 4.9%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 222.2 84% 4.9%;
+
+    /* RIANA Teal Primary Theme */
+    --primary: 185 83% 31%;
+    --primary-foreground: 0 0% 100%;
+    --primary-light: 185 83% 51%;
+    --primary-dark: 185 83% 21%;
+
+    --secondary: 200 20% 95%;
+    --secondary-foreground: 200 100% 20%;
+
+    --muted: 200 20% 96%;
+    --muted-foreground: 200 10% 46%;
+
+    --accent: 200 50% 90%;
+    --accent-foreground: 200 100% 20%;
+
+    /* RIANA Brand Colors */
+    --riana-blue: 185 83% 31%;
+    --riana-success: 142 76% 36%;
+    --riana-warning: 45 93% 47%;
+    --riana-danger: 0 84% 60%;
+
+    /* Status Semantic Colors */
+    --success: 142 76% 36%;
+    --success-foreground: 0 0% 100%;
+    --warning: 45 93% 47%;
+    --warning-foreground: 45 93% 20%;
+    --pending: 220 13% 91%;
+    --pending-foreground: 220 9% 46%;
+
+    --status-pending: 38 92% 40%;
+    --status-pending-bg: 38 80% 96%;
+    --status-approved: 152 69% 31%;
+    --status-approved-bg: 152 60% 96%;
+    --status-rejected: 0 72% 45%;
+    --status-rejected-bg: 0 65% 96%;
+    --status-waiting: 262 55% 45%;
+    --status-waiting-bg: 262 50% 96%;
+    --status-in-progress: 200 75% 38%;
+    --status-in-progress-bg: 200 65% 96%;
+    --status-completed: 152 69% 31%;
+    --status-completed-bg: 152 60% 96%;
+    --priority-low: 152 69% 31%;
+    --priority-medium: 38 92% 40%;
+    --priority-high: 25 85% 45%;
+    --priority-critical: 0 72% 45%;
+
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 210 40% 98%;
+
+    --border: 185 20% 91%;
+    --input: 185 20% 96%;
+    --ring: 185 83% 31%;
+    /* Communication module surfaces and overlay scale */
+    --comm-page: 190 28% 96%;
+    --comm-panel: 0 0% 100%;
+    --comm-panel-elevated: 185 35% 98%;
+    --comm-surface: 0 0% 100%;
+    --comm-border: 185 22% 86%;
+    --comm-border-strong: 185 26% 78%;
+    --comm-muted: 190 20% 92%;
+    --comm-shadow: 185 42% 24%;
+    --comm-placeholder: 200 14% 45%;
+    --comm-control: 185 55% 97%;
+    --comm-control-border: 185 42% 72%;
+    --comm-control-icon: 185 83% 28%;
+    --comm-input-ring: 185 83% 31%;
+    --z-content: 1;
+    --z-sticky: 20;
+    --z-dropdown: 50;
+    --z-chatbot: 30;
+    --z-drawer: 50;
+    --z-modal: 50;
+    --z-call-overlay: 55;
+    --z-notification: 60;
+    --radius: 0.625rem;
+
+    --sidebar-background: 185 30% 98%;
+    --sidebar-foreground: 185 20% 26%;
+    --sidebar-primary: 185 83% 31%;
+    --sidebar-primary-foreground: 0 0% 98%;
+    --sidebar-accent: 185 30% 95%;
+    --sidebar-accent-foreground: 185 100% 20%;
+    --sidebar-border: 185 20% 91%;
+    --sidebar-ring: 185 83% 31%;
+  }
+
+  .dark {
+    --background: 222.2 84% 4.9%;
+    --foreground: 210 40% 98%;
+
+    --card: 220 20% 10%;
+    --card-foreground: 210 40% 98%;
+
+    --popover: 220 20% 10%;
+    --popover-foreground: 210 40% 98%;
+
+    /* RIANA Teal preserved in dark mode */
+    --primary: 185 83% 41%;
+    --primary-foreground: 0 0% 100%;
+    --primary-light: 185 83% 61%;
+    --primary-dark: 185 83% 31%;
+
+    --secondary: 217.2 32.6% 17.5%;
+    --secondary-foreground: 210 40% 98%;
+
+    --muted: 217.2 32.6% 17.5%;
+    --muted-foreground: 215 20.2% 65.1%;
+
+    --accent: 217.2 32.6% 17.5%;
+    --accent-foreground: 210 40% 98%;
+
+    --destructive: 0 62.8% 50%;
+    --destructive-foreground: 210 40% 98%;
+
+    /* Status colors for dark mode */
+    --success: 142 76% 42%;
+    --success-foreground: 0 0% 100%;
+    --warning: 45 93% 52%;
+    --warning-foreground: 45 93% 10%;
+    --status-pending: 45 93% 62%;
+    --status-pending-bg: 38 70% 16%;
+    --status-approved: 152 69% 48%;
+    --status-approved-bg: 152 55% 15%;
+    --status-rejected: 0 72% 60%;
+    --status-rejected-bg: 0 55% 15%;
+    --status-waiting: 262 70% 72%;
+    --status-waiting-bg: 262 45% 18%;
+    --status-in-progress: 200 80% 62%;
+    --status-in-progress-bg: 200 55% 16%;
+    --status-completed: 152 69% 48%;
+    --status-completed-bg: 152 55% 15%;
+    --priority-low: 152 69% 48%;
+    --priority-medium: 45 93% 62%;
+    --priority-high: 25 95% 65%;
+    --priority-critical: 0 72% 60%;
+
+    --border: 217.2 32.6% 22%;
+    --input: 217.2 32.6% 17.5%;
+    --ring: 185 83% 41%;
+    --comm-page: 222 30% 7%;
+    --comm-panel: 220 24% 10%;
+    --comm-panel-elevated: 220 22% 13%;
+    --comm-surface: 220 20% 11%;
+    --comm-border: 217 28% 22%;
+    --comm-border-strong: 217 32% 31%;
+    --comm-muted: 218 24% 16%;
+    --comm-shadow: 0 0% 0%;
+    --comm-placeholder: 215 20% 70%;
+    --comm-control: 220 22% 15%;
+    --comm-control-border: 217 32% 35%;
+    --comm-control-icon: 185 83% 62%;
+    --comm-input-ring: 185 83% 50%;
+    --sidebar-background: 222 30% 8%;
+    --sidebar-foreground: 210 40% 92%;
+    --sidebar-primary: 185 83% 41%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 220 20% 15%;
+    --sidebar-accent-foreground: 210 40% 92%;
+    --sidebar-border: 217.2 32.6% 18%;
+    --sidebar-ring: 185 83% 41%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-family: 'Plus Jakarta Sans', 'Inter', system-ui, sans-serif;
+    font-size: 1rem;
+    line-height: 1.5;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    font-family: 'Plus Jakarta Sans', 'Inter', system-ui, sans-serif;
+    @apply font-semibold tracking-tight;
+  }
+
+  /* RIANA Custom Utilities */
+  .gradient-primary {
+    background: linear-gradient(135deg, hsl(var(--primary)), hsl(var(--primary-light)));
+  }
+  
+  .gradient-header {
+    background: linear-gradient(90deg, hsl(var(--primary-dark)), hsl(var(--primary)));
+  }
+
+  .enterprise-header {
+    background: linear-gradient(90deg, #0f6c75 0%, #157f87 52%, #138896 100%);
+    box-shadow: 0 2px 10px rgb(3 45 51 / 0.18);
+  }
+  
+  .shadow-riana {
+    box-shadow: 0 4px 20px -4px hsl(var(--primary) / 0.3);
+  }
+
+  /* Status Color Codes */
+  .status-waiting {
+    background: linear-gradient(135deg, hsl(45, 93%, 47%), hsl(45, 93%, 57%));
+    color: hsl(45, 93%, 20%);
+  }
+  
+  .status-progress {
+    background: linear-gradient(135deg, hsl(200, 100%, 50%), hsl(200, 100%, 60%));
+    color: hsl(0, 0%, 100%);
+  }
+  
+  .status-complete {
+    background: linear-gradient(135deg, hsl(142, 76%, 36%), hsl(142, 76%, 46%));
+    color: hsl(0, 0%, 100%);
+  }
+
+  .crms-native .status-badge {
+    @apply inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold tracking-wide;
+  }
+
+  .crms-native .status-pending {
+    background-color: hsl(var(--status-pending-bg));
+    color: hsl(var(--status-pending));
+  }
+
+  .crms-native .status-approved,
+  .crms-native .status-completed {
+    background-color: hsl(var(--status-approved-bg));
+    color: hsl(var(--status-approved));
+  }
+
+  .crms-native .status-rejected {
+    background-color: hsl(var(--status-rejected-bg));
+    color: hsl(var(--status-rejected));
+  }
+
+  .crms-native .status-waiting {
+    background: hsl(var(--status-waiting-bg));
+    color: hsl(var(--status-waiting));
+  }
+
+  .crms-native .status-in-progress {
+    background-color: hsl(var(--status-in-progress-bg));
+    color: hsl(var(--status-in-progress));
+  }
+
+  .crms-native {
+    color-scheme: light;
+  }
+
+  .dark .crms-native {
+    color-scheme: dark;
+  }
+
+  .crms-native .recharts-cartesian-axis-tick text,
+  .crms-native .recharts-text {
+    fill: hsl(var(--muted-foreground));
+  }
+
+  .crms-native .recharts-cartesian-axis-line,
+  .crms-native .recharts-cartesian-axis-tick-line {
+    stroke: hsl(var(--border));
+  }
+
+  .crms-native .recharts-cartesian-grid line {
+    stroke: hsl(var(--border));
+    stroke-opacity: 0.7;
+  }
+
+  /* Robot Chatbot Animations */
+  @keyframes robot-blink {
+    0%, 90%, 100% { opacity: 1; }
+    95% { opacity: 0.3; }
+  }
+  
+  @keyframes robot-glow {
+    0%, 100% { box-shadow: 0 0 20px hsl(var(--primary) / 0.5); }
+    50% { box-shadow: 0 0 30px hsl(var(--primary) / 0.8); }
+  }
+  
+  @keyframes robot-processing {
+    0% { transform: scale(1); }
+    50% { transform: scale(1.05); }
+    100% { transform: scale(1); }
+  }
+  
+  .robot-eyes {
+    animation: robot-blink 3s infinite;
+  }
+  
+  .robot-face {
+    animation: robot-glow 2s ease-in-out infinite;
+  }
+  
+  .robot-processing {
+    animation: robot-processing 1s ease-in-out infinite;
+  }
+  
+  @keyframes progress {
+    0% { width: 0%; }
+    50% { width: 70%; }
+    100% { width: 100%; }
+  }
+
+  /* Toast and notification animations */
+  @keyframes toast-slide-in {
+    from {
+      transform: translateX(100%);
+      opacity: 0;
+    }
+    to {
+      transform: translateX(0);
+      opacity: 1;
+    }
+  }
+
+  @keyframes toast-slide-out {
+    from {
+      transform: translateX(0);
+      opacity: 1;
+    }
+    to {
+      transform: translateX(100%);
+      opacity: 0;
+    }
+  }
+
+  @keyframes button-press {
+    0% { transform: scale(1); }
+    50% { transform: scale(0.95); }
+    100% { transform: scale(1); }
+  }
+
+  @keyframes shake {
+    0%, 100% { transform: translateX(0); }
+    10%, 30%, 50%, 70%, 90% { transform: translateX(-5px); }
+    20%, 40%, 60%, 80% { transform: translateX(5px); }
+  }
+
+  @keyframes pulse-glow {
+    0%, 100% { box-shadow: 0 0 0 0 hsl(var(--primary) / 0.4); }
+    50% { box-shadow: 0 0 0 8px hsl(var(--primary) / 0); }
+  }
+
+  @keyframes success-bounce {
+    0%, 100% { transform: scale(1); }
+    50% { transform: scale(1.1); }
+  }
+
+  .animate-toast-in {
+    animation: toast-slide-in 0.3s ease-out;
+  }
+
+  .animate-toast-out {
+    animation: toast-slide-out 0.3s ease-in;
+  }
+
+  .animate-button-press {
+    animation: button-press 0.2s ease-out;
+  }
+
+  .animate-shake {
+    animation: shake 0.5s ease-in-out;
+  }
+
+  .animate-pulse-glow {
+    animation: pulse-glow 2s ease-in-out infinite;
+  }
+
+  .animate-success-bounce {
+    animation: success-bounce 0.3s ease-out;
+  }
+
+  /* Contract type color coding */
+  .contract-amc {
+    background: linear-gradient(135deg, hsl(142, 76%, 36%), hsl(142, 76%, 46%));
+    color: white;
+  }
+
+  .contract-warranty {
+    background: linear-gradient(135deg, hsl(200, 100%, 50%), hsl(200, 100%, 60%));
+    color: white;
+  }
+
+  .contract-lease {
+    background: linear-gradient(135deg, hsl(262, 83%, 58%), hsl(262, 83%, 68%));
+    color: white;
+  }
+
+  .contract-poc {
+    background: linear-gradient(135deg, hsl(45, 93%, 47%), hsl(45, 93%, 57%));
+    color: hsl(45, 93%, 20%);
+  }
+
+  /* Button click effect */
+  .btn-click-effect {
+    @apply transition-all duration-150 active:scale-95 hover:scale-105;
+  }
+
+  /* Card hover effect */
+  .card-hover {
+    @apply transition-all duration-300 hover:shadow-lg hover:-translate-y-1;
+  }
+
+  /* Professional Chat Styles */
+  .glass-card {
+    background: hsl(var(--background));
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid hsl(var(--border));
+  }
+
+  .dark .glass-card {
+    background: hsl(var(--background));
+    border-color: hsl(var(--border));
+  }
+
+  .chat-shell {
+    background:
+      radial-gradient(circle at 0% 0%, hsl(var(--primary) / 0.10), transparent 32%),
+      linear-gradient(145deg, hsl(var(--comm-panel)), hsl(var(--comm-page)));
+    box-shadow: 0 22px 70px -32px hsl(var(--comm-shadow) / 0.45);
+  }
+
+  .call-panel {
+    background:
+      linear-gradient(135deg, hsl(var(--comm-panel-elevated) / 0.98), hsl(var(--primary) / 0.08)),
+      hsl(var(--comm-panel));
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+  }
+
+  .call-avatar-ring {
+    position: relative;
+  }
+
+  .call-avatar-ring::after {
+    content: "";
+    position: absolute;
+    inset: -7px;
+    border-radius: 9999px;
+    border: 1px solid hsl(var(--primary) / 0.34);
+    animation: pulse-glow 1.7s ease-in-out infinite;
+  }
+
+  .chat-bubble-me {
+    @apply rounded-2xl rounded-br-md text-white shadow-sm;
+    background: linear-gradient(135deg, hsl(var(--primary)), hsl(var(--primary-dark))) !important;
+  }
+
+  .chat-bubble-other {
+    @apply rounded-2xl rounded-bl-md shadow-sm;
+    background: linear-gradient(180deg, hsl(var(--comm-surface)), hsl(var(--comm-panel-elevated)));
+    border: 1.5px solid hsl(var(--comm-control-border));
+    color: hsl(var(--foreground));
+    box-shadow: 0 6px 18px -14px hsl(var(--comm-shadow) / 0.55);
+  }
+
+  .chat-message-avatar {
+    border: 1.5px solid hsl(var(--comm-control-border));
+    background: hsl(var(--comm-control));
+    box-shadow: 0 3px 10px hsl(var(--comm-shadow) / 0.12);
+  }
+
+  .chat-message-avatar img {
+    object-fit: cover;
+  }
+
+  .chat-message-avatar-fallback {
+    background: hsl(var(--primary) / 0.14);
+    color: hsl(var(--primary-dark));
+  }
+
+  .dark .chat-message-avatar-fallback {
+    background: hsl(var(--primary) / 0.16);
+    color: hsl(var(--primary-light));
+  }
+
+  .chat-sidebar-item {
+    @apply relative mb-1 rounded-xl border border-transparent transition-all duration-200 hover:shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary;
+  }
+
+  .chat-sidebar-item:hover {
+    background: hsl(var(--comm-muted));
+  }
+
+  .chat-sidebar-active {
+    @apply shadow-sm;
+    background: hsl(var(--primary) / 0.12);
+    border-color: hsl(var(--primary) / 0.35);
+  }
+
+  .chat-composer {
+    position: relative;
+    z-index: var(--z-sticky);
+    background:
+      linear-gradient(180deg, hsl(var(--comm-panel-elevated)), hsl(var(--comm-panel)));
+  }
+
+  .chat-composer-tool {
+    border: 1.5px solid hsl(var(--comm-control-border)) !important;
+    background: hsl(var(--comm-control)) !important;
+    color: hsl(var(--comm-control-icon)) !important;
+    box-shadow: 0 2px 8px hsl(var(--comm-shadow) / 0.10);
+  }
+
+  .chat-composer-tool:hover {
+    background: hsl(var(--primary) / 0.10) !important;
+    border-color: hsl(var(--primary) / 0.50) !important;
+    color: hsl(var(--primary)) !important;
+  }
+
+  .chat-composer-tool:disabled {
+    opacity: 0.55;
+  }
+
+  .chat-composer-input {
+    border: 1.5px solid hsl(var(--comm-control-border));
+    background: hsl(var(--comm-surface));
+    box-shadow:
+      inset 0 0 0 1px hsl(var(--primary) / 0.06),
+      0 1px 2px hsl(var(--comm-shadow) / 0.08);
+  }
+
+  .chat-composer-input:focus-within {
+    border-color: hsl(var(--comm-input-ring));
+  }
+
+  .chat-composer-send {
+    color: hsl(var(--primary-foreground)) !important;
+  }
+
+  .notification-card {
+    @apply rounded-xl border border-transparent transition-all duration-200 hover:-translate-y-0.5 hover:border-primary/15 hover:bg-muted/60 hover:shadow-sm;
+  }
+
+  .notification-card-unread {
+    background: linear-gradient(135deg, hsl(var(--primary) / 0.10), hsl(var(--background)) 64%);
+  }
+}
+
+@keyframes maintenance-node-pulse {
+  0%, 100% { opacity: 0.56; transform: scale(0.92); }
+  50% { opacity: 0.95; transform: scale(1.16); }
+}
+
+@keyframes maintenance-glow {
+  0%, 100% { opacity: 0.42; }
+  50% { opacity: 0.9; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .motion-safe\:animate-\[maintenance-node-pulse_3\.8s_ease-in-out_infinite\],
+  .motion-safe\:animate-\[maintenance-glow_5s_ease-in-out_infinite\],
+  .motion-safe\:animate-\[maintenance-glow_5\.8s_ease-in-out_infinite\],
+  .motion-safe\:animate-\[maintenance-glow_5\.4s_ease-in-out_infinite\],
+  .motion-safe\:animate-\[maintenance-glow_4\.8s_ease-in-out_infinite\] {
+    animation: none !important;
+  }
+}
+/* Subtle animated network accents for system chrome. */
+.enterprise-header,
+.cims-system-footer {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+}
+
+.enterprise-header > div:first-of-type,
+.cims-system-footer > * {
+  position: relative;
+  z-index: 1;
+}
+
+.enterprise-header::before,
+.enterprise-header::after,
+.cims-system-footer::before,
+.cims-system-footer::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+}
+
+.enterprise-header::before {
+  background:
+    linear-gradient(112deg, transparent 0 9%, rgb(126 232 244 / 0.18) 9.15% 9.35%, transparent 9.5% 27%, rgb(126 232 244 / 0.16) 27.1% 27.3%, transparent 27.45% 48%, rgb(126 232 244 / 0.14) 48.1% 48.28%, transparent 48.45% 100%),
+    linear-gradient(68deg, transparent 0 17%, rgb(181 247 255 / 0.13) 17.1% 17.28%, transparent 17.45% 58%, rgb(181 247 255 / 0.12) 58.1% 58.26%, transparent 58.45% 100%);
+  opacity: 0.52;
+}
+
+.enterprise-header::after {
+  background:
+    radial-gradient(circle at 8% 34%, rgb(183 249 255 / 0.88) 0 2px, transparent 3px),
+    radial-gradient(circle at 18% 72%, rgb(74 216 230 / 0.7) 0 2px, transparent 3px),
+    radial-gradient(circle at 36% 24%, rgb(183 249 255 / 0.72) 0 2px, transparent 3px),
+    radial-gradient(circle at 53% 68%, rgb(73 216 230 / 0.62) 0 2px, transparent 3px),
+    radial-gradient(circle at 74% 30%, rgb(183 249 255 / 0.76) 0 2px, transparent 3px),
+    radial-gradient(circle at 91% 62%, rgb(73 216 230 / 0.66) 0 2px, transparent 3px),
+    radial-gradient(circle at 63% 16%, rgb(255 255 255 / 0.5) 0 1px, transparent 2px);
+  opacity: 0.55;
+  animation: cims-network-node-blink 4.8s ease-in-out infinite;
+}
+
+.cims-system-footer::before {
+  background:
+    linear-gradient(103deg, transparent 0 14%, hsl(var(--primary) / 0.12) 14.1% 14.32%, transparent 14.5% 38%, hsl(var(--primary) / 0.1) 38.1% 38.3%, transparent 38.45% 68%, hsl(var(--primary) / 0.1) 68.1% 68.28%, transparent 68.45% 100%),
+    linear-gradient(72deg, transparent 0 24%, hsl(var(--primary-light) / 0.1) 24.1% 24.28%, transparent 24.45% 76%, hsl(var(--primary-light) / 0.09) 76.1% 76.26%, transparent 76.45% 100%);
+  opacity: 0.7;
+}
+
+.cims-system-footer::after {
+  background:
+    radial-gradient(circle at 10% 52%, hsl(var(--primary-light) / 0.58) 0 1.5px, transparent 2.5px),
+    radial-gradient(circle at 27% 30%, hsl(var(--primary) / 0.44) 0 1.5px, transparent 2.5px),
+    radial-gradient(circle at 44% 68%, hsl(var(--primary-light) / 0.48) 0 1.5px, transparent 2.5px),
+    radial-gradient(circle at 66% 38%, hsl(var(--primary) / 0.42) 0 1.5px, transparent 2.5px),
+    radial-gradient(circle at 86% 58%, hsl(var(--primary-light) / 0.5) 0 1.5px, transparent 2.5px);
+  opacity: 0.55;
+  animation: cims-network-node-blink 5.4s ease-in-out 900ms infinite;
+}
+
+@keyframes cims-network-node-blink {
+  0%, 100% {
+    opacity: 0.34;
+    filter: drop-shadow(0 0 0 rgb(76 219 234 / 0));
+  }
+  42% {
+    opacity: 0.72;
+    filter: drop-shadow(0 0 5px rgb(76 219 234 / 0.34));
+  }
+  62% {
+    opacity: 0.45;
+  }
+  78% {
+    opacity: 0.82;
+    filter: drop-shadow(0 0 7px rgb(76 219 234 / 0.38));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .enterprise-header::after,
+  .cims-system-footer::after {
+    animation: none;
+  }
+}

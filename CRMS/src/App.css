@@ -1,0 +1,4 @@
+/* Intentionally empty.
+   The Developers module inherits the shared CIMS design system from index.css.
+   Keeping this file free of Vite starter styles prevents #root sizing, centering,
+   and text alignment from overriding the enterprise shell. */

@@ -1,0 +1,36 @@
+{
+  "name": "riana-cims-api",
+  "version": "1.0.0",
+  "description": "RIANA CIMS production API",
+  "license": "UNLICENSED",
+  "main": "index.js",
+  "engines": {
+    "node": ">=20.19.0"
+  },
+  "scripts": {
+    "start": "node index.js",
+    "dev": "node --watch index.js",
+    "test": "node --test security/*.test.js routes/*.test.js services/*.test.js",
+    "test:security": "node --test security/security.test.js",
+    "security:init": "node scripts/ensure-runtime-secret.cjs",
+    "files:inspect": "node scripts/inspect-file-storage.cjs",
+    "files:backup": "node scripts/backup-private-files.cjs"
+  },
+  "dependencies": {
+    "@js-temporal/polyfill": "^0.5.1",
+    "@napi-rs/canvas": "^0.1.96",
+    "bcryptjs": "^3.0.3",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.22.2",
+    "jsonwebtoken": "^9.0.2",
+    "libphonenumber-js": "^1.11.20",
+    "mysql2": "^3.11.3",
+    "node-cron": "^4.2.1",
+    "nodemailer": "^9.0.3",
+    "pdfjs-dist": "5.5.207",
+    "rrule": "^2.8.1",
+    "sharp": "^0.35.3",
+    "uuid": "^11.1.1"
+  }
+}

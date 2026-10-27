@@ -1,0 +1,21 @@
+const test=require('node:test');
+const assert=require('node:assert/strict');
+const fs=require('node:fs');
+const os=require('node:os');
+const path=require('node:path');
+const {planCopy,applyCopy}=require('../scripts/copy-external-upload-storage.cjs');
+test('external storage copy preserves originals, verifies content and refuses collisions or nested targets',()=>{
+  const root=fs.mkdtempSync(path.join(os.tmpdir(),'cims-storage-copy-'));
+  const source=path.join(root,'source');const target=path.join(root,'target');
+  fs.mkdirSync(path.join(source,'nested'),{recursive:true});
+  fs.writeFileSync(path.join(source,'nested','signed.png'),'fixture-content');
+  const plan=planCopy(source,target);
+  assert.equal(fs.existsSync(target),false);
+  applyCopy(plan);
+  assert.equal(fs.readFileSync(path.join(target,'nested','signed.png'),'utf8'),'fixture-content');
+  assert.equal(fs.readFileSync(path.join(source,'nested','signed.png'),'utf8'),'fixture-content');
+  applyCopy(planCopy(source,target));
+  assert.throws(()=>planCopy(source,path.join(source,'nested-copy')),/separate/);
+  fs.writeFileSync(path.join(target,'nested','signed.png'),'different-content');
+  assert.throws(()=>planCopy(source,target),/different content/);
+});

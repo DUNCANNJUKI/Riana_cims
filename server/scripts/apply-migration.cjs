@@ -1,0 +1,88 @@
+const fs = require('node:fs');
+const path = require('node:path');
+const mysql = require('mysql2/promise');
+require('dotenv').config({ path: path.join(__dirname, '../../.env.local') });
+
+const splitSqlStatements = (sql) => {
+  const statements = [];
+  let delimiter = ';';
+  let current = '';
+  for (const rawLine of sql.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (/^DELIMITER\s+/i.test(line)) {
+      delimiter = line.replace(/^DELIMITER\s+/i, '').trim() || ';';
+      continue;
+    }
+    current += rawLine + '\n';
+    if (current.trimEnd().endsWith(delimiter)) {
+      const trimmed = current.trimEnd();
+      const statement = trimmed.slice(0, trimmed.length - delimiter.length).trim();
+      if (statement) statements.push(statement);
+      current = '';
+    }
+  }
+  const trailing = current.trim();
+  if (trailing) statements.push(trailing);
+  return statements;
+};
+
+const executeMigrationFile = async (connection, filePath) => {
+  const statements = splitSqlStatements(fs.readFileSync(filePath, 'utf8'));
+  for (const statement of statements) {
+    await connection.query(statement);
+  }
+};
+
+async function run() {
+  const migrationsDirectory = path.join(__dirname, '../migrations');
+  const connection = await mysql.createConnection({
+    host: process.env.DATABASE_HOST || '127.0.0.1',
+    port: Number(process.env.DATABASE_PORT || 3306),
+    user: process.env.DATABASE_USER || 'root',
+    password: process.env.DATABASE_PASSWORD || '',
+    database: process.env.DATABASE_NAME || 'riana_cims',
+    multipleStatements: true,
+  });
+  try {
+    await connection.query(`CREATE TABLE IF NOT EXISTS migration_history (
+      migration_id VARCHAR(100) PRIMARY KEY,
+      description VARCHAR(255) NOT NULL,
+      applied_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )`);
+    const migrationFiles = fs.readdirSync(migrationsDirectory)
+      .filter((file) => file.endsWith('.sql') && !file.endsWith('.rollback.sql'))
+      .sort();
+    const appliedMigrations = [];
+    const skippedMigrations = [];
+    for (const file of migrationFiles) {
+      const migrationId = path.basename(file, '.sql');
+      const [existing] = await connection.query('SELECT migration_id FROM migration_history WHERE migration_id=? LIMIT 1', [migrationId]);
+      if (existing.length) {
+        skippedMigrations.push(migrationId);
+        continue;
+      }
+      await executeMigrationFile(connection, path.join(migrationsDirectory, file));
+      await connection.query(
+        'INSERT INTO migration_history (migration_id,description) VALUES (?,?) ON DUPLICATE KEY UPDATE description=VALUES(description)',
+        [migrationId, `Applied from ${file}`],
+      );
+      appliedMigrations.push(migrationId);
+    }
+    const [[result]] = await connection.query(`
+      SELECT
+        (SELECT COUNT(*) FROM modules) modules,
+        (SELECT COUNT(*) FROM roles) roles,
+        (SELECT COUNT(*) FROM permissions) permissions,
+        (SELECT COUNT(*) FROM user_module_roles) grants,
+        (SELECT COUNT(*) FROM user_permissions) direct_grants
+    `);
+    console.log(JSON.stringify({ appliedMigrations, skippedMigrations, ...result }));
+  } finally {
+    await connection.end();
+  }
+}
+
+run().catch((error) => {
+  console.error(`Migration failed: ${error.message}`);
+  process.exitCode = 1;
+});

@@ -1,0 +1,247 @@
+// RIANA CIMS Type Definitions
+
+export interface User {
+  id: string;
+  email: string;
+  role: 'SuperAdmin' | 'Admin' | 'Management' | 'Finance' | 'Developer' | 'Teamlead' | 'Sales' | 'User' | 'InventoryOfficer';
+  module_roles?: Partial<Record<'cims' | 'crms', 'SuperAdmin' | 'Admin' | 'Management' | 'Finance' | 'Developer' | 'Teamlead' | 'Sales' | 'User' | 'InventoryOfficer' | null>>;
+  designation?: 'SuperAdmin' | 'Admin' | 'Developer' | 'Teamlead' | 'Sales' | 'Field specialist' | 'Product Specialist' | 'Customer success' | 'Intern' | 'Manager' | 'Support' | 'Hardware Engineer' | 'Chief Accounts' | 'Payables' | 'Receivables' | 'HR' | 'Operations' | 'Accounts' | 'CEO' | 'MD' | 'Head of Sales';
+  permissions?: string[];
+  extra_permissions?: string[];
+  department_id: string | null;
+  subsidiary_id: string | null;
+  department_name?: string;
+  subsidiary_name?: string;
+  phone_number?: string;
+  avatar_url?: string | null;
+  first_name?: string;
+  last_name?: string;
+  password?: string;
+  created_at?: string;
+  first_login?: boolean;
+  is_active?: boolean;
+}
+
+export interface Company {
+  id: string;
+  name: string;
+  logo_path?: string;
+  font_color?: string;
+  primary_color?: string;
+  font_type?: string;
+  contract_types?: string[];
+}
+
+export interface Subsidiary {
+  id: string;
+  subsidiary_name: 'QSYS' | 'USS' | 'VMS' | string;
+  default_escalation_matrix?: EscalationMatrix | string | null;
+  equipment_configuration?: HandoverEquipmentItem[] | string | null;
+}
+
+export type HandoverEquipmentField =
+  | 'kiosk_type'
+  | 'kiosk_count'
+  | 'counter_count'
+  | 'led_count'
+  | 'screen_with_size'
+  | 'screen_count'
+  | 'service_points'
+  | 'ups_count'
+  | 'speakers'
+  | 'amplifiers'
+  | 'media_controllers'
+  | 'tablets'
+  | 'digital_signage_system'
+  | 'hdmis'
+  | 'splitters'
+  | 'staff_trained'
+  | `custom_${string}`;
+
+export interface HandoverEquipmentItem {
+  field: HandoverEquipmentField;
+  label: string;
+  installed_status: string;
+}
+
+export interface Department {
+  id: string;
+  company_id: string;
+  department_name: string;
+}
+
+export interface Client {
+  id: string;
+  department_id: string;
+  subsidiary_id: string;
+  client_name: string;
+  branch?: string;
+  contact_person_name: string;
+  contact_person_phone: string;
+  contact_person_email?: string;
+  contact_phone_masked?: string;
+  contact_email_masked?: string;
+  contact_person_phone_masked?: string;
+  contact_person_email_masked?: string;
+  contact_person_department?: string;
+  current_vendor?: string;
+  start_date: string;
+  contract_type: string;
+  industry_classification: string;
+  added_by_user_id: string;
+  created_at: string;
+  subsidiary_name?: string;
+  subsidiaries?: { subsidiary_name?: string } | null;
+}
+
+export interface Installation {
+  equipment_quantities?: Record<string,number> | string | null;
+  id: string;
+  client_id: string;
+  branch_id?: string | null;
+  department_id?: string | null;
+  branch?: string;
+  branch_name?: string | null;
+  department_name?: string | null;
+  kiosk_type: string;
+
+  kiosk_count: number;
+  counter_count: number;
+  counter_names?: string[]; // Array of Tripleplay/Counter device names
+  led_count: number;
+  led_names?: string[]; // Array of LED display names
+  service_points: number;
+  ups_count: number;
+  speakers: number;
+  screen_with_size: string;
+  screen_count: number;
+  media_controllers: number;
+  tablets: number;
+  digital_signage_system: number;
+  staff_trained: number;
+  amplifiers: number;
+  hdmis: number;
+  splitters: number;
+  handover_file_path: string;
+  handover_status?: string;
+  account_manager_id: string;
+  assigned_technician_id?: string;
+  hardware_technician_id?: string;
+  software_technician_id?: string;
+  status: 'pending' | 'in_progress' | 'completed' | 'waiting';
+  remarks?: string;
+  assigned_date?: string;
+  completion_date?: string;
+  scheduled_end_date?: string;
+  extension_reason?: string;
+  escalation_matrix?: EscalationMatrix;
+  waiting_reason?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface EscalationTier {
+  name: string;
+  phone_number: string;
+  email: string;
+  role: string;
+}
+
+export interface EscalationMatrix {
+  tier1: EscalationTier;
+  tier2: EscalationTier;
+  tier3: EscalationTier;
+  [tierKey: string]: EscalationTier;
+}
+
+export interface HandoverUpload {
+  id: string;
+  client_id: string;
+  file_path: string;
+  uploaded_by_user_id: string;
+  upload_date: string;
+}
+
+export interface SystemLog {
+  id: string;
+  user_id: string;
+  action: string;
+  details?: string;
+  created_at: string;
+}
+
+export interface ClientAssignment {
+  id: string;
+  client_id: string;
+  assigned_technician_id: string;
+  assigned_by_user_id: string;
+  assigned_date: string;
+  scheduled_end_date?: string;
+  extension_reason?: string;
+  status: 'waiting' | 'in_progress' | 'completed';
+  remarks?: string;
+}
+
+export interface InstallationProgress {
+  id: string;
+  assignment_id: string;
+  client_name: string;
+  subsidiary: string;
+  branch: string;
+  technician_name: string;
+  teamlead_name: string;
+  status: 'waiting' | 'in_progress' | 'completed';
+  assigned_date: string;
+  completion_date?: string;
+  progress_percentage: number;
+  equipment_installed: number;
+  total_equipment: number;
+  remarks?: string;
+}
+
+export interface AuthState {
+  user: User | null;
+  isAuthenticated: boolean;
+  isLoading: boolean;
+}
+
+export interface DashboardStats {
+  totalClients: number;
+  totalInstallations: number;
+  totalUsers: number;
+  recentLogs: SystemLog[];
+}
+
+export interface ClientBranch {
+  id: string;
+  client_id: string;
+  branch_name: string;
+  branch_code?: string | null;
+  contact_person_name?: string | null;
+  contact_email?: string | null;
+  contact_phone?: string | null;
+  physical_address?: string | null;
+  status: 'active' | 'inactive';
+  notes?: string | null;
+  department_count?: number;
+  installation_count?: number;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface ClientDepartment {
+  id: string;
+  client_id: string;
+  branch_id: string;
+  department_name: string;
+  department_code?: string | null;
+  branch_name?: string | null;
+  contact_person_name?: string | null;
+  contact_email?: string | null;
+  contact_phone?: string | null;
+  status: 'active' | 'inactive';
+  notes?: string | null;
+  installation_count?: number;
+  created_at?: string;
+  updated_at?: string;
+}

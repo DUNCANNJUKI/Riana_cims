@@ -1,0 +1,948 @@
+import { useState, useEffect } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import { normalizeHandoverEquipmentConfiguration } from '@/utils/equipmentConfiguration';
+import { InstallationEquipmentFields } from './InstallationEquipmentFields';
+import { PlanningDateInput } from '@/components/common/PlanningDateInput';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/ui/badge";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Plus, Search, Package, Monitor, Smartphone, Wifi, Loader2, Upload } from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
+import { useDatabase } from "@/hooks/useDatabase";
+import { Installation, Client, User, EscalationMatrix, Subsidiary, ClientBranch, ClientDepartment } from "@/types";
+import { InstallationDetailsDialog } from "@/components/dialogs/InstallationDetailsDialog";
+import { EscalationMatrixDialog } from "@/components/dialogs/EscalationMatrixDialog";
+import { normalizeEscalationMatrix } from "@/utils/escalationMatrix";
+
+import { FeedbackLinkGenerator } from "@/components/feedback/FeedbackLinkGenerator";
+import { EHandoverUpload } from "@/components/handover/EHandoverUpload";
+import { InstallationSerialPicker, type InstallationSerialSelection } from '@/components/inventory/InstallationSerialPicker';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { EquipmentRequirements } from '@/components/inventory/EquipmentRequirements';
+import { generateInstallationReport } from "@/utils/installationExport";
+import { InstallationActionsMenu } from "./InstallationActionsMenu";
+import { can } from "@/security/accessControl";
+import { apiClient } from "@/integrations/apiClient";
+
+interface InstallationsModuleProps {
+  user: User;
+}
+
+export const InstallationsModule = ({ user }: InstallationsModuleProps) => {
+  const queryClient = useQueryClient();
+  const canManageInstallations = can(user, 'installations.manage');
+  const [installations, setInstallations] = useState<Installation[]>([]);
+  const [clients, setClients] = useState<Client[]>([]);
+  const [users, setUsers] = useState<User[]>([]);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [technicianFilter, setTechnicianFilter] = useState<string>("all");
+  const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
+  const [newInstallation, setNewInstallation] = useState<Partial<Installation>>({});
+  const [serialSelection,setSerialSelection]=useState<InstallationSerialSelection>();
+  const [saveError,setSaveError]=useState('');
+  const [requirementsOpen,setRequirementsOpen]=useState(false);
+  useEffect(()=>{setSerialSelection(undefined);setSaveError('');},[newInstallation.id,newInstallation.client_id,newInstallation.branch_id,isAddDialogOpen]);
+  const [installationBranches, setInstallationBranches] = useState<ClientBranch[]>([]);
+  const [installationDepartments, setInstallationDepartments] = useState<ClientDepartment[]>([]);
+  const [isHierarchyLoading, setIsHierarchyLoading] = useState(false);
+  const [selectedInstallation, setSelectedInstallation] = useState<Installation | null>(null);
+  const [isDetailsDialogOpen, setIsDetailsDialogOpen] = useState(false);
+  const [isEscalationDialogOpen, setIsEscalationDialogOpen] = useState(false);
+  const [isFeedbackDialogOpen, setIsFeedbackDialogOpen] = useState(false);
+  const [selectedFeedbackInstallation, setSelectedFeedbackInstallation] = useState<Installation | null>(null);
+  const [currentEscalationInstallation, setCurrentEscalationInstallation] = useState<Installation | null>(null);
+  const [assignments, setAssignments] = useState<any[]>([]);
+  const [isUploadHandoverOpen, setIsUploadHandoverOpen] = useState(false);
+  const [selectedInstallationForHandover, setSelectedInstallationForHandover] = useState<Installation | null>(null);
+  const { toast } = useToast();
+  const { 
+    getInstallations, 
+    addInstallation, 
+    updateInstallation,
+    getClients, 
+    updateInstallationStatus,
+    updateEscalationMatrix,
+    getCompanySettings,
+    getSubsidiaries,
+    getUsers,
+    getAssignments,
+    loading 
+  } = useDatabase();
+
+
+  const [subsidiaries, setSubsidiaries] = useState<Subsidiary[]>([]);
+  const configuredEquipment = normalizeHandoverEquipmentConfiguration(subsidiaries.find((s)=>s.id===clients.find((c)=>c.id===newInstallation.client_id)?.subsidiary_id)?.equipment_configuration);
+
+  useEffect(() => {
+    loadInitialData();
+    const refresh = () => { void getSubsidiaries().then((data)=>setSubsidiaries(data || [])); };
+    window.addEventListener('subsidiary-configuration-updated',refresh);
+    return ()=>window.removeEventListener('subsidiary-configuration-updated',refresh);
+  }, []);
+
+
+  const loadInitialData = async () => {
+    try {
+      const [installationsData, clientsData, usersData, assignmentsData, subsidiariesData] = await Promise.all([
+        getInstallations(),
+        getClients(),
+        getUsers(),
+        getAssignments(),
+        getSubsidiaries()
+      ]);
+      
+      // Remove exact duplicate assignment scopes while preserving branch/department-specific rows.
+      const uniqueAssignments = assignmentsData?.filter((assignment: any, index: number, self: any[]) =>
+        index === self.findIndex((a) => (
+          (a.installation_id || '') === (assignment.installation_id || '') &&
+          a.client_id === assignment.client_id &&
+          (a.branch_id || '') === (assignment.branch_id || '') &&
+          (a.department_id || '') === (assignment.department_id || '') &&
+          (a.branch || '') === (assignment.branch || '')
+        ))
+      ) || [];
+      
+      setInstallations(installationsData);
+      setClients(clientsData);
+      setUsers(usersData);
+      setAssignments(uniqueAssignments);
+      setSubsidiaries(subsidiariesData || []);
+    } catch (error) {
+      console.error('Error loading data:', error);
+      toast({
+        title: "Error",
+        description: "Failed to load data",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const normalizeBranches = (branches: any[]): ClientBranch[] => (Array.isArray(branches) ? branches : [])
+    .filter((branch) => branch && (!branch.status || branch.status === 'active'))
+    .map((branch) => ({
+      ...branch,
+      branch_name: String(branch.branch_name || branch.name || '').trim(),
+    }))
+    .filter((branch) => Boolean(branch.branch_name));
+
+  const normalizeDepartments = (departments: any[]): ClientDepartment[] => (Array.isArray(departments) ? departments : [])
+    .filter((department) => department && (!department.status || department.status === 'active'))
+    .map((department) => ({
+      ...department,
+      department_name: String(department.department_name || department.name || '').trim(),
+    }))
+    .filter((department) => Boolean(department.department_name));
+
+  const loadDepartmentsForBranch = async (branchId: string) => {
+    if (!branchId) {
+      setInstallationDepartments([]);
+      return [] as ClientDepartment[];
+    }
+
+    const departments = normalizeDepartments(await apiClient.get(`/branches/${branchId}/departments`));
+    setInstallationDepartments(departments);
+    return departments;
+  };
+
+  const loadBranchesForInstallationClient = async (clientId: string, preferredBranchId = '', preferredDepartmentId = '') => {
+    const client = clients.find((item) => item.id === clientId);
+    setIsHierarchyLoading(true);
+    setInstallationBranches([]);
+    setInstallationDepartments([]);
+
+    try {
+      const branches = normalizeBranches(await apiClient.get(`/clients/${clientId}/branches`));
+      setInstallationBranches(branches);
+
+      const mainBranch = branches.find((branch) => branch.branch_name.toLowerCase() === 'main');
+      const selectedBranch = branches.find((branch) => branch.id === preferredBranchId) || mainBranch || branches[0] || null;
+
+      if (!selectedBranch) {
+        setNewInstallation((current) => ({
+          ...current,
+          client_id: clientId,
+          branch_id: '',
+          department_id: '',
+          branch: client?.branch || '',
+        }));
+        return;
+      }
+
+      const departments = await loadDepartmentsForBranch(selectedBranch.id);
+      const selectedDepartment = departments.find((department) => department.id === preferredDepartmentId) || null;
+      setNewInstallation((current) => ({
+        ...current,
+        client_id: clientId,
+        branch_id: selectedBranch.id,
+        branch: selectedBranch.branch_name,
+        department_id: selectedDepartment?.id || '',
+      }));
+    } catch (error: any) {
+      console.error('Error loading client installation hierarchy:', error);
+      toast({
+        title: "Hierarchy loading failed",
+        description: error?.message || "Could not load branches and departments for this client.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsHierarchyLoading(false);
+    }
+  };
+
+  const handleInstallationClientSelect = async (clientId: string) => {
+    setNewInstallation((current) => ({ ...current, client_id: clientId, branch_id: '', department_id: '', branch: '' }));
+    if (!clientId || clientId === 'no-clients') return;
+    await loadBranchesForInstallationClient(clientId);
+  };
+
+  const handleInstallationBranchSelect = async (branchId: string) => {
+    const selectedBranch = installationBranches.find((branch) => branch.id === branchId);
+    setNewInstallation((current) => ({
+      ...current,
+      branch_id: branchId,
+      branch: selectedBranch?.branch_name || '',
+      department_id: '',
+    }));
+    setIsHierarchyLoading(true);
+    try {
+      await loadDepartmentsForBranch(branchId);
+    } catch (error: any) {
+      console.error('Error loading branch departments:', error);
+      toast({ title: "Department loading failed", description: error?.message || "Could not load departments for this branch.", variant: "destructive" });
+    } finally {
+      setIsHierarchyLoading(false);
+    }
+  };
+
+
+  const normalizeScopeLabel = (value?: string | null) => String(value || '').trim().toLowerCase();
+
+  const getInstallationAssignment = (installation: Installation) => {
+    const client = clients.find(c => c.id === installation.client_id);
+    const installationBranch = normalizeScopeLabel(
+      (installation as any).branch_name || (installation as any).branch || client?.branch
+    );
+    const installationDepartment = normalizeScopeLabel((installation as any).department_name);
+
+    return assignments.find((assignment) => {
+      if (String(assignment.installation_id || '') === String(installation.id || '')) return true;
+      if (String(assignment.client_id || '') !== String(installation.client_id || '')) return false;
+
+      if ((installation as any).branch_id || assignment.branch_id) {
+        if (String(assignment.branch_id || '') !== String((installation as any).branch_id || '')) return false;
+      } else {
+        const assignmentBranch = normalizeScopeLabel(assignment.branch_name || assignment.branch || assignment.clients?.branch);
+        if (installationBranch && assignmentBranch && installationBranch !== assignmentBranch) return false;
+      }
+
+      if ((installation as any).department_id || assignment.department_id) {
+        if (String(assignment.department_id || '') !== String((installation as any).department_id || '')) return false;
+      } else {
+        const assignmentDepartment = normalizeScopeLabel(assignment.department_name);
+        if (installationDepartment && assignmentDepartment && installationDepartment !== assignmentDepartment) return false;
+      }
+
+      return true;
+    });
+  };
+  const filteredInstallations = installations.filter(installation => {
+    const client = clients.find(c => c.id === installation.client_id);
+    const matchesSearch = installation.kiosk_type.toLowerCase().includes(searchTerm.toLowerCase()) ||
+           installation.screen_with_size.toLowerCase().includes(searchTerm.toLowerCase()) ||
+           (client?.client_name || '').toLowerCase().includes(searchTerm.toLowerCase());
+    
+    const assignment = getInstallationAssignment(installation);
+    
+    // Technician filter
+    const matchesTechnician = technicianFilter === 'all' || 
+      installation.hardware_technician_id === technicianFilter ||
+      installation.software_technician_id === technicianFilter ||
+      installation.assigned_technician_id === technicianFilter ||
+      assignment?.hardware_technician_id === technicianFilter ||
+      assignment?.software_technician_id === technicianFilter;
+    
+    return matchesSearch && matchesTechnician;
+  });
+
+  // Get technicians for filter dropdown
+  const technicians = users.filter(u => u.role === 'User' || u.role === 'Teamlead');
+
+  const handleAddInstallation = async () => {
+    setSaveError('');
+    if(serialSelection?.validation_error){setSaveError(serialSelection.validation_error);return;}
+    if(serialSelection?.assets.length && !serialSelection.physical_confirmed){setSaveError('Confirm that the physical devices match the selected serials.');return;}
+    const missingType = configuredEquipment.find((item)=>item.field==='kiosk_type' && !newInstallation.kiosk_type);
+    if (!newInstallation.client_id || !newInstallation.branch_id || missingType) {
+      toast({
+        title: "Error",
+        description: missingType ? `Please select ${missingType.label}.` : 'Client and branch are required.',
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      const escalationMatrix = newInstallation.escalation_matrix
+        ? normalizeEscalationMatrix(newInstallation.escalation_matrix)
+        : null;
+
+      const installationData = {
+        equipment_quantities: typeof newInstallation.equipment_quantities==='string' ? JSON.parse(newInstallation.equipment_quantities) : newInstallation.equipment_quantities || {},
+        ...(serialSelection?.assets.length ? {hardware_selection:serialSelection} : {}),
+        client_id: newInstallation.client_id!,
+        branch_id: newInstallation.branch_id || null,
+        department_id: newInstallation.department_id || null,
+        kiosk_type: newInstallation.kiosk_type || '',
+        kiosk_count: newInstallation.kiosk_count || 0,
+        counter_count: newInstallation.counter_count || 0,
+        counter_names: Array.isArray(newInstallation.counter_names) ? newInstallation.counter_names : [],
+        led_count: newInstallation.led_count || 0,
+        led_names: Array.isArray(newInstallation.led_names) ? newInstallation.led_names : [],
+        service_points: newInstallation.service_points || 0,
+        ups_count: newInstallation.ups_count || 0,
+        speakers: newInstallation.speakers || 0,
+        screen_with_size: newInstallation.screen_with_size || '',
+        screen_count: newInstallation.screen_count || 0,
+        media_controllers: newInstallation.media_controllers || 0,
+        tablets: newInstallation.tablets || 0,
+        digital_signage_system: newInstallation.digital_signage_system || 0,
+        staff_trained: newInstallation.staff_trained || 0,
+        amplifiers: newInstallation.amplifiers || 0,
+        hdmis: newInstallation.hdmis || 0,
+        splitters: newInstallation.splitters || 0,
+        account_manager_id: user.id,
+        status: newInstallation.id ? newInstallation.status || 'pending' : 'pending',
+        remarks: newInstallation.remarks || '',
+        scheduled_end_date: newInstallation.scheduled_end_date || null,
+        escalation_matrix: escalationMatrix
+      };
+
+      let savedInstallationId = newInstallation.id;
+      if (newInstallation.id) {
+        await updateInstallation(newInstallation.id, installationData);
+      } else {
+        const saved = await addInstallation(installationData);
+        savedInstallationId = saved?.id;
+      }
+      await loadInitialData();
+      setNewInstallation({});
+      await queryClient.invalidateQueries({ queryKey: ['hardware'] });
+      setInstallationBranches([]);
+      setInstallationDepartments([]);
+      setIsAddDialogOpen(false);
+      if (savedInstallationId && can(user,'inventory.view')) {
+        setSelectedInstallation({ ...installationData, id:savedInstallationId } as Installation);
+        setIsDetailsDialogOpen(true);
+      }
+      toast({
+        title: "Success",
+        description: "Installation added successfully",
+      });
+    } catch (error: any) {
+      console.error('Error adding installation:', error);
+      setSaveError(error.message || 'Unable to save installation.');
+      toast({
+        title: "Error",
+        description: error.message || "Failed to add installation. Please check all required fields.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleStatusChange = async (installationId: string, newStatus: string, waitingReason?: string) => {
+    if (user.role !== 'SuperAdmin' && user.role !== 'Teamlead' && user.role !== 'Admin') {
+      toast({
+        title: "Access Denied",
+        description: "Only team leads and admins can change installation status",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      await updateInstallationStatus(installationId, newStatus, user.id, waitingReason);
+      await loadInitialData(); // Refresh data
+      toast({
+        title: "Status Updated",
+        description: `Installation status changed to ${newStatus}`,
+      });
+    } catch (error) {
+      console.error('Error updating status:', error);
+      toast({
+        title: "Error",
+        description: "Failed to update installation status",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleEscalationMatrix = (installation: Installation) => {
+    setCurrentEscalationInstallation(installation);
+    setIsEscalationDialogOpen(true);
+  };
+
+  const handleSaveEscalationMatrix = async (matrix: EscalationMatrix) => {
+    if (!currentEscalationInstallation) return;
+
+    try {
+      await updateEscalationMatrix(currentEscalationInstallation.id, matrix);
+      await loadInitialData(); // Refresh data
+    } catch (error) {
+      console.error('Error saving escalation matrix:', error);
+      throw error;
+    }
+  };
+
+
+  const handleDownloadReport = async (installation: Installation) => {
+    try {
+      const client = clients.find(c => c.id === installation.client_id);
+      let company = await getCompanySettings();
+      if (!company) {
+        company = { id: 'default', name: 'RIANA Technologies' };
+      } else {
+        // Map database's company_name to Company interface's name
+        company.name = company.company_name || company.name || 'RIANA Technologies';
+      }
+      
+       if (!client) {
+        toast({
+          title: "Error",
+          description: "Client information not found",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      const subsidiary = subsidiaries.find(s => s.id === client.subsidiary_id);
+      await generateInstallationReport(installation, client, company, subsidiary, user.subsidiary_name);
+
+      // Auto-mark installation as complete on export
+      if (installation.status !== 'completed') {
+        try {
+          await updateInstallationStatus(installation.id, 'completed', user.id);
+          await loadInitialData();
+        } catch (statusError) {
+          console.error('Error auto-completing installation:', statusError);
+          // Don't fail the whole process if just the status update fails
+        }
+      }
+
+      toast({
+        title: "Success",
+        description: "Installation report downloaded and status marked as complete",
+      });
+    } catch (error) {
+      console.error('Error generating report:', error);
+      toast({
+        title: "Error",
+        description: "Failed to generate installation report",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case 'completed': return 'bg-success/10 text-success border-success/20';
+      case 'in_progress': return 'bg-primary/10 text-primary border-primary/20';
+      case 'waiting': return 'bg-warning/10 text-warning border-warning/20';
+      case 'pending': return 'bg-pending text-pending-foreground border-pending/50';
+      default: return 'bg-pending text-pending-foreground border-pending/50';
+    }
+  };
+
+  const getStatusButtonColor = (status: string) => {
+    switch (status) {
+      case 'completed': return 'bg-success hover:bg-success/90 text-success-foreground';
+      case 'in_progress': return 'bg-primary hover:bg-primary/90 text-primary-foreground';
+      case 'waiting': return 'bg-warning hover:bg-warning/90 text-warning-foreground';
+      case 'pending': return 'bg-pending hover:bg-pending/90 text-pending-foreground';
+      default: return 'bg-pending hover:bg-pending/90 text-pending-foreground';
+    }
+  };
+
+  const getClientName = (clientId: string) => {
+    return clients.find(c => c.id === clientId)?.client_name || 'Unknown Client';
+  };
+
+  const getInstallationScopeLabel = (installation: Installation) => {
+    const branchName = installation.branch_name || installation.branch || clients.find(c => c.id === installation.client_id)?.branch || 'Main';
+    return installation.department_name ? `${branchName} / ${installation.department_name}` : branchName;
+  };
+
+  const getTechnicianName = (technicianId?: string) => {
+    if (!technicianId) return 'Not assigned';
+    const tech = users.find(u => u.id === technicianId);
+    if (!tech) return 'Unknown';
+    return `${tech.first_name || ''} ${tech.last_name || ''}`.trim() || tech.email;
+  };
+
+
+  const handleUploadHandover = (installation: Installation) => {
+    setSelectedInstallationForHandover(installation);
+    setIsUploadHandoverOpen(true);
+  };
+
+  const handleHandoverUploadComplete = async () => {
+    await loadInitialData();
+    setIsUploadHandoverOpen(false);
+    setSelectedInstallationForHandover(null);
+  };
+
+  const handleViewDetails = (installation: Installation) => {
+    setSelectedInstallation(installation);
+    setIsDetailsDialogOpen(true);
+  };
+
+  const handleEditInstallation = (installation: Installation) => {
+    setNewInstallation(installation);
+    setIsAddDialogOpen(true);
+    void loadBranchesForInstallationClient(installation.client_id, installation.branch_id || '', installation.department_id || '');
+  };
+
+  const getSelectedClient = () => {
+    if (!selectedInstallation) return null;
+    return clients.find(c => c.id === selectedInstallation.client_id) || null;
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-3xl font-bold text-primary">Installations Management</h1>
+          {['InventoryOfficer','SuperAdmin','Admin','Teamlead'].includes(user.role) && <Button variant="outline" onClick={()=>setRequirementsOpen(true)}>Equipment Serial Requirements</Button>}
+          <p className="text-muted-foreground">Track and manage client installations and equipment</p>
+        </div>
+        {canManageInstallations && <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
+          <DialogTrigger asChild>
+            <Button className="gradient-primary">
+              <Plus className="h-4 w-4 mr-2" />
+              Add Installation
+            </Button>
+          </DialogTrigger>
+          <DialogContent className="max-w-5xl max-h-[80vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>{newInstallation.id ? 'Edit Installation' : 'Add New Installation'}</DialogTitle>
+              <DialogDescription>
+                Enter installation details and equipment specifications
+              </DialogDescription>
+            </DialogHeader>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="client_id">Client *</Label>
+                <Select 
+                  value={newInstallation.client_id || ''} 
+                  onValueChange={(value) => void handleInstallationClientSelect(value)}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select client" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {(() => {
+                      // Clients can have multiple branch/department installations, so scope is selected after the client.
+                      const availableClients = clients;
+                      
+                      // For non-Admin/Teamlead users, only show assigned clients
+                      const isRegularUser = user.role !== 'SuperAdmin' && user.role !== 'Admin' && user.role !== 'Teamlead';
+                      const filteredClients = isRegularUser
+                        ? availableClients.filter(c => 
+                            assignments.some(a => 
+                              a.client_id === c.id && 
+                              (a.hardware_technician_id === user.id || a.software_technician_id === user.id)
+                            )
+                          )
+                        : availableClients;
+                      
+                      return filteredClients.length > 0 ? (
+                        filteredClients.map((client) => (
+                          <SelectItem key={client.id} value={client.id}>
+                            {client.client_name} {client.branch ? `- ${client.branch}` : ''}
+                          </SelectItem>
+                        ))
+                      ) : (
+                        <SelectItem value="no-clients" disabled>
+                          {isRegularUser 
+                            ? 'No assigned clients available' 
+                            : 'No clients available'}
+                        </SelectItem>
+                      );
+                    })()}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="installation_branch_id">Branch *</Label>
+                <Select
+                  value={newInstallation.branch_id || ''}
+                  onValueChange={(value) => void handleInstallationBranchSelect(value)}
+                  disabled={!newInstallation.client_id || isHierarchyLoading || installationBranches.length === 0}
+                >
+                  <SelectTrigger id="installation_branch_id">
+                    <SelectValue placeholder={!newInstallation.client_id ? 'Select client first' : isHierarchyLoading ? 'Loading branches...' : 'Select branch'} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {installationBranches.map((branch) => (
+                      <SelectItem key={branch.id} value={branch.id}>{branch.branch_name}{branch.branch_code ? ` (${branch.branch_code})` : ''}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {newInstallation.client_id && !isHierarchyLoading && installationBranches.length === 0 && (
+                  <p className="text-xs text-destructive">No active branches found. Add the Main branch in Client Management before creating an installation.</p>
+                )}
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="installation_department_id">Department</Label>
+                <Select
+                  value={newInstallation.department_id || 'none'}
+                  onValueChange={(value) => setNewInstallation({...newInstallation, department_id: value === 'none' ? '' : value})}
+                  disabled={!newInstallation.branch_id || isHierarchyLoading || installationDepartments.length === 0}
+                >
+                  <SelectTrigger id="installation_department_id">
+                    <SelectValue placeholder={!newInstallation.branch_id ? 'Select branch first' : installationDepartments.length ? 'Select department' : 'No departments yet'} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">No department</SelectItem>
+                    {installationDepartments.map((department) => (
+                      <SelectItem key={department.id} value={department.id}>{department.department_name}{department.department_code ? ` (${department.department_code})` : ''}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <InstallationEquipmentFields items={configuredEquipment} value={newInstallation} onChange={setNewInstallation} />
+              <div className="space-y-2">
+                <Label htmlFor="scheduled_end_date">Installation End Date</Label>
+                <PlanningDateInput
+                  id="scheduled_end_date"
+                  subsidiaryId={clients.find(c=>c.id===newInstallation.client_id)?.subsidiary_id}
+                  branchId={newInstallation.branch_id}
+                  type="date"
+                  value={newInstallation.scheduled_end_date || ''}
+                  onChange={(e) => setNewInstallation({...newInstallation, scheduled_end_date: e.target.value})}
+                />
+              </div>
+              <div className="col-span-1 md:col-span-3 space-y-2">
+                <Label htmlFor="remarks">Remarks</Label>
+                <Input
+                  id="remarks"
+                  value={newInstallation.remarks || ''}
+                  onChange={(e) => setNewInstallation({...newInstallation, remarks: e.target.value})}
+                  placeholder="Any additional notes or remarks"
+                />
+              </div>
+            </div>
+
+            {isAddDialogOpen && <InstallationSerialPicker user={user} installation={newInstallation} subsidiaryId={clients.find((c)=>c.id===newInstallation.client_id)?.subsidiary_id || ''} equipmentConfiguration={subsidiaries.find((s)=>s.id===clients.find((c)=>c.id===newInstallation.client_id)?.subsidiary_id)?.equipment_configuration} value={serialSelection} onChange={setSerialSelection}/>}
+            {saveError && <Alert variant="destructive"><AlertDescription>{saveError}</AlertDescription></Alert>}
+            <div className="flex justify-end gap-2 mt-4">
+              <Button variant="outline" onClick={() => setIsAddDialogOpen(false)} disabled={loading} className="transition-all hover:scale-105 active:scale-95">
+                Cancel
+              </Button>
+              <Button onClick={handleAddInstallation} className="gradient-primary transition-all hover:scale-105 active:scale-95" disabled={loading}>
+                {loading ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
+                {newInstallation.id ? 'Save Changes' : 'Add Installation'}
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>}
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+        <Card className="shadow-riana">
+          <CardContent className="p-4">
+            <div className="flex items-center gap-2">
+              <Package className="h-8 w-8 text-primary" />
+              <div>
+                <p className="text-sm text-muted-foreground">Total Kiosks</p>
+                <p className="text-2xl font-bold">{installations.reduce((sum, inst) => sum + inst.kiosk_count, 0)}</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+        <Card className="shadow-riana">
+          <CardContent className="p-4">
+            <div className="flex items-center gap-2">
+              <Monitor className="h-8 w-8 text-success" />
+              <div>
+                <p className="text-sm text-muted-foreground">Displays</p>
+                <p className="text-2xl font-bold">{installations.reduce((sum, inst) => sum + inst.led_count, 0)}</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+        <Card className="shadow-riana">
+          <CardContent className="p-4">
+            <div className="flex items-center gap-2">
+              <Smartphone className="h-8 w-8 text-primary" />
+              <div>
+                <p className="text-sm text-muted-foreground">Service Points</p>
+                <p className="text-2xl font-bold">{installations.reduce((sum, inst) => sum + inst.service_points, 0)}</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+        <Card className="shadow-riana">
+          <CardContent className="p-4">
+            <div className="flex items-center gap-2">
+              <Wifi className="h-8 w-8 text-warning" />
+              <div>
+                <p className="text-sm text-muted-foreground">Media Controllers</p>
+                <p className="text-2xl font-bold">{installations.reduce((sum, inst) => sum + inst.media_controllers, 0)}</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      <Card className="shadow-riana">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Package className="h-5 w-5" />
+            Installation Records
+          </CardTitle>
+          <CardDescription>
+            Track all client installations and equipment
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-4 mb-4">
+            <div className="relative flex-1">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
+              <Input
+                placeholder="Search installations by type, screen size..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="pl-10"
+              />
+            </div>
+            <div className="w-full sm:w-64">
+              <Select value={technicianFilter} onValueChange={setTechnicianFilter}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Filter by technician" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Technicians</SelectItem>
+                  {technicians.map((tech) => (
+                    <SelectItem key={tech.id} value={tech.id}>
+                      {tech.first_name || ''} {tech.last_name || ''} ({tech.email})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Client</TableHead>
+                <TableHead>Kiosk Type</TableHead>
+                <TableHead>Equipment</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead>Assignment</TableHead>
+                <TableHead>Handover</TableHead>
+                <TableHead>Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {filteredInstallations.map((installation) => (
+                <TableRow key={installation.id}>
+                  <TableCell>
+                    <div className="font-medium">{getClientName(installation.client_id)}</div>
+                    <div className="text-sm text-muted-foreground">{getInstallationScopeLabel(installation)}</div>
+                  </TableCell>
+                  <TableCell>
+                    <div>
+                      <div className="font-medium">{installation.kiosk_type}</div>
+                      <div className="text-sm text-muted-foreground">
+                        {installation.kiosk_count} units
+                      </div>
+                    </div>
+                  </TableCell>
+                  <TableCell>
+                    <div className="text-sm">
+                      <div>LEDs: {installation.led_count}</div>
+                      <div>Tripleplay: {installation.counter_count}</div>
+                      <div>UPS: {installation.ups_count}</div>
+                      <div>Amplifiers: {installation.amplifiers}</div>
+                      <div>HDMIs: {installation.hdmis}</div>
+                      <div>Splitters: {installation.splitters}</div>
+                    </div>
+                  </TableCell>
+                  <TableCell>
+                    {canManageInstallations ? (
+                      <Select 
+                        value={installation.status} 
+                        onValueChange={(value) => handleStatusChange(installation.id, value)}
+                      >
+                        <SelectTrigger className="w-32">
+                          <SelectValue>
+                            <Badge className={getStatusColor(installation.status)}>
+                              {installation.status.replace('_', ' ')}
+                            </Badge>
+                          </SelectValue>
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="pending">Pending</SelectItem>
+                          <SelectItem value="waiting">Waiting</SelectItem>
+                          <SelectItem value="in_progress">In Progress</SelectItem>
+                          <SelectItem value="completed">Completed</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    ) : (
+                      <Badge className={getStatusColor(installation.status)}>
+                        {installation.status.replace('_', ' ')}
+                      </Badge>
+                    )}
+                  </TableCell>
+                  <TableCell>
+                    {(() => {
+                      const assignment = getInstallationAssignment(installation);
+                      return (
+                        <div className="text-sm">
+                          <div className="font-medium">
+                            {assignment?.installation_start_date 
+                              ? new Date(assignment.installation_start_date).toLocaleDateString()
+                              : installation.assigned_date
+                              ? new Date(installation.assigned_date).toLocaleDateString()
+                              : 'Not assigned'
+                            }
+                          </div>
+                          {assignment && (
+                            <>
+                              <div className="text-muted-foreground text-xs">
+                                HW: {getTechnicianName(assignment.hardware_technician_id)}
+                              </div>
+                              <div className="text-muted-foreground text-xs">
+                                SW: {getTechnicianName(assignment.software_technician_id)}
+                              </div>
+                            </>
+                          )}
+                        </div>
+                      );
+                    })()}
+                  </TableCell>
+                  <TableCell>
+                    <div className="flex items-center gap-2">
+                      {(installation as any).handover_status === 'signed' ? (
+                        <Badge className="bg-emerald-500/10 text-emerald-600 border-emerald-500/20">
+                          <Upload className="h-3 w-3 mr-1" />
+                          Signed
+                        </Badge>
+                      ) : (installation as any).handover_status === 'uploaded' || installation.handover_file_path ? (
+                        <Badge className="bg-blue-500/10 text-blue-600 border-blue-500/20">
+                          <Upload className="h-3 w-3 mr-1" />
+                          Uploaded
+                        </Badge>
+                      ) : (
+                        <Badge variant="outline" className="bg-amber-500/10 text-amber-600 border-amber-500/20">
+                          Pending
+                        </Badge>
+                      )}
+                    </div>
+                  </TableCell>
+                  <TableCell>
+                    <InstallationActionsMenu
+                      installation={installation}
+                      user={user}
+                      onView={handleViewDetails}
+                      onExport={handleDownloadReport}
+                      onFeedback={(inst) => {
+                        setSelectedFeedbackInstallation(inst);
+                        setIsFeedbackDialogOpen(true);
+                      }}
+                      onUpload={handleUploadHandover}
+                      onEdit={handleEditInstallation}
+                      onEscalation={handleEscalationMatrix}
+                    />
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+
+          {filteredInstallations.length === 0 && (
+            <div className="text-center py-8">
+              <Package className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+              <p className="text-muted-foreground">No installations found</p>
+            </div>
+          )}
+          
+          {/* Items Counter */}
+          <div className="mt-4 pt-4 border-t flex items-center justify-between text-sm text-muted-foreground">
+            <span>
+              Showing {filteredInstallations.length} of {installations.length} installations
+            </span>
+            <span className="font-medium text-foreground">
+              Total: {installations.length} records
+            </span>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Dialog open={requirementsOpen} onOpenChange={setRequirementsOpen}><DialogContent className="max-w-5xl max-h-[85dvh] overflow-auto"><DialogHeader><DialogTitle>Equipment Serial Requirements</DialogTitle><DialogDescription>Installation equipment by subsidiary</DialogDescription></DialogHeader><EquipmentRequirements user={user}/></DialogContent></Dialog>
+      {/* Installation Details Dialog */}
+      <InstallationDetailsDialog
+        equipmentConfiguration={subsidiaries.find((s)=>s.id===clients.find((c)=>c.id===selectedInstallation?.client_id)?.subsidiary_id)?.equipment_configuration}
+        installation={selectedInstallation}
+        client={getSelectedClient()}
+        isOpen={isDetailsDialogOpen}
+        onClose={() => setIsDetailsDialogOpen(false)}
+        user={user}
+      />
+
+      {/* Escalation Matrix Dialog */}
+      <EscalationMatrixDialog
+        isOpen={isEscalationDialogOpen}
+        onClose={() => setIsEscalationDialogOpen(false)}
+        onSave={handleSaveEscalationMatrix}
+        existingMatrix={currentEscalationInstallation?.escalation_matrix}
+        canAddTiers={user.role === 'SuperAdmin'}
+      />
+
+      {/* Feedback Link Generator Dialog */}
+      <Dialog open={isFeedbackDialogOpen} onOpenChange={setIsFeedbackDialogOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Generate Feedback Link</DialogTitle>
+            <DialogDescription>
+              Create a unique feedback link for the client to share their experience
+            </DialogDescription>
+          </DialogHeader>
+          {selectedFeedbackInstallation && (
+            <FeedbackLinkGenerator
+              client={clients.find(c => c.id === selectedFeedbackInstallation.client_id)!}
+              installation={selectedFeedbackInstallation}
+              onClose={() => setIsFeedbackDialogOpen(false)}
+            />
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* E-Handover Upload Dialog */}
+      <Dialog open={isUploadHandoverOpen} onOpenChange={setIsUploadHandoverOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Upload Signed E-Handover</DialogTitle>
+            <DialogDescription>
+              Upload the signed E-handover document for this installation
+            </DialogDescription>
+          </DialogHeader>
+          {selectedInstallationForHandover && (
+            <EHandoverUpload
+              user={user}
+              client={clients.find(c => c.id === selectedInstallationForHandover.client_id)!}
+              installation={selectedInstallationForHandover}
+              onUploadComplete={handleHandoverUploadComplete}
+            />
+          )}
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+};
