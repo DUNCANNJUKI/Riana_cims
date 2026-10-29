@@ -63,13 +63,6 @@ include:
   - template: Security/SAST.gitlab-ci.yml
   - template: Security/Secret-Detection.gitlab-ci.yml
 
-nodejs-scan-sast:
-  stage: sast
-  variables:
-    SAST_EXCLUDED_ANALYZERS: ""
-
-semgrep-sast:
-  stage: sast
 # -------------------------------------------------------
 # STAGE 3: Build
 # -------------------------------------------------------
