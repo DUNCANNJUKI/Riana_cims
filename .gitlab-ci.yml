@@ -67,14 +67,9 @@ nodejs-scan-sast:
   stage: sast
   variables:
     SAST_EXCLUDED_ANALYZERS: ""
-  only:
-    - main
 
 semgrep-sast:
   stage: sast
-  only:
-    - main
-
 # -------------------------------------------------------
 # STAGE 3: Build
 # -------------------------------------------------------
