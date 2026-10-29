@@ -1,0 +1,143 @@
+stages:
+  - audit
+  - sast
+  - build
+  - deploy
+
+variables:
+  NODE_VERSION: "22"
+  # GitLab SAST configuration
+  SAST_EXCLUDED_PATHS: "spec, test, tests, tmp, node_modules, dist"
+  SECRET_DETECTION_EXCLUDED_PATHS: "node_modules, dist"
+
+# -------------------------------------------------------
+# STAGE 1: Dependency & Secret Audit (SCA)
+# -------------------------------------------------------
+dependency_audit:
+  stage: audit
+  image: node:22
+  script:
+    - echo "=== SCA - Checking for known CVEs in dependencies ==="
+    - npm ci
+    - npm audit --audit-level=high
+    - echo "=== SCA - Checking for outdated packages ==="
+    - npm outdated || true
+  allow_failure: false
+  only:
+    - main
+  artifacts:
+    when: always
+    reports:
+      junit: audit-results.xml
+    paths:
+      - npm-audit.json
+    expire_in: 30 days
+  after_script:
+    - npm audit --json > npm-audit.json 2>/dev/null || true
+
+secret_detection:
+  stage: audit
+  image: node:22
+  script:
+    - echo "=== Secret Detection - Scanning for leaked credentials ==="
+    - npx --yes secretlint "**/*"
+  allow_failure: true
+  only:
+    - main
+
+license_check:
+  stage: audit
+  image: node:22
+  script:
+    - echo "=== License Compliance - Checking dependency licenses ==="
+    - npm ci
+    - npx --yes license-checker --onlyAllow "MIT;ISC;BSD-2-Clause;BSD-3-Clause;Apache-2.0;CC0-1.0;CC-BY-3.0;CC-BY-4.0;Unlicense;Python-2.0;0BSD" --excludePrivatePackages
+  allow_failure: true
+  only:
+    - main
+
+# -------------------------------------------------------
+# STAGE 2: SAST (Static Application Security Testing)
+# -------------------------------------------------------
+include:
+  - template: Security/SAST.gitlab-ci.yml
+  - template: Security/Secret-Detection.gitlab-ci.yml
+
+nodejs-scan-sast:
+  stage: sast
+  variables:
+    SAST_EXCLUDED_ANALYZERS: ""
+  only:
+    - main
+
+semgrep-sast:
+  stage: sast
+  only:
+    - main
+
+# -------------------------------------------------------
+# STAGE 3: Build
+# -------------------------------------------------------
+build:
+  stage: build
+  image: node:22
+  script:
+    - echo "=== Build - Installing dependencies ==="
+    - npm ci
+    - echo "=== Build - Building production frontend ==="
+    - npm run build
+    - echo "=== Build - Verifying dist output ==="
+    - ls -la dist/
+  artifacts:
+    paths:
+      - dist/
+      - server/
+      - CRMS/
+      - package.json
+      - package-lock.json
+      - ecosystem.config.cjs
+      - setup_db.cjs
+    expire_in: 1 hour
+  only:
+    - main
+
+# -------------------------------------------------------
+# STAGE 4: Deploy to cx-server
+# -------------------------------------------------------
+deploy:
+  stage: deploy
+  image: alpine:latest
+  before_script:
+    - apk add --no-cache openssh-client rsync
+    - eval $(ssh-agent -s)
+    - echo "$CX_SERVER_SSH_KEY" | tr -d '\r' | ssh-add -
+    - mkdir -p ~/.ssh
+    - chmod 700 ~/.ssh
+    - echo "$CX_SERVER_HOST_KEY" >> ~/.ssh/known_hosts
+    - chmod 600 ~/.ssh/known_hosts
+  script:
+    - echo "=== Deploy - Syncing files to cx-server ==="
+    - |
+      rsync -avz --delete \
+        --exclude='.env.local' \
+        --exclude='node_modules' \
+        --exclude='server/backups' \
+        --exclude='server/uploads' \
+        dist/ server/ CRMS/ package.json package-lock.json ecosystem.config.cjs setup_db.cjs \
+        $CX_SERVER_USER@$CX_SERVER_HOST:/var/www/riana-cims/cms/
+    - echo "=== Deploy - Installing production deps and restarting app ==="
+    - |
+      ssh $CX_SERVER_USER@$CX_SERVER_HOST << 'EOF'
+        cd /var/www/riana-cims/cms
+        npm ci --omit=dev
+        sudo pm2 restart riana-cims || sudo pm2 start ecosystem.config.cjs --only riana-cims --env production
+        sudo pm2 save
+        echo "=== Deploy complete ==="
+        sudo pm2 list
+      EOF
+  only:
+    - main
+  environment:
+    name: production
+    url: https://rianacims.name.ng
+  when: on_success
