@@ -35,7 +35,7 @@ dependency_audit:
   after_script:
     - npm audit --json > npm-audit.json 2>/dev/null || true
 
-secret_detection:
+custom_secret_scan:
   stage: audit
   image: node:22
   script:
@@ -44,7 +44,6 @@ secret_detection:
   allow_failure: true
   only:
     - main
-
 license_check:
   stage: audit
   image: node:22
