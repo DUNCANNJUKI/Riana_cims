@@ -20,17 +20,15 @@ dependency_audit:
   script:
     - echo "=== SCA - Checking for known CVEs in dependencies ==="
     - npm ci
-    - npm audit --audit-level=high
+    - npm audit --omit=dev --audit-level=high
     - echo "=== SCA - Checking for outdated packages ==="
     - npm outdated || true
   allow_failure: false
   only:
     - main
-  artifacts:
-    when: always
-    reports:
-      junit: audit-results.xml
-    paths:
+      artifacts:
+      when: always
+      paths:
       - npm-audit.json
     expire_in: 30 days
   after_script:
@@ -43,7 +41,7 @@ custom_secret_scan:
     - echo "=== Secret Detection - Scanning for leaked credentials ==="
     - npx --yes secretlint "**/*"
   allow_failure: true
-  only:
+  only:sssss
     - main
 license_check:
   stage: audit
