@@ -104,10 +104,10 @@ deploy:
       ssh -p 1625 $CX_SERVER_USER@$CX_SERVER_HOST << 'EOF'
         cd /var/www/riana-cims/cms
         npm ci --omit=dev
-        sudo pm2 restart riana-cims || sudo pm2 start ecosystem.config.cjs --only riana-cims --env production
-        sudo pm2 save
+        sudo /root/.nvm/versions/node/v23.6.0/bin/pm2 restart riana-cims || sudo /root/.nvm/versions/node/v23.6.0/bin/pm2 start ecosystem.config.cjs --only riana-cims --env production
+        sudo /root/.nvm/versions/node/v23.6.0/bin/pm2 save
         echo "=== Deploy complete ==="
-        sudo pm2 list
+        sudo /root/.nvm/versions/node/v23.6.0/bin/pm2 list
       EOF
   only:
     - main
@@ -115,4 +115,5 @@ deploy:
     name: production
     url: https://rianacims.name.ng
   when: on_success
+
 
