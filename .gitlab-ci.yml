@@ -97,7 +97,12 @@ deploy:
         --exclude='node_modules' \
         --exclude='server/backups' \
         --exclude='server/uploads' \
-        dist/ server/ CRMS/ package.json package-lock.json ecosystem.config.cjs setup_db.cjs \
+        --exclude='src' \
+        --exclude='.git' \
+        --exclude='*.ts' \
+        --exclude='vite.config.*' \
+        --exclude='vitest.config.*' \
+        ./ \
         $CX_SERVER_USER@$CX_SERVER_HOST:/var/www/riana-cims/cms/
     - echo "=== Deploy - Installing production deps and restarting app ==="
     - |
@@ -115,5 +120,7 @@ deploy:
     name: production
     url: https://rianacims.name.ng
   when: on_success
+
+
 
 
