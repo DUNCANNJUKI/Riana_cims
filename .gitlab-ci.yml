@@ -92,7 +92,7 @@ deploy:
   script:
     - echo "=== Deploy - Syncing files to cx-server ==="
     - |
-      rsync -avz --delete \
+      rsync -avz -e "ssh -p 1625" --delete \
         --exclude='.env.local' \
         --exclude='node_modules' \
         --exclude='server/backups' \
@@ -101,7 +101,7 @@ deploy:
         $CX_SERVER_USER@$CX_SERVER_HOST:/var/www/riana-cims/cms/
     - echo "=== Deploy - Installing production deps and restarting app ==="
     - |
-      ssh $CX_SERVER_USER@$CX_SERVER_HOST << 'EOF'
+      ssh -p 1625 $CX_SERVER_USER@$CX_SERVER_HOST << 'EOF'
         cd /var/www/riana-cims/cms
         npm ci --omit=dev
         sudo pm2 restart riana-cims || sudo pm2 start ecosystem.config.cjs --only riana-cims --env production
@@ -115,3 +115,4 @@ deploy:
     name: production
     url: https://rianacims.name.ng
   when: on_success
+
