@@ -7,13 +7,9 @@ stages:
 
 variables:
   NODE_VERSION: "22"
-  # GitLab SAST configuration
   SAST_EXCLUDED_PATHS: "spec, test, tests, tmp, node_modules, dist"
   SECRET_DETECTION_EXCLUDED_PATHS: "node_modules, dist"
 
-# -------------------------------------------------------
-# STAGE 1: Dependency & Secret Audit (SCA)
-# -------------------------------------------------------
 dependency_audit:
   stage: audit
   image: node:22
@@ -26,9 +22,9 @@ dependency_audit:
   allow_failure: false
   only:
     - main
-      artifacts:
-      when: always
-      paths:
+  artifacts:
+    when: always
+    paths:
       - npm-audit.json
     expire_in: 30 days
   after_script:
@@ -41,8 +37,9 @@ custom_secret_scan:
     - echo "=== Secret Detection - Scanning for leaked credentials ==="
     - npx --yes secretlint "**/*"
   allow_failure: true
-  only:sssss
+  only:
     - main
+
 license_check:
   stage: audit
   image: node:22
@@ -54,16 +51,10 @@ license_check:
   only:
     - main
 
-# -------------------------------------------------------
-# STAGE 2: SAST (Static Application Security Testing)
-# -------------------------------------------------------
 include:
   - template: Security/SAST.gitlab-ci.yml
   - template: Security/Secret-Detection.gitlab-ci.yml
 
-# -------------------------------------------------------
-# STAGE 3: Build
-# -------------------------------------------------------
 build:
   stage: build
   image: node:22
@@ -87,9 +78,6 @@ build:
   only:
     - main
 
-# -------------------------------------------------------
-# STAGE 4: Deploy to cx-server
-# -------------------------------------------------------
 deploy:
   stage: deploy
   image: alpine:latest
