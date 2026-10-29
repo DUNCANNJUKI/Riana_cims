@@ -1,6 +1,7 @@
 stages:
   - audit
   - sast
+  - test
   - build
   - deploy
 
