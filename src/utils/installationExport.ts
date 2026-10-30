@@ -4,7 +4,7 @@ import autoTable from "jspdf-autotable";
 import { addCimsDocumentHeader, addLetterheadToDocument, DOCUMENT_LAYOUT, resolveDocumentBrand } from "./pdfWatermark";
 import { resolveDocumentSubsidiaryName } from "./brandIdentity";
 import { escalationTierEntries } from "./escalationMatrix";
-import { buildHandoverEquipmentRows } from "./equipmentConfiguration";
+import { buildHandoverEquipmentRows, installedHandoverEquipmentRows } from "./equipmentConfiguration";
 import { apiClient } from "@/integrations/apiClient";
 import { getBranchLabel, getDepartmentLabel, getScopeFileSegment } from "./scopeLabels";
 
@@ -193,7 +193,9 @@ export const generateInstallationReport = async (
   ensureSpace(60);
   yPos = addSectionHeader('EQUIPMENT DETAILS', yPos);
 
-  const equipmentData = buildHandoverEquipmentRows(completedInstallation, subsidiary?.equipment_configuration)
+  const equipmentData = installedHandoverEquipmentRows(
+    buildHandoverEquipmentRows(completedInstallation, subsidiary?.equipment_configuration),
+  )
     .map((row) => [row.label, row.displayValue, row.status]);
 
   autoTable(doc, {
