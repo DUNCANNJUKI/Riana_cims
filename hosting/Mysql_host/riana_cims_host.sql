@@ -1,5 +1,5 @@
 -- RIANA CIMS MySQL hosting database
--- Generated 2026-10-16T10:48:45.747Z
+-- Generated 2026-10-30T09:01:29.208Z
 -- Complete schema with sanitized reference data; no credentials or customer records.
 SET NAMES utf8mb4;
 SET FOREIGN_KEY_CHECKS = 0;
@@ -811,12 +811,12 @@ CREATE TABLE `installation_feedback` (
   `installation_id` varchar(36) NOT NULL,
   `client_id` varchar(36) NOT NULL,
   `feedback_date` date NOT NULL,
-  `installation_quality_rating` int(11) NOT NULL,
-  `installation_timeliness_rating` int(11) NOT NULL,
-  `installation_communication_rating` int(11) NOT NULL,
-  `technician_knowledge_rating` int(11) NOT NULL,
-  `technician_professionalism_rating` int(11) NOT NULL,
-  `technician_helpfulness_rating` int(11) NOT NULL,
+  `installation_quality_rating` int(11) DEFAULT NULL,
+  `installation_timeliness_rating` int(11) DEFAULT NULL,
+  `installation_communication_rating` int(11) DEFAULT NULL,
+  `technician_knowledge_rating` int(11) DEFAULT NULL,
+  `technician_professionalism_rating` int(11) DEFAULT NULL,
+  `technician_helpfulness_rating` int(11) DEFAULT NULL,
   `recommendation_score` int(11) NOT NULL,
   `overall_satisfaction` int(11) NOT NULL,
   `positive_feedback` text DEFAULT NULL,
@@ -973,6 +973,7 @@ INSERT INTO `migration_history` (`migration_id`, `description`, `applied_at`) VA
 INSERT INTO `migration_history` (`migration_id`, `description`, `applied_at`) VALUES ('20260729_user_sessions_live_repair', 'Applied from 20260729_user_sessions_live_repair.sql', '2026-07-28 02:47:28.000');
 INSERT INTO `migration_history` (`migration_id`, `description`, `applied_at`) VALUES ('20261012_hardware_inventory', 'Additive Marezi hardware and inventory lifecycle schema', '2026-10-12 23:45:19.000');
 INSERT INTO `migration_history` (`migration_id`, `description`, `applied_at`) VALUES ('20261016_scheduling', 'Additive scoped scheduling and durable in-app reminders', '2026-10-16 13:10:02.000');
+INSERT INTO `migration_history` (`migration_id`, `description`, `applied_at`) VALUES ('20261030_installation_feedback_rating_nullability', 'Allows uncollected legacy installation-feedback ratings to remain null without artificial defaults', '2026-10-30 11:57:19.000');
 
 DROP TABLE IF EXISTS `missed_call_dismissals`;
 CREATE TABLE `missed_call_dismissals` (
