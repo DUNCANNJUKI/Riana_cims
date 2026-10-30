@@ -34,6 +34,11 @@ const { normalizePhone, sendEmail, sendSms, sendWelcomeCredentials, sendWhatsApp
 const { sendUserNotification, sendUsersNotification } = require('./services/notificationDispatcher');
 const { logAuditEvent, logDenied, logFailure, logSuccess, sanitizeAuditData } = require('./services/auditService');
 const { normalizeEquipmentConfigurationPayload, normalizeEquipmentQuantities, assertEquipmentRemovalSafe } = require('./services/subsidiaryEquipment');
+const {
+  buildInstallationFeedbackInsert,
+  FeedbackValidationError,
+  prepareInstallationFeedback,
+} = require('./services/installationFeedback');
 const { isSensitiveTechnicalRequest } = require('./services/chatbotPolicy');
 const { getAssistantResponse } = require('./services/chatbotKnowledge');
 const { createDatabaseBackup, listBackups, pruneBackups, getLastRun } = require('./services/databaseBackup');
@@ -4290,23 +4295,22 @@ app.post('/api/public/installation-feedback', async (req, res) => {
       connection = null;
       return res.status(403).json({ error: 'Feedback link does not match this installation.', code: 'FEEDBACK_LINK_MISMATCH' });
     }
-    await connection.query(
-      `INSERT INTO installation_feedback (
-        id, client_id, installation_id, 
-        overall_satisfaction, recommendation_score, 
-        positive_feedback, improvement_suggestions, dynamic_responses, feedback_date
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURDATE())`,
-      [
-        id, 
-        data.client_id, 
-        data.installation_id, 
-        normalizedScore(data.overall_satisfaction, 1, 5, 5),
-        normalizedScore(data.recommendation_score, 0, 10, 10),
-        textFeedbackFromResponses(data.dynamic_responses)[0] || '',
-        textFeedbackFromResponses(data.dynamic_responses).slice(1).join('\n\n') || '',
-        JSON.stringify(normalizeFeedbackResponses(data.dynamic_responses))
-      ]
+    const [questions] = await connection.query(
+      'SELECT id, question_type, is_active, order_index FROM feedback_questions WHERE is_active = TRUE ORDER BY order_index ASC',
     );
+    const preparedFeedback = prepareInstallationFeedback({
+      dynamicResponses: data.dynamic_responses,
+      questions,
+      overallSatisfaction: data.overall_satisfaction,
+      recommendationScore: data.recommendation_score,
+    });
+    const insert = buildInstallationFeedbackInsert({
+      id,
+      clientId: data.client_id,
+      installationId: data.installation_id,
+      preparedFeedback,
+    });
+    await connection.query(insert.sql, insert.values);
     const [used] = await connection.query(
       'UPDATE feedback_links SET is_used = TRUE, used_at = NOW() WHERE id = ? AND is_used = FALSE',
       [link.id],
@@ -4352,6 +4356,9 @@ app.post('/api/public/installation-feedback', async (req, res) => {
       connection.release();
     }
     console.error('Feedback submission error:', err);
+    if (err instanceof FeedbackValidationError) {
+      return res.status(err.status).json({ error: err.message, code: err.code });
+    }
     res.status(500).json({ error: 'Unable to submit feedback.', code: 'FEEDBACK_SUBMISSION_FAILED' });
   }
 });
