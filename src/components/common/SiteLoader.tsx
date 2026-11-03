@@ -5,6 +5,7 @@ import "./SiteLoader.css";
 interface SiteLoaderProps {
   isLoading: boolean;
   minDuration?: number;
+  status?: string;
 }
 
 const LOADER_LETTERS = "RIANA CIMS".split("");
@@ -19,7 +20,11 @@ const NETWORK_NODES = [
 
 type AnimationStyle = CSSProperties & { "--animation-order": number };
 
-export const SiteLoader = ({ isLoading, minDuration = 0 }: SiteLoaderProps) => {
+export const SiteLoader = ({
+  isLoading,
+  minDuration = 0,
+  status = "Initializing workspace...",
+}: SiteLoaderProps) => {
   const [showLoader, setShowLoader] = useState(isLoading);
   const visibleSince = useRef(isLoading ? Date.now() : 0);
 
@@ -48,10 +53,15 @@ export const SiteLoader = ({ isLoading, minDuration = 0 }: SiteLoaderProps) => {
         <div className="riana-loader__network" aria-hidden="true">
           <svg viewBox="0 0 350 150" focusable="false">
             <g className="riana-loader__links">
-              <path d="M20 74 L76 52 L116 78" />
-              <path d="M116 78 L180 45 L224 66 L270 88 L330 60" />
+              <path id="riana-signal-path-left" d="M20 74 L76 52 L116 78" />
+              <path id="riana-signal-path-main" d="M116 78 L180 45 L224 66 L270 88 L330 60" />
               <path d="M18 128 L72 108" />
-              <path d="M260 126 L310 108 L344 134" />
+              <path id="riana-signal-path-right" d="M260 126 L310 108 L344 134" />
+            </g>
+            <g className="riana-loader__signals">
+              <circle r="2.2"><animateMotion dur="3.2s" repeatCount="indefinite"><mpath href="#riana-signal-path-left" /></animateMotion></circle>
+              <circle r="2.2"><animateMotion dur="3.8s" repeatCount="indefinite"><mpath href="#riana-signal-path-main" /></animateMotion></circle>
+              <circle r="1.9"><animateMotion dur="3s" repeatCount="indefinite"><mpath href="#riana-signal-path-right" /></animateMotion></circle>
             </g>
             <circle className="riana-loader__orbit" cx="180" cy="88" r="56" />
             {NETWORK_NODES.map(({ cx, cy, delay }) => (
@@ -78,8 +88,8 @@ export const SiteLoader = ({ isLoading, minDuration = 0 }: SiteLoaderProps) => {
           ))}
         </div>
 
-        <p className="riana-loader__message">Establishing secure workspace...</p>
-        <div className="riana-loader__progress" aria-label="Loading application">
+        <p className="riana-loader__message" aria-atomic="true">{status}</p>
+        <div className="riana-loader__progress" role="progressbar" aria-label="Loading application">
           <span className="riana-loader__progress-value" />
         </div>
         <p className="riana-loader__hint">Please wait a moment</p>

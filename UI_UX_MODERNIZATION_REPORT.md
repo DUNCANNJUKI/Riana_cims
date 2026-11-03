@@ -124,3 +124,12 @@ Revert only the frontend files above and remove `ModernDashboard.tsx`, then rebu
 - CIMS/PWA and CRMS were rebuilt successfully and only the local `riana-cims` and `riana-cims-web` services were restarted.
 
 Physical passkey, two-device media, background push, and authenticated role/business-workflow acceptance remain pending. This refinement does not change the existing production-readiness decision.
+
+## Enterprise loader lifecycle enhancement (3 November 2026)
+
+- Removed the startup page's artificial 1.2-second display delay; the loader now remains only while the existing authentication/session state is genuinely pending.
+- Added lifecycle copy: `Initializing workspace...` during application/authentication initialization and `Loading your workspace...` while a lazy application module is resolving. The copy deliberately avoids claiming a session verification step that the existing authentication hook does not expose as a distinct event.
+- Kept progress explicitly indeterminate because the existing initialization APIs do not expose measurable completion percentages.
+- Increased the official logo and network composition modestly, added a 2.8-second logo breath, one-time 65ms staggered title reveal, coordinated node pulses, and subtle SVG path signals without adding a runtime animation dependency.
+- Added stable status height, safe-area padding, small-landscape scaling, semantic progress/status announcements, and a complete reduced-motion fallback.
+- No authentication, authorization, routing, API, database, tenant, reporting, or integration behavior was changed.

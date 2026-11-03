@@ -1,5 +1,5 @@
 import { FormEvent, useEffect, useRef, useState } from 'react';
-import { Bot, Loader2, Maximize2, MessageCircle, Minimize2, Send, ShieldCheck, User as UserIcon, X } from 'lucide-react';
+import { Bot, Check, Copy, Loader2, Maximize2, MessageCircle, Minimize2, Send, ShieldCheck, ThumbsDown, ThumbsUp, User as UserIcon, X } from 'lucide-react';
 import { User } from '@/types';
 import { useCimsAssistant } from '@/hooks/useCimsAssistant';
 import { Button } from '@/components/ui/button';
@@ -9,13 +9,16 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 
 interface ChatbotWidgetProps {
   user?: User;
+  currentModule?: string;
 }
 
-export const ChatbotWidget = ({ user }: ChatbotWidgetProps) => {
+export const ChatbotWidget = ({ user, currentModule = '' }: ChatbotWidgetProps) => {
   const [isOpen, setIsOpen] = useState(false);
   const [isMinimized, setIsMinimized] = useState(false);
   const [input, setInput] = useState('');
-  const { messages, suggestions, isSending, sendMessage } = useCimsAssistant(user);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [rated, setRated] = useState<Record<string, 'up' | 'down'>>({});
+  const { messages, suggestions, isSending, sendMessage } = useCimsAssistant(user, currentModule);
   const endRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -34,6 +37,16 @@ export const ChatbotWidget = ({ user }: ChatbotWidgetProps) => {
     if (!message || isSending) return;
     setInput('');
     await sendMessage(message);
+  };
+
+  const copyAnswer = async (id: string, text: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopiedId(id);
+      window.setTimeout(() => setCopiedId((current) => current === id ? null : current), 1600);
+    } catch {
+      setCopiedId(null);
+    }
   };
 
   if (!isOpen) {
@@ -83,6 +96,11 @@ export const ChatbotWidget = ({ user }: ChatbotWidgetProps) => {
                     <div className={`max-w-[78%] rounded-xl px-3 py-2 text-xs leading-5 ${message.sender === 'user' ? 'bg-primary text-primary-foreground' : 'bg-muted text-foreground'}`}>
                       <p className="whitespace-pre-wrap">{message.text}</p>
                       <p className={`mt-1 text-[9px] ${message.sender === 'user' ? 'text-primary-foreground/70' : 'text-muted-foreground'}`}>{message.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>
+                      {message.sender === 'assistant' ? <div className="mt-1.5 flex items-center gap-0.5 border-t border-border/60 pt-1">
+                        <Button type="button" variant="ghost" size="icon" className="h-6 w-6" onClick={() => void copyAnswer(message.id, message.text)} aria-label="Copy answer">{copiedId === message.id ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}</Button>
+                        <Button type="button" variant="ghost" size="icon" className="h-6 w-6" onClick={() => setRated((current) => ({ ...current, [message.id]: 'up' }))} aria-label="Mark answer helpful" aria-pressed={rated[message.id] === 'up'}><ThumbsUp className={`h-3 w-3 ${rated[message.id] === 'up' ? 'fill-current text-primary' : ''}`} /></Button>
+                        <Button type="button" variant="ghost" size="icon" className="h-6 w-6" onClick={() => setRated((current) => ({ ...current, [message.id]: 'down' }))} aria-label="Mark answer not helpful" aria-pressed={rated[message.id] === 'down'}><ThumbsDown className={`h-3 w-3 ${rated[message.id] === 'down' ? 'fill-current text-destructive' : ''}`} /></Button>
+                      </div> : null}
                     </div>
                     {message.sender === 'user' ? <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground"><UserIcon className="h-3 w-3" /></span> : null}
                   </div>

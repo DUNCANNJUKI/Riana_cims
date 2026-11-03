@@ -1,5 +1,5 @@
 -- RIANA CIMS MySQL hosting database
--- Generated 2026-11-03T05:06:10.294Z
+-- Generated 2026-11-03T11:07:16.240Z
 -- Complete schema with sanitized reference data; no credentials or customer records.
 SET NAMES utf8mb4;
 SET FOREIGN_KEY_CHECKS = 0;
@@ -1823,7 +1823,7 @@ CREATE TABLE `user_sessions` (
   KEY `idx_user_sessions_session_id` (`session_id`),
   KEY `idx_user_sessions_active` (`user_id`,`revoked_at`,`expires_at`),
   CONSTRAINT `fk_user_sessions_user` FOREIGN KEY (`user_id`) REFERENCES `user_profiles` (`id`) ON DELETE CASCADE
-) ENGINE=InnoDB AUTO_INCREMENT=100 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=102 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 DROP TABLE IF EXISTS `user_session_locks`;
 CREATE TABLE `user_session_locks` (

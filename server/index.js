@@ -5217,6 +5217,7 @@ app.post('/api/chat/assistant', async (req, res) => {
       role: req.user.role,
       user: req.user,
       context,
+      currentModule: String(req.body.currentModule || '').trim().slice(0, 60),
       tools: buildAssistantLookupTools(req),
     });
     res.json(answer);

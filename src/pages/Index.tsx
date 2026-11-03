@@ -55,7 +55,6 @@ const Index = () => {
   const scannedAssetId = new URLSearchParams(location.search).get('hardware');
 
   const [activeModule, setActiveModule] = useState('dashboard');
-  const [showLoader, setShowLoader] = useState(true);
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
   const [systemTourActive, setSystemTourActive] = useState(false);
   const [lockPreferences, setLockPreferences] = useState({ inactivityTimeoutMinutes: 10, lockOnResume: false });
@@ -70,12 +69,6 @@ const Index = () => {
   // Initialize push notifications and offline sync
   usePushNotifications();
   const { isOnline } = useOfflineSync();
-
-  useEffect(() => {
-    // Show loader for minimum time for better UX
-    const timer = setTimeout(() => setShowLoader(false), 1200);
-    return () => clearTimeout(timer);
-  }, []);
 
   useEffect(() => {
     if (isAuthenticated && (user?.role === 'Developer' || location.pathname.startsWith('/developers'))) {
@@ -115,8 +108,8 @@ const Index = () => {
   }, [isAuthenticated, lockPreferences.lockOnResume]);
 
   // Show loader during initial load
-  if (showLoader || isLoading) {
-    return <SiteLoader isLoading={true} />;
+  if (isLoading) {
+    return <SiteLoader isLoading status="Initializing workspace..." />;
   }
 
   if (!isAuthenticated || !user) {
@@ -220,7 +213,7 @@ const Index = () => {
             </div>
           )}
           <main className="cims-content min-w-0 flex-1 overflow-auto overscroll-contain p-3 sm:p-5 lg:p-7">
-            <Suspense fallback={<SiteLoader isLoading={true} />}>
+            <Suspense fallback={<SiteLoader isLoading status="Loading your workspace..." />}>
               <div className="mx-auto w-full max-w-[1600px] min-w-0">
                 {renderContent()}
               </div>
@@ -235,7 +228,7 @@ const Index = () => {
         </div>
       </div>
       
-      {user.role!=='InventoryOfficer' && <ChatbotWidget user={user} />}
+      {user.role!=='InventoryOfficer' && <ChatbotWidget user={user} currentModule={activeModule} />}
       <InactivityGuard active={isAuthenticated} timeoutMinutes={lockPreferences.inactivityTimeoutMinutes} onLock={() => requestAppLock("inactivity")} />
       </div>
       <SecureAppLock active={isAuthenticated} onLogout={logout} />

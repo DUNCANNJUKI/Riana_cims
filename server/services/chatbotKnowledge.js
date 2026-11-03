@@ -1,4 +1,5 @@
 const { hasCapability } = require('../security/accessControl');
+const { KNOWLEDGE_ARTICLES, formatKnowledgeAnswer, retrieveKnowledge, suggestionsFor } = require('./chatbotKnowledgeBase');
 
 const RIANA_ASSISTANT_SYSTEM_PROMPT = [
   'You are the Riana CIMS Assistant. Help users with verified information and supported actions available inside Riana CIMS.',
@@ -77,6 +78,7 @@ const CREDENTIAL_PATTERN = /\b(show|reveal|give|send|list|export|display|what is
 const UNSUPPORTED_PATTERN = /\b(weather|president|prime minister|capital city|stock price|sports score|news|internet|google|wikipedia|exchange rate outside|tomorrow's weather|tomorrows weather)\b/i;
 const DETAIL_PATTERN = /\b(explain|give details|show all|provide a full report|summarize the complete record|step-by-step|elaborate)\b/i;
 const BROAD_PATTERN = /\b(explain everything|show everything|tell me everything|whole system|all data|all records|very broad)\b/i;
+const FOLLOWUP_DETAIL_PATTERN = /^(?:can you )?(?:show|give|tell|explain)?\s*(?:me )?(?:the )?(?:steps|more|more details|details|how|why)\??$/i;
 
 const STOP_IDENTIFIERS = new Set(['status', 'client', 'branch', 'department', 'installation', 'ticket', 'handover', 'report', 'request', 'reference', 'number', 'system']);
 const STATIC_SUGGESTIONS = ['How do I find pending work?', 'How do I preview a report?', 'How do notifications work?'];
@@ -264,7 +266,7 @@ const getStaticResponse = ({ message, role }) => {
   return withSuggestions('unsupported', 'That information is not available in Riana CIMS.');
 };
 
-const getAssistantResponse = async ({ message, role, user = {}, context = null, tools = {}, now = new Date(), timeZone = DEFAULT_ASSISTANT_TIME_ZONE }) => {
+const getAssistantResponse = async ({ message, role, user = {}, context = null, currentModule = '', tools = {}, now = new Date(), timeZone = DEFAULT_ASSISTANT_TIME_ZONE }) => {
   const cleanMessage = cleanValue(message, 1000);
   const intent = classifyIntent(cleanMessage);
 
@@ -276,8 +278,29 @@ const getAssistantResponse = async ({ message, role, user = {}, context = null, 
   if (intent === 'unsupported') return withSuggestions('unsupported', 'That information is not available in Riana CIMS.');
   if (intent === 'broad') return withSuggestions('overview', `${SYSTEM_OVERVIEW} Please specify a module if you need details.`, STATIC_SUGGESTIONS);
 
+  if (context?.knowledgeId && FOLLOWUP_DETAIL_PATTERN.test(cleanMessage)) {
+    const previous = KNOWLEDGE_ARTICLES.find((entry) => entry.id === context.knowledgeId);
+    if (previous) {
+      const permitted = retrieveKnowledge({ query: previous.keywords.join(' '), user: { ...user, role }, currentModule: previous.module })
+        .some(({ entry }) => entry.id === previous.id);
+      if (permitted) return withSuggestions(previous.id, formatKnowledgeAnswer(previous, true), previous.suggestions || [], context);
+    }
+  }
+
   if (['installation', 'client', 'branch', 'department', 'change_request', 'handover', 'report_lookup', 'followup_branch', 'followup_status'].includes(intent)) {
     return resolveRecordIntent({ intent, message: cleanMessage, user: { ...user, role }, context, tools });
+  }
+
+  const authorizedUser = { ...user, role };
+  const matches = retrieveKnowledge({ query: cleanMessage, user: authorizedUser, currentModule: cleanValue(currentModule, 60) });
+  if (matches.length) {
+    const selected = matches[0].entry;
+    return withSuggestions(
+      selected.id,
+      formatKnowledgeAnswer(selected, DETAIL_PATTERN.test(cleanMessage) || /\b(how|steps|guide|why)\b/i.test(cleanMessage)),
+      selected.suggestions || suggestionsFor({ user: authorizedUser, currentModule: selected.module }),
+      { knowledgeId: selected.id, module: selected.module },
+    );
   }
 
   return getStaticResponse({ message: cleanMessage, role });

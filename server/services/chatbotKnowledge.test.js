@@ -141,3 +141,30 @@ test('intent classifier recognizes supported request classes', () => {
   assert.equal(classifyIntent('Check handover H-100'), 'handover');
   assert.equal(classifyIntent('What is the weather?'), 'unsupported');
 });
+
+test('retrieves verified step-by-step installation guidance', async () => {
+  const response = await ask('How do I create an installation?');
+  assert.equal(response.topic, 'installations-create');
+  assert.match(response.reply, /1\. Open Installations/);
+  assert.equal(response.context.knowledgeId, 'installations-create');
+});
+
+test('filters knowledge by effective server-side capability', async () => {
+  const response = await ask('How do I register hardware?', { user: noAccessUser, role: noAccessUser.role });
+  assert.notEqual(response.topic, 'inventory-register');
+  assert.doesNotMatch(response.reply, /registration action/i);
+});
+
+test('finance guidance preserves technician-expense-only calculation', async () => {
+  const financeUser = { id: 'admin-2', role: 'Admin' };
+  const response = await ask('How is the installation budget calculated?', { user: financeUser, role: financeUser.role });
+  assert.equal(response.topic, 'finance-budget');
+  assert.match(response.reply, /sum of those technician expenses/i);
+  assert.match(response.reply, /does not add shared project costs/i);
+});
+
+test('knowledge follow-up stays within the authorized current topic', async () => {
+  const response = await ask('Show me the steps', { context: { knowledgeId: 'installations-create', module: 'installations' } });
+  assert.equal(response.topic, 'installations-create');
+  assert.match(response.reply, /Choose Add Installation/);
+});
