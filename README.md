@@ -73,6 +73,8 @@ The hosting build includes `hosting/Mysql_host/riana_cims_host.sql`, which is in
 
 Commit application source, dependency lockfiles, migrations, tests, and documentation. Generated `Deployment/`, `Deployment-packages/`, `release/`, frontend `dist/` directories, and temporary QA fixtures under `tmp/` are local outputs. Regenerate deployment archives with `npm run build:deployment`; retain the latest verified release separately for deployment.
 
+The deployment pipeline produces one ordered `LIVE_DB_UPDATE_ALL.sql` for an existing live database. Back up the live database, select it in phpMyAdmin, and import that file once before uploading/restarting the application. Do not import the clean-install `riana_cims_host.sql` over a live database. Production packages exclude local uploads, private uploads, temporary diagnostics, tests, backups, dependency folders, and obsolete duplicate frontend chunk aliases.
+
 Root `.runtime/`, `server/.runtime/`, private uploads, legacy uploads, local environment files, and database backups contain operational data and must remain outside Git and Docker build contexts. Ignoring them does not delete them. Preserve these directories during cleanup; local storage rollback may depend on retained originals and `.runtime/backups`.
 
 The October 18, 2026 cleanup removes generated deployment staging and stale package copies while preserving the current October release, application builds, migrations, and operational data. Recover previously tracked package files from Git history or regenerate them with the packaging command above.

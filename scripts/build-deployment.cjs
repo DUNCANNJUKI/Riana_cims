@@ -11,6 +11,13 @@ const publicHtml = path.join(output, 'public_html');
 const database = path.join(output, 'database');
 const liveUpdatesDirectory = path.join(root, 'hosting', 'Mysql_host', 'live_updates');
 const migrationsDirectory = path.join(root, 'server', 'migrations');
+const consolidatedLiveUpdateFile = 'LIVE_DB_UPDATE_ALL.sql';
+const additionalLiveMigrationIds = [
+  '20261031_communication_backend_foundation',
+  '20261101_passkeys_and_account_security',
+  '20261101_totp_recovery_and_preferences',
+  '20261102_technician_installation_budgets',
+];
 const bootstrapSuperAdminId = '00000000-0000-4000-8000-000000000001';
 const bootstrapSuperAdminEmail = 'superadmin@riana.co';
 const preserveSuperAdmin = /^(?:1|true|yes)$/i.test(String(process.env.HOST_EXPORT_PRESERVE_SUPERADMIN || ''));
@@ -34,8 +41,8 @@ const copyDirectory = (source, target, filter) => {
 
 const serverFilter = (source) => {
   const name = path.basename(source);
-  if (['node_modules', 'backups', 'uploads', '.runtime'].includes(name)) return false;
-  if (/\.test\.js$/i.test(name)) return false;
+  if (['node_modules', 'backups', 'uploads', 'private_uploads', 'tmp', 'tests', '.runtime'].includes(name)) return false;
+  if (/\.(?:test|spec)\.(?:c?js|mjs)$/i.test(name)) return false;
   return true;
 };
 
@@ -117,72 +124,28 @@ const copyActiveCompanyLogo = (hostSql) => {
   return `app/server/uploads/${filename}`;
 };
 
-const legacyFrontendChunkAliases = [
-  ['index-DhBNfA7G.js', 'index-DN_qhgrm.js'],
-  ['progress-BLguSni9.js', 'progress-BdmfTB5i.js'],
-  ['table-CogB_dR4.js', 'table-Cun4seLk.js'],
-  ['AuditLogsModule-B4CUAC5t.js', 'AuditLogsModule-FXpwm6AD.js'],
-  ['HandoverUploadModule-BCNmXP7n.js', 'HandoverUploadModule-DQ5b7QV0.js'],
-  ['TechnicianWorkloadCalendar-9Cg2blpm.js', 'TechnicianWorkloadCalendar-EbYm7FJ8.js'],
-  ['Dashboard-Bsa-OxAn.js', 'Dashboard-DIF8W9a3.js'],
-  ['InstallationProgressModule-I6UX-YaY.js', 'InstallationProgressModule-D4AjVm1x.js'],
-  ['AnnouncementsManagementModule-CAFSZxPd.js', 'AnnouncementsManagementModule-ToXFpPCj.js'],
-  ['TechnicianMobileDashboard-WpNqBrUq.js', 'TechnicianMobileDashboard-C4KeYqtA.js'],
-  ['ImportModule-Be2gn9Ue.js', 'ImportModule-8HhWBByQ.js'],
-  ['AssignmentModule-BB46HqUW.js', 'AssignmentModule-D2JZSwAi.js'],
-  ['FinancesModule-B9CbVEb8.js', 'TechnicianFinancesModule-current.js'],
-  ['TechnicianProfilePage-Dvulh90V.js', 'TechnicianProfilePage-B5mvZi-h.js'],
-  ['AnalyticsModule-CRj2WWxr.js', 'AnalyticsModule-40rXEUeo.js'],
-  ['UsersModule-BNJJrJ5W.js', 'UsersModule-DGRaYSzt.js'],
-  ['ReportsModule-C4Pg4fJI.js', 'ReportsModule-UrJnfNMF.js'],
-  ['ClientsModule-DVtquhpe.js', 'ClientsModule-xzwOSogI.js'],
-  ['CompanySettingsModule-RxVpJl44.js', 'CompanySettingsModule-BoP93ZBk.js'],
-  ['InstallationsModule-BSTyYOBM.js', 'InstallationsModule-BFtXKfJv.js'],
-];
-
-const installLegacyFrontendChunkAliases = (distDirectory) => {
-  const assetsDirectory = path.join(distDirectory, 'assets');
-  const assetFiles = fs.readdirSync(assetsDirectory);
-  for (const [legacyName, currentName] of legacyFrontendChunkAliases) {
-    let source = path.join(assetsDirectory, currentName);
-    if (!fs.statSync(source, { throwIfNoEntry: false })?.isFile()) {
-      const chunkPrefix = currentName.slice(0, currentName.indexOf('-') + 1);
-      const currentBundle = assetFiles
-        .filter((file) => file.startsWith(chunkPrefix) && file.endsWith('.js'))
-        .sort((left, right) => {
-          const leftSize = fs.statSync(path.join(assetsDirectory, left)).size;
-          const rightSize = fs.statSync(path.join(assetsDirectory, right)).size;
-          return leftSize - rightSize || left.localeCompare(right);
-        })[0];
-      if (currentBundle) source = path.join(assetsDirectory, currentBundle);
-    }
-    const target = path.join(assetsDirectory, legacyName);
-    if (!fs.statSync(source, { throwIfNoEntry: false })?.isFile()) {
-      throw new Error(`Cannot create legacy frontend chunk alias; current chunk is missing: ${currentName}`);
-    }
-    fs.copyFileSync(source, target);
-  }
-};
-
 function discoverLiveUpdates() {
   requirePath(liveUpdatesDirectory, 'Live database updates directory');
-  const dateCounts = new Map();
-  const updates = fs.readdirSync(liveUpdatesDirectory)
+  const packagedLiveSources = fs.readdirSync(liveUpdatesDirectory)
     .filter((file) => file.endsWith('.sql'))
-    .sort()
-    .map((sourceFile) => {
+    .map((sourceFile) => ({ sourceFile, sourcePath: path.join(liveUpdatesDirectory, sourceFile) }));
+  const presentMigrationIds = new Set(packagedLiveSources.map(({ sourceFile }) => path.basename(sourceFile, '.sql')));
+  for (const migrationId of additionalLiveMigrationIds) {
+    if (!presentMigrationIds.has(migrationId)) {
+      packagedLiveSources.push({ sourceFile: `${migrationId}.sql`, sourcePath: path.join(migrationsDirectory, `${migrationId}.sql`) });
+    }
+  }
+  const updates = packagedLiveSources
+    .sort((left, right) => left.sourceFile.localeCompare(right.sourceFile))
+    .map(({ sourceFile, sourcePath }) => {
       const migrationId = path.basename(sourceFile, '.sql');
       const match = /^(\d{8})_[a-z0-9_]+$/.exec(migrationId);
       if (!match) throw new Error(`Invalid live database update filename: ${sourceFile}`);
-      const date = match[1];
-      dateCounts.set(date, (dateCounts.get(date) || 0) + 1);
-      return { migrationId, sourceFile, sourcePath: path.join(liveUpdatesDirectory, sourceFile), migrationPath: path.join(migrationsDirectory, sourceFile), packageFile: `LIVE_DB_UPDATE_${date}.sql` };
+      return { migrationId, sourceFile, sourcePath, migrationPath: path.join(migrationsDirectory, sourceFile) };
     });
   if (!updates.length) throw new Error('At least one live database update is required.');
   for (const update of updates) {
-    if (dateCounts.get(update.migrationId.slice(0, 8)) > 1) {
-      throw new Error(`Multiple live database updates share date ${update.migrationId.slice(0, 8)}; use distinct migration dates.`);
-    }
+    requirePath(update.sourcePath, `Live database update source for ${update.migrationId}`);
     requirePath(update.migrationPath, `Source migration for ${update.migrationId}`);
     const migrationSql = fs.readFileSync(update.migrationPath, 'utf8');
     const liveSql = fs.readFileSync(update.sourcePath, 'utf8');
@@ -216,8 +179,6 @@ fs.mkdirSync(database, { recursive: true });
 
 copyDirectory(path.join(root, 'dist'), path.join(application, 'dist'));
 copyDirectory(path.join(root, 'dist'), publicHtml);
-installLegacyFrontendChunkAliases(path.join(application, 'dist'));
-installLegacyFrontendChunkAliases(publicHtml);
 copyDirectory(path.join(root, 'CRMS', 'dist'), path.join(application, 'CRMS', 'dist'));
 copyDirectory(path.join(root, 'server'), path.join(application, 'server'), serverFilter);
 fs.copyFileSync(path.join(root, 'README.md'), path.join(application, 'README.md'));
@@ -233,7 +194,21 @@ const deploymentSql = hostSql
   );
 fs.writeFileSync(path.join(database, 'riana_cims_host.sql'), deploymentSql, 'utf8');
 const packagedCompanyLogo = copyActiveCompanyLogo(hostSql);
-for (const update of liveUpdates) fs.copyFileSync(update.sourcePath, path.join(output, update.packageFile));
+const consolidatedLiveUpdate = [
+  '-- RIANA CIMS consolidated live database update',
+  `-- Generated ${new Date().toISOString()}`,
+  '-- Apply this file once to the existing live database selected in phpMyAdmin.',
+  '-- Every included update is idempotent and records its own migration_history entry.',
+  'SET NAMES utf8mb4;',
+  ...liveUpdates.flatMap((update) => [
+    '',
+    `-- BEGIN ${update.migrationId} (${update.sourceFile})`,
+    fs.readFileSync(update.sourcePath, 'utf8').trim(),
+    `-- END ${update.migrationId}`,
+  ]),
+  '',
+].join('\n');
+fs.writeFileSync(path.join(output, consolidatedLiveUpdateFile), consolidatedLiveUpdate, 'utf8');
 
 const serverPackage = JSON.parse(fs.readFileSync(path.join(root, 'server', 'package.json'), 'utf8'));
 const applicationPackage = {
@@ -364,10 +339,8 @@ const superAdminImportStatement = preserveSuperAdmin
 const superAdminSecurityCheck = preserveSuperAdmin
   ? '- Keep the database SQL/archive private because it contains the preserved bcrypt credential hash.'
   : '- Keep the SuperAdmin bootstrap variables only for the one activation restart.';
-const liveUpdateFiles = liveUpdates.map(({ packageFile }) => `\`${packageFile}\``).join(', ');
-const liveUpdateDescription = liveUpdates.length === 1
-  ? 'The update is idempotent, preserves all rows, and records itself in migration_history.'
-  : 'Apply the updates in the listed order. Each update is idempotent, preserves existing rows, and records itself in migration_history.';
+const liveUpdateFiles = `\`${consolidatedLiveUpdateFile}\``;
+const liveUpdateDescription = 'Import this one consolidated file once. Its ordered updates are idempotent, preserve existing rows, and record themselves in migration_history.';
 
 const deploymentGuideTemplate = `# RIANA CIMS - shared-hosting deployment
 
@@ -449,7 +422,10 @@ const buildInfo = {
   databaseContainsLiveRecords: preserveSuperAdmin,
   databaseContainsLiveOperationalRecords: false,
   packagedCompanyLogo,
-  liveDatabaseUpdates: liveUpdates.map(({ migrationId, sourceFile, packageFile }) => ({ migrationId, sourceFile, packageFile })),
+  liveDatabaseUpdate: {
+    packageFile: consolidatedLiveUpdateFile,
+    migrations: liveUpdates.map(({ migrationId, sourceFile }) => ({ migrationId, sourceFile })),
+  },
   bootstrapSuperAdmin: {
     email: bootstrapSuperAdminEmail,
     active: preserveSuperAdmin,
@@ -480,7 +456,7 @@ if (!/CREATE\s+TABLE\s+`?user_profiles`?/i.test(sql) || !/CREATE\s+TABLE\s+`?use
 }
 
 const allowedRuntimePackageFiles = new Set(packagedCompanyLogo ? [packagedCompanyLogo] : []);
-const forbiddenNames = new Set(['.env.local', '.runtime', 'node_modules', 'backups']);
+const forbiddenNames = new Set(['.env.local', '.runtime', 'node_modules', 'backups', 'private_uploads', 'tmp', 'tests']);
 for (const file of listFiles(output)) {
   const relativePath = path.relative(output, file).split(path.sep).join('/');
   const segments = relativePath.split('/');

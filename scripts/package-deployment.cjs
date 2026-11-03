@@ -43,10 +43,8 @@ const zipDirectory = (directory, destination) => new Promise((resolve, reject) =
 async function run() {
   assertInsideRoot(output);
   const buildInfo = JSON.parse(fs.readFileSync(requireFile('BUILD_INFO.json'), 'utf8'));
-  const liveUpdateFiles = (buildInfo.liveDatabaseUpdates || []).map(({ packageFile }) => packageFile);
-  if (!liveUpdateFiles.length || liveUpdateFiles.some((file) => !/^LIVE_DB_UPDATE_\d{8}\.sql$/.test(file))) {
-    throw new Error('BUILD_INFO.json does not contain valid live database update files.');
-  }
+  const liveUpdateFile = buildInfo.liveDatabaseUpdate?.packageFile;
+  if (liveUpdateFile !== 'LIVE_DB_UPDATE_ALL.sql') throw new Error('BUILD_INFO.json does not contain the single consolidated live database update.');
   const environment = fs.readFileSync(requireFile('app/.env.example'), 'utf8');
   if (!environment.includes('SMTP_HOST=smtp-mail.outlook.com') || !environment.includes('AFRICASTALKING_USERNAME=QSYS') || !environment.includes('BEEM_WHATSAPP_TEMPLATE_ID=479') || environment.includes('BREVO_') || environment.includes('B_TEXTMAN_')) {
     throw new Error('Refusing to package stale notification-provider configuration.');
@@ -66,7 +64,7 @@ async function run() {
   ];
   for (const [name, directory] of archives) await zipDirectory(directory, path.join(output, name));
 
-  const metadata = ['BUILD_INFO.json', 'FILE_MANIFEST.sha256', 'DEPLOYMENT_GUIDE.md', ...liveUpdateFiles];
+  const metadata = ['BUILD_INFO.json', 'FILE_MANIFEST.sha256', 'DEPLOYMENT_GUIDE.md', liveUpdateFile];
   for (const name of metadata) fs.copyFileSync(requireFile(name), path.join(output, name));
 
   const packagedFiles = [...archives.map(([name]) => name), ...metadata];
