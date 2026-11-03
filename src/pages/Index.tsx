@@ -10,11 +10,14 @@ import { SiteLoader } from "@/components/common/SiteLoader";
 import { usePushNotifications } from "@/hooks/usePushNotifications";
 import { useOfflineSync } from "@/hooks/useOfflineSync";
 import { InactivityGuard } from "@/components/auth/InactivityGuard";
+import { SecureAppLock } from "@/components/auth/SecureAppLock";
+import { requestAppLock } from "@/utils/appLock";
 import { MaintenanceBanner } from "@/components/maintenance/MaintenanceBanner";
 import { MaintenancePage } from "@/components/maintenance/MaintenancePage";
 import { useMaintenanceStatus } from "@/hooks/useMaintenanceStatus";
 import { Navigate, useLocation } from "react-router-dom";
 import { can } from '@/security/accessControl';
+import { apiClient } from '@/integrations/apiClient';
 
 const lazyNamed = <TModule extends Record<string, unknown>>(
   loader: () => Promise<TModule>,
@@ -24,7 +27,7 @@ const lazyNamed = <TModule extends Record<string, unknown>>(
   return { default: module[exportName] as ComponentType<any> };
 });
 
-const Dashboard = lazyNamed(() => import("@/components/dashboard/Dashboard"), "Dashboard");
+const Dashboard = lazyNamed(() => import("@/components/dashboard/ModernDashboard"), "Dashboard");
 const ClientsModule = lazyNamed(() => import("@/components/clients/ClientsModule"), "ClientsModule");
 const InstallationsModule = lazyNamed(() => import("@/components/installations/InstallationsModule"), "InstallationsModule");
 const HardwareInventoryModule = lazyNamed(() => import("@/components/inventory/HardwareInventoryModule"), "HardwareInventoryModule");
@@ -36,9 +39,8 @@ const AnalyticsModule = lazyNamed(() => import("@/components/analytics/Analytics
 const HandoverUploadModule = lazyNamed(() => import("@/components/handover/HandoverUploadModule"), "HandoverUploadModule");
 const AssignmentModule = lazyNamed(() => import("@/components/assignments/AssignmentModule"), "AssignmentModule");
 const InstallationProgressModule = lazyNamed(() => import("@/components/progress/InstallationProgressModule"), "InstallationProgressModule");
-const FinancesModule = lazyNamed(() => import("@/components/finances/FinancesModule"), "FinancesModule");
+const FinancesModule = lazyNamed(() => import("@/components/finances/TechnicianFinancesModule"), "FinancesModule");
 const TechnicianWorkloadCalendar = lazyNamed(() => import("@/components/calendar/TechnicianWorkloadCalendar"), "TechnicianWorkloadCalendar");
-const SchedulingWorkspace = lazyNamed(() => import("@/components/calendar/SchedulingWorkspace"), "SchedulingWorkspace");
 const TechnicianMobileDashboard = lazyNamed(() => import("@/components/technician/TechnicianMobileDashboard"), "TechnicianMobileDashboard");
 const AnnouncementsManagementModule = lazyNamed(() => import("@/components/announcements/AnnouncementsManagementModule"), "AnnouncementsManagementModule");
 const TechnicianProfilePage = lazyNamed(() => import("@/components/profile/TechnicianProfilePage"), "TechnicianProfilePage");
@@ -56,6 +58,8 @@ const Index = () => {
   const [showLoader, setShowLoader] = useState(true);
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
   const [systemTourActive, setSystemTourActive] = useState(false);
+  const [lockPreferences, setLockPreferences] = useState({ inactivityTimeoutMinutes: 10, lockOnResume: false });
+  const hiddenAtRef = useRef<number | null>(null);
   const sidebarBeforeTour = useRef(false);
   const previewTourNavigation = (active: boolean) => {
     if (active) { sidebarBeforeTour.current = isMobileSidebarOpen; if (window.innerWidth < 1024) setIsMobileSidebarOpen(true); }
@@ -83,6 +87,33 @@ const Index = () => {
     if(isAuthenticated && user && new URLSearchParams(location.search).has('hardware') && can(user,'inventory.view'))setActiveModule('inventory');
   },[isAuthenticated,user,location.search]);
 
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    void apiClient.get('/communication/preferences').then((preferences) => setLockPreferences({
+      inactivityTimeoutMinutes: Number(preferences.inactivity_timeout_minutes || 10),
+      lockOnResume: Boolean(preferences.lock_on_resume),
+    })).catch(() => undefined);
+    const update = (event: Event) => {
+      const detail = (event as CustomEvent<{ inactivityTimeoutMinutes?: number; lockOnResume?: boolean }>).detail;
+      setLockPreferences((current) => ({ inactivityTimeoutMinutes: Number(detail?.inactivityTimeoutMinutes || current.inactivityTimeoutMinutes), lockOnResume: Boolean(detail?.lockOnResume) }));
+    };
+    window.addEventListener('riana-lock-preferences-changed', update);
+    return () => window.removeEventListener('riana-lock-preferences-changed', update);
+  }, [isAuthenticated, user?.id]);
+
+  useEffect(() => {
+    if (!isAuthenticated || !lockPreferences.lockOnResume) return;
+    const handleVisibility = () => {
+      if (document.visibilityState === 'hidden') hiddenAtRef.current = Date.now();
+      else if (hiddenAtRef.current && Date.now() - hiddenAtRef.current >= 30_000) {
+        hiddenAtRef.current = null;
+        requestAppLock('resume');
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
+    return () => document.removeEventListener('visibilitychange', handleVisibility);
+  }, [isAuthenticated, lockPreferences.lockOnResume]);
+
   // Show loader during initial load
   if (showLoader || isLoading) {
     return <SiteLoader isLoading={true} />;
@@ -108,7 +139,7 @@ const Index = () => {
     switch (activeModule) {
       case 'dashboard':
         if(user.role==='InventoryOfficer')return <HardwareInventoryModule user={user}/>;
-        return <Dashboard user={user} />;
+        return <Dashboard user={user} onNavigate={setActiveModule} />;
       case 'technician-dashboard':
         return <TechnicianMobileDashboard user={user} />;
       case 'technician-profile':
@@ -134,7 +165,7 @@ const Index = () => {
       case 'analytics':
         return <AnalyticsModule user={user} />;
       case 'audit-logs':
-        return user.role === 'SuperAdmin' ? <AuditLogsModule user={user} /> : <Dashboard user={user} />;
+        return user.role === 'SuperAdmin' ? <AuditLogsModule user={user} /> : <Dashboard user={user} onNavigate={setActiveModule} />;
       case 'my-activity':
         return <MyActivityModule />;
       case 'handover':
@@ -142,18 +173,18 @@ const Index = () => {
       case 'assignments':
         return <AssignmentModule user={user} />;
       case 'calendar':
-        return user.role==='User'?<SchedulingWorkspace user={user}/>:<TechnicianWorkloadCalendar user={user} />;
+        return <TechnicianWorkloadCalendar user={user} />;
       case 'announcements-management':
         return <AnnouncementsManagementModule user={user} />;
       case 'developers':
         if (developerWorkspaceRole === 'SuperAdmin' || developerWorkspaceRole === 'Admin' || developerWorkspaceRole === 'Management' || developerWorkspaceRole === 'Teamlead' || developerWorkspaceRole === 'Developer' || developerWorkspaceRole === 'Sales') {
           return <DevelopersWorkspace userId={user.id} role={developerWorkspaceRole} />;
         }
-        return <Dashboard user={user} />;
+        return <Dashboard user={user} onNavigate={setActiveModule} />;
       case 'help':
         return <HelpModule user={user} />;
       default:
-        return <Dashboard user={user} />;
+        return <Dashboard user={user} onNavigate={setActiveModule} />;
     }
   };
 
@@ -161,6 +192,7 @@ const Index = () => {
 
   return (
     <div className="min-h-dvh bg-background">
+      <div id="cims-authenticated-shell">
       <div className="flex h-dvh min-h-0 overflow-hidden">
         <Sidebar 
           user={user} 
@@ -187,7 +219,7 @@ const Index = () => {
               Offline - changes will sync when the connection returns.
             </div>
           )}
-          <main className="min-w-0 flex-1 overflow-auto overscroll-contain bg-background p-2 sm:p-4 lg:p-6">
+          <main className="cims-content min-w-0 flex-1 overflow-auto overscroll-contain p-3 sm:p-5 lg:p-7">
             <Suspense fallback={<SiteLoader isLoading={true} />}>
               <div className="mx-auto w-full max-w-[1600px] min-w-0">
                 {renderContent()}
@@ -204,7 +236,9 @@ const Index = () => {
       </div>
       
       {user.role!=='InventoryOfficer' && <ChatbotWidget user={user} />}
-      <InactivityGuard active={isAuthenticated} onLogout={logout} />
+      <InactivityGuard active={isAuthenticated} timeoutMinutes={lockPreferences.inactivityTimeoutMinutes} onLock={() => requestAppLock("inactivity")} />
+      </div>
+      <SecureAppLock active={isAuthenticated} onLogout={logout} />
     </div>
   );
 };

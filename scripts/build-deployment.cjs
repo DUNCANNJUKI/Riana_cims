@@ -130,7 +130,7 @@ const legacyFrontendChunkAliases = [
   ['TechnicianMobileDashboard-WpNqBrUq.js', 'TechnicianMobileDashboard-C4KeYqtA.js'],
   ['ImportModule-Be2gn9Ue.js', 'ImportModule-8HhWBByQ.js'],
   ['AssignmentModule-BB46HqUW.js', 'AssignmentModule-D2JZSwAi.js'],
-  ['FinancesModule-B9CbVEb8.js', 'FinancesModule-CSTQHio_.js'],
+  ['FinancesModule-B9CbVEb8.js', 'TechnicianFinancesModule-current.js'],
   ['TechnicianProfilePage-Dvulh90V.js', 'TechnicianProfilePage-B5mvZi-h.js'],
   ['AnalyticsModule-CRj2WWxr.js', 'AnalyticsModule-40rXEUeo.js'],
   ['UsersModule-BNJJrJ5W.js', 'UsersModule-DGRaYSzt.js'],

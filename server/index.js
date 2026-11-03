@@ -30,9 +30,20 @@ const writeInstallationHandover = async (req,id,work,document) => {
   } catch(error) {await supporting.cleanup();throw error;}
 };
 const { createChallenge, verifyChallenge } = require('./utils/twoFactor');
-const { normalizePhone, sendEmail, sendSms, sendWelcomeCredentials, sendWhatsApp, smtpStatus, verifySmtpConnection, whatsappConfigured, whatsappStatus, smsStatus } = require('./services/notifications');
+const QRCode = require('qrcode');
+const {
+  beginTotpEnrollment,
+  confirmTotpEnrollment,
+  createTotpLoginChallenge,
+  replaceRecoveryCodes,
+  resolveEncryptionKey,
+  verifyTotp,
+  verifyTotpLoginChallenge,
+} = require('./services/accountMfa');
+const { normalizePhone, sendEmail, sendSms, sendVerificationCode, sendWelcomeCredentials, sendWhatsApp, smtpStatus, verifySmtpConnection, whatsappConfigured, whatsappStatus, smsStatus } = require('./services/notifications');
 const { sendUserNotification, sendUsersNotification } = require('./services/notificationDispatcher');
 const { logAuditEvent, logDenied, logFailure, logSuccess, sanitizeAuditData } = require('./services/auditService');
+const { normalizeTechnicianExpenses } = require('./services/technicianBudget');
 const { normalizeEquipmentConfigurationPayload, normalizeEquipmentQuantities, assertEquipmentRemovalSafe } = require('./services/subsidiaryEquipment');
 const {
   buildInstallationFeedbackInsert,
@@ -42,6 +53,14 @@ const {
 const { isSensitiveTechnicalRequest } = require('./services/chatbotPolicy');
 const { getAssistantResponse } = require('./services/chatbotKnowledge');
 const { createDatabaseBackup, listBackups, pruneBackups, getLastRun } = require('./services/databaseBackup');
+const { createPushDeliveryService, readVapidConfiguration } = require('./services/webPushDelivery');
+const {
+  activeCredentialRows,
+  authenticationOptions,
+  registrationOptions,
+  verifyAuthentication,
+  verifyRegistration,
+} = require('./services/passkeyService');
 const {
   createMaintenanceMiddleware,
   getMaintenanceState,
@@ -79,6 +98,7 @@ const port = process.env.PORT || process.env.VITE_API_PORT || 3001;
 const JWT_SECRET = resolveJwtSecret();
 const CIMS_SESSION_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 const privateFileConfig = getPrivateFileConfig();
+const pushDelivery = createPushDeliveryService({ pool });
 const configuredCallRingTimeout = Number(process.env.CHAT_CALL_RING_TIMEOUT_SECONDS || 45);
 const CHAT_CALL_RING_TIMEOUT_SECONDS = Number.isFinite(configuredCallRingTimeout)
   ? Math.max(15, Math.min(300, Math.round(configuredCallRingTimeout)))
@@ -403,6 +423,7 @@ const repairSuperAdminAccounts = async () => {
 };
 
 const authMiddleware = createSessionAuthenticator({ pool, jwtSecret: JWT_SECRET });
+const accountMfaKey = () => resolveEncryptionKey({ jwtSecret: JWT_SECRET });
 
 // Ensure uploads directory exists
 const uploadsDir = process.env.LEGACY_UPLOAD_ROOT
@@ -775,7 +796,7 @@ const initDb = async () => {
       first_login BOOLEAN DEFAULT TRUE,
       is_active BOOLEAN DEFAULT TRUE,
       two_factor_enabled BOOLEAN DEFAULT FALSE,
-      two_factor_method ENUM('email', 'sms', 'call') DEFAULT 'email',
+      two_factor_method ENUM('email', 'sms', 'call', 'totp') DEFAULT 'email',
       two_factor_phone VARCHAR(30),
       session_version INT UNSIGNED NOT NULL DEFAULT 0,
       last_seen_at TIMESTAMP NULL,
@@ -788,7 +809,7 @@ const initDb = async () => {
     await ensureTableColumns('user_profiles', [
       ['avatar_url', 'VARCHAR(255) NULL'],
       ['two_factor_enabled', 'BOOLEAN NOT NULL DEFAULT FALSE'],
-      ['two_factor_method', "ENUM('email','sms','call') NOT NULL DEFAULT 'email'"],
+      ['two_factor_method', "ENUM('email','sms','call','totp') NOT NULL DEFAULT 'email'"],
       ['two_factor_phone', 'VARCHAR(30) NULL'],
       ['session_version', 'INT UNSIGNED NOT NULL DEFAULT 0'],
       ['last_seen_at', 'TIMESTAMP NULL'],
@@ -1945,6 +1966,20 @@ app.get('/api/notifications', authMiddleware, async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+app.get('/api/notifications/summary', authMiddleware, async (req, res) => {
+  try {
+    const [rows] = await pool.query(
+      'SELECT * FROM crms_notifications WHERE user_id=? ORDER BY created_at DESC LIMIT 50',
+      [req.user.id],
+    );
+    const [[count]] = await pool.query(
+      'SELECT COUNT(*) AS unread_count FROM crms_notifications WHERE user_id=? AND `read`=FALSE',
+      [req.user.id],
+    );
+    res.json({ notifications: rows, unread_count: Number(count.unread_count || 0) });
+  } catch (err) { res.status(500).json({ error: 'Unable to load notifications.' }); }
+});
+
 app.patch('/api/notifications/:id/read', authMiddleware, async (req, res) => {
   try {
     await pool.query(
@@ -2246,7 +2281,9 @@ app.post('/api/auth/login', async (req, res) => {
     }
 
     if (user.two_factor_enabled) {
-      const challenge = await createChallenge(pool, user, JWT_SECRET);
+      const challenge = user.two_factor_method === 'totp'
+        ? await createTotpLoginChallenge(pool, user.id)
+        : await createChallenge(pool, user, JWT_SECRET);
       await logSuccess(pool, req, { user_id: user.id, action: 'login_2fa_challenge_created', category: 'authentication', module: 'Auth', description: 'Two-factor challenge created during login.' });
       return res.json({ requiresTwoFactor: true, ...challenge });
     }
@@ -2261,7 +2298,15 @@ app.post('/api/auth/login', async (req, res) => {
 
 app.post('/api/auth/verify-2fa', async (req, res) => {
   try {
-    const challenge = await verifyChallenge(pool, req.body.challengeId, req.body.code, JWT_SECRET);
+    const isTotp = req.body.method === 'totp';
+    const challenge = isTotp
+      ? await verifyTotpLoginChallenge(pool, {
+        challengeId: String(req.body.challengeId || ''),
+        code: req.body.code,
+        useRecoveryCode: Boolean(req.body.useRecoveryCode),
+        key: accountMfaKey(),
+      })
+      : await verifyChallenge(pool, req.body.challengeId, req.body.code, JWT_SECRET);
     if (!challenge) {
       await logFailure(pool, req, { action: 'login_2fa_failed', category: 'authentication', module: 'Auth', description: 'Invalid or expired two-factor verification code.', severity: 'warning' });
       return res.status(401).json({ error: 'Invalid or expired verification code.' });
@@ -2280,27 +2325,214 @@ app.post('/api/auth/verify-2fa', async (req, res) => {
       return res.status(503).json(maintenanceResponse(maintenance));
     }
     const sessionResult = await issueCimsSession(req, res, rows[0]);
-    await logSuccess(pool, req, { user_id: rows[0].id, action: 'login_success', category: 'authentication', module: 'Auth', description: 'User completed two-factor login successfully.', session_id: sessionAuditRef(sessionResult.sessionId) });
+    await logSuccess(pool, req, { user_id: rows[0].id, action: 'login_success', category: 'authentication', module: 'Auth', description: 'User completed two-factor login successfully.', metadata: isTotp ? { method: 'totp', recovery_code: Boolean(challenge.usedRecoveryCode) } : undefined, session_id: sessionAuditRef(sessionResult.sessionId) });
     if (sessionResult.revokedCount) {
       await logSuccess(pool, req, { user_id: rows[0].id, action: 'session_replaced', category: 'authentication', module: 'Auth', description: 'Previous active session was replaced by a new login.', metadata: { revokedSessions: sessionResult.revokedCount }, session_id: sessionAuditRef(sessionResult.sessionId), severity: 'notice' });
     }
     res.json({ user: safeUser(rows[0]), token: sessionResult.token });
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) {
+    await logFailure(pool, req, { action: 'login_2fa_failed', category: 'authentication', module: 'Auth', description: 'Two-factor verification failed.', severity: 'warning' });
+    res.status(err.status || 500).json({ error: err.status ? err.message : 'Unable to complete two-factor verification.' });
+  }
+});
+
+app.post('/api/auth/passkey-options', async (req, res) => {
+  try {
+    const email = String(req.body.email || '').trim().toLowerCase();
+    if (!email) return res.status(400).json({ error: 'Email is required.' });
+    const [rows] = await pool.query(
+      'SELECT id,email,first_name,last_name,is_active FROM user_profiles WHERE LOWER(email)=? LIMIT 1',
+      [email],
+    );
+    if (!rows.length || !rows[0].is_active) return res.status(404).json({ error: 'No passkey is available for this account.' });
+    const result = await authenticationOptions(pool, req, rows[0]);
+    if (!result) return res.status(404).json({ error: 'No passkey is available for this account.' });
+    res.json(result);
+  } catch (err) {
+    await logFailure(pool, req, { action: 'passkey_authentication_options_failed', category: 'authentication', module: 'Auth', description: 'Passkey authentication could not be started.', severity: 'warning' });
+    res.status(400).json({ error: 'Unable to start passkey sign-in.' });
+  }
+});
+
+app.post('/api/auth/passkey-verify', async (req, res) => {
+  try {
+    const result = await verifyAuthentication(pool, String(req.body.challengeId || ''), req.body.response);
+    const [rows] = await pool.query(`
+      SELECT u.*,s.subsidiary_name,${USER_MODULE_ROLES_SQL},${USER_PERMISSIONS_SQL}
+      FROM user_profiles u LEFT JOIN subsidiaries s ON s.id=u.subsidiary_id
+      WHERE u.id=? AND u.is_active=TRUE LIMIT 1`, [result.userId]);
+    if (!rows.length) return res.status(403).json({ error: 'User account is unavailable.' });
+    const user = rows[0];
+    const maintenance = await getMaintenanceState(pool);
+    if (maintenance.enabled && user.role !== 'SuperAdmin') return res.status(503).json(maintenanceResponse(maintenance));
+    if (user.two_factor_enabled) {
+      const challenge = user.two_factor_method === 'totp'
+        ? await createTotpLoginChallenge(pool, user.id)
+        : await createChallenge(pool, user, JWT_SECRET);
+      return res.json({ requiresTwoFactor: true, ...challenge });
+    }
+    const sessionResult = await issueCimsSession(req, res, user);
+    await logSuccess(pool, req, { user_id: user.id, action: 'passkey_login_success', category: 'authentication', module: 'Auth', description: 'User signed in with a verified passkey.', session_id: sessionAuditRef(sessionResult.sessionId) });
+    res.json({ user: safeUser(user), token: sessionResult.token });
+  } catch (err) {
+    await logFailure(pool, req, { action: 'passkey_login_failed', category: 'authentication', module: 'Auth', description: 'Passkey verification failed.', severity: 'warning' });
+    res.status(err.status || 401).json({ error: err.status ? err.message : 'Passkey verification failed.' });
+  }
+});
+
+app.get('/api/auth/passkeys', authMiddleware, async (req, res) => {
+  try {
+    const rows = await activeCredentialRows(pool, req.user.id);
+    res.json(rows.map(({ public_key, counter, transports, ...item }) => ({
+      ...item,
+      transports: Array.isArray(transports) ? transports : (() => { try { return JSON.parse(transports || '[]'); } catch { return []; } })(),
+    })));
+  } catch (err) { res.status(500).json({ error: 'Unable to load passkeys.' }); }
+});
+
+app.post('/api/auth/passkeys/register-options', authMiddleware, async (req, res) => {
+  try {
+    const password = String(req.body.password || '');
+    const [rows] = await pool.query('SELECT id,email,first_name,last_name,password FROM user_profiles WHERE id=? LIMIT 1', [req.user.id]);
+    if (!rows.length || !(await verifyPassword(password, rows[0].password))) return res.status(401).json({ error: 'Recent password verification is required.' });
+    res.json(await registrationOptions(pool, req, rows[0]));
+  } catch (err) { res.status(err.status || 400).json({ error: err.status ? err.message : 'Unable to start passkey registration.' }); }
+});
+
+app.post('/api/auth/passkeys/register-verify', authMiddleware, async (req, res) => {
+  try {
+    await verifyRegistration(pool, req, req.user.id, String(req.body.challengeId || ''), req.body.response, req.body.name);
+    await logSuccess(pool, req, { action: 'passkey_registered', category: 'authentication', module: 'Auth', entity_type: 'user', entity_id: req.user.id, description: 'A passkey was registered.', severity: 'notice' });
+    res.json({ success: true });
+  } catch (err) { res.status(err.status || 400).json({ error: err.status ? err.message : 'Passkey registration failed.' }); }
+});
+
+app.delete('/api/auth/passkeys/:id', authMiddleware, async (req, res) => {
+  try {
+    const password = String(req.body.password || '');
+    const [users] = await pool.query('SELECT password FROM user_profiles WHERE id=? LIMIT 1', [req.user.id]);
+    if (!users.length || !(await verifyPassword(password, users[0].password))) return res.status(401).json({ error: 'Recent password verification is required.' });
+    const [result] = await pool.query('UPDATE webauthn_credentials SET revoked_at=UTC_TIMESTAMP() WHERE id=? AND user_id=? AND revoked_at IS NULL', [req.params.id, req.user.id]);
+    if (!result.affectedRows) return res.status(404).json({ error: 'Passkey not found.' });
+    await logSuccess(pool, req, { action: 'passkey_revoked', category: 'authentication', module: 'Auth', entity_type: 'user', entity_id: req.user.id, description: 'A passkey was revoked.', severity: 'notice' });
+    res.json({ success: true });
+  } catch (err) { res.status(500).json({ error: 'Unable to remove passkey.' }); }
+});
+
+app.get('/api/auth/sessions', authMiddleware, async (req, res) => {
+  try {
+    const [rows] = await pool.query(
+      `SELECT session_id,device_name,browser_name,ip_address,created_at,last_activity_at,expires_at,revoked_at,revoke_reason
+       FROM user_sessions WHERE user_id=? ORDER BY created_at DESC LIMIT 25`, [req.user.id],
+    );
+    res.json(rows.map((row) => ({ ...row, current: row.session_id === req.user.sid, session_id: undefined, id: sessionAuditRef(row.session_id) })));
+  } catch (err) { res.status(500).json({ error: 'Unable to load active sessions.' }); }
+});
+
+app.delete('/api/auth/sessions/:id', authMiddleware, async (req, res) => {
+  try {
+    const [rows] = await pool.query('SELECT session_id FROM user_sessions WHERE user_id=?', [req.user.id]);
+    const target = rows.find((row) => sessionAuditRef(row.session_id) === req.params.id);
+    if (!target) return res.status(404).json({ error: 'Session not found.' });
+    await revokeCurrentSession(pool, { userId: req.user.id, sessionId: target.session_id, reason: 'USER_REVOKED' });
+    await logSuccess(pool, req, { action: 'session_revoked', category: 'authentication', module: 'Auth', description: 'User revoked an account session.', session_id: req.params.id, severity: 'notice' });
+    res.json({ success: true, current: target.session_id === req.user.sid });
+  } catch (err) { res.status(500).json({ error: 'Unable to revoke session.' }); }
+});
+
+app.post('/api/auth/totp/enroll', authMiddleware, async (req, res) => {
+  try {
+    const currentPassword = String(req.body.currentPassword || '');
+    const [users] = await pool.query('SELECT id,email,password FROM user_profiles WHERE id=? LIMIT 1', [req.user.id]);
+    if (!users.length || !(await verifyPassword(currentPassword, users[0].password))) return res.status(401).json({ error: 'Current password verification is required.' });
+    const enrollment = await beginTotpEnrollment(pool, { userId: req.user.id, email: users[0].email, key: accountMfaKey() });
+    const qrCodeDataUrl = await QRCode.toDataURL(enrollment.uri, { errorCorrectionLevel: 'M', margin: 1, width: 240 });
+    await logSuccess(pool, req, { action: 'totp_enrollment_started', category: 'authentication', module: 'Auth', entity_type: 'user', entity_id: req.user.id, description: 'Authenticator-app enrollment started.', severity: 'notice' });
+    res.json({ enrollmentId: enrollment.enrollmentId, secret: enrollment.secret, qrCodeDataUrl, expiresInSeconds: enrollment.expiresInSeconds });
+  } catch (err) { res.status(err.status || 500).json({ error: err.status ? err.message : 'Unable to start authenticator enrollment.' }); }
+});
+
+app.post('/api/auth/totp/confirm', authMiddleware, async (req, res) => {
+  try {
+    const result = await confirmTotpEnrollment(pool, { userId: req.user.id, enrollmentId: String(req.body.enrollmentId || ''), token: req.body.code, key: accountMfaKey() });
+    await logSuccess(pool, req, { action: 'totp_enabled', category: 'authentication', module: 'Auth', entity_type: 'user', entity_id: req.user.id, description: 'Authenticator-app MFA was enabled and recovery codes were generated.', severity: 'notice' });
+    res.json({ success: true, recoveryCodes: result.recoveryCodes });
+  } catch (err) {
+    await logFailure(pool, req, { action: 'totp_enrollment_failed', category: 'authentication', module: 'Auth', description: 'Authenticator-app enrollment verification failed.', severity: 'warning' });
+    res.status(err.status || 500).json({ error: err.status ? err.message : 'Unable to confirm authenticator enrollment.' });
+  }
+});
+
+app.post('/api/auth/recovery-codes/regenerate', authMiddleware, async (req, res) => {
+  let connection;
+  try {
+    const currentPassword = String(req.body.currentPassword || '');
+    const [users] = await pool.query('SELECT password,two_factor_enabled,two_factor_method FROM user_profiles WHERE id=? LIMIT 1', [req.user.id]);
+    if (!users.length || !(await verifyPassword(currentPassword, users[0].password))) return res.status(401).json({ error: 'Current password verification is required.' });
+    if (!users[0].two_factor_enabled || users[0].two_factor_method !== 'totp') return res.status(409).json({ error: 'Enable authenticator-app MFA before generating recovery codes.' });
+    await verifyTotp(pool, { userId: req.user.id, token: req.body.code, key: accountMfaKey() });
+    connection = await pool.getConnection();
+    await connection.beginTransaction();
+    const recoveryCodes = await replaceRecoveryCodes(connection, req.user.id, accountMfaKey());
+    await connection.commit();
+    connection.release();
+    connection = null;
+    await logSuccess(pool, req, { action: 'mfa_recovery_codes_regenerated', category: 'authentication', module: 'Auth', entity_type: 'user', entity_id: req.user.id, description: 'MFA recovery codes were regenerated.', severity: 'warning' });
+    res.json({ success: true, recoveryCodes });
+  } catch (err) {
+    if (connection) { await connection.rollback().catch(() => {}); connection.release(); }
+    res.status(err.status || 500).json({ error: err.status ? err.message : 'Unable to regenerate recovery codes.' });
+  }
+});
+
+app.delete('/api/auth/totp', authMiddleware, async (req, res) => {
+  let connection;
+  try {
+    const currentPassword = String(req.body.currentPassword || '');
+    const [users] = await pool.query('SELECT password,two_factor_method FROM user_profiles WHERE id=? LIMIT 1', [req.user.id]);
+    if (!users.length || !(await verifyPassword(currentPassword, users[0].password))) return res.status(401).json({ error: 'Current password verification is required.' });
+    if (users[0].two_factor_method !== 'totp') return res.status(409).json({ error: 'Authenticator-app MFA is not active.' });
+    await verifyTotp(pool, { userId: req.user.id, token: req.body.code, key: accountMfaKey() });
+    connection = await pool.getConnection();
+    await connection.beginTransaction();
+    await connection.query('UPDATE user_totp_credentials SET revoked_at=UTC_TIMESTAMP() WHERE user_id=? AND revoked_at IS NULL', [req.user.id]);
+    await connection.query('DELETE FROM user_mfa_recovery_codes WHERE user_id=? AND used_at IS NULL', [req.user.id]);
+    await connection.query("UPDATE user_profiles SET two_factor_enabled=FALSE,two_factor_method='email',two_factor_phone=NULL WHERE id=?", [req.user.id]);
+    await connection.commit();
+    connection.release();
+    connection = null;
+    await logSuccess(pool, req, { action: 'totp_disabled', category: 'authentication', module: 'Auth', entity_type: 'user', entity_id: req.user.id, description: 'Authenticator-app MFA and unused recovery codes were revoked.', severity: 'warning' });
+    res.json({ success: true });
+  } catch (err) {
+    if (connection) { await connection.rollback().catch(() => {}); connection.release(); }
+    res.status(err.status || 500).json({ error: err.status ? err.message : 'Unable to disable authenticator-app MFA.' });
+  }
 });
 
 app.get('/api/auth/2fa-settings', authMiddleware, async (req, res) => {
   try {
-    const [rows] = await pool.query(
-      'SELECT two_factor_enabled,two_factor_method,two_factor_phone,phone_number,email FROM user_profiles WHERE id = ?',
-      [req.user.id],
-    );
+    const [rows] = await pool.query('SELECT two_factor_enabled,two_factor_method,two_factor_phone,phone_number,email FROM user_profiles WHERE id = ?', [req.user.id]);
     if (!rows.length) return res.status(404).json({ error: 'User not found' });
-    res.json(rows[0]);
+    let recoveryCodesRemaining = 0;
+    let authenticatorAvailable = true;
+    try {
+      const [recovery] = await pool.query('SELECT COUNT(*) AS total FROM user_mfa_recovery_codes WHERE user_id=? AND used_at IS NULL', [req.user.id]);
+      recoveryCodesRemaining = Number(recovery[0]?.total || 0);
+    } catch (error) {
+      if (error.code !== 'ER_NO_SUCH_TABLE') throw error;
+      authenticatorAvailable = false;
+    }
+    res.json({ ...rows[0], recovery_codes_remaining: recoveryCodesRemaining, authenticator_available: authenticatorAvailable });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 app.patch('/api/auth/2fa-settings', authMiddleware, async (req, res) => {
   try {
+    const currentPassword = String(req.body.currentPassword || '');
+    const [passwordRows] = await pool.query('SELECT password FROM user_profiles WHERE id=? LIMIT 1', [req.user.id]);
+    if (!passwordRows.length || !(await verifyPassword(currentPassword, passwordRows[0].password))) {
+      return res.status(401).json({ error: 'Current password verification is required.' });
+    }
     const enabled = Boolean(req.body.enabled);
     const method = ['email', 'sms', 'call'].includes(req.body.method) ? req.body.method : 'email';
     let phone = null;
@@ -2316,6 +2548,16 @@ app.patch('/api/auth/2fa-settings', authMiddleware, async (req, res) => {
           return res.status(400).json({ error: 'Select the country and enter a valid international phone number.' });
         }
       }
+    }
+    if (enabled && !req.body.challengeId) {
+      const [users] = await pool.query('SELECT id,email,phone_number FROM user_profiles WHERE id=? LIMIT 1', [req.user.id]);
+      if (!users.length) return res.status(404).json({ error: 'User not found.' });
+      const challenge = await createChallenge(pool, { ...users[0], two_factor_method: method, two_factor_phone: phone }, JWT_SECRET);
+      return res.json({ success: true, requiresConfirmation: true, ...challenge });
+    }
+    if (enabled) {
+      const challenge = await verifyChallenge(pool, req.body.challengeId, req.body.code, JWT_SECRET);
+      if (!challenge || challenge.user_id !== req.user.id) return res.status(401).json({ error: 'Invalid or expired enrollment code.' });
     }
     await pool.query(
       'UPDATE user_profiles SET two_factor_enabled=?,two_factor_method=?,two_factor_phone=? WHERE id=?',
@@ -2344,6 +2586,114 @@ app.post('/api/auth/avatar', authMiddleware, async (req, res) => {
   }
 });
 
+app.patch('/api/auth/profile', authMiddleware, async (req, res) => {
+  try {
+    const normalizeName = (value) => String(value || '').normalize('NFKC').trim().replace(/\s+/g, ' ');
+    const firstName = normalizeName(req.body?.first_name);
+    const lastName = normalizeName(req.body?.last_name);
+    const validName = (value) => !value || (value.length <= 100 && /^[\p{L}\p{M} .'-]+$/u.test(value));
+    if ((!firstName && !lastName) || !validName(firstName) || !validName(lastName)) return res.status(400).json({ error: 'Enter a valid first or last name using no more than 100 characters.' });
+    await pool.query('UPDATE user_profiles SET first_name=?,last_name=? WHERE id=?', [firstName || null, lastName || null, req.user.id]);
+    await logSuccess(pool, req, { action: 'profile_name_updated', category: 'authentication', module: 'Auth', entity_type: 'user', entity_id: req.user.id, description: 'The user updated their permitted profile name.', metadata: { first_name_changed: true, last_name_changed: true } });
+    res.json({ success: true, first_name: firstName || null, last_name: lastName || null });
+  } catch (err) { res.status(500).json({ error: 'Unable to update profile name.' }); }
+});
+
+const identityChangeCodeHash = (id, code) => crypto.createHmac('sha256', JWT_SECRET).update(`identity-change:${id}:${code}`).digest('hex');
+
+app.get('/api/auth/profile/identity-change', authMiddleware, async (req, res) => {
+  try {
+    const [rows] = await pool.query(
+      `SELECT id,change_type,proposed_value,expires_at FROM user_identity_change_requests
+       WHERE user_id=? AND used_at IS NULL AND expires_at>UTC_TIMESTAMP() ORDER BY created_at DESC LIMIT 1`, [req.user.id],
+    );
+    if (!rows.length) return res.json({ pending: false });
+    const row = rows[0];
+    const masked = row.change_type === 'email'
+      ? String(row.proposed_value).replace(/^(.{2}).*(@.*)$/, '$1***$2')
+      : `${String(row.proposed_value).slice(0, 4)}***${String(row.proposed_value).slice(-3)}`;
+    res.json({ pending: true, requestId: row.id, type: row.change_type, destination: masked, expiresAt: row.expires_at });
+  } catch (err) {
+    if (err.code === 'ER_NO_SUCH_TABLE') return res.json({ pending: false, migrationRequired: true });
+    res.status(500).json({ error: 'Unable to load pending identity verification.' });
+  }
+});
+
+app.post('/api/auth/profile/identity-change', authMiddleware, async (req, res) => {
+  try {
+    const changeType = req.body?.type === 'email' ? 'email' : req.body?.type === 'phone' ? 'phone' : null;
+    if (!changeType) return res.status(400).json({ error: 'Select email or phone verification.' });
+    const [users] = await pool.query('SELECT email,phone_number,password FROM user_profiles WHERE id=? LIMIT 1', [req.user.id]);
+    if (!users.length || !(await verifyPassword(String(req.body?.currentPassword || ''), users[0].password))) return res.status(401).json({ error: 'Current password verification is required.' });
+    let proposedValue;
+    if (changeType === 'email') {
+      proposedValue = String(req.body?.value || '').trim().toLowerCase();
+      if (!/^[^\s@]+@riana\.co$/i.test(proposedValue)) return res.status(400).json({ error: 'Use your authorized @riana.co email address.' });
+      const [duplicates] = await pool.query('SELECT id FROM user_profiles WHERE LOWER(email)=? AND id<>? LIMIT 1', [proposedValue, req.user.id]);
+      if (duplicates.length) return res.status(409).json({ error: 'That email address is already assigned to another account.' });
+    } else {
+      try { proposedValue = normalizePhone(req.body?.value); }
+      catch { return res.status(400).json({ error: 'Enter a valid international phone number.' }); }
+    }
+    const id = uuidv4();
+    const code = String(crypto.randomInt(100000, 1000000));
+    const configured = changeType === 'email'
+      ? Boolean(process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASSWORD)
+      : Boolean(process.env.AFRICASTALKING_API_KEY);
+    if (configured) await sendVerificationCode({ channel: changeType === 'email' ? 'email' : 'sms', destination: proposedValue, code });
+    else if (process.env.NODE_ENV === 'production') return res.status(503).json({ error: `${changeType === 'email' ? 'Email' : 'SMS'} verification is currently unavailable.` });
+    await pool.query('UPDATE user_identity_change_requests SET used_at=UTC_TIMESTAMP() WHERE user_id=? AND change_type=? AND used_at IS NULL', [req.user.id, changeType]);
+    await pool.query(
+      'INSERT INTO user_identity_change_requests (id,user_id,change_type,proposed_value,code_hash,expires_at) VALUES (?,?,?,?,?,DATE_ADD(UTC_TIMESTAMP(), INTERVAL 10 MINUTE))',
+      [id, req.user.id, changeType, proposedValue, identityChangeCodeHash(id, code)],
+    );
+    await logSuccess(pool, req, { action: 'profile_identity_change_requested', category: 'authentication', module: 'Auth', entity_type: 'user', entity_id: req.user.id, description: `A verified ${changeType} change was requested.`, metadata: { type: changeType }, severity: 'notice' });
+    res.json({ requestId: id, type: changeType, expiresInSeconds: 600, ...(process.env.NODE_ENV !== 'production' && !configured ? { developmentCode: code } : {}) });
+  } catch (err) {
+    if (err.code === 'ER_NO_SUCH_TABLE') return res.status(503).json({ error: 'Verified identity changes require the pending additive database migration.', code: 'ACCOUNT_SECURITY_MIGRATION_REQUIRED' });
+    res.status(500).json({ error: 'Unable to start identity verification.' });
+  }
+});
+
+app.post('/api/auth/profile/identity-change/confirm', authMiddleware, async (req, res) => {
+  const connection = await pool.getConnection();
+  try {
+    await connection.beginTransaction();
+    const [requests] = await connection.query(
+      `SELECT r.*,u.email AS previous_email FROM user_identity_change_requests r JOIN user_profiles u ON u.id=r.user_id
+       WHERE r.id=? AND r.user_id=? AND r.used_at IS NULL AND r.expires_at>UTC_TIMESTAMP() AND r.attempts<5 LIMIT 1 FOR UPDATE`,
+      [String(req.body?.requestId || ''), req.user.id],
+    );
+    if (!requests.length) {
+      await connection.rollback();
+      return res.status(400).json({ error: 'Verification request expired. Start again.' });
+    }
+    const request = requests[0];
+    const supplied = Buffer.from(identityChangeCodeHash(request.id, String(req.body?.code || '')), 'hex');
+    const expected = Buffer.from(request.code_hash, 'hex');
+    if (supplied.length !== expected.length || !crypto.timingSafeEqual(supplied, expected)) {
+      await connection.query('UPDATE user_identity_change_requests SET attempts=attempts+1 WHERE id=?', [request.id]);
+      await connection.commit();
+      return res.status(401).json({ error: 'Invalid verification code.' });
+    }
+    if (request.change_type === 'email') {
+      await connection.query('UPDATE user_profiles SET email=?,session_version=session_version+1 WHERE id=?', [request.proposed_value, req.user.id]);
+      await revokeUserSessions(connection, req.user.id, 'EMAIL_CHANGED');
+    } else await connection.query('UPDATE user_profiles SET phone_number=? WHERE id=?', [request.proposed_value, req.user.id]);
+    await connection.query('UPDATE user_identity_change_requests SET used_at=UTC_TIMESTAMP() WHERE id=? AND used_at IS NULL', [request.id]);
+    await connection.commit();
+    await logSuccess(pool, req, { action: 'profile_identity_changed', category: 'authentication', module: 'Auth', entity_type: 'user', entity_id: req.user.id, description: `The verified account ${request.change_type} was changed.`, metadata: { type: request.change_type }, severity: 'warning' });
+    if (request.change_type === 'email') {
+      void sendEmail({ recipientEmail: request.previous_email, recipientName: 'RIANA user', notificationType: 'security_alert', requestDescription: 'Your RIANA CIMS account email address was changed. Contact an administrator immediately if you did not authorize this change.' }).catch((error) => console.warn('Previous-address security notification failed:', error.message));
+    }
+    res.json({ success: true, type: request.change_type, value: request.proposed_value, requiresReauthentication: request.change_type === 'email' });
+  } catch (err) {
+    await connection.rollback().catch(() => {});
+    if (err.code === 'ER_DUP_ENTRY') return res.status(409).json({ error: 'That email address is already assigned to another account.' });
+    res.status(500).json({ error: 'Unable to confirm identity change.' });
+  } finally { connection.release(); }
+});
+
 app.get('/api/auth/me', authMiddleware, async (req, res) => {
   try {
     const [rows] = await pool.query(`
@@ -2359,8 +2709,57 @@ app.get('/api/auth/me', authMiddleware, async (req, res) => {
   } catch (err) { res.status(500).json({ error: 'Unable to load the current user.' }); }
 });
 
+app.post('/api/auth/lock', authMiddleware, async (req, res) => {
+  try {
+    if (!req.user.sid) return res.status(409).json({ error: 'This session cannot be locked.' });
+    const reason = ['manual', 'inactivity', 'resume'].includes(req.body?.reason) ? req.body.reason : 'manual';
+    await pool.query(
+      `INSERT INTO user_session_locks (session_id,user_id,reason,locked_at,unlocked_at) VALUES (?,?,?,UTC_TIMESTAMP(),NULL)
+       ON DUPLICATE KEY UPDATE reason=VALUES(reason),locked_at=VALUES(locked_at),unlocked_at=NULL`,
+      [req.user.sid, req.user.id, reason],
+    );
+    await logSuccess(pool, req, { action: 'session_locked', category: 'authentication', module: 'Auth', entity_type: 'user', entity_id: req.user.id, description: 'The current session entered backend-enforced restricted lock state.', metadata: { reason }, severity: 'notice' });
+    res.json({ success: true, locked: true });
+  } catch (err) {
+    if (err.code === 'ER_NO_SUCH_TABLE') return res.status(503).json({ error: 'Secure app lock requires the pending additive database migration.', code: 'ACCOUNT_SECURITY_MIGRATION_REQUIRED' });
+    res.status(500).json({ error: 'Unable to lock this session.' });
+  }
+});
+
+app.post('/api/auth/unlock/password', authMiddleware, async (req, res) => {
+  try {
+    if (!req.sessionLocked) return res.status(409).json({ error: 'This session is not locked.' });
+    const [users] = await pool.query('SELECT password FROM user_profiles WHERE id=? LIMIT 1', [req.user.id]);
+    if (!users.length || !(await verifyPassword(String(req.body?.password || ''), users[0].password))) return res.status(401).json({ error: 'Invalid password.' });
+    await pool.query('UPDATE user_session_locks SET unlocked_at=UTC_TIMESTAMP() WHERE session_id=? AND user_id=? AND unlocked_at IS NULL', [req.user.sid, req.user.id]);
+    await logSuccess(pool, req, { action: 'session_unlocked', category: 'authentication', module: 'Auth', entity_type: 'user', entity_id: req.user.id, description: 'The current session was unlocked with password reauthentication.', severity: 'notice' });
+    res.json({ success: true, locked: false });
+  } catch (err) { res.status(500).json({ error: 'Unable to unlock this session.' }); }
+});
+
+app.post('/api/auth/unlock/passkey-options', authMiddleware, async (req, res) => {
+  try {
+    if (!req.sessionLocked) return res.status(409).json({ error: 'This session is not locked.' });
+    const [users] = await pool.query('SELECT id,email,first_name,last_name FROM user_profiles WHERE id=? LIMIT 1', [req.user.id]);
+    const result = users[0] ? await authenticationOptions(pool, req, users[0]) : null;
+    if (!result) return res.status(404).json({ error: 'No passkey is available for this account.' });
+    res.json(result);
+  } catch (err) { res.status(err.status || 400).json({ error: err.status ? err.message : 'Unable to start passkey unlock.' }); }
+});
+
+app.post('/api/auth/unlock/passkey-verify', authMiddleware, async (req, res) => {
+  try {
+    if (!req.sessionLocked) return res.status(409).json({ error: 'This session is not locked.' });
+    const result = await verifyAuthentication(pool, String(req.body?.challengeId || ''), req.body?.response);
+    if (String(result.userId) !== String(req.user.id)) return res.status(403).json({ error: 'Passkey does not belong to this account.' });
+    await pool.query('UPDATE user_session_locks SET unlocked_at=UTC_TIMESTAMP() WHERE session_id=? AND user_id=? AND unlocked_at IS NULL', [req.user.sid, req.user.id]);
+    await logSuccess(pool, req, { action: 'session_unlocked_passkey', category: 'authentication', module: 'Auth', entity_type: 'user', entity_id: req.user.id, description: 'The current session was unlocked with a verified passkey.', severity: 'notice' });
+    res.json({ success: true, locked: false });
+  } catch (err) { res.status(err.status || 401).json({ error: err.status ? err.message : 'Passkey unlock failed.' }); }
+});
+
 app.get('/api/auth/session-status', authMiddleware, (req, res) => {
-  res.json({ success: true, active: true, user_id: req.user.id });
+  res.json({ success: true, active: true, locked: Boolean(req.sessionLocked), user_id: req.user.id });
 });
 
 app.post('/api/auth/logout', authMiddleware, async (req, res) => {
@@ -2389,8 +2788,13 @@ app.get('/api/user_profiles', authMiddleware, async (req, res) => {
 
 app.patch('/api/auth/password', authMiddleware, async (req, res) => {
   try {
+    const currentPassword = String(req.body.currentPassword || '');
     const password = String(req.body.password || '');
-    if (password.length < 8) return res.status(400).json({ error: 'Password must be at least 8 characters.' });
+    if (password.length < 12 || !/[a-z]/.test(password) || !/[A-Z]/.test(password) || !/\d/.test(password)) {
+      return res.status(400).json({ error: 'Use at least 12 characters with uppercase, lowercase, and a number.' });
+    }
+    const [current] = await pool.query('SELECT password FROM user_profiles WHERE id=? LIMIT 1', [req.user.id]);
+    if (!current.length || !(await verifyPassword(currentPassword, current[0].password))) return res.status(401).json({ error: 'Current password is incorrect.' });
     const passwordHash = await hashPassword(password);
     await pool.query('UPDATE user_profiles SET password = ?, first_login = FALSE, session_version = session_version + 1 WHERE id = ?', [passwordHash, req.user.id]);
     await revokeUserSessions(pool, req.user.id, 'PASSWORD_CHANGED');
@@ -3933,38 +4337,128 @@ app.post('/api/handover_uploads', requireCapability('installations.manage'), asy
 });
 
 // INSTALLATION BUDGETS
-app.get('/api/budgets', async (req, res) => {
+const financeInstallation = async (req, installationId, db = pool) => {
+  const [rows] = await db.query(`SELECT i.id,i.client_id,i.branch_id,c.subsidiary_id,c.client_name,
+    COALESCE(cb.branch_name,c.branch) branch_name
+    FROM installations i JOIN clients c ON ${sqlUuidEquals('i.client_id', 'c.id')}
+    LEFT JOIN client_branches cb ON ${sqlUuidEquals('i.branch_id', 'cb.id')}
+    WHERE i.id=? LIMIT 1`, [installationId]);
+  const installation = rows[0];
+  if (!installation) { const error = new Error('Installation not found.'); error.status = 404; throw error; }
+  if (!isSuperAdmin(req) && installation.subsidiary_id !== req.user.subsidiary_id) {
+    const error = new Error('Installation is outside your subsidiary.'); error.status = 403; throw error;
+  }
+  return installation;
+};
+
+const assignedBudgetTechnicians = async (installationId, db = pool) => {
+  const [rows] = await db.query(`SELECT DISTINCT u.id,u.first_name,u.last_name,u.email FROM user_profiles u JOIN (
+    SELECT hardware_technician_id technician_id FROM client_assignments WHERE installation_id=? AND hardware_technician_id IS NOT NULL
+    UNION SELECT software_technician_id FROM client_assignments WHERE installation_id=? AND software_technician_id IS NOT NULL
+    UNION SELECT assigned_technician_id FROM installations WHERE id=? AND assigned_technician_id IS NOT NULL
+    UNION SELECT hardware_technician_id FROM installations WHERE id=? AND hardware_technician_id IS NOT NULL
+    UNION SELECT software_technician_id FROM installations WHERE id=? AND software_technician_id IS NOT NULL
+  ) assigned ON ${sqlUuidEquals('assigned.technician_id', 'u.id')}
+  WHERE u.is_active=TRUE ORDER BY u.first_name,u.last_name,u.id`, [installationId, installationId, installationId, installationId, installationId]);
+  return rows;
+};
+
+app.get('/api/installations/:id/budget-technicians', requireCapability('finances.view'), async (req, res) => {
   try {
-    const [rows] = await pool.query('SELECT * FROM installation_budgets ORDER BY created_at DESC');
-    res.json(rows);
+    const installation = await financeInstallation(req, req.params.id);
+    const technicians = await assignedBudgetTechnicians(req.params.id);
+    res.json({ installation, technicians });
+  } catch (err) { res.status(err.status || 500).json({ error: err.status ? err.message : 'Unable to load assigned technicians.' }); }
+});
+
+app.get('/api/budgets', requireCapability('finances.view'), async (req, res) => {
+  try {
+    const params = [];
+    const scope = isSuperAdmin(req) ? '' : ' WHERE c.subsidiary_id=?';
+    if (!isSuperAdmin(req)) params.push(req.user.subsidiary_id);
+    const [rows] = await pool.query(`SELECT b.*,c.client_name,COALESCE(cb.branch_name,b.branch,c.branch) branch_name
+      FROM installation_budgets b JOIN installations i ON ${sqlUuidEquals('b.installation_id', 'i.id')}
+      JOIN clients c ON ${sqlUuidEquals('i.client_id', 'c.id')}
+      LEFT JOIN client_branches cb ON ${sqlUuidEquals('i.branch_id', 'cb.id')}${scope}
+      ORDER BY b.created_at DESC,b.revision_number DESC`, params);
+    const technicianBudgetIds = rows.filter(row => row.budget_model === 'technician').map(row => row.id);
+    let expenses = [];
+    if (technicianBudgetIds.length) {
+      const placeholders = technicianBudgetIds.map(() => '?').join(',');
+      [expenses] = await pool.query(`SELECT * FROM installation_budget_technician_expenses WHERE budget_id IN (${placeholders}) ORDER BY technician_name_snapshot`, technicianBudgetIds);
+    }
+    const grouped = new Map();
+    expenses.forEach(expense => grouped.set(expense.budget_id, [...(grouped.get(expense.budget_id) || []), expense]));
+    res.json(rows.map(row => ({ ...row, technician_expenses: grouped.get(row.id) || [] })));
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 app.post('/api/budgets', requireCapability('finances.manage'), async (req, res) => {
+  const db = await pool.getConnection();
   try {
-    const { installation_id, total_budget, labor_cost, equipment_cost, transport_cost, miscellaneous_cost, notes, created_by, currency, branch } = req.body;
+    await db.beginTransaction();
+    const installationId = String(req.body.installation_id || '').trim();
+    const installation = await financeInstallation(req, installationId, db);
+    const technicians = await assignedBudgetTechnicians(installationId, db);
+    if (!technicians.length) { const error = new Error('This installation has no assigned technicians.'); error.status = 409; throw error; }
+    const normalized = normalizeTechnicianExpenses(req.body.technician_expenses, technicians.map(item => item.id));
+    if (normalized.rows.length !== technicians.length) { const error = new Error('Provide one expense row for every assigned technician.'); error.status = 400; throw error; }
+    const currency = String(req.body.currency || 'KES').trim().toUpperCase();
+    if (!/^[A-Z]{3}$/.test(currency)) { const error = new Error('Currency must be a three-letter code.'); error.status = 400; throw error; }
+    const [current] = await db.query("SELECT id FROM installation_budgets WHERE installation_id=? AND budget_model='technician' AND is_current=TRUE FOR UPDATE", [installationId]);
+    if (current.length) { const error = new Error('A current technician budget already exists for this installation. Revise it instead.'); error.status = 409; throw error; }
     const id = uuidv4();
-    await pool.query(
-      'INSERT INTO installation_budgets (id, installation_id, total_budget, labor_cost, equipment_cost, transport_cost, miscellaneous_cost, notes, created_by, currency, branch) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-      [id, installation_id, total_budget, labor_cost, equipment_cost, transport_cost, miscellaneous_cost, notes, created_by, currency, branch]
-    );
-    res.status(201).json({ id });
-  } catch (err) { res.status(500).json({ error: err.message }); }
+    await db.query(`INSERT INTO installation_budgets
+      (id,installation_id,client_id,branch_id,budget_model,revision_number,is_current,total_budget,labor_cost,equipment_cost,transport_cost,miscellaneous_cost,notes,created_by,currency,branch)
+      VALUES (?,?,?,?, 'technician',1,TRUE,?,0,0,0,0,?,?,?,?)`,
+      [id, installationId, installation.client_id, installation.branch_id, normalized.total_budget, String(req.body.notes || '').trim().slice(0, 2000) || null, req.user.id, currency, installation.branch_name]);
+    const names = new Map(technicians.map(item => [item.id, `${item.first_name || ''} ${item.last_name || ''}`.trim() || item.email]));
+    for (const expense of normalized.rows) await db.query(`INSERT INTO installation_budget_technician_expenses
+      (id,budget_id,technician_id,accommodation_cost,transport_cost,meals_cost,other_expenses,technician_total,expense_notes,technician_name_snapshot)
+      VALUES (?,?,?,?,?,?,?,?,?,?)`, [uuidv4(), id, expense.technician_id, expense.accommodation_cost, expense.transport_cost, expense.meals_cost, expense.other_expenses, expense.technician_total, expense.expense_notes, names.get(expense.technician_id)]);
+    await db.query(`INSERT INTO installation_budget_audit (id,budget_id,installation_id,action,actor_id,revision_number,total_budget,change_summary)
+      VALUES (?,?,?,?,?,?,?,?)`, [uuidv4(), id, installationId, 'created', req.user.id, 1, normalized.total_budget, JSON.stringify({ technician_count: normalized.rows.length, currency })]);
+    await db.commit();
+    res.status(201).json({ id, total_budget: normalized.total_budget, revision_number: 1 });
+  } catch (err) { await db.rollback(); res.status(err.status || 500).json({ error: err.status ? err.message : 'Unable to create technician budget.' }); }
+  finally { db.release(); }
 });
 
 app.put('/api/budgets/:id', requireCapability('finances.manage'), async (req, res) => {
+  const db = await pool.getConnection();
   try {
-    const { labor_cost, equipment_cost, transport_cost, miscellaneous_cost, total_budget, notes, currency } = req.body;
-    await pool.query(
-      'UPDATE installation_budgets SET labor_cost = ?, equipment_cost = ?, transport_cost = ?, miscellaneous_cost = ?, total_budget = ?, notes = ?, currency = ? WHERE id = ?',
-      [labor_cost, equipment_cost, transport_cost, miscellaneous_cost, total_budget, notes, currency, req.params.id]
-    );
-    res.json({ success: true });
-  } catch (err) { res.status(500).json({ error: err.message }); }
+    await db.beginTransaction();
+    const [rows] = await db.query('SELECT * FROM installation_budgets WHERE id=? FOR UPDATE', [req.params.id]);
+    const previous = rows[0];
+    if (!previous) { const error = new Error('Budget not found.'); error.status = 404; throw error; }
+    await financeInstallation(req, previous.installation_id, db);
+    if (previous.budget_model !== 'technician') { const error = new Error('Historical legacy budgets cannot be converted to technician budgets.'); error.status = 409; throw error; }
+    if (!previous.is_current) { const error = new Error('Only the current budget revision can be revised.'); error.status = 409; throw error; }
+    const technicians = await assignedBudgetTechnicians(previous.installation_id, db);
+    const normalized = normalizeTechnicianExpenses(req.body.technician_expenses, technicians.map(item => item.id));
+    if (normalized.rows.length !== technicians.length) { const error = new Error('Provide one expense row for every assigned technician.'); error.status = 400; throw error; }
+    const currency = String(req.body.currency || previous.currency).trim().toUpperCase();
+    const id = uuidv4(); const revision = Number(previous.revision_number) + 1;
+    await db.query('UPDATE installation_budgets SET is_current=FALSE WHERE id=?', [previous.id]);
+    await db.query(`INSERT INTO installation_budgets
+      (id,installation_id,client_id,branch_id,budget_model,revision_number,is_current,supersedes_budget_id,total_budget,labor_cost,equipment_cost,transport_cost,miscellaneous_cost,notes,created_by,currency,branch)
+      VALUES (?,?,?,?, 'technician',?,TRUE,?,?,0,0,0,0,?,?,?,?)`,
+      [id, previous.installation_id, previous.client_id, previous.branch_id, revision, previous.id, normalized.total_budget, String(req.body.notes || '').trim().slice(0, 2000) || null, req.user.id, currency, previous.branch]);
+    const names = new Map(technicians.map(item => [item.id, `${item.first_name || ''} ${item.last_name || ''}`.trim() || item.email]));
+    for (const expense of normalized.rows) await db.query(`INSERT INTO installation_budget_technician_expenses
+      (id,budget_id,technician_id,accommodation_cost,transport_cost,meals_cost,other_expenses,technician_total,expense_notes,technician_name_snapshot)
+      VALUES (?,?,?,?,?,?,?,?,?,?)`, [uuidv4(), id, expense.technician_id, expense.accommodation_cost, expense.transport_cost, expense.meals_cost, expense.other_expenses, expense.technician_total, expense.expense_notes, names.get(expense.technician_id)]);
+    await db.query(`INSERT INTO installation_budget_audit (id,budget_id,installation_id,action,actor_id,revision_number,total_budget,change_summary)
+      VALUES (?,?,?,?,?,?,?,?)`, [uuidv4(), id, previous.installation_id, 'revised', req.user.id, revision, normalized.total_budget, JSON.stringify({ supersedes_budget_id: previous.id, technician_count: normalized.rows.length, currency })]);
+    await db.commit(); res.json({ id, total_budget: normalized.total_budget, revision_number: revision });
+  } catch (err) { await db.rollback(); res.status(err.status || 500).json({ error: err.status ? err.message : 'Unable to revise technician budget.' }); }
+  finally { db.release(); }
 });
 
 app.delete('/api/budgets/:id', requireCapability('finances.manage'), async (req, res) => {
   try {
+    const [rows] = await pool.query('SELECT budget_model FROM installation_budgets WHERE id=? LIMIT 1', [req.params.id]);
+    if (rows[0]?.budget_model === 'technician') return res.status(405).json({ error: 'Technician budgets are retained for audit. Create a revision instead.' });
     await pool.query('DELETE FROM installation_budgets WHERE id = ?', [req.params.id]);
     res.json({ success: true });
   } catch (err) { res.status(500).json({ error: err.message }); }
@@ -5247,6 +5741,7 @@ app.post('/api/chat/messages', authMiddleware, async (req, res) => {
     const ownMessage = await loadVisibleChatMessage(id, req.user.id);
     const recipientMessage = await loadVisibleChatMessage(id, receiverId);
     notifyChatClients(receiverId, { type: 'new_message', message: recipientMessage });
+    void pushDelivery.deliver(receiverId, { type: 'message', entityId: id, title: 'New message', body: `Message from ${req.user.first_name || 'a colleague'}`, url: '/' }).catch(error => console.error('Push message delivery failed:', error.message));
     res.json(ownMessage);
   } catch (err) {
     console.error('Chat message send failed:', err.message);
@@ -5455,6 +5950,155 @@ app.post('/api/chat/messages/:messageId/delete-for-everyone', authMiddleware, as
   }
 });
 
+const communicationSchemaUnavailable = (error, res) => {
+  if (error?.code !== 'ER_NO_SUCH_TABLE' && error?.code !== 'ER_BAD_FIELD_ERROR') return false;
+  res.status(503).json({ error: 'Communication services require the pending additive database migration.', code: 'COMMUNICATION_MIGRATION_REQUIRED' });
+  return true;
+};
+const normalizeDeviceId = (value) => {
+  const id = String(value || '').trim();
+  return /^[A-Za-z0-9._:-]{16,80}$/.test(id) ? id : null;
+};
+
+app.get('/api/communication/preferences', authMiddleware, async (req, res) => {
+  try {
+    const [rows] = await pool.query('SELECT keep_history,notifications_enabled,message_notifications,call_notifications,do_not_disturb,quiet_hours_enabled,quiet_hours_start,quiet_hours_end,timezone FROM communication_preferences WHERE user_id = ?', [req.user.id]);
+    let interfacePreferences = { language: 'en', theme: 'system', inactivity_timeout_minutes: 10, lock_on_resume: false };
+    try {
+      const [interfaceRows] = await pool.query('SELECT language,theme,inactivity_timeout_minutes,lock_on_resume FROM user_interface_preferences WHERE user_id=?', [req.user.id]);
+      if (interfaceRows[0]) interfacePreferences = interfaceRows[0];
+    } catch (error) { if (error.code !== 'ER_NO_SUCH_TABLE') throw error; }
+    res.json({ ...(rows[0] || { keep_history: false, notifications_enabled: true, message_notifications: true, call_notifications: true, do_not_disturb: false, quiet_hours_enabled: false, quiet_hours_start: null, quiet_hours_end: null, timezone: 'Africa/Nairobi' }), ...interfacePreferences });
+  } catch (error) {
+    if (!communicationSchemaUnavailable(error, res)) res.status(500).json({ error: 'Unable to load communication preferences.' });
+  }
+});
+
+app.get('/api/communication/push-configuration', authMiddleware, (req, res) => {
+  const configuration = readVapidConfiguration();
+  res.json({ configured: configuration.configured, publicKey: configuration.configured ? configuration.publicKey : null });
+});
+
+app.put('/api/communication/preferences', authMiddleware, async (req, res) => {
+  let connection;
+  try {
+    const booleanValue = (name, fallback) => typeof req.body?.[name] === 'boolean' ? req.body[name] : fallback;
+    const timeValue = (value) => value == null || value === '' ? null : (/^(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d)?$/.test(String(value)) ? String(value) : undefined);
+    const quietStart = timeValue(req.body?.quiet_hours_start);
+    const quietEnd = timeValue(req.body?.quiet_hours_end);
+    if (quietStart === undefined || quietEnd === undefined) return res.status(400).json({ error: 'Quiet hours must use HH:MM format.' });
+    const timezone = String(req.body?.timezone || 'Africa/Nairobi').trim().slice(0, 80);
+    const language = req.body?.language === 'en' ? 'en' : null;
+    const theme = ['light', 'dark', 'system'].includes(req.body?.theme) ? req.body.theme : null;
+    const inactivityTimeout = Number(req.body?.inactivity_timeout_minutes);
+    const lockOnResume = Boolean(req.body?.lock_on_resume);
+    if (!language || !theme) return res.status(400).json({ error: 'Select a supported language and theme.' });
+    if (![5, 10, 15, 30, 60].includes(inactivityTimeout)) return res.status(400).json({ error: 'Select a supported inactivity timeout.' });
+    connection = await pool.getConnection();
+    await connection.beginTransaction();
+    await connection.query(
+      `INSERT INTO communication_preferences (user_id,keep_history,notifications_enabled,message_notifications,call_notifications,do_not_disturb,quiet_hours_enabled,quiet_hours_start,quiet_hours_end,timezone)
+       VALUES (?,?,?,?,?,?,?,?,?,?) ON DUPLICATE KEY UPDATE keep_history=VALUES(keep_history),notifications_enabled=VALUES(notifications_enabled),message_notifications=VALUES(message_notifications),call_notifications=VALUES(call_notifications),do_not_disturb=VALUES(do_not_disturb),quiet_hours_enabled=VALUES(quiet_hours_enabled),quiet_hours_start=VALUES(quiet_hours_start),quiet_hours_end=VALUES(quiet_hours_end),timezone=VALUES(timezone)`,
+      [req.user.id, booleanValue('keep_history', false), booleanValue('notifications_enabled', true), booleanValue('message_notifications', true), booleanValue('call_notifications', true), booleanValue('do_not_disturb', false), booleanValue('quiet_hours_enabled', false), quietStart, quietEnd, timezone],
+    );
+    await connection.query('INSERT INTO user_interface_preferences (user_id,language,theme,inactivity_timeout_minutes,lock_on_resume) VALUES (?,?,?,?,?) ON DUPLICATE KEY UPDATE language=VALUES(language),theme=VALUES(theme),inactivity_timeout_minutes=VALUES(inactivity_timeout_minutes),lock_on_resume=VALUES(lock_on_resume)', [req.user.id, language, theme, inactivityTimeout, lockOnResume]);
+    await connection.commit();
+    connection.release();
+    connection = null;
+    await logSuccess(pool, req, { action: 'communication_preferences_updated', category: 'chat', module: 'Chat', entity_type: 'user', entity_id: req.user.id, description: 'Communication preferences updated.' });
+    res.json({ success: true, language, theme, timezone, inactivity_timeout_minutes: inactivityTimeout, lock_on_resume: lockOnResume });
+  } catch (error) {
+    if (connection) { await connection.rollback().catch(() => {}); connection.release(); }
+    if (!communicationSchemaUnavailable(error, res)) res.status(500).json({ error: 'Unable to update communication preferences.' });
+  }
+});
+
+app.put('/api/communication/push-subscriptions', authMiddleware, async (req, res) => {
+  try {
+    const deviceId = normalizeDeviceId(req.body?.device_id);
+    const subscription = req.body?.subscription;
+    let endpointUrl;
+    try { endpointUrl = new URL(String(subscription?.endpoint || '')); } catch { endpointUrl = null; }
+    if (!deviceId || !endpointUrl || endpointUrl.protocol !== 'https:' || !subscription?.keys?.p256dh || !subscription?.keys?.auth) return res.status(400).json({ error: 'A valid secure push subscription and device identifier are required.' });
+    const endpointHash = crypto.createHash('sha256').update(endpointUrl.toString()).digest('hex');
+    await pool.query(
+      `INSERT INTO push_subscriptions (id,user_id,device_id,endpoint_hash,endpoint,p256dh,auth_secret,device_label,user_agent,expires_at,disabled_at,failure_count)
+       VALUES (?,?,?,?,?,?,?,?,?,?,NULL,0)
+       ON DUPLICATE KEY UPDATE endpoint_hash=VALUES(endpoint_hash),endpoint=VALUES(endpoint),p256dh=VALUES(p256dh),auth_secret=VALUES(auth_secret),device_label=VALUES(device_label),user_agent=VALUES(user_agent),expires_at=VALUES(expires_at),disabled_at=NULL,failure_count=0`,
+      [uuidv4(), req.user.id, deviceId, endpointHash, endpointUrl.toString(), String(subscription.keys.p256dh).slice(0, 255), String(subscription.keys.auth).slice(0, 255), String(req.body?.device_label || '').slice(0, 120) || null, String(req.headers['user-agent'] || '').slice(0, 255) || null, subscription.expirationTime ? new Date(subscription.expirationTime) : null],
+    );
+    res.json({ success: true, device_id: deviceId });
+  } catch (error) {
+    if (!communicationSchemaUnavailable(error, res)) res.status(500).json({ error: 'Unable to register push subscription.' });
+  }
+});
+
+app.delete('/api/communication/push-subscriptions/:deviceId', authMiddleware, async (req, res) => {
+  try {
+    const deviceId = normalizeDeviceId(req.params.deviceId);
+    if (!deviceId) return res.status(400).json({ error: 'Invalid device identifier.' });
+    await pool.query('UPDATE push_subscriptions SET disabled_at = COALESCE(disabled_at,NOW()) WHERE user_id = ? AND device_id = ?', [req.user.id, deviceId]);
+    res.json({ success: true });
+  } catch (error) {
+    if (!communicationSchemaUnavailable(error, res)) res.status(500).json({ error: 'Unable to remove push subscription.' });
+  }
+});
+
+app.put('/api/chat/messages/:messageId/saved', authMiddleware, async (req, res) => {
+  try {
+    const messageId = String(req.params.messageId || '').trim();
+    const message = await userCanAccessMessage(messageId, req.user.id);
+    if (!message) return res.status(404).json({ error: 'Message not found.' });
+    await pool.query('INSERT INTO saved_messages (id,message_id,user_id) VALUES (?,?,?) ON DUPLICATE KEY UPDATE message_id=VALUES(message_id)', [uuidv4(), messageId, req.user.id]);
+    res.json({ success: true });
+  } catch (error) {
+    if (!communicationSchemaUnavailable(error, res)) res.status(500).json({ error: 'Unable to save the message.' });
+  }
+});
+
+app.delete('/api/chat/messages/:messageId/saved', authMiddleware, async (req, res) => {
+  try {
+    await pool.query('DELETE FROM saved_messages WHERE message_id = ? AND user_id = ?', [String(req.params.messageId || '').trim(), req.user.id]);
+    res.json({ success: true });
+  } catch (error) {
+    if (!communicationSchemaUnavailable(error, res)) res.status(500).json({ error: 'Unable to remove the saved message.' });
+  }
+});
+
+app.get('/api/chat/saved-messages', authMiddleware, async (req, res) => {
+  try {
+    const [rows] = await pool.query(`${selectChatMessageSql} INNER JOIN saved_messages sm ON sm.message_id=m.id AND sm.user_id=? WHERE NOT EXISTS (SELECT 1 FROM message_user_deletions mud WHERE mud.message_id=m.id AND mud.user_id=?) ORDER BY sm.created_at DESC LIMIT 200`, [req.user.id, req.user.id]);
+    res.json(await enrichChatMessages(rows, req.user.id));
+  } catch (error) {
+    if (!communicationSchemaUnavailable(error, res)) res.status(500).json({ error: 'Unable to load saved messages.' });
+  }
+});
+
+app.post('/api/chat/conversations/:otherUserId/visibility', authMiddleware, async (req, res) => {
+  const connection = await pool.getConnection();
+  try {
+    const otherUserId = String(req.params.otherUserId || '').trim();
+    const action = ['archive', 'unarchive', 'clear'].includes(req.body?.action) ? req.body.action : null;
+    if (!action || !otherUserId || otherUserId === String(req.user.id)) return res.status(400).json({ error: 'Invalid conversation visibility action.' });
+    await connection.beginTransaction();
+    const [rows] = await connection.query('SELECT id FROM messages WHERE (sender_id=? AND receiver_id=?) OR (sender_id=? AND receiver_id=?)', [req.user.id, otherUserId, otherUserId, req.user.id]);
+    for (const row of rows) {
+      if (action === 'clear') {
+        await connection.query('INSERT INTO message_user_visibility (id,message_id,user_id,hidden_at) VALUES (?,?,?,NOW()) ON DUPLICATE KEY UPDATE hidden_at=NOW()', [uuidv4(), row.id, req.user.id]);
+      } else if (action === 'archive') {
+        await connection.query('INSERT INTO message_user_visibility (id,message_id,user_id,archived_at) VALUES (?,?,?,NOW()) ON DUPLICATE KEY UPDATE archived_at=NOW()', [uuidv4(), row.id, req.user.id]);
+      } else {
+        await connection.query('INSERT INTO message_user_visibility (id,message_id,user_id,archived_at) VALUES (?,?,?,NULL) ON DUPLICATE KEY UPDATE archived_at=NULL', [uuidv4(), row.id, req.user.id]);
+      }
+    }
+    await connection.commit();
+    res.json({ success: true, affected_messages: rows.length });
+  } catch (error) {
+    await connection.rollback().catch(() => undefined);
+    if (!communicationSchemaUnavailable(error, res)) res.status(500).json({ error: 'Unable to update conversation visibility.' });
+  } finally { connection.release(); }
+});
+
 app.post('/api/chat/calls', authMiddleware, async (req, res) => {
   const connection = await pool.getConnection();
   try {
@@ -5479,6 +6123,15 @@ app.post('/api/chat/calls', authMiddleware, async (req, res) => {
        ON DUPLICATE KEY UPDATE status=VALUES(status),joined_at=COALESCE(joined_at,VALUES(joined_at))`,
       [uuidv4(), id, req.user.id, 'accepted'],
     );
+    const callerDeviceId = normalizeDeviceId(req.body?.device_id);
+    if (callerDeviceId) {
+      await connection.query(
+        `INSERT INTO call_device_sessions (id,call_id,user_id,device_id,status,accepted_at,resolved_at,last_seen_at)
+         VALUES (?,?,?,?, 'accepted',UTC_TIMESTAMP(),UTC_TIMESTAMP(),UTC_TIMESTAMP())
+         ON DUPLICATE KEY UPDATE status='accepted',accepted_at=COALESCE(accepted_at,UTC_TIMESTAMP()),resolved_at=UTC_TIMESTAMP(),last_seen_at=UTC_TIMESTAMP()`,
+        [uuidv4(), id, req.user.id, callerDeviceId],
+      );
+    }
     for (const receiverId of activeRecipientIds) {
       await connection.query(
         `INSERT INTO call_participants (id,call_id,user_id,status) VALUES (?,?,?,?)
@@ -5490,6 +6143,14 @@ app.post('/api/chat/calls', authMiddleware, async (req, res) => {
          ON DUPLICATE KEY UPDATE delivered_at = COALESCE(delivered_at, VALUES(delivered_at))`,
         [uuidv4(), id, receiverId],
       );
+      await connection.query(
+        `INSERT INTO call_device_sessions (id,call_id,user_id,device_id,status,last_seen_at)
+         SELECT UUID(),?,?,ps.device_id,'ringing',UTC_TIMESTAMP()
+         FROM push_subscriptions ps
+         WHERE ps.user_id=? AND ps.disabled_at IS NULL AND (ps.expires_at IS NULL OR ps.expires_at>UTC_TIMESTAMP())
+         ON DUPLICATE KEY UPDATE status=IF(status='accepted',status,'ringing'),last_seen_at=UTC_TIMESTAMP()`,
+        [id, receiverId, receiverId],
+      );
     }
     await connection.commit();
     const [callMessage] = await pool.query(`${selectChatMessageSql} WHERE m.id = ?`, [id]);
@@ -5498,6 +6159,7 @@ app.post('/api/chat/calls', authMiddleware, async (req, res) => {
       const [recipientView] = await enrichChatMessages(callMessage, receiverId);
       notifyChatClients(receiverId, { type: 'incoming_call', call: recipientView });
       notifyChatClients(receiverId, { type: 'new_message', message: recipientView });
+      void pushDelivery.deliver(receiverId, { type: 'incoming_call', entityId: id, title: `Incoming ${callType} call`, body: `${req.user.first_name || 'A colleague'} is calling`, url: '/' }).catch(error => console.error('Push call delivery failed:', error.message));
     }
     scheduleMissedCallCheck(id);
     res.json(enriched);
@@ -5511,29 +6173,113 @@ app.post('/api/chat/calls', authMiddleware, async (req, res) => {
 });
 
 app.patch('/api/chat/calls/:callId', authMiddleware, async (req, res) => {
+  const connection = await pool.getConnection();
   try {
     const callId = String(req.params.callId || '').trim();
     const status = ['accepted', 'declined', 'ended', 'missed'].includes(req.body?.status) ? req.body.status : null;
     if (!status) return res.status(400).json({ error: 'Invalid call status.' });
-    const call = await userCanAccessMessage(callId, req.user.id);
-    if (!call || call.message_kind !== 'call') return res.status(404).json({ error: 'Call not found.' });
-    await pool.query(
+    await connection.beginTransaction();
+    const [callRows] = await connection.query(
+      `SELECT m.* FROM messages m
+       WHERE m.id = ? AND m.message_kind = 'call'
+       FOR UPDATE`,
+      [callId],
+    );
+    const call = callRows[0];
+    if (!call) {
+      await connection.rollback();
+      return res.status(404).json({ error: 'Call not found.' });
+    }
+    const [[participantCountRow]] = await connection.query(
+      'SELECT COUNT(*) AS participant_count FROM call_participants WHERE call_id = ?',
+      [callId],
+    );
+    call.participant_count = Number(participantCountRow?.participant_count || 0);
+    const [membershipRows] = await connection.query(
+      'SELECT status FROM call_participants WHERE call_id = ? AND user_id = ? FOR UPDATE',
+      [callId, req.user.id],
+    );
+    if (!membershipRows.length) {
+      await connection.rollback();
+      return res.status(403).json({ error: 'You are not authorized to update this call.' });
+    }
+    const participantStatus = membershipRows[0].status;
+    const isOneToOne = Number(call.participant_count || 0) <= 2;
+    const terminalStatuses = new Set(['declined', 'ended', 'missed']);
+    if (status === 'accepted' && terminalStatuses.has(String(call.call_status))) {
+      await connection.rollback();
+      return res.status(409).json({ error: 'This call invitation is no longer active.', code: 'CALL_NOT_ACTIVE' });
+    }
+    const deviceId = normalizeDeviceId(req.body?.device_id);
+    if (status === 'accepted') {
+      if (!deviceId) {
+        await connection.rollback();
+        return res.status(400).json({ error: 'A valid device identifier is required to answer calls.', code: 'DEVICE_ID_REQUIRED' });
+      }
+      const [deviceRows] = await connection.query(
+        'SELECT device_id,status FROM call_device_sessions WHERE call_id=? AND user_id=? FOR UPDATE',
+        [callId, req.user.id],
+      );
+      const winner = deviceRows.find(row => row.status === 'accepted');
+      if (winner && winner.device_id !== deviceId) {
+        await connection.rollback();
+        return res.status(409).json({ error: 'This call was answered on another device.', code: 'CALL_ACCEPTED_ON_ANOTHER_DEVICE' });
+      }
+      if (winner && winner.device_id === deviceId && participantStatus === 'accepted') {
+        await connection.commit();
+        const [existingMessage] = await pool.query(`${selectChatMessageSql} WHERE m.id = ?`, [callId]);
+        const [existing] = await enrichChatMessages(existingMessage, req.user.id);
+        return res.json(existing);
+      }
+      await connection.query(
+        `INSERT INTO call_device_sessions (id,call_id,user_id,device_id,status,accepted_at,resolved_at,last_seen_at)
+         VALUES (?,?,?,?, 'accepted',UTC_TIMESTAMP(),UTC_TIMESTAMP(),UTC_TIMESTAMP())
+         ON DUPLICATE KEY UPDATE status='accepted',accepted_at=COALESCE(accepted_at,UTC_TIMESTAMP()),resolved_at=UTC_TIMESTAMP(),last_seen_at=UTC_TIMESTAMP()`,
+        [uuidv4(), callId, req.user.id, deviceId],
+      );
+      await connection.query(
+        `UPDATE call_device_sessions SET status='canceled',resolved_at=UTC_TIMESTAMP()
+         WHERE call_id=? AND user_id=? AND device_id<>? AND status='ringing'`,
+        [callId, req.user.id, deviceId],
+      );
+    }
+    await connection.query(
       `INSERT INTO call_participants (id,call_id,user_id,status,joined_at,left_at) VALUES (?,?,?,?,?,?)
        ON DUPLICATE KEY UPDATE status=VALUES(status),joined_at=COALESCE(joined_at,VALUES(joined_at)),left_at=VALUES(left_at),updated_at=CURRENT_TIMESTAMP`,
       [uuidv4(), callId, req.user.id, status, status === 'accepted' ? new Date() : null, ['declined', 'ended', 'missed'].includes(status) ? new Date() : null],
     );
-    const fields = ['call_status = ?'];
-    const values = [status];
-    if (status === 'accepted') fields.push('call_started_at = COALESCE(call_started_at, NOW())');
-    if (['declined', 'ended', 'missed'].includes(status)) fields.push('call_ended_at = COALESCE(call_ended_at, NOW())');
-    values.push(callId);
-    await pool.query(`UPDATE messages SET ${fields.join(', ')} WHERE id = ? AND message_kind = 'call'`, values);
+    const shouldUpdateGlobalState = status === 'accepted' || status === 'ended' || isOneToOne;
+    if (shouldUpdateGlobalState) {
+      const fields = ['call_status = ?'];
+      const values = [status];
+      if (status === 'accepted') fields.push('call_started_at = COALESCE(call_started_at, NOW())');
+      if (terminalStatuses.has(status)) fields.push('call_ended_at = COALESCE(call_ended_at, NOW())');
+      values.push(callId);
+      await connection.query(`UPDATE messages SET ${fields.join(', ')} WHERE id = ? AND message_kind = 'call'`, values);
+    }
+    await logSuccess(connection, req, {
+      action: `call_${status}`,
+      category: 'chat',
+      module: 'Chat',
+      entity_type: 'call',
+      entity_id: callId,
+      description: `Call participant state changed to ${status}.`,
+      metadata: { call_type: call.call_type, participant_count: Number(call.participant_count || 0) },
+    });
+    await connection.commit();
+    if (status === 'accepted' && deviceId) {
+      notifyChatClients(req.user.id, { type: 'call_device_resolved', callId, winningDeviceId: deviceId });
+    }
     const [callMessage] = await pool.query(`${selectChatMessageSql} WHERE m.id = ?`, [callId]);
     const [updated] = await enrichChatMessages(callMessage, req.user.id);
     await publishCallUpdate(callId);
     res.json(updated);
   } catch (err) {
+    await connection.rollback().catch(() => undefined);
+    console.error('Chat call state update failed:', err.message);
     res.status(500).json({ error: 'Unable to update the call.' });
+  } finally {
+    connection.release();
   }
 });
 
@@ -5543,7 +6289,15 @@ app.post('/api/chat/call-signal', authMiddleware, async (req, res) => {
     const receiverId = String(req.body?.receiver_id || '').trim();
     const signalType = String(req.body?.signal_type || '').trim();
     const payload = req.body?.payload;
-    if (!callId || !receiverId || !['offer', 'answer', 'ice-candidate'].includes(signalType)) {
+    const deviceId = normalizeDeviceId(req.body?.device_id);
+    const allowedSignalTypes = ['offer', 'answer', 'ice-candidate', 'reaction', 'hand-state'];
+    const allowedMeetingReactions = new Set(['👍', '👏', '❤️', '😂', '🎉']);
+    const validEngagementPayload = signalType === 'reaction'
+      ? payload && typeof payload === 'object' && allowedMeetingReactions.has(payload.emoji) && Object.keys(payload).every((key) => key === 'emoji')
+      : signalType === 'hand-state'
+        ? payload && typeof payload === 'object' && typeof payload.raised === 'boolean' && Object.keys(payload).every((key) => key === 'raised')
+        : true;
+    if (!callId || !receiverId || !deviceId || !allowedSignalTypes.includes(signalType) || !validEngagementPayload) {
       return res.status(400).json({ error: 'Invalid call signal.' });
     }
     const call = await userCanAccessMessage(callId, req.user.id);
@@ -5555,6 +6309,15 @@ app.post('/api/chat/call-signal', authMiddleware, async (req, res) => {
     );
     if (!call || call.message_kind !== 'call' || !recipientRows.length) {
       return res.status(403).json({ error: 'Call signal recipient is invalid.' });
+    }
+    const [deviceSessionRows] = await pool.query(
+      `SELECT cds.status,m.call_status FROM call_device_sessions cds
+       INNER JOIN messages m ON m.id=cds.call_id
+       WHERE cds.call_id=? AND cds.user_id=? AND cds.device_id=? LIMIT 1`,
+      [callId, req.user.id, deviceId],
+    );
+    if (!deviceSessionRows.length || deviceSessionRows[0].status !== 'accepted' || ['declined', 'ended', 'missed'].includes(deviceSessionRows[0].call_status)) {
+      return res.status(409).json({ error: 'This device does not own the active call session.', code: 'CALL_DEVICE_NOT_AUTHORIZED' });
     }
     const signalId = uuidv4();
     notifyChatClients(receiverId, {

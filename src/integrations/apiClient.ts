@@ -22,7 +22,14 @@ export const clearAuthToken = () => {
 };
 const AUTH_FAILURE_CODES = new Set(['SESSION_REPLACED', 'SESSION_REVOKED', 'TOKEN_EXPIRED', 'ACCOUNT_DISABLED']);
 const AUTH_MESSAGE_KEY = 'riana-auth-message';
-const NON_SESSION_401_ENDPOINTS = [/\/auth\/login$/i, /\/auth\/verify-2fa$/i, /\/auth\/verify-password$/i];
+const NON_SESSION_401_ENDPOINTS = [
+  /\/auth\/login$/i,
+  /\/auth\/verify-2fa$/i,
+  /\/auth\/verify-password$/i,
+  /\/auth\/passkey-(?:options|verify)$/i,
+  /\/auth\/passkeys\/(?:register-options|register-verify)$/i,
+  /\/auth\/passkeys\/[^/]+$/i,
+];
 
 const sessionMessageFor = (code?: string, fallback?: string) => {
   if (code === 'SESSION_REPLACED') return 'Your account was signed in on another device. Please sign in again if this was not you.';
@@ -98,6 +105,7 @@ export const apiFetch = async (endpoint: string, options: RequestInit = {}, retr
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
+      if (response.status === 423 && errorData?.code === 'SESSION_LOCKED') window.dispatchEvent(new Event('riana-session-locked'));
       if (response.status === 401) handleUnauthorizedResponse(endpoint, token, errorData);
       if (response.status === 503) handleMaintenanceResponse(errorData);
       const error = new Error(friendlyRequestError(response.status, errorData));
@@ -177,5 +185,5 @@ export const apiClient = {
   post: (endpoint: string, body: any) => apiFetch(endpoint, { method: 'POST', body: JSON.stringify(body) }),
   put: (endpoint: string, body: any) => apiFetch(endpoint, { method: 'PUT', body: JSON.stringify(body) }),
   patch: (endpoint: string, body: any) => apiFetch(endpoint, { method: 'PATCH', body: JSON.stringify(body) }),
-  delete: (endpoint: string) => apiFetch(endpoint, { method: 'DELETE' })
+  delete: (endpoint: string, body?: unknown) => apiFetch(endpoint, { method: 'DELETE', body: body === undefined ? undefined : JSON.stringify(body) })
 };

@@ -9,7 +9,6 @@ import {
   Users,
   Building2,
   CalendarDays,
-  Sparkles,
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { StatCard } from '@crms/components/dashboard/StatCard';
@@ -20,20 +19,12 @@ import { Skeleton } from '@crms/components/ui/skeleton';
 import { Card, CardContent, CardHeader, CardTitle } from '@crms/components/ui/card';
 import { Button } from '@crms/components/ui/button';
 import { Progress } from '@crms/components/ui/progress';
-import { format } from 'date-fns';
 import { RoleDashboard } from '@crms/components/dashboard/RoleDashboard';
 
 export default function Dashboard() {
   const { data: stats, isLoading } = useDashboardStats();
   const { data: requests } = useChangeRequests();
   const { data: clients } = useClients();
-
-  const getGreeting = () => {
-    const hour = new Date().getHours();
-    if (hour < 12) return 'Good morning';
-    if (hour < 18) return 'Good afternoon';
-    return 'Good evening';
-  };
 
   // Calculate additional metrics
   const criticalRequests = requests?.filter(r => r.priority === 'critical' && r.status !== 'completed').length || 0;
@@ -48,45 +39,19 @@ export default function Dashboard() {
     : 0;
 
   return (
-    <div className="space-y-8 animate-fade-in">
-      {/* Welcome Banner */}
-      <div className="dashboard-welcome relative overflow-hidden rounded-2xl border border-primary/20 bg-card p-6 shadow-sm md:p-8">
-        <div className="pointer-events-none absolute inset-y-0 left-0 w-1.5 bg-primary" />
-        <div className="pointer-events-none absolute top-0 right-0 w-64 h-64 bg-primary/10 rounded-full -translate-y-1/2 translate-x-1/2 blur-3xl" />
-        <div className="pointer-events-none absolute bottom-0 left-0 w-48 h-48 bg-primary/5 rounded-full translate-y-1/2 -translate-x-1/2 blur-2xl" />
-        
-        <div className="relative z-10 flex flex-col md:flex-row md:items-center md:justify-between gap-6">
-          <div className="flex items-start gap-4">
-            <div>
-              <div className="flex items-center gap-2 mb-1">
-                <Sparkles className="h-4 w-4 text-primary" />
-                <span className="text-xs font-semibold text-primary uppercase tracking-wider">Riana Group CRMS</span>
-              </div>
-              <h1 className="text-2xl md:text-3xl font-bold text-foreground">
-                {getGreeting()}!
-              </h1>
-              <p className="text-muted-foreground mt-1 text-sm md:text-base">
-                Here's your change request management overview for {format(new Date(), 'EEEE, MMMM d, yyyy')}
-              </p>
-            </div>
-          </div>
-          
-          <div className="flex gap-3">
-            <Link to="/developers/requests/new">
-              <Button className="bg-primary text-primary-foreground hover:bg-primary/90 shadow-md">
-                New Request
-                <ArrowRight className="ml-2 h-4 w-4" />
-              </Button>
-            </Link>
-          </div>
+    <div className="flex flex-col gap-5 animate-fade-in lg:gap-6">
+      <section className="flex flex-col gap-3 border-b border-border/70 pb-4 sm:flex-row sm:items-end sm:justify-between" aria-labelledby="crms-overview-title">
+        <div>
+          <h1 id="crms-overview-title" className="text-2xl font-bold tracking-tight md:text-[1.75rem]">Change Request Management</h1>
+          <p className="mt-1 text-sm text-muted-foreground md:text-base">Manage and track client change requests.</p>
         </div>
-      </div>
+        <Button asChild className="self-start shadow-sm sm:self-auto">
+          <Link to="/developers/requests/new">New Request<ArrowRight className="ml-1" /></Link>
+        </Button>
+      </section>
 
-       {/* Role-Based Quick Actions */}
-       <RoleDashboard />
- 
       {/* Quick Stats Grid */}
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+      <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6" aria-label="Request summary">
         {isLoading ? (
           <>
             {[1, 2, 3, 4, 5, 6].map(i => (
@@ -134,10 +99,13 @@ export default function Dashboard() {
             />
           </>
         )}
-      </div>
+      </section>
+
+      {/* Role-Based Quick Actions */}
+      <RoleDashboard />
 
       {/* Progress Overview */}
-      <div className="grid gap-6 md:grid-cols-3">
+      <div className="grid gap-4 md:grid-cols-3">
         <Card className="metric-card md:col-span-1">
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
@@ -244,7 +212,7 @@ export default function Dashboard() {
       </div>
 
       {/* Main Content Grid */}
-      <div className="grid gap-6 lg:grid-cols-3">
+      <div className="grid gap-4 lg:grid-cols-3">
         <div className="lg:col-span-2">
           <RecentRequestsTable />
         </div>

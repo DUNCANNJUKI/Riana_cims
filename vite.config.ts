@@ -55,7 +55,7 @@ export default defineConfig(({ mode }) => ({
     react(),
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['Riana_logo.png', 'Riana_mark_transparent.png', 'marezi-letterhead.png', 'pwa-icon.svg', 'pwa-maskable.svg', 'letterhead.jpg', 'letterhead-full.jpg', 'letterhead-new.jpg'],
+      includeAssets: ['Riana_logo.png', 'Riana_mark_transparent.png', 'marezi-letterhead.png', 'pwa-icon.svg', 'pwa-maskable.svg', 'push-handlers.js', 'letterhead.jpg', 'letterhead-full.jpg', 'letterhead-new.jpg'],
       manifest: {
         id: '/',
         name: 'RIANA CIMS - Client Installation Management System',
@@ -90,6 +90,7 @@ export default defineConfig(({ mode }) => ({
         ],
       },
       workbox: {
+        importScripts: ['push-handlers.js'],
         maximumFileSizeToCacheInBytes: 10 * 1024 * 1024, // 10 MB limit
         globPatterns: ['**/*.{js,css,html,ico,png,svg,jpg,jpeg,webp}'],
         cleanupOutdatedCaches: true,

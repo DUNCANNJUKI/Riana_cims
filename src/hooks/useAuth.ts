@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { User, AuthState } from '@/types';
 import { apiClient, setAuthToken, clearAuthToken, getAuthToken } from '@/integrations/apiClient';
+import { startAuthentication } from '@simplewebauthn/browser';
 
 const clearStoredAuth = () => {
   clearAuthToken();
@@ -129,12 +130,31 @@ export const useAuth = () => {
     }
   };
 
-  const verifyTwoFactor = async (challengeId: string, code: string): Promise<void> => {
+  const verifyTwoFactor = async (challengeId: string, code: string, method?: string, useRecoveryCode = false): Promise<void> => {
     setAuthState(prev => ({ ...prev, isLoading: true }));
     try {
-      const data = await apiClient.post('/auth/verify-2fa', { challengeId, code });
+      const data = await apiClient.post('/auth/verify-2fa', { challengeId, code, method, useRecoveryCode });
       if (!data.token || !data.user) throw new Error('Invalid verification response');
       completeLogin(data);
+    } catch (error) {
+      setAuthState(prev => ({ ...prev, isLoading: false }));
+      throw error;
+    }
+  };
+
+  const loginWithPasskey = async (email: string) => {
+    setAuthState(prev => ({ ...prev, isLoading: true }));
+    try {
+      const challenge = await apiClient.post('/auth/passkey-options', { email });
+      const response = await startAuthentication({ optionsJSON: challenge.options });
+      const data = await apiClient.post('/auth/passkey-verify', { challengeId: challenge.challengeId, response });
+      if (data.requiresTwoFactor) {
+        setAuthState(prev => ({ ...prev, isLoading: false }));
+        return data;
+      }
+      if (!data.token || !data.user) throw new Error('Invalid passkey sign-in response.');
+      completeLogin(data);
+      return data;
     } catch (error) {
       setAuthState(prev => ({ ...prev, isLoading: false }));
       throw error;
@@ -186,6 +206,7 @@ export const useAuth = () => {
   return {
     ...authState,
     login,
+    loginWithPasskey,
     verifyTwoFactor,
     logout,
     updateFirstLogin,

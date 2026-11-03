@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { apiClient, API_URL, getAuthToken } from '@/integrations/apiClient';
 import { User } from '@/types';
 import { playCallHangupSound, playCallRingSound, playMessageSound } from '@/utils/notificationSound';
+import { getCommunicationDeviceId } from '@/utils/communicationDevice';
 
 export interface ChatMessage {
   id: string;
@@ -58,8 +59,8 @@ export interface ChatUser extends User {
 export interface CallSignalEvent {
   callId: string;
   senderId: string;
-  signalType: 'offer' | 'answer' | 'ice-candidate';
-  payload: RTCSessionDescriptionInit | RTCIceCandidateInit;
+  signalType: 'offer' | 'answer' | 'ice-candidate' | 'reaction' | 'hand-state';
+  payload: RTCSessionDescriptionInit | RTCIceCandidateInit | { emoji: string } | { raised: boolean };
   receivedAt: number;
   signalId?: string;
 }
@@ -218,14 +219,14 @@ export const useChat = (currentUser: User | null) => {
 
   const startCall = useCallback(async (receiverIds: string | string[], callType: 'audio' | 'video') => {
     const targetIds = Array.isArray(receiverIds) ? receiverIds : [receiverIds];
-    const call = await apiClient.post('/chat/calls', { receiver_id: targetIds[0], receiver_ids: targetIds, call_type: callType }) as ChatMessage;
+    const call = await apiClient.post('/chat/calls', { receiver_id: targetIds[0], receiver_ids: targetIds, call_type: callType, device_id: getCommunicationDeviceId() }) as ChatMessage;
     setActiveCall(call);
     appendOrReplaceMessage(call);
     return call;
   }, [appendOrReplaceMessage]);
 
   const updateCallStatus = useCallback(async (callId: string, status: 'accepted' | 'declined' | 'ended' | 'missed') => {
-    const call = await apiClient.patch(`/chat/calls/${callId}`, { status }) as ChatMessage;
+    const call = await apiClient.patch(`/chat/calls/${callId}`, { status, device_id: getCommunicationDeviceId() }) as ChatMessage;
     setActiveCall(['declined', 'ended', 'missed'].includes(status) ? null : call);
     setIncomingCall(current => current?.id === callId ? null : current);
     appendOrReplaceMessage(call);
@@ -235,14 +236,15 @@ export const useChat = (currentUser: User | null) => {
   const sendCallSignal = useCallback(async (
     callId: string,
     receiverId: string,
-    signalType: 'offer' | 'answer' | 'ice-candidate',
-    payload: RTCSessionDescriptionInit | RTCIceCandidateInit,
+    signalType: 'offer' | 'answer' | 'ice-candidate' | 'reaction' | 'hand-state',
+    payload: RTCSessionDescriptionInit | RTCIceCandidateInit | { emoji: string } | { raised: boolean },
   ) => {
     await apiClient.post('/chat/call-signal', {
       call_id: callId,
       receiver_id: receiverId,
       signal_type: signalType,
       payload,
+      device_id: getCommunicationDeviceId(),
     });
   }, []);
 
@@ -292,6 +294,13 @@ export const useChat = (currentUser: User | null) => {
           setIncomingCall(current => current?.id === call.id ? null : current);
           setActiveCall(['declined', 'ended', 'missed'].includes(String(call.call_status)) ? null : call);
           if (call.call_status === 'missed' && call.receiver_id === currentUserId) mergeMissedCalls([call]);
+        } else if (data.type === 'call_device_resolved') {
+          if (data.winningDeviceId !== getCommunicationDeviceId()) {
+            setIncomingCall(current => current?.id === data.callId ? null : current);
+            setActiveCall(current => current?.id === data.callId ? null : current);
+            setCallSignals(current => current.filter(signal => signal.callId !== data.callId));
+            playCallHangupSound();
+          }
         } else if (data.type === 'missed_call') {
           const call = data.call as ChatMessage;
           appendOrReplaceMessage(call);

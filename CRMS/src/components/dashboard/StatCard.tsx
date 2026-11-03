@@ -44,19 +44,19 @@ export function StatCard({ title, value, icon: Icon, variant = 'default', trend,
 
   return (
     <Card className={cn(
-      'group relative overflow-hidden bg-card text-card-foreground shadow-sm transition-all duration-300 hover:-translate-y-0.5 hover:shadow-md',
+      'group relative overflow-hidden bg-card text-card-foreground shadow-sm transition-[border-color,box-shadow] duration-200 hover:border-primary/20 hover:shadow-md',
       'border border-border',
       className
     )}>
       <div className={cn('pointer-events-none absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity', styles.accent)} />
       
-      <div className="relative p-5">
+      <div className="relative p-4">
         <div className="flex items-start justify-between gap-4">
           <div className="flex-1 min-w-0">
-            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-1">
+            <p className="mb-1 text-xs font-semibold text-muted-foreground">
               {title}
             </p>
-            <p className="text-2xl font-bold tracking-tight text-foreground">
+            <p className="text-2xl font-bold tabular-nums tracking-tight text-foreground">
               {value}
             </p>
             {subtitle && (
@@ -78,7 +78,7 @@ export function StatCard({ title, value, icon: Icon, variant = 'default', trend,
           </div>
           
           <div className={cn(
-            'flex h-11 w-11 shrink-0 items-center justify-center rounded-xl transition-transform group-hover:scale-110',
+            'flex h-10 w-10 shrink-0 items-center justify-center rounded-lg',
             styles.icon
           )}>
             <Icon className="h-5 w-5" />

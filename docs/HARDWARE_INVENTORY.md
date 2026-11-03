@@ -237,7 +237,7 @@ For the actual database suite, explicitly set a fresh `HARDWARE_TEST_DATABASE=ci
 
 Outstanding verification: physical camera scanning, real thermal/A4 printer alignment, hosted production rollout and supervised real stock data. UI fixtures are not a substitute for these device/production checks.
 
-The full application TypeScript check has existing errors in ChatModule and FinancesModule; the new inventory code does not produce TypeScript diagnostics. The repository dependency audit has existing advisories outside this feature that must be assessed before production sign-off. Production acceptance is therefore pending that baseline review and the rollout/device checks above.
+The final 2026-11-03 full application TypeScript check passed, both production builds passed, and `npm audit --omit=dev` reported zero vulnerabilities. Production acceptance remains pending the isolated-MySQL, rollout, physical-device, authenticated-role, and operational checks described above.
 
 Scheduled notification-channel alerts and automatic signed handover amendment generation remain partial/pending; their in-app alert/history and immutable-original preservation foundations are implemented. Official offline serial generation is deliberately unavailable.
 

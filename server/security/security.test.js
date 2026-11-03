@@ -1,9 +1,11 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('path');
+const jwt = require('jsonwebtoken');
 const {
   buildCorsOptions,
   createGlobalApiPolicy,
+  createSessionAuthenticator,
   createSensitiveRateLimiter,
   resolveJwtSecret,
   resolveStoredFile,
@@ -64,6 +66,30 @@ test('global API policy allows only explicit public paths', async () => {
   assert.equal(authenticated, 2);
 });
 
+test('locked sessions deny protected APIs but allow only server-side unlock routes', async () => {
+  const secret = 's'.repeat(48);
+  const token = jwt.sign({ id: 'user-1', sid: 'session-1', sv: 0 }, secret, { algorithm: 'HS256' });
+  const pool = {
+    async query(sql) {
+      if (sql.includes('FROM user_profiles')) return [[{ id: 'user-1', email: 'user@riana.co', role: 'User', is_active: 1, first_login: 0, session_version: 0, subsidiary_id: 'sub-1', extra_permissions: '' }]];
+      if (sql.includes('user_session_locks')) return [[{ session_id: 'session-1', token_hash: null, expires_at: null, revoked_at: null, locked_at: new Date(), lock_reason: 'manual' }]];
+      return [[]];
+    },
+  };
+  const authenticate = createSessionAuthenticator({ pool, jwtSecret: secret });
+  const protectedResponse = response();
+  await authenticate({ method: 'GET', path: '/clients', headers: { authorization: `Bearer ${token}` } }, protectedResponse, () => assert.fail('locked protected request must not continue'));
+  assert.equal(protectedResponse.statusCode, 423);
+  assert.equal(protectedResponse.body.code, 'SESSION_LOCKED');
+
+  let continued = false;
+  const unlockRequest = { method: 'POST', path: '/auth/unlock/password', headers: { authorization: `Bearer ${token}` } };
+  await authenticate(unlockRequest, response(), () => { continued = true; });
+  assert.equal(continued, true);
+  assert.equal(unlockRequest.sessionLocked, true);
+  assert.equal(unlockRequest.user.id, 'user-1');
+});
+
 test('sensitive routes enforce twenty requests per five minutes', () => {
   const limiter = createSensitiveRateLimiter({ limit: 20, windowMs: 300000 });
   for (let index = 0; index < 20; index += 1) {
@@ -83,6 +109,16 @@ test('assistant, support-guide, and SMTP test routes use the sensitive request l
     limiter({ ip: '192.0.2.20', path }, response(), () => {});
     const blocked = response();
     limiter({ ip: '192.0.2.20', path }, blocked, () => assert.fail(`${path} should be blocked`));
+    assert.equal(blocked.statusCode, 429);
+  }
+});
+
+test('TOTP enrollment, removal, and recovery regeneration use the sensitive request limiter', () => {
+  for (const path of ['/api/auth/totp/enroll', '/api/auth/totp/confirm', '/api/auth/totp', '/api/auth/recovery-codes/regenerate']) {
+    const limiter = createSensitiveRateLimiter({ limit: 1, windowMs: 300000 });
+    limiter({ ip: '192.0.2.21', path }, response(), () => {});
+    const blocked = response();
+    limiter({ ip: '192.0.2.21', path }, blocked, () => assert.fail(`${path} should be blocked`));
     assert.equal(blocked.statusCode, 429);
   }
 });

@@ -64,12 +64,17 @@ const createSessionAuthenticator = ({ pool, jwtSecret }) => async (req, res, nex
     }
     const session = await validateAuthenticatedSession(pool, { userId: user.id, sessionId: decoded.sid, token });
     if (!session.valid) {
-      return res.status(401).json({
+      const lockedRouteAllowed = session.code === 'SESSION_LOCKED' && (
+        (req.method === 'POST' && /^\/auth\/(?:unlock\/(?:password|passkey-options|passkey-verify)|logout)$/.test(req.path))
+        || (req.method === 'GET' && req.path === '/auth/session-status')
+      );
+      if (!lockedRouteAllowed) return res.status(session.code === 'SESSION_LOCKED' ? 423 : 401).json({
         success: false,
         code: session.code,
         error: session.message,
         message: session.message,
       });
+      req.sessionLocked = true;
     }
     req.user = {
       id: user.id,
@@ -97,7 +102,7 @@ const PUBLIC_API_RULES = [
   ['GET', /^\/health$/],
   ['GET', /^\/time$/],
   ['GET', /^\/maintenance\/status$/],
-  ['POST', /^\/auth\/(login|verify-2fa|forgot-password|reset-password)$/],
+  ['POST', /^\/auth\/(login|verify-2fa|forgot-password|reset-password|passkey-options|passkey-verify)$/],
   ['POST', /^\/crms\/auth\/(login|verify-2fa)$/],
   ['GET', /^\/feedback_questions$/],
   ['GET', /^\/public\/company-branding$/],
@@ -116,7 +121,9 @@ const createGlobalApiPolicy = (authenticate) => (req, res, next) => (
 
 const SENSITIVE_PATHS = [
   /^\/api\/hardware\/(?:generate|register|import|reconcile|policy|model_propose|model_approve)$/,
-  /^\/api\/(?:crms\/)?auth\/(?:login|verify-2fa|forgot-password|reset-password|avatar)$/,
+  /^\/api\/(?:crms\/)?auth\/(?:login|verify-2fa|forgot-password|reset-password|passkey-options|passkey-verify|avatar|profile(?:\/identity-change(?:\/confirm)?)?)$/,
+  /^\/api\/auth\/(?:totp(?:\/[^/]+)?|recovery-codes\/regenerate)$/,
+  /^\/api\/auth\/(?:lock|unlock\/(?:password|passkey-options|passkey-verify))$/,
   /^\/api\/upload$/,
   /^\/api\/public\//,
   /^\/api\/admin\/backup/,

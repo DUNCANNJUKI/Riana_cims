@@ -42,6 +42,7 @@ export const NotificationBell = ({ user, onNavigate, triggerClassName }: Notific
   const navigate = useNavigate();
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [isOpen, setIsOpen] = useState(false);
+  const [unreadCount, setUnreadCount] = useState(0);
   const [pendingCounts, setPendingCounts] = useState({
     pendingAssignments: 0,
     pendingInstallations: 0,
@@ -69,12 +70,14 @@ export const NotificationBell = ({ user, onNavigate, triggerClassName }: Notific
     try {
       const newNotifications: Notification[] = [];
       
-      const [assignments, installations, announcements, persistentNotifications] = await Promise.all([
+      const [assignments, installations, announcements, persistentSummary] = await Promise.all([
         user.role==='InventoryOfficer' ? Promise.resolve([]) : apiClient.get('/client_assignments'),
         user.role==='InventoryOfficer' ? Promise.resolve([]) : apiClient.get('/installations'),
         apiClient.get(`/announcements?user_id=${encodeURIComponent(user.id)}`),
-        apiClient.get('/notifications').catch(() => []),
+        apiClient.get('/notifications/summary').catch(() => ({ notifications: [], unread_count: 0 })),
       ]);
+      const persistentNotifications = persistentSummary.notifications || [];
+      setUnreadCount(Number(persistentSummary.unread_count || 0));
 
       (persistentNotifications || []).forEach((notification: any) => {
         const isAssignment = String(notification.title || '').toLowerCase().includes('assignment');
@@ -114,7 +117,8 @@ export const NotificationBell = ({ user, onNavigate, triggerClassName }: Notific
 
       const pendingAssignments = userAssignments.length;
       const pendingInstallations = userInstallations.length;
-      const pendingHandovers = missionHandovers.length;
+      const canReviewHandovers = user.role === 'SuperAdmin' || user.role === 'Admin' || user.role === 'Teamlead';
+      const pendingHandovers = canReviewHandovers ? missionHandovers.length : 0;
 
       const newTotalCount = pendingAssignments + pendingInstallations + pendingHandovers + unreadAnnouncements.length;
       
@@ -154,7 +158,7 @@ export const NotificationBell = ({ user, onNavigate, triggerClassName }: Notific
         }
       });
 
-      if (user.role === 'SuperAdmin' || user.role === 'Admin' || user.role === 'Teamlead') {
+      if (canReviewHandovers) {
         missionHandovers.forEach((installation: any) => {
           newNotifications.push({
             id: `handover-${installation.id}`,
@@ -208,14 +212,14 @@ export const NotificationBell = ({ user, onNavigate, triggerClassName }: Notific
     }
   };
 
-  const totalCount = pendingCounts.pendingAssignments + 
-                     pendingCounts.pendingInstallations + 
-                     pendingCounts.pendingHandovers +
-                     pendingCounts.pendingAnnouncements;
+  const categoryCount = pendingCounts.pendingAssignments + pendingCounts.pendingInstallations + pendingCounts.pendingHandovers + pendingCounts.pendingAnnouncements;
 
   const markAsRead = (id: string) => {
     const notification = notifications.find(item => item.id === id);
-    if (notification?.persistentId) void apiClient.patch(`/notifications/${notification.persistentId}/read`, {});
+    if (notification?.persistentId && !notification.read) {
+      void apiClient.patch(`/notifications/${notification.persistentId}/read`, {});
+      setUnreadCount((count) => Math.max(0, count - 1));
+    }
     setNotifications(prev => 
       prev.map(n => n.id === id ? { ...n, read: true } : n)
     );
@@ -223,6 +227,7 @@ export const NotificationBell = ({ user, onNavigate, triggerClassName }: Notific
 
   const markAllAsRead = () => {
     void apiClient.post('/notifications/read-all', {});
+    setUnreadCount(0);
     setNotifications(prev => prev.map(n => ({ ...n, read: true })));
   };
 
@@ -285,8 +290,6 @@ export const NotificationBell = ({ user, onNavigate, triggerClassName }: Notific
     }
   };
 
-  const unreadCount = notifications.filter(n => !n.read).length;
-
   const handleOpenChange = (open: boolean) => {
     setIsOpen(open);
     if (open && 'Notification' in window && Notification.permission === 'default') {
@@ -302,16 +305,16 @@ export const NotificationBell = ({ user, onNavigate, triggerClassName }: Notific
           size="icon" 
           className={cn(
             "relative h-10 w-10 rounded-full border border-transparent text-foreground transition-all hover:border-primary/20 hover:bg-primary/10 hover:text-primary dark:text-foreground",
-            totalCount > 0 && "bg-primary/10 text-primary animate-pulse-glow",
+            unreadCount > 0 && "bg-primary/10 text-primary animate-pulse-glow",
             triggerClassName,
           )}
         >
           <Bell className="h-4 w-4 sm:h-5 sm:w-5" />
-          {totalCount > 0 && (
+          {unreadCount > 0 && (
             <Badge 
               className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full border-2 border-background bg-destructive px-1 text-[10px] font-bold text-destructive-foreground shadow-sm"
             >
-              {totalCount > 9 ? '9+' : totalCount}
+              {unreadCount > 9 ? '9+' : unreadCount}
             </Badge>
           )}
         </Button>
@@ -332,7 +335,7 @@ export const NotificationBell = ({ user, onNavigate, triggerClassName }: Notific
         </div>
 
         {/* Pending Counters Summary - Responsive Grid */}
-        {totalCount > 0 && (
+        {categoryCount > 0 && (
           <div className="grid grid-cols-3 gap-2 border-b border-primary/10 bg-muted/35 p-3 text-center">
             {pendingCounts.pendingAssignments > 0 && (
               <div 
