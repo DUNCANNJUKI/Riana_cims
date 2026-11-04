@@ -96,7 +96,14 @@ const REACTION_OPTIONS = [
   { type: "sad", label: "Sad", icon: "\u{1F622}" },
   { type: "angry", label: "Angry", icon: "\u{1F621}" },
 ];
-const MEETING_REACTIONS = ["👍", "👏", "❤️", "😂", "🎉"] as const;
+const MEETING_REACTIONS = [
+  "\u{1F44D}",
+  "\u2764\uFE0F",
+  "\u{1F44F}",
+  "\u{1F602}",
+  "\u{1F389}",
+  "\u{1F60A}",
+] as const;
 type MeetingReaction = { id: string; userId: string; emoji: string; expiresAt: number };
 
 type SinkSelectableMediaElement = HTMLMediaElement & { setSinkId?: (deviceId: string) => Promise<void> };
@@ -210,6 +217,7 @@ export const ChatModule = ({ currentUser, chat, onClose, onMinimize, onToggleFul
     throw new Error("Call connection is not initialized.");
   });
   const microphoneTestCleanupRef = useRef<() => void>(() => undefined);
+  const lastMeetingReactionAtRef = useRef(0);
 
   const visibleUsers = users.filter(user => user.id !== currentUser.id);
   const activeUser = visibleUsers.find(u => u.id === activeChatUserId);
@@ -241,7 +249,10 @@ export const ChatModule = ({ currentUser, chat, onClose, onMinimize, onToggleFul
 
   const sendMeetingReaction = (emoji: typeof MEETING_REACTIONS[number]) => {
     if (!activeCall) return;
-    const reaction: MeetingReaction = { id: crypto.randomUUID(), userId: currentUser.id, emoji, expiresAt: Date.now() + 5000 };
+    const now = Date.now();
+    if (now - lastMeetingReactionAtRef.current < 800) return;
+    lastMeetingReactionAtRef.current = now;
+    const reaction: MeetingReaction = { id: crypto.randomUUID(), userId: currentUser.id, emoji, expiresAt: now + 5000 };
     setMeetingReactions(current => [...current.slice(-7), reaction]);
     void broadcastMeetingEvent("reaction", { emoji });
   };
@@ -1082,7 +1093,7 @@ export const ChatModule = ({ currentUser, chat, onClose, onMinimize, onToggleFul
                   </div>
                 </div>
                 <div className="pointer-events-none absolute right-4 top-16 z-20 flex max-w-[70%] flex-wrap justify-end gap-2" aria-live="polite" aria-label="Meeting reactions">
-                  {meetingReactions.map(reaction => <span key={reaction.id} className="animate-in zoom-in rounded-full border bg-background/95 px-3 py-1.5 text-xl shadow-lg" title={`${formatUserName(users.find(user => user.id === reaction.userId) || (reaction.userId === currentUser.id ? currentUser : undefined))} reacted ${reaction.emoji}`}>{reaction.emoji}</span>)}
+                  {meetingReactions.map(reaction => <span key={reaction.id} className="animate-in zoom-in rounded-full border bg-background/95 px-3 py-1.5 text-xl shadow-lg motion-reduce:animate-none" title={`${formatUserName(users.find(user => user.id === reaction.userId) || (reaction.userId === currentUser.id ? currentUser : undefined))} reacted ${reaction.emoji}`}>{reaction.emoji}</span>)}
                 </div>
                 {callError && <p className="mb-3 rounded-lg border border-destructive/20 bg-destructive/10 px-3 py-2 text-xs text-destructive">{callError}</p>}
                 <div className="mb-4 flex min-w-0 flex-wrap items-center gap-2 rounded-xl border border-[hsl(var(--comm-border))] bg-background/70 p-2" role="toolbar" aria-label="Call controls">

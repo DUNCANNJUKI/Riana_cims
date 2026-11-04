@@ -1809,6 +1809,7 @@ app.get('/api/health', (_req, res) => res.json({
   status: 'ok',
   timestamp: new Date(),
   corsPolicy: 'same-origin-host-v1',
+  release: String(process.env.APP_RELEASE || process.env.GIT_COMMIT || 'unversioned').slice(0, 80),
 }));
 
 const toRequestBoolean = (body, key, fallback) => (
@@ -6292,7 +6293,14 @@ app.post('/api/chat/call-signal', authMiddleware, async (req, res) => {
     const payload = req.body?.payload;
     const deviceId = normalizeDeviceId(req.body?.device_id);
     const allowedSignalTypes = ['offer', 'answer', 'ice-candidate', 'reaction', 'hand-state'];
-    const allowedMeetingReactions = new Set(['👍', '👏', '❤️', '😂', '🎉']);
+    const allowedMeetingReactions = new Set([
+      '\u{1F44D}',
+      '\u2764\uFE0F',
+      '\u{1F44F}',
+      '\u{1F602}',
+      '\u{1F389}',
+      '\u{1F60A}',
+    ]);
     const validEngagementPayload = signalType === 'reaction'
       ? payload && typeof payload === 'object' && allowedMeetingReactions.has(payload.emoji) && Object.keys(payload).every((key) => key === 'emoji')
       : signalType === 'hand-state'

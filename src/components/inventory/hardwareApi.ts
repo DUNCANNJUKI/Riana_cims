@@ -1,5 +1,6 @@
 import { apiClient, apiFetch } from "@/integrations/apiClient";
 import type { User } from "@/types";
+export { normalizeHardwareCatalog } from "./hardwareCatalog";
 
 export const hardwareActorKey = (user: User) =>
   JSON.stringify([
@@ -104,6 +105,8 @@ export type HardwareCatalog = {
     sequence_partition: string;
     approval_reference: string | null;
   };
+  /** False when the backend omitted or malformed the governed policy object. */
+  policy_available?: boolean;
   statuses: string[];
   equipment_fields?: Array<{field:string;label:string}>;
   equipment_fields_by_subsidiary?: Record<string,Array<{field:string;label:string}>>;

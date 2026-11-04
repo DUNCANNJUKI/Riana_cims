@@ -1,4 +1,4 @@
-const release = 'scheduling-20261016-4';
+const release = 'production-recovery-20261104-1';
 const versionKey = 'riana-app-cache-release';
 
 export async function clearReleaseCaches() {
@@ -15,7 +15,10 @@ export async function clearReleaseCaches() {
     for(const registration of registrations){
       const scope=new URL(registration.scope);
       if(scope.origin===location.origin && ['/', '/developers/'].includes(scope.pathname)){
-        changed=(await registration.unregister()) || changed;
+        // Request the matching release without unregistering the worker or
+        // deleting user-managed browser storage. Workbox activates the updated
+        // precache through its normal lifecycle.
+        await registration.update();
       }
     }
   }

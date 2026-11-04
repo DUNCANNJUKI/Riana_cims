@@ -55,6 +55,7 @@ import {
   hardwareActorKey,
   type HardwareAsset,
   type HardwareCatalog,
+  normalizeHardwareCatalog,
 } from "./hardwareApi";
 import { QrScanner } from "./QrScanner";
 import { HardwareTour } from "./HardwareTour";
@@ -281,7 +282,10 @@ export function HardwareInventoryModule({ user }: { user: User }) {
   const [modelProfile, setModelProfile] = useState("");
   const catalog = useQuery<HardwareCatalog>({
     queryKey: ["hardware", "catalog", actorKey],
-    queryFn: () => hardwareGet("/catalog"),
+    queryFn: async () =>
+      normalizeHardwareCatalog(
+        (await hardwareGet("/catalog")) as Record<string, unknown>,
+      ) as HardwareCatalog,
     enabled: can(user, "inventory.view"),
     refetchInterval: 30000,
     retry: false,
@@ -1009,7 +1013,7 @@ export function HardwareInventoryModule({ user }: { user: User }) {
     }
   }, [profile, dismiss]);
   useEffect(() => {
-    if (catalog.data) {
+    if (catalog.data?.policy) {
       setApproval(Boolean(catalog.data.policy.issuance_approved));
       setFieldApproval(Boolean(catalog.data.policy.field_approval_required));
     }
@@ -1059,6 +1063,15 @@ export function HardwareInventoryModule({ user }: { user: User }) {
       {catalog.error && (
         <Alert variant="destructive">
           <AlertDescription>{catalog.error.message}</AlertDescription>
+        </Alert>
+      )}
+      {catalog.data && catalog.data.policy_available === false && (
+        <Alert variant="destructive">
+          <AlertDescription>
+            Inventory policy data is unavailable. Asset browsing remains
+            available, but governed issuance actions are disabled until an
+            administrator verifies the database recovery and API deployment.
+          </AlertDescription>
         </Alert>
       )}
       {catalog.isLoading && (
