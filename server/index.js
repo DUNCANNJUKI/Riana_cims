@@ -2388,8 +2388,29 @@ app.get('/api/auth/passkeys', authMiddleware, async (req, res) => {
       ...item,
       transports: Array.isArray(transports) ? transports : (() => { try { return JSON.parse(transports || '[]'); } catch { return []; } })(),
     })));
-  } catch (err) { res.status(500).json({ error: 'Unable to load passkeys.' }); }
+  } catch (err) {
+    if (err?.code === 'ER_NO_SUCH_TABLE' || err?.code === 'ER_BAD_FIELD_ERROR') {
+      return res.status(503).json({
+        error: 'Passkeys require the pending account-security database migration.',
+        code: 'PASSKEY_MIGRATION_REQUIRED',
+      });
+    }
+    res.status(500).json({ error: 'Unable to load passkeys.' });
+  }
 });
+
+const passkeyRouteError = (res, err, fallback, defaultStatus = 400) => {
+  if (err?.code === 'ER_NO_SUCH_TABLE' || err?.code === 'ER_BAD_FIELD_ERROR') {
+    return res.status(503).json({
+      error: 'Passkeys require the pending account-security database migration.',
+      code: 'PASSKEY_MIGRATION_REQUIRED',
+    });
+  }
+  return res.status(err?.status || defaultStatus).json({
+    error: err?.status ? err.message : fallback,
+    ...(err?.code === 'PASSKEY_CONFIGURATION_REQUIRED' ? { code: err.code } : {}),
+  });
+};
 
 app.post('/api/auth/passkeys/register-options', authMiddleware, async (req, res) => {
   try {
@@ -2397,7 +2418,7 @@ app.post('/api/auth/passkeys/register-options', authMiddleware, async (req, res)
     const [rows] = await pool.query('SELECT id,email,first_name,last_name,password FROM user_profiles WHERE id=? LIMIT 1', [req.user.id]);
     if (!rows.length || !(await verifyPassword(password, rows[0].password))) return res.status(401).json({ error: 'Recent password verification is required.' });
     res.json(await registrationOptions(pool, req, rows[0]));
-  } catch (err) { res.status(err.status || 400).json({ error: err.status ? err.message : 'Unable to start passkey registration.' }); }
+  } catch (err) { passkeyRouteError(res, err, 'Unable to start passkey registration.'); }
 });
 
 app.post('/api/auth/passkeys/register-verify', authMiddleware, async (req, res) => {
@@ -2405,7 +2426,7 @@ app.post('/api/auth/passkeys/register-verify', authMiddleware, async (req, res) 
     await verifyRegistration(pool, req, req.user.id, String(req.body.challengeId || ''), req.body.response, req.body.name);
     await logSuccess(pool, req, { action: 'passkey_registered', category: 'authentication', module: 'Auth', entity_type: 'user', entity_id: req.user.id, description: 'A passkey was registered.', severity: 'notice' });
     res.json({ success: true });
-  } catch (err) { res.status(err.status || 400).json({ error: err.status ? err.message : 'Passkey registration failed.' }); }
+  } catch (err) { passkeyRouteError(res, err, 'Passkey registration failed.'); }
 });
 
 app.delete('/api/auth/passkeys/:id', authMiddleware, async (req, res) => {

@@ -46,7 +46,7 @@ async function run() {
   const liveUpdateFile = buildInfo.liveDatabaseUpdate?.packageFile;
   if (liveUpdateFile !== 'LIVE_DB_UPDATE_ALL.sql') throw new Error('BUILD_INFO.json does not contain the single consolidated live database update.');
   const environment = fs.readFileSync(requireFile('app/.env.example'), 'utf8');
-  if (!environment.includes('SMTP_HOST=smtp-mail.outlook.com') || !environment.includes('AFRICASTALKING_USERNAME=QSYS') || !environment.includes('BEEM_WHATSAPP_TEMPLATE_ID=479') || environment.includes('BREVO_') || environment.includes('B_TEXTMAN_')) {
+  if (!environment.includes('SMTP_HOST=smtp-mail.outlook.com') || !environment.includes('AFRICASTALKING_USERNAME=QSYS') || !environment.includes('BEEM_WHATSAPP_TEMPLATE_ID=479') || !environment.includes('WEBAUTHN_ORIGIN=https://rianacims.name.ng') || !environment.includes('WEBAUTHN_RP_ID=rianacims.name.ng') || environment.includes('BREVO_') || environment.includes('B_TEXTMAN_')) {
     throw new Error('Refusing to package stale notification-provider configuration.');
   }
   if (!environment.includes('PRIVATE_UPLOAD_ROOT=/home/CPANEL_USER/riana_private_uploads')) {

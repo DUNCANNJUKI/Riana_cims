@@ -11,12 +11,21 @@ function relyingParty(req) {
   const protocol = forwardedProto || req.protocol || 'http';
   const requestHost = String(req.headers['x-forwarded-host'] || req.headers.host || '').split(',')[0].trim();
   const configuredOrigin = String(process.env.WEBAUTHN_ORIGIN || '').trim().replace(/\/+$/, '');
+  if (process.env.NODE_ENV === 'production' && !configuredOrigin) {
+    const error = new Error('Passkey registration is unavailable until WEBAUTHN_ORIGIN is configured.');
+    error.status = 503;
+    error.code = 'PASSKEY_CONFIGURATION_REQUIRED';
+    throw error;
+  }
   const origin = configuredOrigin || `${protocol}://${requestHost}`;
   const originUrl = new URL(origin);
   const rpID = normalizeHost(process.env.WEBAUTHN_RP_ID || originUrl.hostname);
   if (!rpID) throw new Error('WebAuthn relying-party ID is not configured.');
   if (process.env.NODE_ENV === 'production' && originUrl.protocol !== 'https:') {
-    throw new Error('WebAuthn requires HTTPS in production.');
+    const error = new Error('WebAuthn requires HTTPS in production.');
+    error.status = 503;
+    error.code = 'PASSKEY_CONFIGURATION_REQUIRED';
+    throw error;
   }
   return { origin: originUrl.origin, rpID, rpName: process.env.WEBAUTHN_RP_NAME || 'RIANA CIMS' };
 }

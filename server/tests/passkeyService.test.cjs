@@ -33,6 +33,23 @@ test('rejects non-HTTPS WebAuthn origins in production', () => {
   }
 });
 
+test('requires an explicit WebAuthn origin in production', () => {
+  const previous = { origin: process.env.WEBAUTHN_ORIGIN, rp: process.env.WEBAUTHN_RP_ID, environment: process.env.NODE_ENV };
+  delete process.env.WEBAUTHN_ORIGIN;
+  delete process.env.WEBAUTHN_RP_ID;
+  process.env.NODE_ENV = 'production';
+  try {
+    assert.throws(
+      () => relyingParty(request('rianacims.name.ng', 'https')),
+      (error) => error.code === 'PASSKEY_CONFIGURATION_REQUIRED' && error.status === 503,
+    );
+  } finally {
+    if (previous.origin === undefined) delete process.env.WEBAUTHN_ORIGIN; else process.env.WEBAUTHN_ORIGIN = previous.origin;
+    if (previous.rp === undefined) delete process.env.WEBAUTHN_RP_ID; else process.env.WEBAUTHN_RP_ID = previous.rp;
+    if (previous.environment === undefined) delete process.env.NODE_ENV; else process.env.NODE_ENV = previous.environment;
+  }
+});
+
 test('uses explicit production RP ID and origin configuration', () => {
   const previous = { origin: process.env.WEBAUTHN_ORIGIN, rp: process.env.WEBAUTHN_RP_ID, environment: process.env.NODE_ENV };
   process.env.WEBAUTHN_ORIGIN = 'https://cims.example.test';

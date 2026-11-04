@@ -135,6 +135,16 @@ const packagedServer = fs.readFileSync(normalizedPath('app/server/index.js'), 'u
 if (!packagedServer.includes("corsPolicy: 'same-origin-host-v1'")) {
   fail('Packaged API is missing the production CORS policy deployment marker.');
 }
+for (const route of [
+  "app.patch('/api/auth/profile'",
+  "app.get('/api/auth/passkeys'",
+  "app.post('/api/auth/passkeys/register-options'",
+  "app.post('/api/auth/passkeys/register-verify'",
+  "app.get('/api/notifications/summary'",
+  "app.get('/api/communication/preferences'",
+]) {
+  if (!packagedServer.includes(route)) fail(`Packaged API is missing the required route: ${route}`);
+}
 const passengerEntry = fs.readFileSync(normalizedPath('app/passenger_app.js'), 'utf8');
 for (const alias of ['DB_HOST', 'DB_PORT', 'DB_NAME', 'DB_USER', 'DB_PASSWORD', 'DB_PASS']) {
   if (!passengerEntry.includes(alias)) fail(`Passenger entry is missing the cPanel database alias: ${alias}`);
@@ -153,6 +163,10 @@ for (const marker of [
   'BEEM_WHATSAPP_TEMPLATE_ID=479',
   'PRIVATE_UPLOAD_ROOT=/home/CPANEL_USER/riana_private_uploads',
   'FILE_BACKUP_ROOT=/home/CPANEL_USER/riana_private_file_backups',
+  'WEBAUTHN_ORIGIN=https://rianacims.name.ng',
+  'WEBAUTHN_RP_ID=rianacims.name.ng',
+  'WEBAUTHN_RP_NAME=RIANA CIMS',
+  'MFA_ENCRYPTION_KEY=REPLACE_WITH_32_BYTE_BASE64_OR_64_CHARACTER_HEX_KEY',
 ]) {
   if (!packagedEnvironment.includes(marker)) fail(`Packaged notification/private-storage configuration is missing: ${marker}`);
 }
