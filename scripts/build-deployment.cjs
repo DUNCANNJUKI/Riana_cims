@@ -14,9 +14,12 @@ const migrationsDirectory = path.join(root, 'server', 'migrations');
 const consolidatedLiveUpdateFile = 'LIVE_DB_UPDATE_ALL.sql';
 const additionalLiveMigrationIds = [
   '20261031_communication_backend_foundation',
+  '20261016_missed_call_dismissals_compatibility',
   '20261101_passkeys_and_account_security',
   '20261101_totp_recovery_and_preferences',
   '20261102_technician_installation_budgets',
+  '20261104_communication_meeting_state',
+  '20261105_hardware_policy_default_bootstrap',
 ];
 const bootstrapSuperAdminId = '00000000-0000-4000-8000-000000000001';
 const bootstrapSuperAdminEmail = 'superadmin@riana.co';

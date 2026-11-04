@@ -3,6 +3,7 @@ import { apiClient, API_URL, getAuthToken } from '@/integrations/apiClient';
 import { User } from '@/types';
 import { playCallHangupSound, playCallRingSound, playMessageSound } from '@/utils/notificationSound';
 import { getCommunicationDeviceId } from '@/utils/communicationDevice';
+import { filterDismissedMissedCalls, mergeUndismissedMissedCalls, persistThenDismissMissedCall } from './missedCallState';
 
 export interface ChatMessage {
   id: string;
@@ -26,6 +27,8 @@ export interface ChatMessage {
   call_ended_at?: string | null;
   call_participant_ids?: string[];
   call_participant_count?: number;
+  call_participants?: Array<{ user_id: string; status: string; hand_raised?: boolean; hand_raised_at?: string | null; audio_enabled?: boolean | null; video_enabled?: boolean | null; screen_sharing?: boolean; first_name?: string; last_name?: string; email?: string }>;
+  spotlight_user_id?: string | null;
   is_read: boolean;
   read_at: string | null;
   is_edited?: boolean;
@@ -59,8 +62,8 @@ export interface ChatUser extends User {
 export interface CallSignalEvent {
   callId: string;
   senderId: string;
-  signalType: 'offer' | 'answer' | 'ice-candidate' | 'reaction' | 'hand-state';
-  payload: RTCSessionDescriptionInit | RTCIceCandidateInit | { emoji: string } | { raised: boolean };
+  signalType: 'offer' | 'answer' | 'ice-candidate' | 'reaction' | 'hand-state' | 'media-state' | 'spotlight' | 'rejoin';
+  payload: RTCSessionDescriptionInit | RTCIceCandidateInit | { emoji: string } | { raised: boolean; targetUserId?: string } | { audioEnabled: boolean; videoEnabled: boolean; screenSharing: boolean } | { userId: string | null } | Record<string, never>;
   receivedAt: number;
   signalId?: string;
 }
@@ -83,12 +86,15 @@ export const useChat = (currentUser: User | null) => {
   const [incomingCall, setIncomingCall] = useState<ChatMessage | null>(null);
   const [activeCall, setActiveCall] = useState<ChatMessage | null>(null);
   const [missedCalls, setMissedCalls] = useState<ChatMessage[]>([]);
+  const [dismissingMissedCallIds, setDismissingMissedCallIds] = useState<Set<string>>(() => new Set());
   const [callSignals, setCallSignals] = useState<CallSignalEvent[]>([]);
   const [onlineUserCount, setOnlineUserCount] = useState(0);
   const streamAbortRef = useRef<AbortController | null>(null);
   const reconnectTimerRef = useRef<number | null>(null);
   const activeChatUserIdRef = useRef<string | null>(null);
   const notifiedMissedCallIdsRef = useRef<Set<string>>(new Set());
+  const dismissedMissedCallIdsRef = useRef<Set<string>>(new Set());
+  const missedCallEventVersionRef = useRef(0);
 
 
   const loadUsers = useCallback(async () => {
@@ -134,32 +140,87 @@ export const useChat = (currentUser: User | null) => {
   }, []);
 
   const mergeMissedCalls = useCallback((calls: ChatMessage[]) => {
-    const missed = calls.filter(call => call.message_kind === 'call' && call.call_status === 'missed');
+    const missed = filterDismissedMissedCalls(calls, dismissedMissedCallIdsRef.current);
     if (!missed.length) return;
-    setMissedCalls(prev => {
-      const next = [...prev];
-      missed.forEach(call => {
-        const existing = next.findIndex(item => item.id === call.id);
-        if (existing >= 0) next[existing] = { ...next[existing], ...call };
-        else next.unshift(call);
-      });
-      return next.slice(0, 10);
-    });
+    missedCallEventVersionRef.current += 1;
+    setMissedCalls(prev => mergeUndismissedMissedCalls(prev, missed, dismissedMissedCallIdsRef.current));
     const fresh = missed.filter(call => !notifiedMissedCallIdsRef.current.has(call.id));
     fresh.forEach(call => notifiedMissedCallIdsRef.current.add(call.id));
     if (fresh.length) playCallHangupSound();
   }, []);
 
   const loadMissedCalls = useCallback(async () => {
+    const eventVersionAtRequest = missedCallEventVersionRef.current;
     try {
       const data = await apiClient.get('/chat/missed-calls');
-      const calls = Array.isArray(data) ? data as ChatMessage[] : [];
-      setMissedCalls(calls);
-      mergeMissedCalls(calls);
+      const calls = filterDismissedMissedCalls(Array.isArray(data) ? data as ChatMessage[] : [], dismissedMissedCallIdsRef.current);
+      setMissedCalls(current => eventVersionAtRequest === missedCallEventVersionRef.current
+        ? calls
+        : mergeUndismissedMissedCalls(current, calls, dismissedMissedCallIdsRef.current));
+      const fresh = calls.filter(call => !notifiedMissedCallIdsRef.current.has(call.id));
+      fresh.forEach(call => notifiedMissedCallIdsRef.current.add(call.id));
+      if (fresh.length) playCallHangupSound();
     } catch (error) {
       console.error('Error loading missed calls:', error);
     }
-  }, [mergeMissedCalls]);
+  }, []);
+
+  useEffect(() => {
+    dismissedMissedCallIdsRef.current.clear();
+    notifiedMissedCallIdsRef.current.clear();
+    missedCallEventVersionRef.current = 0;
+    setMissedCalls([]);
+    setDismissingMissedCallIds(new Set());
+  }, [currentUserId]);
+
+  const dismissMissedCall = useCallback(async (callId: string) => {
+    const normalizedCallId = String(callId);
+    setDismissingMissedCallIds(current => new Set(current).add(normalizedCallId));
+    try {
+      await persistThenDismissMissedCall(
+        () => apiClient.post(`/chat/missed-calls/${encodeURIComponent(normalizedCallId)}/dismiss`, {}),
+        () => {
+          dismissedMissedCallIdsRef.current.add(normalizedCallId);
+          notifiedMissedCallIdsRef.current.add(normalizedCallId);
+          setMissedCalls(current => current.filter(call => call.id !== normalizedCallId));
+        },
+      );
+      return true;
+    } catch (error) {
+      console.error('Error dismissing missed call:', error);
+      return false;
+    } finally {
+      setDismissingMissedCallIds(current => {
+        const next = new Set(current);
+        next.delete(normalizedCallId);
+        return next;
+      });
+    }
+  }, []);
+
+  const loadActiveCall = useCallback(async () => {
+    if (!currentUserId) return;
+    try {
+      const result = await apiClient.get(`/chat/calls/active?device_id=${encodeURIComponent(getCommunicationDeviceId())}`) as { activeCall?: ChatMessage | null };
+      const call = result.activeCall;
+      if (!call) {
+        setActiveCall(null);
+        setIncomingCall(null);
+        return;
+      }
+      appendOrReplaceMessage(call);
+      const ownStatus = call.call_participants?.find(participant => String(participant.user_id) === String(currentUserId))?.status;
+      if (String(call.sender_id) === String(currentUserId) || ownStatus === 'accepted') {
+        setIncomingCall(null);
+        setActiveCall(call);
+      } else {
+        setActiveCall(null);
+        setIncomingCall(call);
+      }
+    } catch (error) {
+      console.warn('[Chat] Active call state could not be restored.', error);
+    }
+  }, [appendOrReplaceMessage, currentUserId]);
 
   const sendMessage = async (
     receiverId: string,
@@ -225,6 +286,22 @@ export const useChat = (currentUser: User | null) => {
     return call;
   }, [appendOrReplaceMessage]);
 
+  const inviteCallParticipants = useCallback(async (callId: string, receiverIds: string[]) => {
+    const result = await apiClient.post(`/chat/calls/${encodeURIComponent(callId)}/participants`, { receiver_ids: receiverIds }) as { call: ChatMessage; invited_user_ids: string[] };
+    setActiveCall(result.call);
+    appendOrReplaceMessage(result.call);
+    return result;
+  }, [appendOrReplaceMessage]);
+
+  const cancelCallInvitation = useCallback(async (callId: string, userId: string) => {
+    await apiClient.post(`/chat/calls/${encodeURIComponent(callId)}/participants/${encodeURIComponent(userId)}/cancel`, {});
+  }, []);
+
+  const getCallIceServers = useCallback(async () => {
+    const result = await apiClient.get('/chat/calls/ice-servers') as { iceServers?: RTCIceServer[] };
+    return Array.isArray(result.iceServers) ? result.iceServers : [{ urls: 'stun:stun.l.google.com:19302' }];
+  }, []);
+
   const updateCallStatus = useCallback(async (callId: string, status: 'accepted' | 'declined' | 'ended' | 'missed') => {
     const call = await apiClient.patch(`/chat/calls/${callId}`, { status, device_id: getCommunicationDeviceId() }) as ChatMessage;
     setActiveCall(['declined', 'ended', 'missed'].includes(status) ? null : call);
@@ -236,8 +313,8 @@ export const useChat = (currentUser: User | null) => {
   const sendCallSignal = useCallback(async (
     callId: string,
     receiverId: string,
-    signalType: 'offer' | 'answer' | 'ice-candidate' | 'reaction' | 'hand-state',
-    payload: RTCSessionDescriptionInit | RTCIceCandidateInit | { emoji: string } | { raised: boolean },
+    signalType: 'offer' | 'answer' | 'ice-candidate' | 'reaction' | 'hand-state' | 'media-state' | 'spotlight' | 'rejoin',
+    payload: RTCSessionDescriptionInit | RTCIceCandidateInit | { emoji: string } | { raised: boolean; targetUserId?: string } | { audioEnabled: boolean; videoEnabled: boolean; screenSharing: boolean } | { userId: string | null } | Record<string, never>,
   ) => {
     await apiClient.post('/chat/call-signal', {
       call_id: callId,
@@ -263,6 +340,7 @@ export const useChat = (currentUser: User | null) => {
 
     loadUsers();
     loadMissedCalls();
+    void loadActiveCall();
     let disposed = false;
 
     const handleStreamMessage = (rawData: string) => {
@@ -288,11 +366,21 @@ export const useChat = (currentUser: User | null) => {
           setIncomingCall(call);
           appendOrReplaceMessage(call);
           playCallRingSound();
+        } else if (data.type === 'call_invitation') {
+          const call = data.call as ChatMessage;
+          setIncomingCall(call);
+          appendOrReplaceMessage(call);
+          playCallRingSound();
         } else if (data.type === 'call_updated') {
           const call = data.call as ChatMessage;
           appendOrReplaceMessage(call);
-          setIncomingCall(current => current?.id === call.id ? null : current);
-          setActiveCall(['declined', 'ended', 'missed'].includes(String(call.call_status)) ? null : call);
+          const ownParticipantStatus = call.call_participants?.find(participant => String(participant.user_id) === String(currentUserId))?.status;
+          const isPendingInvite = ['invited', 'ringing'].includes(String(ownParticipantStatus)) && String(call.sender_id) !== String(currentUserId);
+          const hasLeftCall = ['declined', 'ended', 'missed', 'cancelled', 'expired', 'failed'].includes(String(ownParticipantStatus));
+          if (!isPendingInvite) setIncomingCall(current => current?.id === call.id ? null : current);
+          setActiveCall(['declined', 'ended', 'missed'].includes(String(call.call_status)) || hasLeftCall
+            ? null
+            : isPendingInvite ? current => current?.id === call.id ? current : null : call);
           if (call.call_status === 'missed' && call.receiver_id === currentUserId) mergeMissedCalls([call]);
         } else if (data.type === 'call_device_resolved') {
           if (data.winningDeviceId !== getCommunicationDeviceId()) {
@@ -353,6 +441,7 @@ export const useChat = (currentUser: User | null) => {
         setIsConnected(true);
         void loadUsers();
         void loadMissedCalls();
+        void loadActiveCall();
         if (activeChatUserIdRef.current) void loadMessages(activeChatUserIdRef.current);
         const reader = response.body.getReader();
         const decoder = new TextDecoder();
@@ -388,7 +477,7 @@ export const useChat = (currentUser: User | null) => {
       if (reconnectTimerRef.current) window.clearTimeout(reconnectTimerRef.current);
       streamAbortRef.current?.abort();
     };
-  }, [appendOrReplaceMessage, currentUserId, loadMessages, loadMissedCalls, loadUsers, mergeMissedCalls]);
+  }, [appendOrReplaceMessage, currentUserId, loadActiveCall, loadMessages, loadMissedCalls, loadUsers, mergeMissedCalls]);
 
   return {
     messages,
@@ -416,20 +505,18 @@ export const useChat = (currentUser: User | null) => {
     callSignals,
     startCall,
     updateCallStatus,
+    inviteCallParticipants,
+    cancelCallInvitation,
+    getCallIceServers,
     sendCallSignal,
     clearCallSignals,
     clearCallState,
     missedCalls,
+    dismissingMissedCallIds,
     loadUsers,
     loadMissedCalls,
-    dismissMissedCall: async (callId: string) => {
-      setMissedCalls(prev => prev.filter(call => call.id !== callId));
-      try {
-        await apiClient.post(`/chat/missed-calls/${callId}/dismiss`, {});
-      } catch (error) {
-        console.error('Error dismissing missed call:', error);
-      }
-    },
+    loadActiveCall,
+    dismissMissedCall,
     onlineUserCount,
     totalUnread: Object.values(unreadCounts).reduce((a, b) => a + b, 0),
   };

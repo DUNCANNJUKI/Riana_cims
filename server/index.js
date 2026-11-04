@@ -54,6 +54,7 @@ const { isSensitiveTechnicalRequest } = require('./services/chatbotPolicy');
 const { getAssistantResponse } = require('./services/chatbotKnowledge');
 const { createDatabaseBackup, listBackups, pruneBackups, getLastRun } = require('./services/databaseBackup');
 const { createPushDeliveryService, readVapidConfiguration } = require('./services/webPushDelivery');
+const { createIceServers, isValidCallSignalPayload } = require('./services/communicationCalls');
 const {
   activeCredentialRows,
   authenticationOptions,
@@ -5403,20 +5404,51 @@ const attachCallParticipants = async (messages) => {
   const callIds = messages.filter(message => message.message_kind === 'call').map(message => message.id);
   if (!callIds.length) return messages;
   const placeholders = callIds.map(() => '?').join(',');
-  const [rows] = await pool.query(
-    `SELECT cp.call_id,cp.user_id,cp.status,u.first_name,u.last_name,u.email
-     FROM call_participants cp
-     JOIN user_profiles u ON u.id = cp.user_id
-     WHERE cp.call_id IN (${placeholders})
-     ORDER BY cp.created_at ASC`,
-    callIds,
-  );
+  let rows;
+  try {
+    [rows] = await pool.query(
+      `SELECT cp.call_id,cp.user_id,cp.status,cp.hand_raised,cp.hand_raised_at,cp.audio_enabled,cp.video_enabled,cp.screen_sharing,u.first_name,u.last_name,u.email
+       FROM call_participants cp
+       JOIN user_profiles u ON u.id = cp.user_id
+       WHERE cp.call_id IN (${placeholders})
+       ORDER BY cp.created_at ASC`,
+      callIds,
+    );
+  } catch (error) {
+    if (!['ER_NO_SUCH_TABLE', 'ER_BAD_FIELD_ERROR'].includes(error?.code)) throw error;
+    [rows] = await pool.query(
+      `SELECT cp.call_id,cp.user_id,cp.status,u.first_name,u.last_name,u.email
+       FROM call_participants cp
+       JOIN user_profiles u ON u.id = cp.user_id
+       WHERE cp.call_id IN (${placeholders})
+       ORDER BY cp.created_at ASC`,
+      callIds,
+    );
+  }
   const byCall = new Map();
   for (const row of rows) {
     const list = byCall.get(row.call_id) || [];
-    list.push({ user_id: row.user_id, status: row.status, first_name: row.first_name, last_name: row.last_name, email: row.email });
+    list.push({
+      user_id: row.user_id,
+      status: row.status,
+      hand_raised: row.hand_raised === true || row.hand_raised === 1,
+      hand_raised_at: row.hand_raised_at || null,
+      audio_enabled: typeof row.audio_enabled === 'boolean' ? row.audio_enabled : row.audio_enabled == null ? null : Boolean(row.audio_enabled),
+      video_enabled: typeof row.video_enabled === 'boolean' ? row.video_enabled : row.video_enabled == null ? null : Boolean(row.video_enabled),
+      screen_sharing: row.screen_sharing === true || row.screen_sharing === 1,
+      first_name: row.first_name,
+      last_name: row.last_name,
+      email: row.email,
+    });
     byCall.set(row.call_id, list);
   }
+  let meetingStates = [];
+  try {
+    [meetingStates] = await pool.query(`SELECT call_id,spotlight_user_id FROM call_meeting_state WHERE call_id IN (${placeholders})`, callIds);
+  } catch (error) {
+    if (error?.code !== 'ER_NO_SUCH_TABLE') throw error;
+  }
+  const spotlightByCall = new Map(meetingStates.map(row => [row.call_id, row.spotlight_user_id]));
   return messages.map(message => {
     if (message.message_kind !== 'call') return message;
     const participants = byCall.get(message.id) || [];
@@ -5426,6 +5458,7 @@ const attachCallParticipants = async (messages) => {
       call_participants: participants,
       call_participant_ids: participantIds,
       call_participant_count: participantIds.length,
+      spotlight_user_id: spotlightByCall.get(message.id) || null,
     };
   });
 };
@@ -5547,7 +5580,49 @@ const markRingingCallMissed = async (callId) => {
   return true;
 };
 
+const expireCallInvitation = async (callId, userId) => {
+  let result;
+  try {
+    [result] = await pool.query(
+      `UPDATE call_participants cp
+     INNER JOIN messages m ON m.id=cp.call_id
+     SET cp.status='expired',cp.left_at=COALESCE(cp.left_at,NOW()),cp.hand_raised=FALSE,cp.hand_raised_at=NULL,cp.updated_at=CURRENT_TIMESTAMP
+     WHERE cp.call_id=? AND cp.user_id=? AND cp.status IN ('invited','ringing')
+       AND m.call_status IN ('ringing','accepted')
+       AND cp.updated_at < DATE_SUB(NOW(), INTERVAL ? SECOND)`,
+      [callId, userId, CHAT_CALL_RING_TIMEOUT_SECONDS],
+    );
+  } catch (error) {
+    if (['ER_NO_SUCH_TABLE', 'ER_BAD_FIELD_ERROR', 'ER_TRUNCATED_WRONG_VALUE'].includes(error?.code)) return false;
+    throw error;
+  }
+  if (!result.affectedRows) return false;
+  await pool.query("UPDATE call_device_sessions SET status='canceled',resolved_at=UTC_TIMESTAMP() WHERE call_id=? AND user_id=? AND status='ringing'", [callId, userId]);
+  await publishCallUpdate(callId);
+  return true;
+};
+
+const markExpiredCallInvitations = async () => {
+  const [rows] = await pool.query(
+    `SELECT cp.call_id,cp.user_id FROM call_participants cp
+     INNER JOIN messages m ON m.id=cp.call_id
+     WHERE cp.status IN ('invited','ringing') AND m.call_status IN ('ringing','accepted')
+       AND cp.updated_at < DATE_SUB(NOW(), INTERVAL ? SECOND)
+     ORDER BY cp.updated_at ASC LIMIT 100`,
+    [CHAT_CALL_RING_TIMEOUT_SECONDS],
+  );
+  for (const row of rows) await expireCallInvitation(row.call_id, row.user_id);
+};
+
+const scheduleCallInvitationExpiry = (callId, userId) => {
+  const timer = setTimeout(() => {
+    expireCallInvitation(callId, userId).catch(error => console.error('Call invitation expiry failed:', error.message));
+  }, (CHAT_CALL_RING_TIMEOUT_SECONDS + 1) * 1000);
+  if (typeof timer.unref === 'function') timer.unref();
+};
+
 const markExpiredRingingCalls = async (userId = null) => {
+  await markExpiredCallInvitations();
   const params = [CHAT_CALL_RING_TIMEOUT_SECONDS];
   let userFilter = '';
   if (userId) {
@@ -5639,21 +5714,18 @@ app.get('/api/chat/missed-calls', authMiddleware, async (req, res) => {
 app.post('/api/chat/missed-calls/:callId/dismiss', authMiddleware, async (req, res) => {
   try {
     const callId = String(req.params.callId || '').trim();
-    const call = await userCanAccessMessage(callId, req.user.id);
-    if (!call || call.message_kind !== 'call' || call.call_status !== 'missed') {
-      return res.status(404).json({ error: 'Missed call not found.' });
-    }
-    const isRecipient = String(call.receiver_id) === String(req.user.id);
-    const [participantRows] = await pool.query(
-      'SELECT 1 FROM call_participants WHERE call_id = ? AND user_id = ? AND status = ? LIMIT 1',
-      [callId, req.user.id, 'missed'],
+    if (!callId || callId.length > 100) return res.status(400).json({ error: 'Invalid missed-call identifier.' });
+    const [dismissal] = await pool.query(
+      `INSERT INTO missed_call_dismissals (id,call_id,user_id)
+       SELECT ?,m.id,?
+       FROM messages m
+       LEFT JOIN call_participants cp ON cp.call_id=m.id AND cp.user_id=? AND cp.status='missed'
+       WHERE m.id=? AND m.message_kind='call' AND m.call_status='missed'
+         AND (m.receiver_id=? OR cp.user_id IS NOT NULL)
+       ON DUPLICATE KEY UPDATE dismissed_at=CURRENT_TIMESTAMP`,
+      [uuidv4(), req.user.id, req.user.id, callId, req.user.id],
     );
-    if (!isRecipient && !participantRows.length) return res.status(403).json({ error: 'You cannot dismiss this call.' });
-    await pool.query(
-      `INSERT INTO missed_call_dismissals (id,call_id,user_id) VALUES (?,?,?)
-       ON DUPLICATE KEY UPDATE dismissed_at = CURRENT_TIMESTAMP`,
-      [uuidv4(), callId, req.user.id],
-    );
+    if (!dismissal.affectedRows) return res.status(404).json({ error: 'Missed call not found or no longer available.' });
     await logSuccess(pool, req, {
       action: 'missed_call_dismissed',
       category: 'chat',
@@ -5661,10 +5733,13 @@ app.post('/api/chat/missed-calls/:callId/dismiss', authMiddleware, async (req, r
       entity_type: 'message',
       entity_id: callId,
       description: 'Missed call notification dismissed.',
-    });
+    }).catch(error => console.error('Missed-call dismissal audit log failed:', error?.code || error?.message || error));
     res.json({ success: true });
   } catch (err) {
-    res.status(500).json({ error: 'Unable to dismiss missed call.' });
+    console.error('Unable to persist missed-call dismissal:', err?.code || err?.message || err);
+    if (!communicationSchemaUnavailable(err, res)) {
+      res.status(500).json({ error: 'Unable to dismiss missed call.', code: 'MISSED_CALL_DISMISSAL_FAILED' });
+    }
   }
 });
 
@@ -5997,6 +6072,27 @@ app.get('/api/communication/preferences', authMiddleware, async (req, res) => {
   }
 });
 
+app.patch('/api/communication/preferences/theme', authMiddleware, async (req, res) => {
+  const theme = req.body?.theme;
+  if (!['light', 'dark', 'system'].includes(theme)) {
+    return res.status(400).json({ error: 'Select a supported theme.' });
+  }
+  try {
+    await pool.query(
+      `INSERT INTO user_interface_preferences
+       (user_id,language,theme,inactivity_timeout_minutes,lock_on_resume)
+       VALUES (?,'en',?,10,FALSE)
+       ON DUPLICATE KEY UPDATE theme=VALUES(theme)`,
+      [req.user.id, theme],
+    );
+    res.json({ success: true, theme });
+  } catch (error) {
+    if (!communicationSchemaUnavailable(error, res)) {
+      res.status(500).json({ error: 'Unable to save the theme preference.' });
+    }
+  }
+});
+
 app.get('/api/communication/push-configuration', authMiddleware, (req, res) => {
   const configuration = readVapidConfiguration();
   res.json({ configured: configuration.configured, publicKey: configuration.configured ? configuration.publicKey : null });
@@ -6130,9 +6226,10 @@ app.post('/api/chat/calls', authMiddleware, async (req, res) => {
     const callType = req.body?.call_type === 'video' ? 'video' : 'audio';
     if (!receiverIds.length) return res.status(400).json({ error: 'Select at least one active user.' });
     const placeholders = receiverIds.map(() => '?').join(',');
-    const [recipients] = await connection.query(`SELECT id FROM user_profiles WHERE id IN (${placeholders}) AND is_active = 1`, receiverIds);
+    const [recipients] = await connection.query(`SELECT id FROM user_profiles WHERE id IN (${placeholders}) AND COALESCE(is_active,1) = 1`, receiverIds);
     const activeRecipientIds = recipients.map(row => String(row.id));
     if (!activeRecipientIds.length) return res.status(404).json({ error: 'Active chat recipient not found.' });
+    if (activeRecipientIds.length !== receiverIds.length) return res.status(404).json({ error: 'One or more selected call participants are no longer active.' });
     const primaryReceiverId = activeRecipientIds[0];
     const id = uuidv4();
     await connection.beginTransaction();
@@ -6178,6 +6275,15 @@ app.post('/api/chat/calls', authMiddleware, async (req, res) => {
     await connection.commit();
     const [callMessage] = await pool.query(`${selectChatMessageSql} WHERE m.id = ?`, [id]);
     const [enriched] = await enrichChatMessages(callMessage, req.user.id);
+    await logSuccess(pool, req, {
+      action: 'call_started',
+      category: 'chat',
+      module: 'Chat',
+      entity_type: 'call',
+      entity_id: id,
+      description: 'An audio/video call was started.',
+      metadata: { call_type: callType, participant_count: activeRecipientIds.length + 1 },
+    }).catch(error => console.error('Call start audit log failed:', error?.code || error?.message || error));
     for (const receiverId of activeRecipientIds) {
       const [recipientView] = await enrichChatMessages(callMessage, receiverId);
       notifyChatClients(receiverId, { type: 'incoming_call', call: recipientView });
@@ -6188,8 +6294,8 @@ app.post('/api/chat/calls', authMiddleware, async (req, res) => {
     res.json(enriched);
   } catch (err) {
     await connection.rollback().catch(() => undefined);
-    console.error('Chat call start failed:', err.message);
-    res.status(500).json({ error: 'Unable to start the call.' });
+    console.error('Chat call start failed:', err?.code || err?.message || err);
+    res.status(err.code === 'ER_NO_SUCH_TABLE' ? 503 : 500).json({ error: err.code === 'ER_NO_SUCH_TABLE' ? 'Communication database setup is incomplete.' : 'Unable to start the call.', code: err.code === 'ER_NO_SUCH_TABLE' ? 'COMMUNICATION_SCHEMA_INCOMPLETE' : 'CALL_START_FAILED' });
   } finally {
     connection.release();
   }
@@ -6233,6 +6339,10 @@ app.patch('/api/chat/calls/:callId', authMiddleware, async (req, res) => {
       await connection.rollback();
       return res.status(409).json({ error: 'This call invitation is no longer active.', code: 'CALL_NOT_ACTIVE' });
     }
+    if (status === 'accepted' && !['invited', 'ringing', 'accepted'].includes(String(participantStatus))) {
+      await connection.rollback();
+      return res.status(409).json({ error: 'This meeting invitation is no longer active.', code: 'CALL_INVITATION_NOT_ACTIVE' });
+    }
     const deviceId = normalizeDeviceId(req.body?.device_id);
     if (status === 'accepted') {
       if (!deviceId) {
@@ -6271,7 +6381,20 @@ app.patch('/api/chat/calls/:callId', authMiddleware, async (req, res) => {
        ON DUPLICATE KEY UPDATE status=VALUES(status),joined_at=COALESCE(joined_at,VALUES(joined_at)),left_at=VALUES(left_at),updated_at=CURRENT_TIMESTAMP`,
       [uuidv4(), callId, req.user.id, status, status === 'accepted' ? new Date() : null, ['declined', 'ended', 'missed'].includes(status) ? new Date() : null],
     );
-    const shouldUpdateGlobalState = status === 'accepted' || status === 'ended' || isOneToOne;
+    if (['declined', 'ended', 'missed'].includes(status)) {
+      await connection.query(
+        "UPDATE call_device_sessions SET status=IF(status='accepted','disconnected','canceled'),resolved_at=UTC_TIMESTAMP() WHERE call_id=? AND user_id=? AND status IN ('accepted','ringing')",
+        [callId, req.user.id],
+      );
+      await connection.query('UPDATE call_participants SET hand_raised=FALSE,hand_raised_at=NULL,screen_sharing=FALSE WHERE call_id=? AND user_id=?', [callId, req.user.id]).catch((error) => {
+        if (!['ER_NO_SUCH_TABLE', 'ER_BAD_FIELD_ERROR'].includes(error?.code)) throw error;
+      });
+      await connection.query('UPDATE call_meeting_state SET spotlight_user_id=NULL,updated_by=? WHERE call_id=? AND spotlight_user_id=?', [req.user.id, callId, req.user.id]).catch((error) => {
+        if (error?.code !== 'ER_NO_SUCH_TABLE') throw error;
+      });
+    }
+    const isOrganizer = String(call.sender_id) === String(req.user.id);
+    const shouldUpdateGlobalState = status === 'accepted' || (status === 'ended' && (isOrganizer || isOneToOne)) || isOneToOne;
     if (shouldUpdateGlobalState) {
       const fields = ['call_status = ?'];
       const values = [status];
@@ -6279,6 +6402,14 @@ app.patch('/api/chat/calls/:callId', authMiddleware, async (req, res) => {
       if (terminalStatuses.has(status)) fields.push('call_ended_at = COALESCE(call_ended_at, NOW())');
       values.push(callId);
       await connection.query(`UPDATE messages SET ${fields.join(', ')} WHERE id = ? AND message_kind = 'call'`, values);
+      if (status === 'ended' && isOrganizer) {
+        await connection.query('UPDATE call_participants SET hand_raised=FALSE,hand_raised_at=NULL,screen_sharing=FALSE WHERE call_id=?', [callId]).catch((error) => {
+          if (!['ER_NO_SUCH_TABLE', 'ER_BAD_FIELD_ERROR'].includes(error?.code)) throw error;
+        });
+        await connection.query('UPDATE call_meeting_state SET spotlight_user_id=NULL,updated_by=? WHERE call_id=?', [req.user.id, callId]).catch((error) => {
+          if (error?.code !== 'ER_NO_SUCH_TABLE') throw error;
+        });
+      }
     }
     await logSuccess(connection, req, {
       action: `call_${status}`,
@@ -6306,6 +6437,154 @@ app.patch('/api/chat/calls/:callId', authMiddleware, async (req, res) => {
   }
 });
 
+app.get('/api/chat/calls/ice-servers', authMiddleware, (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  res.json({ iceServers: createIceServers(req.user.id) });
+});
+
+app.get('/api/chat/calls/active', authMiddleware, async (req, res) => {
+  try {
+    const deviceId = normalizeDeviceId(req.query?.device_id);
+    if (!deviceId) return res.status(400).json({ error: 'A valid device identifier is required.' });
+    const [rows] = await pool.query(
+      `SELECT m.id FROM messages m
+       INNER JOIN call_participants cp ON cp.call_id=m.id AND cp.user_id=?
+       WHERE m.message_kind='call' AND m.call_status IN ('ringing','accepted')
+         AND (
+           cp.status IN ('invited','ringing')
+           OR (cp.status='accepted' AND EXISTS (
+             SELECT 1 FROM call_device_sessions cds
+             WHERE cds.call_id=m.id AND cds.user_id=? AND cds.device_id=? AND cds.status='accepted'
+           ))
+         )
+       ORDER BY m.created_at DESC LIMIT 1`,
+      [req.user.id, req.user.id, deviceId],
+    );
+    if (!rows.length) return res.json({ activeCall: null });
+    const [messageRows] = await pool.query(`${selectChatMessageSql} WHERE m.id=?`, [rows[0].id]);
+    const [activeCall] = await enrichChatMessages(messageRows, req.user.id);
+    res.setHeader('Cache-Control', 'no-store');
+    res.json({ activeCall: activeCall || null });
+  } catch (error) {
+    if (!communicationSchemaUnavailable(error, res)) res.status(500).json({ error: 'Unable to restore the active call.' });
+  }
+});
+
+app.post('/api/chat/calls/:callId/participants', authMiddleware, async (req, res) => {
+  const connection = await pool.getConnection();
+  try {
+    const callId = String(req.params.callId || '').trim();
+    const requestedIds = Array.isArray(req.body?.receiver_ids) ? req.body.receiver_ids : [];
+    const receiverIds = Array.from(new Set(requestedIds.map(value => String(value || '').trim()).filter(id => id && id !== String(req.user.id)))).slice(0, 8);
+    if (!callId || !receiverIds.length) return res.status(400).json({ error: 'Select at least one colleague to invite.' });
+
+    await connection.beginTransaction();
+    const [callRows] = await connection.query("SELECT * FROM messages WHERE id=? AND message_kind='call' FOR UPDATE", [callId]);
+    const call = callRows[0];
+    if (!call || !['ringing', 'accepted'].includes(String(call.call_status))) {
+      await connection.rollback();
+      return res.status(409).json({ error: 'This meeting is no longer active.', code: 'CALL_NOT_ACTIVE' });
+    }
+    const [organizerRows] = await connection.query('SELECT status FROM call_participants WHERE call_id=? AND user_id=? FOR UPDATE', [callId, req.user.id]);
+    if (String(call.sender_id) !== String(req.user.id) || !organizerRows.length || organizerRows[0].status !== 'accepted') {
+      await connection.rollback();
+      return res.status(403).json({ error: 'Only the meeting organizer can invite colleagues.' });
+    }
+    const placeholders = receiverIds.map(() => '?').join(',');
+    const [authorizedUsers] = await connection.query(`SELECT id,first_name FROM user_profiles WHERE id IN (${placeholders}) AND is_active=1`, receiverIds);
+    const authorizedIds = authorizedUsers.map(row => String(row.id));
+    if (!authorizedIds.length) {
+      await connection.rollback();
+      return res.status(404).json({ error: 'No active colleagues were selected.' });
+    }
+    const insertedIds = [];
+    for (const userId of authorizedIds) {
+      const [existingRows] = await connection.query('SELECT status FROM call_participants WHERE call_id=? AND user_id=? FOR UPDATE', [callId, userId]);
+      if (existingRows.length && ['accepted', 'ringing', 'invited'].includes(existingRows[0].status)) continue;
+      if (existingRows.length) {
+        await connection.query("UPDATE call_participants SET status='invited',joined_at=NULL,left_at=NULL,updated_at=CURRENT_TIMESTAMP WHERE call_id=? AND user_id=?", [callId, userId]);
+      } else {
+        await connection.query("INSERT INTO call_participants (id,call_id,user_id,status) VALUES (?,?,?,'invited')", [uuidv4(), callId, userId]);
+      }
+      await connection.query(
+        `INSERT INTO call_device_sessions (id,call_id,user_id,device_id,status,last_seen_at)
+         SELECT UUID(),?,?,ps.device_id,'ringing',UTC_TIMESTAMP() FROM push_subscriptions ps
+         WHERE ps.user_id=? AND ps.disabled_at IS NULL AND (ps.expires_at IS NULL OR ps.expires_at>UTC_TIMESTAMP())
+         ON DUPLICATE KEY UPDATE status=IF(status='accepted',status,'ringing'),last_seen_at=UTC_TIMESTAMP()`,
+        [callId, userId, userId],
+      );
+      insertedIds.push(userId);
+    }
+    await connection.commit();
+
+    const [callMessage] = await pool.query(`${selectChatMessageSql} WHERE m.id=?`, [callId]);
+    const [updatedCall] = await enrichChatMessages(callMessage, req.user.id);
+    for (const userId of insertedIds) {
+      const [recipientCall] = await enrichChatMessages(callMessage, userId);
+      notifyChatClients(userId, { type: 'call_invitation', call: recipientCall });
+      void pushDelivery.deliver(userId, { type: 'incoming_call', entityId: callId, title: `Meeting invitation`, body: `${req.user.first_name || 'A colleague'} invited you to a call`, url: '/' }).then(async delivery => {
+        if (!delivery.configured || delivery.failed < 1 || delivery.sent > 0 || chatClients.has(String(userId))) return;
+        const [failure] = await pool.query(
+          "UPDATE call_participants SET status='failed',left_at=COALESCE(left_at,NOW()),updated_at=CURRENT_TIMESTAMP WHERE call_id=? AND user_id=? AND status IN ('invited','ringing')",
+          [callId, userId],
+        );
+        if (!failure.affectedRows) return;
+        await pool.query("UPDATE call_device_sessions SET status='canceled',resolved_at=UTC_TIMESTAMP() WHERE call_id=? AND user_id=? AND status='ringing'", [callId, userId]);
+        await publishCallUpdate(callId);
+      }).catch(error => console.error('Push call invitation failed:', error.message));
+      scheduleCallInvitationExpiry(callId, userId);
+    }
+    await publishCallUpdate(callId);
+    await logSuccess(connection, req, { action: 'call_participants_invited', category: 'chat', module: 'Chat', entity_type: 'call', entity_id: callId, description: 'Participants invited to an active call.', metadata: { invited_count: insertedIds.length } });
+    res.json({ call: updatedCall, invited_user_ids: insertedIds });
+  } catch (error) {
+    await connection.rollback().catch(() => undefined);
+    if (!communicationSchemaUnavailable(error, res)) {
+      console.error('Call participant invitation failed:', error.message);
+      res.status(500).json({ error: 'Unable to invite participants.' });
+    }
+  } finally {
+    connection.release();
+  }
+});
+
+app.post('/api/chat/calls/:callId/participants/:userId/cancel', authMiddleware, async (req, res) => {
+  const connection = await pool.getConnection();
+  try {
+    const callId = String(req.params.callId || '').trim();
+    const participantId = String(req.params.userId || '').trim();
+    await connection.beginTransaction();
+    const [callRows] = await connection.query("SELECT sender_id,call_status FROM messages WHERE id=? AND message_kind='call' FOR UPDATE", [callId]);
+    const call = callRows[0];
+    if (!call || !['ringing', 'accepted'].includes(String(call.call_status))) {
+      await connection.rollback();
+      return res.status(409).json({ error: 'This meeting is no longer active.', code: 'CALL_NOT_ACTIVE' });
+    }
+    if (String(call.sender_id) !== String(req.user.id)) {
+      await connection.rollback();
+      return res.status(403).json({ error: 'Only the meeting organizer can cancel an invitation.' });
+    }
+    const [result] = await connection.query(
+      "UPDATE call_participants SET status='cancelled',left_at=COALESCE(left_at,NOW()),hand_raised=FALSE,hand_raised_at=NULL,screen_sharing=FALSE,updated_at=CURRENT_TIMESTAMP WHERE call_id=? AND user_id=? AND status IN ('invited','ringing')",
+      [callId, participantId],
+    );
+    if (!result.affectedRows) {
+      await connection.rollback();
+      return res.status(409).json({ error: 'The invitation is no longer pending.' });
+    }
+    await connection.query("UPDATE call_device_sessions SET status='canceled',resolved_at=UTC_TIMESTAMP() WHERE call_id=? AND user_id=? AND status='ringing'", [callId, participantId]);
+    await logSuccess(connection, req, { action: 'call_invitation_cancelled', category: 'chat', module: 'Chat', entity_type: 'call', entity_id: callId, description: 'A pending meeting invitation was cancelled.' });
+    await connection.commit();
+    await publishCallUpdate(callId);
+    res.json({ success: true });
+  } catch (error) {
+    await connection.rollback().catch(() => undefined);
+    if (!communicationSchemaUnavailable(error, res)) res.status(500).json({ error: 'Unable to cancel the invitation.' });
+  } finally {
+    connection.release();
+  }
+});
+
 app.post('/api/chat/call-signal', authMiddleware, async (req, res) => {
   try {
     const callId = String(req.body?.call_id || '').trim();
@@ -6313,20 +6592,8 @@ app.post('/api/chat/call-signal', authMiddleware, async (req, res) => {
     const signalType = String(req.body?.signal_type || '').trim();
     const payload = req.body?.payload;
     const deviceId = normalizeDeviceId(req.body?.device_id);
-    const allowedSignalTypes = ['offer', 'answer', 'ice-candidate', 'reaction', 'hand-state'];
-    const allowedMeetingReactions = new Set([
-      '\u{1F44D}',
-      '\u2764\uFE0F',
-      '\u{1F44F}',
-      '\u{1F602}',
-      '\u{1F389}',
-      '\u{1F60A}',
-    ]);
-    const validEngagementPayload = signalType === 'reaction'
-      ? payload && typeof payload === 'object' && allowedMeetingReactions.has(payload.emoji) && Object.keys(payload).every((key) => key === 'emoji')
-      : signalType === 'hand-state'
-        ? payload && typeof payload === 'object' && typeof payload.raised === 'boolean' && Object.keys(payload).every((key) => key === 'raised')
-        : true;
+    const allowedSignalTypes = ['offer', 'answer', 'ice-candidate', 'reaction', 'hand-state', 'media-state', 'spotlight', 'rejoin'];
+    const validEngagementPayload = isValidCallSignalPayload(signalType, payload);
     if (!callId || !receiverId || !deviceId || !allowedSignalTypes.includes(signalType) || !validEngagementPayload) {
       return res.status(400).json({ error: 'Invalid call signal.' });
     }
@@ -6346,8 +6613,53 @@ app.post('/api/chat/call-signal', authMiddleware, async (req, res) => {
        WHERE cds.call_id=? AND cds.user_id=? AND cds.device_id=? LIMIT 1`,
       [callId, req.user.id, deviceId],
     );
-    if (!deviceSessionRows.length || deviceSessionRows[0].status !== 'accepted' || ['declined', 'ended', 'missed'].includes(deviceSessionRows[0].call_status)) {
+    const [senderMembership] = await pool.query('SELECT status FROM call_participants WHERE call_id=? AND user_id=? LIMIT 1', [callId, req.user.id]);
+    const [recipientMembership] = await pool.query('SELECT status FROM call_participants WHERE call_id=? AND user_id=? LIMIT 1', [callId, receiverId]);
+    if (!['accepted', 'invited', 'ringing'].includes(String(recipientMembership[0]?.status || ''))) {
+      return res.status(403).json({ error: 'Call signals can only be delivered to current participants.' });
+    }
+    const targetUserId = signalType === 'hand-state' && typeof payload.targetUserId === 'string' ? payload.targetUserId : String(req.user.id);
+    if (signalType === 'hand-state' && targetUserId !== String(req.user.id)) {
+      if (payload.raised !== false || String(call.sender_id) !== String(req.user.id)) {
+        return res.status(403).json({ error: 'Only the meeting organizer can lower another participant hand.' });
+      }
+      const [targetMembership] = await pool.query('SELECT status FROM call_participants WHERE call_id=? AND user_id=? LIMIT 1', [callId, targetUserId]);
+      if (!['accepted', 'invited', 'ringing'].includes(String(targetMembership[0]?.status || ''))) {
+        return res.status(403).json({ error: 'The selected participant is no longer in the meeting.' });
+      }
+    }
+    if (signalType === 'spotlight') {
+      const spotlightUserId = payload.userId === null ? null : String(payload.userId);
+      if (String(call.sender_id) !== String(req.user.id)) return res.status(403).json({ error: 'Only the meeting organizer can spotlight a participant.' });
+      if (spotlightUserId) {
+        const [spotlightMembership] = await pool.query('SELECT status FROM call_participants WHERE call_id=? AND user_id=? LIMIT 1', [callId, spotlightUserId]);
+        if (!['accepted', 'invited', 'ringing'].includes(String(spotlightMembership[0]?.status || ''))) return res.status(403).json({ error: 'The selected participant is no longer in the meeting.' });
+      }
+    }
+    const senderIsJoined = senderMembership[0]?.status === 'accepted'
+      && (deviceSessionRows.length ? deviceSessionRows[0].status === 'accepted' : String(call.sender_id) === String(req.user.id));
+    const invitationCanRing = signalType === 'offer'
+      && senderIsJoined
+      && ['invited', 'ringing'].includes(String(recipientMembership[0]?.status || ''));
+    if ((!senderIsJoined && !invitationCanRing)
+      || ['declined', 'ended', 'missed'].includes(deviceSessionRows[0]?.call_status || '')) {
       return res.status(409).json({ error: 'This device does not own the active call session.', code: 'CALL_DEVICE_NOT_AUTHORIZED' });
+    }
+    if (signalType === 'hand-state') {
+      await pool.query(
+        'UPDATE call_participants SET hand_raised=?,hand_raised_at=?,updated_at=CURRENT_TIMESTAMP WHERE call_id=? AND user_id=?',
+        [payload.raised, payload.raised ? new Date() : null, callId, targetUserId],
+      );
+    } else if (signalType === 'media-state') {
+      await pool.query(
+        'UPDATE call_participants SET audio_enabled=?,video_enabled=?,screen_sharing=?,updated_at=CURRENT_TIMESTAMP WHERE call_id=? AND user_id=?',
+        [payload.audioEnabled, payload.videoEnabled, payload.screenSharing, callId, req.user.id],
+      );
+    } else if (signalType === 'spotlight') {
+      await pool.query(
+        'INSERT INTO call_meeting_state (call_id,spotlight_user_id,updated_by) VALUES (?,?,?) ON DUPLICATE KEY UPDATE spotlight_user_id=VALUES(spotlight_user_id),updated_by=VALUES(updated_by)',
+        [callId, payload.userId, req.user.id],
+      );
     }
     const signalId = uuidv4();
     notifyChatClients(receiverId, {
@@ -6360,7 +6672,7 @@ app.post('/api/chat/call-signal', authMiddleware, async (req, res) => {
     });
     res.json({ success: true, signalId });
   } catch (err) {
-    res.status(500).json({ error: 'Unable to send call signal.' });
+    if (!communicationSchemaUnavailable(err, res)) res.status(500).json({ error: 'Unable to send call signal.' });
   }
 });
 

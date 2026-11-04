@@ -8,7 +8,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { X, Send, Check, CheckCheck, Search, Users, MessageSquare, Phone, Video, VideoOff, Paperclip, Download, Image as ImageIcon, FileText, Reply, PhoneOff, Mic, MicOff, MonitorUp, MoreVertical, Copy, SmilePlus, Edit3, Trash2, BellOff, ScreenShare, ScreenShareOff, LayoutGrid, PanelTop, Settings2, Maximize2, Minimize2, Minus, Hand } from "lucide-react";
+import { X, Send, Check, CheckCheck, Search, Users, UserPlus, MessageSquare, Phone, Video, VideoOff, Paperclip, Download, Image as ImageIcon, FileText, Reply, PhoneOff, Mic, MicOff, MonitorUp, MoreVertical, Copy, SmilePlus, Edit3, Trash2, BellOff, ScreenShare, ScreenShareOff, LayoutGrid, PanelTop, Settings2, Maximize2, Minimize2, Minus, Hand, Pin, PinOff, PictureInPicture2, ChevronLeft, ChevronRight } from "lucide-react";
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
 import { resolveAvatarUrl } from "@/utils/avatar";
@@ -108,7 +108,7 @@ type MeetingReaction = { id: string; userId: string; emoji: string; expiresAt: n
 
 type SinkSelectableMediaElement = HTMLMediaElement & { setSinkId?: (deviceId: string) => Promise<void> };
 
-const RemoteCallMedia = ({ stream, video, label, avatarUrl, outputDeviceId }: { stream: MediaStream; video: boolean; label: string; avatarUrl?: string; outputDeviceId: string }) => {
+const RemoteCallMedia = ({ stream, video, label, avatarUrl, outputDeviceId, videoEnabled }: { stream: MediaStream; video: boolean; label: string; avatarUrl?: string; outputDeviceId: string; videoEnabled?: boolean }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
   const [playbackBlocked, setPlaybackBlocked] = useState(false);
@@ -162,7 +162,7 @@ const RemoteCallMedia = ({ stream, video, label, avatarUrl, outputDeviceId }: { 
 
   return <div className="relative">
     {video
-      ? <div className="relative aspect-video w-full overflow-hidden rounded-lg bg-muted/60"><video ref={videoRef} autoPlay playsInline aria-label={`${label} video`} className={cn("h-full w-full bg-black object-cover", !hasLiveVideo && "invisible")} />{!hasLiveVideo && <div className="absolute inset-0 flex flex-col items-center justify-center gap-3"><Avatar className="h-20 w-20 border-4 border-background shadow-lg"><AvatarImage src={resolveAvatarUrl(avatarUrl)} alt={label} /><AvatarFallback className="bg-primary text-xl font-bold text-primary-foreground">{label.split(/\s+/).map(part => part[0]).join("").slice(0, 2).toUpperCase()}</AvatarFallback></Avatar><span className="text-xs font-semibold text-muted-foreground">Camera off</span></div>}</div>
+      ? <div className="relative aspect-video w-full overflow-hidden rounded-lg bg-muted/60"><video ref={videoRef} autoPlay playsInline aria-label={`${label} video`} className={cn("h-full w-full bg-black object-cover", (!hasLiveVideo || videoEnabled === false) && "invisible")} />{(!hasLiveVideo || videoEnabled === false) && <div className="absolute inset-0 flex flex-col items-center justify-center gap-3"><Avatar className="h-20 w-20 border-4 border-background shadow-lg"><AvatarImage src={resolveAvatarUrl(avatarUrl)} alt={label} /><AvatarFallback className="bg-primary text-xl font-bold text-primary-foreground">{label.split(/\s+/).map(part => part[0]).join("").slice(0, 2).toUpperCase()}</AvatarFallback></Avatar><span className="text-xs font-semibold text-muted-foreground">{videoEnabled === false ? "Camera off" : "Video unavailable"}</span></div>}</div>
       : <><audio ref={audioRef} autoPlay aria-label={`${label} audio`} /><div className="flex h-36 items-center justify-center rounded-lg bg-muted/60 text-sm text-muted-foreground">Audio connected</div></>}
     {playbackBlocked && <Button type="button" size="sm" className="absolute inset-x-4 bottom-4" onClick={resumePlayback}>Play {label}&apos;s audio</Button>}
   </div>;
@@ -173,7 +173,7 @@ export const ChatModule = ({ currentUser, chat, onClose, onMinimize, onToggleFul
     messages, users, activeChatUserId, setActiveChatUserId,
     sendMessage, editMessage, setReaction, removeReaction, deleteMessageForMe, deleteMessageForEveryone, setTyping, typingUsers, unreadCounts, isConnected,
     incomingCall, activeCall, callSignals, startCall, updateCallStatus,
-    sendCallSignal, clearCallSignals, clearCallState, onlineUserCount, isLoadingUsers, usersError, loadUsers,
+    sendCallSignal, clearCallSignals, clearCallState, inviteCallParticipants, cancelCallInvitation, getCallIceServers, onlineUserCount, isLoadingUsers, usersError, loadUsers,
   } = chat;
   const { toast } = useToast();
   const [inputText, setInputText] = useState("");
@@ -190,17 +190,32 @@ export const ChatModule = ({ currentUser, chat, onClose, onMinimize, onToggleFul
   const [isRingtoneSilenced, setIsRingtoneSilenced] = useState(false);
   const [isMicrophoneMuted, setIsMicrophoneMuted] = useState(false);
   const [isCameraEnabled, setIsCameraEnabled] = useState(true);
+  const [hasLiveLocalVideo, setHasLiveLocalVideo] = useState(false);
   const [isScreenSharing, setIsScreenSharing] = useState(false);
   const [activeSpeakerId, setActiveSpeakerId] = useState<string | null>(null);
   const [callLayout, setCallLayout] = useState<"gallery" | "speaker">("gallery");
+  const [galleryPage, setGalleryPage] = useState(0);
   const [mediaDevices, setMediaDevices] = useState<MediaDeviceInfo[]>([]);
   const [audioInputDeviceId, setAudioInputDeviceId] = useState("");
   const [videoInputDeviceId, setVideoInputDeviceId] = useState("");
   const [audioOutputDeviceId, setAudioOutputDeviceId] = useState("");
   const [showDeviceSettings, setShowDeviceSettings] = useState(false);
+  const [showInvitePanel, setShowInvitePanel] = useState(false);
+  const [meetingInviteSearchTerm, setMeetingInviteSearchTerm] = useState("");
+  const [meetingInviteSelection, setMeetingInviteSelection] = useState<string[]>([]);
+  const [isInvitingParticipants, setIsInvitingParticipants] = useState(false);
   const [isTestingMicrophone, setIsTestingMicrophone] = useState(false);
   const [microphoneLevel, setMicrophoneLevel] = useState(0);
   const [raisedHands, setRaisedHands] = useState<Record<string, boolean>>({});
+  const [raisedHandOrder, setRaisedHandOrder] = useState<Record<string, number>>({});
+  const [remoteMediaStates, setRemoteMediaStates] = useState<Record<string, { audioEnabled: boolean; videoEnabled: boolean; screenSharing: boolean }>>({});
+  const [spotlightParticipantId, setSpotlightParticipantId] = useState<string | null>(null);
+  const [pinnedParticipantId, setPinnedParticipantId] = useState<string | null>(null);
+  const [isSelfViewPip, setIsSelfViewPip] = useState(false);
+  const [pipPosition, setPipPosition] = useState({ left: 62, top: 58 });
+  const [mobileMeetingView, setMobileMeetingView] = useState<"gallery" | "participants" | "chat">("gallery");
+  const [isDesktopChatOpen, setIsDesktopChatOpen] = useState(true);
+  const [isDesktopParticipantsOpen, setIsDesktopParticipantsOpen] = useState(false);
   const [meetingReactions, setMeetingReactions] = useState<MeetingReaction[]>([]);
   const scrollRef = useRef<HTMLDivElement>(null);
   const typingTimerRef = useRef<number | null>(null);
@@ -218,14 +233,44 @@ export const ChatModule = ({ currentUser, chat, onClose, onMinimize, onToggleFul
   });
   const microphoneTestCleanupRef = useRef<() => void>(() => undefined);
   const lastMeetingReactionAtRef = useRef(0);
+  const raisedHandsRef = useRef<Record<string, boolean>>({});
+  const screenSharingRef = useRef(false);
+  const iceServersRef = useRef<RTCIceServer[]>([{ urls: "stun:stun.l.google.com:19302" }]);
+  const iceRestartTimersRef = useRef<Map<string, number>>(new Map());
+  const iceRestartAttemptsRef = useRef<Set<string>>(new Set());
+  const mediaGalleryRef = useRef<HTMLDivElement>(null);
+  const pipDragRef = useRef<{ pointerId: number; startX: number; startY: number; left: number; top: number } | null>(null);
 
   const visibleUsers = users.filter(user => user.id !== currentUser.id);
+  raisedHandsRef.current = raisedHands;
+  screenSharingRef.current = isScreenSharing;
+  const activeCallId = activeCall?.id;
   const activeUser = visibleUsers.find(u => u.id === activeChatUserId);
   const activeCallParticipantIds = activeCall
-    ? Array.from(new Set([activeCall.sender_id, activeCall.receiver_id, ...(activeCall.call_participant_ids || [])].filter(Boolean)))
+    ? Array.from(new Set(Array.isArray(activeCall.call_participants)
+      ? activeCall.call_participants.filter(participant => String(participant.status) === "accepted").map(participant => participant.user_id)
+      : [activeCall.sender_id, activeCall.receiver_id, ...(activeCall.call_participant_ids || [])].filter(Boolean)))
     : [];
+  const activeCallPendingInviteIds = activeCall?.call_participants?.filter(participant => ["invited", "ringing"].includes(String(participant.status))).map(participant => participant.user_id) || [];
   const activeCallOtherParticipants = activeCallParticipantIds.filter(id => id !== currentUser.id);
   const activeCallUsers = activeCallOtherParticipants.map(id => users.find(user => user.id === id)).filter(Boolean) as User[];
+  const orderedCallParticipantIds = [...activeCallOtherParticipants].sort((left, right) => {
+    if (spotlightParticipantId === left) return -1;
+    if (spotlightParticipantId === right) return 1;
+    if (pinnedParticipantId === left) return -1;
+    if (pinnedParticipantId === right) return 1;
+    return 0;
+  });
+  const activeCallParticipantKey = activeCallParticipantIds.join("|");
+  const galleryPageSize = 11;
+  const galleryPageCount = Math.max(1, Math.ceil(orderedCallParticipantIds.length / galleryPageSize));
+  const visibleGalleryParticipantIds = orderedCallParticipantIds.slice(galleryPage * galleryPageSize, (galleryPage + 1) * galleryPageSize);
+  const meetingParticipantIds = activeCall?.call_participants?.map(participant => participant.user_id) || activeCallParticipantIds;
+  const meetingParticipants = Array.from(new Set(meetingParticipantIds)).map(userId => {
+    const profile = userId === currentUser.id ? currentUser : users.find(user => user.id === userId);
+    const participant = activeCall?.call_participants?.find(item => String(item.user_id) === String(userId));
+    return { userId, profile, status: participant?.status || "accepted", handRaised: Boolean(raisedHands[userId]), raisedAt: raisedHandOrder[userId] || Number.MAX_SAFE_INTEGER };
+  }).sort((left, right) => Number(right.handRaised) - Number(left.handRaised) || left.raisedAt - right.raisedAt || formatUserName(left.profile).localeCompare(formatUserName(right.profile)));
   const activeCallLabel = activeCallOtherParticipants.length > 1
     ? `${activeCall.call_type === "video" ? "Group video" : "Group phone"} call (${activeCallOtherParticipants.length + 1})`
     : `${activeCall?.call_type === "video" ? "Video" : "Phone"} call with ${formatUserName(activeCallUsers[0])}`;
@@ -233,18 +278,75 @@ export const ChatModule = ({ currentUser, chat, onClose, onMinimize, onToggleFul
     ? Array.from(new Set([activeChatUserId, ...selectedCallParticipantIds])).filter(id => id && id !== currentUser.id && visibleUsers.some(user => user.id === id))
     : [];
 
-  const broadcastMeetingEvent = async (signalType: "reaction" | "hand-state", payload: { emoji: string } | { raised: boolean }) => {
+  const broadcastMeetingEvent = async (signalType: "reaction" | "hand-state", payload: { emoji: string } | { raised: boolean; targetUserId?: string }) => {
     if (!activeCall) return;
     // Engagement events are intentionally best-effort while invitees are still joining.
     // Media/signaling errors remain surfaced through the established call error path.
     await Promise.allSettled(activeCallOtherParticipants.map(participantId => sendCallSignal(activeCall.id, participantId, signalType, payload)));
   };
 
+  const publishLocalMediaState = (call: ChatMessage, participantIds: string[]) => {
+    const audioEnabled = Boolean(localStreamRef.current?.getAudioTracks().some(track => track.readyState === "live" && track.enabled));
+    const videoEnabled = Boolean(localStreamRef.current?.getVideoTracks().some(track => track.readyState === "live" && track.enabled));
+    return Promise.allSettled(participantIds.filter(id => id && id !== currentUser.id).map(id => sendCallSignal(call.id, id, "media-state", { audioEnabled, videoEnabled, screenSharing: screenSharingRef.current })));
+  };
+
   const toggleRaisedHand = () => {
     if (!activeCall) return;
     const raised = !raisedHands[currentUser.id];
     setRaisedHands(current => ({ ...current, [currentUser.id]: raised }));
+    setRaisedHandOrder(current => {
+      const next = { ...current };
+      if (raised) next[currentUser.id] = Date.now();
+      else delete next[currentUser.id];
+      return next;
+    });
     void broadcastMeetingEvent("hand-state", { raised });
+  };
+
+  const setMeetingSpotlight = (participantId: string | null) => {
+    if (!activeCall || String(activeCall.sender_id) !== String(currentUser.id)) return;
+    setSpotlightParticipantId(participantId);
+    setGalleryPage(0);
+    void Promise.allSettled(activeCallOtherParticipants.map(id => sendCallSignal(activeCall.id, id, "spotlight", { userId: participantId })));
+  };
+
+  const handlePipPointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (!isSelfViewPip || !mediaGalleryRef.current) return;
+    pipDragRef.current = { pointerId: event.pointerId, startX: event.clientX, startY: event.clientY, ...pipPosition };
+    event.currentTarget.setPointerCapture(event.pointerId);
+  };
+
+  const handlePipPointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
+    const drag = pipDragRef.current;
+    const bounds = mediaGalleryRef.current?.getBoundingClientRect();
+    if (!isSelfViewPip || !drag || drag.pointerId !== event.pointerId || !bounds?.width || !bounds.height) return;
+    const left = drag.left + ((event.clientX - drag.startX) / bounds.width) * 100;
+    const top = drag.top + ((event.clientY - drag.startY) / bounds.height) * 100;
+    setPipPosition({ left: Math.min(64, Math.max(0, left)), top: Math.min(76, Math.max(0, top)) });
+  };
+
+  const handleMeetingChatToggle = () => {
+    if (window.matchMedia("(max-width: 1023px)").matches) {
+      setMobileMeetingView(current => current === "chat" ? "gallery" : "chat");
+      return;
+    }
+    setIsDesktopChatOpen(current => !current);
+  };
+
+  const handleMeetingParticipantsToggle = () => {
+    if (window.matchMedia("(max-width: 1023px)").matches) {
+      setMobileMeetingView(current => current === "participants" ? "gallery" : "participants");
+      return;
+    }
+    setIsDesktopParticipantsOpen(current => !current);
+  };
+
+  const lowerRaisedHand = (userId: string) => {
+    if (!activeCall || String(activeCall.sender_id) !== String(currentUser.id)) return;
+    setRaisedHands(current => ({ ...current, [userId]: false }));
+    setRaisedHandOrder(current => { const next = { ...current }; delete next[userId]; return next; });
+    void broadcastMeetingEvent("hand-state", { raised: false, targetUserId: userId });
   };
 
   const sendMeetingReaction = (emoji: typeof MEETING_REACTIONS[number]) => {
@@ -295,6 +397,9 @@ export const ChatModule = ({ currentUser, chat, onClose, onMinimize, onToggleFul
   };
 
   const closePeer = () => {
+    iceRestartTimersRef.current.forEach(timer => window.clearTimeout(timer));
+    iceRestartTimersRef.current.clear();
+    iceRestartAttemptsRef.current.clear();
     peerRefs.current.forEach(connection => connection.close());
     peerRefs.current.clear();
     processedSignalsRef.current.clear();
@@ -324,7 +429,7 @@ export const ChatModule = ({ currentUser, chat, onClose, onMinimize, onToggleFul
       if (localStreamRef.current) attachLocalStreamToPeer(existingPeer, localStreamRef.current);
       return existingPeer;
     }
-    const connection = new RTCPeerConnection({ iceServers: [{ urls: "stun:stun.l.google.com:19302" }] });
+    const connection = new RTCPeerConnection({ iceServers: iceServersRef.current });
     connection.onicecandidate = event => {
       if (event.candidate) void sendCallSignal(call.id, targetUserId, "ice-candidate", event.candidate.toJSON());
     };
@@ -337,8 +442,35 @@ export const ChatModule = ({ currentUser, chat, onClose, onMinimize, onToggleFul
       });
     };
     connection.onconnectionstatechange = () => {
-      if (["failed", "disconnected", "closed"].includes(connection.connectionState)) {
-        setCallError(connection.connectionState === "failed" ? "Call connection failed." : null);
+      const state = connection.connectionState;
+      if (state === "failed" || state === "disconnected") {
+        setCallError(state === "failed" ? "Call connection failed. Trying to reconnect…" : "Connection interrupted. Trying to reconnect…");
+        const existingTimer = iceRestartTimersRef.current.get(targetUserId);
+        if (existingTimer) window.clearTimeout(existingTimer);
+        const timer = window.setTimeout(() => {
+          if (connection.connectionState === "closed" || iceRestartAttemptsRef.current.has(targetUserId)) return;
+          iceRestartAttemptsRef.current.add(targetUserId);
+          void getCallIceServers().then(servers => {
+            if (servers.length) {
+              iceServersRef.current = servers;
+              connection.setConfiguration({ iceServers });
+            }
+            return connection.createOffer({ iceRestart: true });
+          }).then(async offer => {
+            await connection.setLocalDescription(offer);
+            await sendCallSignal(call.id, targetUserId, "offer", connection.localDescription || offer);
+          }).catch(() => setCallError("Unable to reconnect this participant. Check the network and try rejoining."));
+        }, state === "failed" ? 300 : 1800);
+        iceRestartTimersRef.current.set(targetUserId, timer);
+      } else if (state === "connected") {
+        const timer = iceRestartTimersRef.current.get(targetUserId);
+        if (timer) window.clearTimeout(timer);
+        iceRestartTimersRef.current.delete(targetUserId);
+        iceRestartAttemptsRef.current.delete(targetUserId);
+        setCallError(null);
+        if (localStreamRef.current) void publishLocalMediaState(call, [targetUserId]);
+        if (raisedHandsRef.current[currentUser.id]) void sendCallSignal(call.id, targetUserId, "hand-state", { raised: true });
+        if (String(call.sender_id) === String(currentUser.id)) void sendCallSignal(call.id, targetUserId, "spotlight", { userId: spotlightParticipantId });
       }
     };
     peerRefs.current.set(targetUserId, connection);
@@ -485,6 +617,7 @@ export const ChatModule = ({ currentUser, chat, onClose, onMinimize, onToggleFul
     const nextMuted = !isMicrophoneMuted;
     tracks.forEach(track => { track.enabled = !nextMuted; });
     setIsMicrophoneMuted(nextMuted);
+    if (activeCall) void publishLocalMediaState(activeCall, activeCallOtherParticipants);
   };
 
   const toggleCamera = () => {
@@ -493,6 +626,7 @@ export const ChatModule = ({ currentUser, chat, onClose, onMinimize, onToggleFul
     const nextEnabled = !isCameraEnabled;
     tracks.forEach(track => { track.enabled = nextEnabled; });
     setIsCameraEnabled(nextEnabled);
+    if (activeCall) void publishLocalMediaState(activeCall, activeCallOtherParticipants);
   };
 
   const stopScreenShare = async () => {
@@ -505,6 +639,8 @@ export const ChatModule = ({ currentUser, chat, onClose, onMinimize, onToggleFul
     screenStreamRef.current = null;
     setLocalStream(localStreamRef.current);
     setIsScreenSharing(false);
+    screenSharingRef.current = false;
+    if (activeCall) void publishLocalMediaState(activeCall, activeCallOtherParticipants);
   };
 
   const toggleScreenShare = async () => {
@@ -528,6 +664,8 @@ export const ChatModule = ({ currentUser, chat, onClose, onMinimize, onToggleFul
       const previewStream = new MediaStream([screenTrack, ...(localStreamRef.current?.getAudioTracks() || [])]);
       setLocalStream(previewStream);
       setIsScreenSharing(true);
+      screenSharingRef.current = true;
+      if (activeCall) void publishLocalMediaState(activeCall, activeCallOtherParticipants);
       screenTrack.onended = () => { void stopScreenShare(); };
     } catch (error) {
       if (error instanceof DOMException && error.name === "NotAllowedError") return;
@@ -583,8 +721,58 @@ export const ChatModule = ({ currentUser, chat, onClose, onMinimize, onToggleFul
 
   useEffect(() => {
     setRaisedHands({});
+    setRaisedHandOrder({});
     setMeetingReactions([]);
+    setRemoteMediaStates({});
+    setSpotlightParticipantId(null);
+    setPinnedParticipantId(null);
+    setIsSelfViewPip(false);
+    setMobileMeetingView("gallery");
+    setIsDesktopParticipantsOpen(false);
+    setShowInvitePanel(false);
+    setMeetingInviteSelection([]);
   }, [activeCall?.id]);
+
+  useEffect(() => {
+    setGalleryPage(page => Math.min(page, Math.max(0, Math.ceil(activeCallOtherParticipants.length / galleryPageSize) - 1)));
+  }, [activeCallOtherParticipants.length]);
+
+  useEffect(() => {
+    if (!activeCall) return;
+    const nextHands: Record<string, boolean> = {};
+    const nextHandOrder: Record<string, number> = {};
+    const nextMediaStates: Record<string, { audioEnabled: boolean; videoEnabled: boolean; screenSharing: boolean }> = {};
+    activeCall.call_participants?.forEach(participant => {
+      if (participant.hand_raised) {
+        nextHands[participant.user_id] = true;
+        const raisedAt = participant.hand_raised_at ? new Date(participant.hand_raised_at).getTime() : Date.now();
+        nextHandOrder[participant.user_id] = Number.isFinite(raisedAt) ? raisedAt : Date.now();
+      }
+      if (typeof participant.audio_enabled === "boolean" && typeof participant.video_enabled === "boolean") {
+        nextMediaStates[participant.user_id] = { audioEnabled: participant.audio_enabled, videoEnabled: participant.video_enabled, screenSharing: participant.screen_sharing === true };
+      }
+    });
+    setRaisedHands(nextHands);
+    setRaisedHandOrder(nextHandOrder);
+    setRemoteMediaStates(nextMediaStates);
+    setSpotlightParticipantId(activeCall.spotlight_user_id || null);
+  }, [activeCall]);
+
+  useEffect(() => {
+    if (!activeCallId) return;
+    const activeIds = new Set(activeCallParticipantKey ? activeCallParticipantKey.split("|") : []);
+    setRaisedHands(current => Object.fromEntries(Object.entries(current).filter(([userId]) => activeIds.has(userId))));
+    setRaisedHandOrder(current => Object.fromEntries(Object.entries(current).filter(([userId]) => activeIds.has(userId))));
+    setRemoteMediaStates(current => Object.fromEntries(Object.entries(current).filter(([userId]) => activeIds.has(userId))));
+    if (spotlightParticipantId && !activeIds.has(spotlightParticipantId)) setSpotlightParticipantId(null);
+  }, [activeCallId, activeCallParticipantKey, spotlightParticipantId]);
+
+  useEffect(() => {
+    if (!activeCallId) return;
+    let disposed = false;
+    void getCallIceServers().then(servers => { if (!disposed && servers.length) iceServersRef.current = servers; }).catch(() => undefined);
+    return () => { disposed = true; };
+  }, [activeCallId, getCallIceServers]);
 
   useEffect(() => {
     if (meetingReactions.length === 0) return;
@@ -619,10 +807,25 @@ export const ChatModule = ({ currentUser, chat, onClose, onMinimize, onToggleFul
     if (!localVideoRef.current) return;
     localVideoRef.current.srcObject = localStream;
     if (localStream) void localVideoRef.current.play().catch(() => undefined);
+  }, [localStream, hasLiveLocalVideo]);
+
+  useEffect(() => {
+    const updateLocalVideo = () => setHasLiveLocalVideo(Boolean(localStream?.getVideoTracks().some(track => track.readyState === "live" && track.enabled && !track.muted)));
+    updateLocalVideo();
+    const tracks = localStream?.getVideoTracks() || [];
+    tracks.forEach(track => {
+      track.addEventListener("mute", updateLocalVideo);
+      track.addEventListener("unmute", updateLocalVideo);
+      track.addEventListener("ended", updateLocalVideo);
+    });
+    return () => tracks.forEach(track => {
+      track.removeEventListener("mute", updateLocalVideo);
+      track.removeEventListener("unmute", updateLocalVideo);
+      track.removeEventListener("ended", updateLocalVideo);
+    });
   }, [localStream]);
 
   const incomingCallId = incomingCall?.id;
-  const activeCallId = activeCall?.id;
   const shouldRing = Boolean(incomingCallId && !activeCallId && !isRingtoneSilenced);
   const shouldResetRingtoneSilence = !incomingCallId;
   const shouldEndLocalCall = (!activeCallId && !incomingCallId) || ["ended", "declined", "missed"].includes(String(activeCall?.call_status));
@@ -663,14 +866,48 @@ export const ChatModule = ({ currentUser, chat, onClose, onMinimize, onToggleFul
           continue;
         }
         if (signal.signalType === "hand-state") {
-          const raised = (signal.payload as { raised?: unknown }).raised;
-          if (typeof raised === "boolean") setRaisedHands(current => ({ ...current, [targetUserId]: raised }));
+          const handPayload = signal.payload as { raised?: unknown; targetUserId?: unknown };
+          const raised = handPayload.raised;
+          const handUserId = typeof handPayload.targetUserId === "string" ? handPayload.targetUserId : targetUserId;
+          if (typeof raised === "boolean") {
+            setRaisedHands(current => ({ ...current, [handUserId]: raised }));
+            setRaisedHandOrder(current => {
+              const next = { ...current };
+              if (raised) next[handUserId] = next[handUserId] || Date.now();
+              else delete next[handUserId];
+              return next;
+            });
+          }
+          continue;
+        }
+        if (signal.signalType === "media-state") {
+          const mediaState = signal.payload as { audioEnabled?: unknown; videoEnabled?: unknown; screenSharing?: unknown };
+          if (typeof mediaState.audioEnabled === "boolean" && typeof mediaState.videoEnabled === "boolean" && typeof mediaState.screenSharing === "boolean") {
+            setRemoteMediaStates(current => ({ ...current, [targetUserId]: { audioEnabled: mediaState.audioEnabled as boolean, videoEnabled: mediaState.videoEnabled as boolean, screenSharing: mediaState.screenSharing as boolean } }));
+          }
+          continue;
+        }
+        if (signal.signalType === "spotlight") {
+          const userId = (signal.payload as { userId?: unknown }).userId;
+          setSpotlightParticipantId(typeof userId === "string" && activeCallParticipantKey.split("|").includes(userId) ? userId : null);
+          continue;
+        }
+        if (signal.signalType === "rejoin") {
+          try {
+            const connection = createPeerConnectionRef.current(call, targetUserId);
+            if (connection.signalingState !== "stable") continue;
+            const offer = await connection.createOffer({ iceRestart: Boolean(connection.remoteDescription) });
+            await connection.setLocalDescription(offer);
+            await sendCallSignal(call.id, targetUserId, "offer", connection.localDescription || offer);
+          } catch (error) {
+            setCallError(error instanceof Error ? error.message : "Unable to restart a participant connection.");
+          }
           continue;
         }
         try {
           const connection = createPeerConnectionRef.current(call, targetUserId);
           if (signal.signalType === "offer") {
-            if (connection.remoteDescription || connection.signalingState !== "stable") continue;
+            if (connection.signalingState !== "stable") continue;
             await connection.setRemoteDescription(new RTCSessionDescription(signal.payload as RTCSessionDescriptionInit));
             // setRemoteDescription changes state, but TypeScript retains the pre-await narrowing.
             if ((connection.signalingState as RTCSignalingState) !== "have-remote-offer") continue;
@@ -701,7 +938,7 @@ export const ChatModule = ({ currentUser, chat, onClose, onMinimize, onToggleFul
       }
     };
     void processSignals();
-  }, [activeCall, callSignals, sendCallSignal]);
+  }, [activeCall, activeCallParticipantKey, callSignals, sendCallSignal]);
 
   const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -769,6 +1006,8 @@ export const ChatModule = ({ currentUser, chat, onClose, onMinimize, onToggleFul
     if (!selectedCallTargets.length) return;
     try {
       setCallError(null);
+      const iceServers = await getCallIceServers();
+      if (iceServers.length) iceServersRef.current = iceServers;
       await openMedia(callType === "video");
       const call = await startCall(selectedCallTargets, callType);
       await Promise.all(selectedCallTargets.map(async targetId => {
@@ -778,10 +1017,34 @@ export const ChatModule = ({ currentUser, chat, onClose, onMinimize, onToggleFul
         await connection.setLocalDescription(offer);
         await sendCallSignal(call.id, targetId, "offer", connection.localDescription || offer);
       }));
+      await publishLocalMediaState(call, selectedCallTargets);
     } catch (error) {
       endLocalCallState();
       clearCallState();
       toast({ title: "Call failed", description: error instanceof Error ? error.message : "Unable to start the call.", variant: "destructive" });
+    }
+  };
+
+  const inviteSelectedParticipants = async () => {
+    if (!activeCall || !meetingInviteSelection.length || isInvitingParticipants) return;
+    setIsInvitingParticipants(true);
+    try {
+      const result = await inviteCallParticipants(activeCall.id, meetingInviteSelection);
+      await Promise.all(result.invited_user_ids.map(async targetId => {
+        const connection = createPeerConnection(result.call, targetId);
+        if (connection.signalingState !== "stable" || connection.localDescription) return;
+        const offer = await connection.createOffer();
+        await connection.setLocalDescription(offer);
+        await sendCallSignal(result.call.id, targetId, "offer", connection.localDescription || offer);
+      }));
+      await publishLocalMediaState(result.call, result.invited_user_ids);
+      setMeetingInviteSelection([]);
+      setShowInvitePanel(false);
+      toast({ title: "Invitations sent", description: result.invited_user_ids.length ? `${result.invited_user_ids.length} colleague${result.invited_user_ids.length === 1 ? " was" : "s were"} invited to the meeting.` : "Those colleagues are already invited or in the meeting." });
+    } catch (error) {
+      toast({ title: "Invitations not sent", description: error instanceof Error ? error.message : "Unable to invite colleagues.", variant: "destructive" });
+    } finally {
+      setIsInvitingParticipants(false);
     }
   };
 
@@ -793,10 +1056,31 @@ export const ChatModule = ({ currentUser, chat, onClose, onMinimize, onToggleFul
       await openMedia(incomingCall.call_type === "video");
       const call = await updateCallStatus(incomingCall.id, "accepted");
       createPeerConnection(call, call.sender_id);
+      await publishLocalMediaState(call, call.call_participant_ids || [call.sender_id]);
       playCallPickupSound();
     } catch (error) {
       endLocalCallState();
       toast({ title: "Unable to answer", description: error instanceof Error ? error.message : "Check microphone/camera permissions.", variant: "destructive" });
+    }
+  };
+
+  const rejoinCallMedia = async () => {
+    if (!activeCall) return;
+    try {
+      setCallError(null);
+      await openMedia(activeCall.call_type === "video");
+      const connectedParticipantIds = activeCall.call_participants
+        ?.filter(participant => participant.status === "accepted")
+        .map(participant => participant.user_id)
+        .filter(userId => userId !== currentUser.id) || activeCallOtherParticipants;
+      for (const userId of connectedParticipantIds) {
+        createPeerConnection(activeCall, userId);
+        await sendCallSignal(activeCall.id, userId, "rejoin", {});
+      }
+      await publishLocalMediaState(activeCall, connectedParticipantIds);
+    } catch (error) {
+      setCallError(error instanceof Error ? error.message : "Unable to rejoin meeting media.");
+      toast({ title: "Unable to reconnect media", description: error instanceof Error ? error.message : "Check your camera and microphone permissions.", variant: "destructive" });
     }
   };
 
@@ -1092,10 +1376,8 @@ export const ChatModule = ({ currentUser, chat, onClose, onMinimize, onToggleFul
                     {Object.values(raisedHands).filter(Boolean).length > 0 && <Badge variant="secondary" className="rounded-full"><Hand className="mr-1 h-3 w-3" />{Object.values(raisedHands).filter(Boolean).length} raised</Badge>}
                   </div>
                 </div>
-                <div className="pointer-events-none absolute right-4 top-16 z-20 flex max-w-[70%] flex-wrap justify-end gap-2" aria-live="polite" aria-label="Meeting reactions">
-                  {meetingReactions.map(reaction => <span key={reaction.id} className="animate-in zoom-in rounded-full border bg-background/95 px-3 py-1.5 text-xl shadow-lg motion-reduce:animate-none" title={`${formatUserName(users.find(user => user.id === reaction.userId) || (reaction.userId === currentUser.id ? currentUser : undefined))} reacted ${reaction.emoji}`}>{reaction.emoji}</span>)}
-                </div>
                 {callError && <p className="mb-3 rounded-lg border border-destructive/20 bg-destructive/10 px-3 py-2 text-xs text-destructive">{callError}</p>}
+                {!localStream?.getTracks().some(track => track.readyState === "live") && <Button type="button" size="sm" className="mb-3 rounded-full" onClick={() => void rejoinCallMedia()}><Video className="mr-2 h-4 w-4" />Reconnect camera and microphone</Button>}
                 <div className="mb-4 flex min-w-0 flex-wrap items-center gap-2 rounded-xl border border-[hsl(var(--comm-border))] bg-background/70 p-2" role="toolbar" aria-label="Call controls">
                   <div className="flex min-w-0 flex-wrap items-center gap-2" role="group" aria-label="Media controls">
                     <Button size="icon" variant={isMicrophoneMuted ? "destructive" : "outline"} className={cn("h-10 w-10 rounded-full", !isMicrophoneMuted && "call-control-button")} onClick={toggleMicrophone} title={isMicrophoneMuted ? "Unmute microphone" : "Mute microphone"} aria-label={isMicrophoneMuted ? "Unmute microphone" : "Mute microphone"} aria-pressed={isMicrophoneMuted}>{isMicrophoneMuted ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}</Button>
@@ -1108,13 +1390,46 @@ export const ChatModule = ({ currentUser, chat, onClose, onMinimize, onToggleFul
                     <Button size="sm" variant={callLayout === "gallery" ? "default" : "outline"} className={cn("h-10 rounded-full px-3", callLayout === "gallery" ? "call-control-active" : "call-control-button")} onClick={() => setCallLayout("gallery")} aria-pressed={callLayout === "gallery"}><LayoutGrid className="mr-2 h-4 w-4" />Gallery</Button>
                     <Button size="sm" variant={callLayout === "speaker" ? "default" : "outline"} className={cn("h-10 rounded-full px-3", callLayout === "speaker" ? "call-control-active" : "call-control-button")} onClick={() => setCallLayout("speaker")} aria-pressed={callLayout === "speaker"}><PanelTop className="mr-2 h-4 w-4" />Speaker</Button>
                   </div>
+                  <div className="flex min-w-0 items-center gap-2 border-l border-[hsl(var(--comm-border))] pl-2 max-sm:border-l-0 max-sm:pl-0">
+                    <Button type="button" size="sm" variant={showInvitePanel ? "default" : "outline"} className={cn("h-10 rounded-full px-3", showInvitePanel ? "call-control-active" : "call-control-button")} onClick={() => setShowInvitePanel(value => !value)} aria-expanded={showInvitePanel} aria-controls="meeting-invite-panel"><UserPlus className="mr-2 h-4 w-4" />Invite</Button>
+                    <Badge variant="secondary" className="rounded-full"><Users className="mr-1 h-3 w-3" />{activeCallParticipantIds.length}</Badge>
+                    <Button type="button" size="sm" variant={mobileMeetingView === "participants" || isDesktopParticipantsOpen ? "default" : "outline"} className="h-10 rounded-full px-3" onClick={handleMeetingParticipantsToggle} aria-pressed={mobileMeetingView === "participants" || isDesktopParticipantsOpen}><Users className="mr-2 h-4 w-4" />People</Button>
+                    <Button type="button" size="sm" variant={mobileMeetingView === "chat" || !isDesktopChatOpen ? "default" : "outline"} className="h-10 rounded-full px-3" onClick={handleMeetingChatToggle} aria-pressed={mobileMeetingView === "chat" || !isDesktopChatOpen}><MessageSquare className="mr-2 h-4 w-4" />Chat</Button>
+                  </div>
                   <div className="ml-auto flex min-w-0 flex-wrap items-center justify-end gap-2 border-l border-[hsl(var(--comm-border))] pl-2 max-sm:ml-0 max-sm:justify-start max-sm:border-l-0 max-sm:pl-0" role="group" aria-label="Call actions">
                     <Button size="icon" variant={showDeviceSettings ? "default" : "outline"} className={cn("h-10 w-10 rounded-full", showDeviceSettings ? "call-control-active" : "call-control-button")} onClick={() => setShowDeviceSettings(value => !value)} title="Media devices" aria-label="Media device settings" aria-expanded={showDeviceSettings}><Settings2 className="h-4 w-4" /></Button>
                     {onMinimize && <Button size="icon" variant="outline" className="call-control-button h-10 w-10 rounded-full" onClick={onMinimize} title="Minimize call" aria-label="Minimize active call"><Minus className="h-4 w-4" /></Button>}
+                    {activeCall.call_type === "video" && <Button size="icon" variant={isSelfViewPip ? "default" : "outline"} className="h-10 w-10 rounded-full" onClick={() => setIsSelfViewPip(value => !value)} title={isSelfViewPip ? "Restore self view to gallery" : "Move self view"} aria-label={isSelfViewPip ? "Restore self view to gallery" : "Move self view"} aria-pressed={isSelfViewPip}><PictureInPicture2 className="h-4 w-4" /></Button>}
                     {onToggleFullscreen && <Button size="icon" variant="outline" className="call-control-button h-10 w-10 rounded-full" onClick={onToggleFullscreen} title={isFullscreen ? "Exit full screen" : "Full screen call"} aria-label={isFullscreen ? "Exit full screen call" : "Open call full screen"} aria-pressed={isFullscreen}>{isFullscreen ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}</Button>}
                     <Button size="sm" variant="destructive" className="call-hangup h-10 rounded-full px-4" onClick={() => void hangUpCall()} aria-label="Hang up call"><PhoneOff className="mr-2 h-4 w-4" />Hang up</Button>
                   </div>
                 </div>
+                {showInvitePanel && <section id="meeting-invite-panel" className="mb-4 rounded-xl border border-[hsl(var(--comm-border))] bg-background/90 p-3" aria-label="Invite meeting participants">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+                    <label className="grid min-w-0 flex-1 gap-1 text-xs font-semibold text-muted-foreground">Find colleagues<Input value={meetingInviteSearchTerm} onChange={event => setMeetingInviteSearchTerm(event.target.value)} placeholder="Search by name or email" className="h-10" aria-label="Search colleagues to invite" /></label>
+                    <Button type="button" onClick={() => void inviteSelectedParticipants()} disabled={!meetingInviteSelection.length || isInvitingParticipants} className="h-10 rounded-full">{isInvitingParticipants ? "Inviting…" : `Invite ${meetingInviteSelection.length || "selected"}`}</Button>
+                  </div>
+                  <div className="mt-3 grid max-h-40 gap-1 overflow-y-auto sm:grid-cols-2">
+                    {visibleUsers.filter(user => !activeCallParticipantIds.includes(user.id) && !activeCallPendingInviteIds.includes(user.id) && `${user.first_name || ""} ${user.last_name || ""} ${user.email || ""}`.toLowerCase().includes(meetingInviteSearchTerm.toLowerCase())).map(user => <label key={user.id} className="flex cursor-pointer items-center gap-2 rounded-lg px-2 py-2 hover:bg-muted"><input type="checkbox" checked={meetingInviteSelection.includes(user.id)} onChange={event => setMeetingInviteSelection(current => event.target.checked ? [...new Set([...current, user.id])] : current.filter(id => id !== user.id))} aria-label={`Invite ${formatUserName(user)}`} /><Avatar className="h-8 w-8"><AvatarImage src={resolveAvatarUrl(user.avatar_url)} alt="" /><AvatarFallback>{(user.first_name?.[0] || user.email?.[0] || "?").toUpperCase()}</AvatarFallback></Avatar><span className="min-w-0 truncate text-sm">{formatUserName(user)}</span><span className="ml-auto text-xs text-muted-foreground">{user.online ? "Online" : "Offline"}</span></label>)}
+                    {visibleUsers.filter(user => !activeCallParticipantIds.includes(user.id) && !activeCallPendingInviteIds.includes(user.id) && `${user.first_name || ""} ${user.last_name || ""} ${user.email || ""}`.toLowerCase().includes(meetingInviteSearchTerm.toLowerCase())).length === 0 && <p className="py-3 text-sm text-muted-foreground">No eligible colleagues found.</p>}
+                  </div>
+                </section>}
+                {(mobileMeetingView === "participants" || isDesktopParticipantsOpen) && <section className="mb-4 max-h-[min(48vh,520px)] overflow-y-auto rounded-xl border border-[hsl(var(--comm-border))] bg-background/90 p-3" aria-label="Meeting participants">
+                  <div className="mb-2 flex items-center justify-between"><h4 className="text-sm font-semibold">Participants ({activeCallParticipantIds.length} in meeting)</h4><Button type="button" size="sm" variant="ghost" className="lg:hidden" onClick={() => setMobileMeetingView("gallery")} aria-label="Close participants panel"><X className="h-4 w-4" /></Button></div>
+                  <ul className="grid gap-1 sm:grid-cols-2 lg:grid-cols-1">
+                    {meetingParticipants.map(participant => <li key={participant.userId} className="flex min-w-0 items-center gap-2 rounded-lg border border-transparent px-2 py-2 hover:border-border hover:bg-muted/50">
+                      <Avatar className="h-9 w-9 shrink-0"><AvatarImage src={resolveAvatarUrl(participant.profile?.avatar_url)} alt={formatUserName(participant.profile)} /><AvatarFallback>{formatUserName(participant.profile).split(/\s+/).map(part => part[0]).join("").slice(0, 2).toUpperCase()}</AvatarFallback></Avatar>
+                      <div className="min-w-0 flex-1"><p className="truncate text-sm font-medium">{participant.userId === currentUser.id ? `${formatUserName(currentUser)} (You)` : formatUserName(participant.profile)}</p><p className="truncate text-[11px] text-muted-foreground">{participant.status === "accepted" ? participant.userId === currentUser.id || remoteStreams[participant.userId] ? "Connected" : "Connecting" : participant.status === "invited" ? "Invited" : participant.status === "ringing" ? "Ringing" : participant.status[0].toUpperCase() + participant.status.slice(1)}</p></div>
+                      {participant.handRaised && <Hand className="h-4 w-4 shrink-0 text-amber-600" aria-label="Hand raised" />}
+                      {remoteMediaStates[participant.userId]?.audioEnabled === false && <MicOff className="h-4 w-4 shrink-0 text-muted-foreground" aria-label="Microphone muted" />}
+                      {remoteMediaStates[participant.userId]?.videoEnabled === false && <VideoOff className="h-4 w-4 shrink-0 text-muted-foreground" aria-label="Camera off" />}
+                      {activeCallParticipantIds.includes(participant.userId) && <Button type="button" size="icon" variant="ghost" className="h-8 w-8 shrink-0" onClick={() => setPinnedParticipantId(current => current === participant.userId ? null : participant.userId)} title={pinnedParticipantId === participant.userId ? "Unpin participant" : "Pin participant"} aria-label={pinnedParticipantId === participant.userId ? "Unpin participant" : `Pin ${formatUserName(participant.profile)}`} aria-pressed={pinnedParticipantId === participant.userId}>{pinnedParticipantId === participant.userId ? <PinOff className="h-4 w-4" /> : <Pin className="h-4 w-4" />}</Button>}
+                      {activeCallParticipantIds.includes(participant.userId) && String(activeCall.sender_id) === String(currentUser.id) && <Button type="button" size="icon" variant={spotlightParticipantId === participant.userId ? "default" : "ghost"} className="h-8 w-8 shrink-0" onClick={() => setMeetingSpotlight(spotlightParticipantId === participant.userId ? null : participant.userId)} title={spotlightParticipantId === participant.userId ? "Remove spotlight" : "Spotlight participant"} aria-label={spotlightParticipantId === participant.userId ? "Remove spotlight" : `Spotlight ${formatUserName(participant.profile)}`} aria-pressed={spotlightParticipantId === participant.userId}><PanelTop className="h-4 w-4" /></Button>}
+                      {String(activeCall.sender_id) === String(currentUser.id) && ["invited", "ringing"].includes(participant.status) && <Button type="button" size="sm" variant="outline" className="h-8 shrink-0 px-2" onClick={() => void cancelCallInvitation(activeCall.id, participant.userId).catch(error => toast({ title: "Invitation not cancelled", description: error instanceof Error ? error.message : "Please try again.", variant: "destructive" }))}>Cancel</Button>}
+                      {String(activeCall.sender_id) === String(currentUser.id) && participant.handRaised && participant.userId !== currentUser.id && <Button type="button" size="sm" variant="outline" className="h-8 shrink-0 px-2" onClick={() => lowerRaisedHand(participant.userId)}>Lower</Button>}
+                    </li>)}
+                  </ul>
+                </section>}
                 {showDeviceSettings && (
                   <div className="mb-4 grid gap-3 rounded-xl border border-[hsl(var(--comm-border))] bg-background/80 p-3 sm:grid-cols-2 lg:grid-cols-3" aria-label="Media device settings">
                     <label className="grid gap-1 text-xs font-semibold text-muted-foreground">
@@ -1145,30 +1460,45 @@ export const ChatModule = ({ currentUser, chat, onClose, onMinimize, onToggleFul
                     </label>
                   </div>
                 )}
-                <div className="grid max-h-[min(48vh,520px)] grid-cols-[repeat(auto-fit,minmax(min(100%,13rem),1fr))] gap-3 overflow-x-hidden overflow-y-auto pr-1" aria-label="Active call media">
-                  <div className="relative min-h-32 min-w-0 overflow-hidden rounded-xl border border-white/10 bg-background/60 p-2 shadow-inner">
-                    {activeCall.call_type === "video" && isCameraEnabled ? <video ref={localVideoRef} autoPlay muted playsInline className="aspect-video h-auto max-h-64 w-full rounded-lg bg-black object-cover" /> : activeCall.call_type === "video" ? <div className="flex h-36 flex-col items-center justify-center gap-2 rounded-lg bg-muted/60 text-sm font-medium text-muted-foreground"><Avatar className="h-16 w-16 border-4 border-background shadow-lg"><AvatarImage src={resolveAvatarUrl(currentUser.avatar_url)} alt={formatUserName(currentUser)} /><AvatarFallback className="bg-primary font-bold text-primary-foreground">{(currentUser.first_name?.[0] || currentUser.email?.[0] || "?").toUpperCase()}{(currentUser.last_name?.[0] || "").toUpperCase()}</AvatarFallback></Avatar><span>Your camera is off</span></div> : <div className="flex h-36 items-center justify-center gap-3 rounded-lg bg-muted/60 text-sm font-medium text-muted-foreground"><Mic className="h-5 w-5 text-primary" />{isMicrophoneMuted ? "Your microphone is muted" : "Your microphone is active"}</div>}
+                <div ref={mediaGalleryRef} className={cn("relative grid max-h-[min(48vh,520px)] grid-cols-[repeat(auto-fit,minmax(min(100%,13rem),1fr))] gap-3 overflow-x-hidden overflow-y-auto pr-1", mobileMeetingView === "gallery" && !isDesktopParticipantsOpen ? "grid" : "hidden", mobileMeetingView !== "gallery" && "lg:grid", isDesktopParticipantsOpen && "lg:hidden")} aria-label="Active call media">
+                  <div
+                    className={cn("relative aspect-video min-h-32 min-w-0 overflow-hidden rounded-xl border border-white/10 bg-background/60 p-2 shadow-inner", pinnedParticipantId === currentUser.id && "ring-2 ring-primary", isSelfViewPip && "absolute z-30 w-[38%] max-w-56 cursor-move touch-none shadow-xl")}
+                    style={isSelfViewPip ? { left: `${pipPosition.left}%`, top: `${pipPosition.top}%` } : undefined}
+                    onPointerDown={handlePipPointerDown}
+                    onPointerMove={handlePipPointerMove}
+                    onPointerUp={() => { pipDragRef.current = null; }}
+                    onPointerCancel={() => { pipDragRef.current = null; }}
+                  >
+                    {activeCall.call_type === "video" && hasLiveLocalVideo ? <video ref={localVideoRef} autoPlay muted playsInline aria-label="Your video preview" className="h-full w-full rounded-lg bg-black object-cover -scale-x-100" /> : activeCall.call_type === "video" ? <div className="flex h-full min-h-32 flex-col items-center justify-center gap-2 rounded-lg bg-muted/60 text-sm font-medium text-muted-foreground"><Avatar className="h-16 w-16 border-4 border-background shadow-lg"><AvatarImage src={resolveAvatarUrl(currentUser.avatar_url)} alt={formatUserName(currentUser)} /><AvatarFallback className="bg-primary font-bold text-primary-foreground">{(currentUser.first_name?.[0] || currentUser.email?.[0] || "?").toUpperCase()}{(currentUser.last_name?.[0] || "").toUpperCase()}</AvatarFallback></Avatar><span>{isCameraEnabled ? "Camera unavailable" : "Your camera is off"}</span></div> : <div className="flex h-36 items-center justify-center gap-3 rounded-lg bg-muted/60 text-sm font-medium text-muted-foreground"><Mic className="h-5 w-5 text-primary" />{isMicrophoneMuted ? "Your microphone is muted" : "Your microphone is active"}</div>}
+                    <span className="absolute bottom-4 left-4 rounded-full bg-black/65 px-2 py-1 text-[11px] font-semibold text-white">You{isMicrophoneMuted ? " · Muted" : ""}</span>
                     {raisedHands[currentUser.id] && <span className="absolute right-4 top-4 rounded-full bg-warning px-2 py-1 text-[10px] font-bold text-warning-foreground"><Hand className="mr-1 inline h-3 w-3" />Hand raised</span>}
+                    {meetingReactions.filter(reaction => reaction.userId === currentUser.id).map(reaction => <span key={reaction.id} className="pointer-events-none absolute right-4 top-4 z-20 animate-in zoom-in rounded-full border bg-background/95 px-3 py-1.5 text-xl shadow-lg motion-reduce:animate-none" aria-label={`You reacted ${reaction.emoji}`}>{reaction.emoji}</span>)}
+                    <Button type="button" size="icon" variant="secondary" className="absolute bottom-2 right-2 h-8 w-8" onPointerDown={event => event.stopPropagation()} onClick={() => setPinnedParticipantId(current => current === currentUser.id ? null : currentUser.id)} title={pinnedParticipantId === currentUser.id ? "Unpin self view" : "Pin self view"} aria-label={pinnedParticipantId === currentUser.id ? "Unpin self view" : "Pin self view"} aria-pressed={pinnedParticipantId === currentUser.id}><Pin className="h-4 w-4" /></Button>
                   </div>
-                  {activeCallOtherParticipants.map(participantId => {
+                  {visibleGalleryParticipantIds.map(participantId => {
                     const participantLabel = formatUserName(users.find(user => user.id === participantId));
                     const stream = remoteStreams[participantId];
                     return (
-                      <div key={participantId} className={cn("relative aspect-video min-h-32 min-w-0 overflow-hidden rounded-xl border bg-background/60 p-2 shadow-inner transition-[box-shadow,border-color]", activeSpeakerId === participantId ? "border-primary ring-2 ring-primary/35" : "border-white/10", callLayout === "speaker" && activeSpeakerId === participantId && "col-span-full")}>
-                        {stream ? <RemoteCallMedia stream={stream} video={activeCall.call_type === "video"} label={participantLabel} avatarUrl={users.find(user => user.id === participantId)?.avatar_url} outputDeviceId={audioOutputDeviceId} /> : (
+                      <div key={participantId} className={cn("relative aspect-video min-h-32 min-w-0 overflow-hidden rounded-xl border bg-background/60 p-2 shadow-inner transition-[box-shadow,border-color]", activeSpeakerId === participantId || spotlightParticipantId === participantId || pinnedParticipantId === participantId ? "border-primary ring-2 ring-primary/35" : "border-white/10", (spotlightParticipantId === participantId || pinnedParticipantId === participantId || callLayout === "speaker" && activeSpeakerId === participantId) && "col-span-full", spotlightParticipantId === participantId && "order-first")}>
+                        {spotlightParticipantId === participantId && <span className="absolute left-4 top-4 z-10 rounded-full bg-primary px-2 py-1 text-[10px] font-bold text-primary-foreground">Spotlight</span>}
+                        {stream ? <RemoteCallMedia stream={stream} video={activeCall.call_type === "video"} videoEnabled={remoteMediaStates[participantId]?.videoEnabled} label={participantLabel} avatarUrl={users.find(user => user.id === participantId)?.avatar_url} outputDeviceId={audioOutputDeviceId} /> : (
                           <div className="flex h-36 min-w-0 flex-col items-center justify-center gap-2 rounded-lg bg-muted/60 px-3 text-center text-sm font-medium text-muted-foreground"><MonitorUp className="h-5 w-5 shrink-0 text-primary" /><span className="max-w-full truncate">Waiting for {participantLabel}</span></div>
                         )}
                         <span className="absolute bottom-4 left-4 right-4 max-w-[calc(100%-2rem)] truncate rounded-full bg-black/65 px-2 py-1 text-[11px] font-semibold text-white">{participantLabel}</span>
+                        {remoteMediaStates[participantId]?.audioEnabled === false && <span className="absolute bottom-4 right-4 rounded-full bg-black/75 p-1.5 text-white" title="Microphone muted" aria-label="Microphone muted"><MicOff className="h-3 w-3" /></span>}
+                        {remoteMediaStates[participantId]?.screenSharing && <span className="absolute right-4 top-4 rounded-full bg-black/75 px-2 py-1 text-[10px] font-semibold text-white">Sharing screen</span>}
                         {raisedHands[participantId] && <span className="absolute left-4 top-4 rounded-full bg-warning px-2 py-1 text-[10px] font-bold text-warning-foreground"><Hand className="mr-1 inline h-3 w-3" />Hand raised</span>}
                         {activeSpeakerId === participantId && <span className="absolute right-4 top-4 rounded-full bg-primary px-2 py-1 text-[10px] font-bold text-primary-foreground">Speaking</span>}
+                        {meetingReactions.filter(reaction => reaction.userId === participantId).map(reaction => <span key={reaction.id} className="pointer-events-none absolute right-4 top-4 z-20 animate-in zoom-in rounded-full border bg-background/95 px-3 py-1.5 text-xl shadow-lg motion-reduce:animate-none" aria-label={`${participantLabel} reacted ${reaction.emoji}`}>{reaction.emoji}</span>)}
                       </div>
                     );
                   })}
                 </div>
+                {galleryPageCount > 1 && <nav className="flex items-center justify-center gap-3" aria-label="Participant gallery pages"><Button type="button" size="sm" variant="outline" onClick={() => setGalleryPage(page => Math.max(0, page - 1))} disabled={galleryPage === 0} aria-label="Previous participant page"><ChevronLeft className="h-4 w-4" /></Button><span className="text-xs text-muted-foreground" aria-live="polite">Page {galleryPage + 1} of {galleryPageCount}</span><Button type="button" size="sm" variant="outline" onClick={() => setGalleryPage(page => Math.min(galleryPageCount - 1, page + 1))} disabled={galleryPage + 1 >= galleryPageCount} aria-label="Next participant page"><ChevronRight className="h-4 w-4" /></Button></nav>}
               </div>
             )}
 
-            <ScrollArea className={cn("min-h-0 flex-1 scroll-smooth px-3 sm:px-6", activeCall && "lg:col-start-2 lg:row-start-2 lg:border-l lg:border-[hsl(var(--comm-border))]")}>
+            <ScrollArea className={cn("min-h-0 flex-1 scroll-smooth px-3 sm:px-6", activeCall && "lg:col-start-2 lg:row-start-2 lg:border-l lg:border-[hsl(var(--comm-border))]", activeCall && mobileMeetingView !== "chat" && "hidden lg:flex", activeCall && !isDesktopChatOpen && "lg:hidden", activeCall && isDesktopParticipantsOpen && "lg:hidden")}>
               <div className="space-y-5 py-5">
                 {displayMessages.length === 0 && (
                   <div className="flex min-h-[260px] flex-col items-center justify-center rounded-lg border border-dashed bg-background/60 px-6 text-center text-muted-foreground">
@@ -1207,7 +1537,7 @@ export const ChatModule = ({ currentUser, chat, onClose, onMinimize, onToggleFul
               </div>
             </ScrollArea>
 
-            <div className={cn("chat-composer border-t border-[hsl(var(--comm-border))] bg-[hsl(var(--comm-panel-elevated))] p-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] shadow-[0_-12px_30px_rgba(15,108,117,0.08)] backdrop-blur-xl sm:p-4", activeCall && "lg:col-start-2 lg:row-start-3 lg:border-l lg:border-[hsl(var(--comm-border))]")}>
+            <div className={cn("chat-composer border-t border-[hsl(var(--comm-border))] bg-[hsl(var(--comm-panel-elevated))] p-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] shadow-[0_-12px_30px_rgba(15,108,117,0.08)] backdrop-blur-xl sm:p-4", activeCall && "lg:col-start-2 lg:row-start-3 lg:border-l lg:border-[hsl(var(--comm-border))]", activeCall && mobileMeetingView !== "chat" && "hidden lg:block", activeCall && !isDesktopChatOpen && "lg:hidden", activeCall && isDesktopParticipantsOpen && "lg:hidden")}>
               {editingMessage && <div className="mb-3 flex items-center justify-between rounded-lg border border-primary/25 bg-primary/10 px-3 py-2 text-xs"><div className="min-w-0"><p className="font-semibold text-foreground">Editing message</p><p className="truncate text-muted-foreground">{editingMessage.content}</p></div><Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => { setEditingMessage(null); setInputText(""); }} aria-label="Cancel editing"><X className="h-4 w-4" /></Button></div>}
               {replyingTo && !editingMessage && <div className="mb-3 flex items-center justify-between rounded-lg border border-[hsl(var(--comm-border))] bg-[hsl(var(--comm-surface))] px-3 py-2 text-xs"><div className="min-w-0"><p className="font-semibold text-foreground">Replying to {replyingTo.sender_id === currentUser.id ? "your message" : replyingTo.sender_first_name || "message"}</p><p className="truncate text-muted-foreground">{replyingTo.attachment_file_name || stripHostedPlaceholderLines(replyingTo.content) || replyingTo.message_kind}</p></div><Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setReplyingTo(null)} aria-label="Cancel reply"><X className="h-4 w-4" /></Button></div>}
               {selectedFile && <div className="mb-3 flex items-center justify-between rounded-lg border border-[hsl(var(--comm-border))] bg-[hsl(var(--comm-surface))] px-3 py-2 text-xs"><div className="flex min-w-0 items-center gap-2"><Paperclip className="h-4 w-4 shrink-0 text-primary" /><span className="truncate font-medium text-foreground">{selectedFile.name}</span><span className="shrink-0 text-muted-foreground">{formatFileSize(selectedFile.size)}</span></div><Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setSelectedFile(null)} aria-label="Remove attachment"><X className="h-4 w-4" /></Button></div>}

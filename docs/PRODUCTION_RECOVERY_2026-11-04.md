@@ -78,3 +78,19 @@ rollback statements before execution.
 The source repair is pending the recorded automated build/test results and live
 read-only database diagnostics. Until production artifact consistency and data
 integrity are verified, status remains **NOT READY FOR DEPLOYMENT**.
+
+## 2026-11-05 inventory policy follow-up
+
+The sanitized hosting database export created `hardware_policy` but omitted its
+required singleton row. The current client correctly fails closed when the
+catalog omits valid policy data, keeping serial issuance disabled. The export
+now seeds only the default unapproved policy, and the additive
+`20261105_hardware_policy_default_bootstrap` migration inserts that default only
+when row `id=1` is missing. It does not replace existing approval metadata.
+
+The deployment database archive is a clean-install starter containing no live
+operational asset records. Do not import it over an existing production
+database. For an already imported database, inspect `hardware_policy` and take
+a verified backup before applying the additive migration or inserting only the
+missing default row. Zero asset totals require separate data recovery assessment
+against the pre-import backup; the policy repair does not recreate assets.

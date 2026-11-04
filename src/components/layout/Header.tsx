@@ -136,8 +136,12 @@ export const Header = ({ user, className, setActiveModule, onOpenMobileMenu, onP
       .then((preferences) => {
         if (typeof preferences?.timezone === 'string' && preferences.timezone) setUserTimeZone(resolveTimeZone(preferences.timezone));
         if (['light', 'dark', 'system'].includes(preferences?.theme)) {
-          localStorage.setItem('theme', preferences.theme);
-          const useDark = preferences.theme === 'dark' || (preferences.theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+          const savedTheme = localStorage.getItem('theme');
+          const theme = savedTheme && ['light', 'dark', 'system'].includes(savedTheme)
+            ? savedTheme
+            : preferences.theme;
+          localStorage.setItem('theme', theme);
+          const useDark = theme === 'dark' || (theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
           document.documentElement.classList.toggle('dark', useDark);
           setIsDarkMode(useDark);
         }
@@ -201,15 +205,17 @@ export const Header = ({ user, className, setActiveModule, onOpenMobileMenu, onP
 
   const toggleDarkMode = () => {
     const newMode = !isDarkMode;
+    const theme = newMode ? 'dark' : 'light';
     setIsDarkMode(newMode);
-    
-    if (newMode) {
-      document.documentElement.classList.add('dark');
-      localStorage.setItem('theme', 'dark');
-    } else {
-      document.documentElement.classList.remove('dark');
-      localStorage.setItem('theme', 'light');
-    }
+    document.documentElement.classList.toggle('dark', newMode);
+    localStorage.setItem('theme', theme);
+    void apiClient.patch('/communication/preferences/theme', { theme }).catch(() => {
+      toast({
+        title: 'Theme saved on this device',
+        description: 'Your account preference could not be synchronized. Check your connection and try again.',
+        variant: 'destructive',
+      });
+    });
   };
   const getUserInitials = () => {
     if (user.first_name && user.last_name) {
@@ -436,7 +442,10 @@ export const Header = ({ user, className, setActiveModule, onOpenMobileMenu, onP
                 <p className="text-sm font-bold">Missed {missedCall.call_type === "video" ? "video" : "phone"} call</p>
                 <p className="mt-0.5 truncate text-xs text-muted-foreground">From {getChatDisplayName(missedCall.sender_first_name, missedCall.sender_last_name)}</p>
               </div>
-              <Button variant="ghost" size="icon" className="h-8 w-8 rounded-full" onClick={() => chat.dismissMissedCall(missedCall.id)} aria-label="Dismiss missed call">
+              <Button variant="ghost" size="icon" className="h-8 w-8 rounded-full" disabled={chat.dismissingMissedCallIds.has(missedCall.id)} onClick={async () => {
+                const dismissed = await chat.dismissMissedCall(missedCall.id);
+                if (!dismissed) toast({ title: "Missed call not dismissed", description: "The dismissal could not be saved. Check your connection and try again.", variant: "destructive" });
+              }} aria-label="Dismiss missed call">
                 <X className="h-4 w-4" />
               </Button>
             </div>
@@ -444,7 +453,10 @@ export const Header = ({ user, className, setActiveModule, onOpenMobileMenu, onP
               <Button size="sm" variant="outline" className="flex-1 rounded-full" onClick={() => openChatForCall(missedCall.sender_id)}>
                 <MessageSquare className="mr-2 h-4 w-4" />Open chat
               </Button>
-              <Button size="sm" variant="ghost" className="rounded-full" onClick={() => chat.dismissMissedCall(missedCall.id)}>Dismiss</Button>
+              <Button size="sm" variant="ghost" className="rounded-full" disabled={chat.dismissingMissedCallIds.has(missedCall.id)} onClick={async () => {
+                const dismissed = await chat.dismissMissedCall(missedCall.id);
+                if (!dismissed) toast({ title: "Missed call not dismissed", description: "The dismissal could not be saved. Check your connection and try again.", variant: "destructive" });
+              }}>Dismiss</Button>
             </div>
           </div>
         </div>

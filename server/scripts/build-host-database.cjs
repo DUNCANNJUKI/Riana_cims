@@ -73,6 +73,15 @@ async function run() {
     }
     if (rows.length) parts.push('');
   }
+  if (tables.some(({ TABLE_NAME }) => TABLE_NAME === 'hardware_policy')) {
+    // A clean deployment starts with a safe, unapproved policy. Do not copy
+    // local or production approval metadata into the sanitized database.
+    parts.push(
+      '-- Safe inventory policy bootstrap: issuance remains disabled until formally approved.',
+      "INSERT IGNORE INTO `hardware_policy` (`id`,`sequence_partition`,`issuance_approved`,`field_approval_required`,`approved_by`,`approved_at`,`approval_reference`) VALUES (1,'per_model_year',0,1,NULL,NULL,NULL);",
+      '',
+    );
+  }
   for (const file of pendingMigrationFiles) {
     parts.push(`-- Pending idempotent migration: ${file}`, fs.readFileSync(path.join(migrationsDirectory, file), 'utf8').trim(), '');
   }

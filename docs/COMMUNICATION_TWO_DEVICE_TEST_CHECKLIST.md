@@ -1,5 +1,15 @@
 # Communication Two-Device Acceptance Checklist
 
+## Active meeting invitation and media-state regression
+
+- Start an organizer video call with Device A and accept it on Device B.
+- From Device A, invite an active directory user on Device C. Confirm the invite arrives through the foreground event stream and, when configured, the existing push path.
+- Accept on Device C and verify the participant count and gallery update on A, B, and C without restarting the call; verify all three devices can exchange media.
+- Decline an invitation and confirm the declined user is not retained as an active gallery tile. Retry an invitation after decline and confirm duplicate active invitations remain suppressed.
+- Toggle camera and microphone on each device. Confirm remote participants see the camera avatar fallback and microphone mute indicator; re-enable each control and confirm live media returns.
+- Interrupt one peer's network briefly. Confirm one ICE restart is attempted, recovery restores media, and an unrecovered peer presents a connection error without ending other peers.
+- Repeat at phone and tablet widths; confirm invitation search, selection, controls, and media tiles remain usable without horizontal page overflow.
+
 Use non-production accounts and test data. Record browser versions, operating systems, network type, device models, timestamps, call IDs, and evidence references. Do not use live business conversations.
 
 ## Preconditions

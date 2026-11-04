@@ -122,6 +122,9 @@ const sql = fs.readFileSync(normalizedPath('database/riana_cims_host.sql'), 'utf
 if (/^\s*(CREATE\s+DATABASE|USE\s+`)/im.test(sql)) fail('SQL must import into the database selected in cPanel.');
 if (/\bDEFAULT\s+\(?uuid\(\)\)?/i.test(sql)) fail('SQL contains a UUID function default unsupported by older shared-host MySQL releases.');
 if (/`feedback_date`[^\n]*\bDEFAULT\s+\(?curdate\(\)\)?/i.test(sql)) fail('SQL contains a DATE function default unsupported by older shared-host MySQL releases.');
+if (!/INSERT\s+IGNORE\s+INTO\s+`hardware_policy`\s*\(`id`,`sequence_partition`,`issuance_approved`,`field_approval_required`,`approved_by`,`approved_at`,`approval_reference`\)\s*VALUES\s*\(1,'per_model_year',0,1,NULL,NULL,NULL\)/i.test(sql)) {
+  fail('SQL must seed an unapproved hardware policy without copying approval metadata.');
+}
 if ((sql.match(/INSERT\s+INTO\s+`user_profiles`/gi) || []).length !== 1) fail('SQL must contain exactly one user bootstrap statement.');
 if (preserveSuperAdmin) {
   if (!sql.includes('PRESERVED_SUPERADMIN_ACTIVE_BCRYPT') || !bcryptHashPattern.test(sql)) {
@@ -142,6 +145,7 @@ for (const route of [
   "app.post('/api/auth/passkeys/register-verify'",
   "app.get('/api/notifications/summary'",
   "app.get('/api/communication/preferences'",
+  "app.patch('/api/communication/preferences/theme'",
 ]) {
   if (!packagedServer.includes(route)) fail(`Packaged API is missing the required route: ${route}`);
 }
