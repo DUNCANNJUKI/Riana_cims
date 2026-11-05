@@ -4710,6 +4710,60 @@ app.get('/api/public/company-logo/:filename', async (req, res) => {
   }
 });
 
+// PWA install icons are generated from the currently configured company logo.
+// Only company_settings referenced uploads are accepted; arbitrary paths and URLs
+// are deliberately never fetched by the server.
+let pwaSharp;
+const getPwaSharp = () => {
+  if (pwaSharp !== undefined) return pwaSharp;
+  try { pwaSharp = require('sharp'); } catch { pwaSharp = null; }
+  return pwaSharp;
+};
+app.get('/api/public/company-pwa-icon/:size.png', async (req, res) => {
+  const size = Number(req.params.size);
+  if (![180, 192, 512].includes(size)) return res.status(404).end();
+  try {
+    const sharp = getPwaSharp();
+    if (!sharp) return res.status(503).json({ error: 'PWA icon generation is unavailable.' });
+
+    const [[brand] = []] = await pool.query('SELECT logo_path,primary_color FROM company_settings ORDER BY id LIMIT 1');
+    const logoPath = String(brand?.logo_path || '').trim();
+    const storedLogo = normalizeStoredFileReference(logoPath);
+    let sourcePath = null;
+    if (storedLogo && !logoPath.startsWith('/') && !/^https?:/i.test(logoPath)) {
+      const [rows] = await pool.query(
+        'SELECT id FROM company_settings WHERE logo_path IN (?, ?, ?) LIMIT 1',
+        [storedLogo, `uploads/${storedLogo}`, `/uploads/${storedLogo}`],
+      );
+      if (rows.length && LOGO_CONTENT_TYPES[path.extname(storedLogo).toLowerCase()]) {
+        sourcePath = resolveExistingUpload(storedLogo);
+      }
+    }
+    if (!sourcePath || !fs.existsSync(sourcePath)) sourcePath = path.join(__dirname, '../dist/Riana_logo.png');
+    if (!fs.existsSync(sourcePath)) sourcePath = path.join(__dirname, '../public/Riana_logo.png');
+    if (!fs.existsSync(sourcePath)) return res.status(404).end();
+
+    const primary = /^#[\da-f]{6}$/i.test(String(brand?.primary_color || ''))
+      ? brand.primary_color
+      : '#086f76';
+    const inset = Math.round(size * 0.76);
+    const logo = await sharp(sourcePath, { limitInputPixels: 16000000, failOn: 'none' })
+      .rotate().resize(inset, inset, { fit: 'contain', background: { r: 255, g: 255, b: 255, alpha: 0 } })
+      .png().toBuffer();
+    const metadata = await sharp(logo).metadata();
+    const left = Math.max(0, Math.round((size - (metadata.width || inset)) / 2));
+    const top = Math.max(0, Math.round((size - (metadata.height || inset)) / 2));
+    const icon = await sharp({ create: { width: size, height: size, channels: 4, background: primary } })
+      .composite([{ input: logo, left, top }]).png().toBuffer();
+    res.setHeader('Cache-Control', 'public, max-age=300, stale-while-revalidate=3600');
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.type('image/png').send(icon);
+  } catch (err) {
+    console.error('Company PWA icon generation failed:', err.code || err.message);
+    res.status(500).json({ error: 'Unable to generate company app icon.' });
+  }
+});
+
 app.get('/api/public/feedback-links/:token', async (req, res) => {
   try {
     const [rows] = await pool.query(

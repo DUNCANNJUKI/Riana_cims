@@ -71,22 +71,22 @@ export default defineConfig(({ mode }) => ({
         start_url: '/',
         icons: [
           {
-            src: '/pwa-icon.svg',
-            sizes: 'any',
-            type: 'image/svg+xml',
+            src: '/api/public/company-pwa-icon/192.png',
+            sizes: '192x192',
+            type: 'image/png',
             purpose: 'any'
           },
           {
-            src: '/pwa-maskable.svg',
-            sizes: 'any',
-            type: 'image/svg+xml',
+            src: '/api/public/company-pwa-icon/512.png',
+            sizes: '512x512',
+            type: 'image/png',
             purpose: 'maskable'
           }
         ],
         categories: ['business', 'productivity'],
         shortcuts: [
-          { name: 'Dashboard', short_name: 'Dashboard', url: '/', icons: [{ src: '/pwa-icon.svg', sizes: 'any', type: 'image/svg+xml' }] },
-          { name: 'Install App', short_name: 'Install', url: '/install', icons: [{ src: '/pwa-icon.svg', sizes: 'any', type: 'image/svg+xml' }] },
+          { name: 'Dashboard', short_name: 'Dashboard', url: '/', icons: [{ src: '/api/public/company-pwa-icon/192.png', sizes: '192x192', type: 'image/png' }] },
+          { name: 'Install App', short_name: 'Install', url: '/install', icons: [{ src: '/api/public/company-pwa-icon/192.png', sizes: '192x192', type: 'image/png' }] },
         ],
       },
       workbox: {

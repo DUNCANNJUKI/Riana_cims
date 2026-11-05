@@ -40,46 +40,47 @@
   left: 50%;
   top: 58.5%;
   display: block;
-  width: clamp(2.625rem, 12vw, 3.75rem);
-  aspect-ratio: 3 / 4;
+  box-sizing: border-box;
+  width: clamp(3.25rem, 17vw, 4.75rem);
+  height: clamp(3.25rem, 17vw, 4.75rem);
+  padding: 0.35rem;
+  border: 1px solid rgb(8 111 118 / 14%);
+  border-radius: 1rem;
+  background: rgb(255 255 255 / 94%);
+  box-shadow: 0 5px 18px rgb(24 78 91 / 16%);
   overflow: hidden;
   transform: translate(-50%, -50%);
 }
 
 .riana-loader__logo img {
   display: block;
-  width: auto;
-  max-width: none;
+  width: 100%;
   height: 100%;
   object-fit: contain;
+  object-position: center;
   transform-origin: center;
   animation: riana-loader-logo 2.8s ease-in-out infinite;
 }
 
 .riana-loader__title {
   display: flex;
+  box-sizing: border-box;
+  width: min(100%, 25rem);
   min-height: 1.75rem;
   align-items: center;
   justify-content: center;
   margin-top: 0.5rem;
   color: #294554;
   font-family: "Plus Jakarta Sans", "Inter", system-ui, sans-serif;
-  font-size: clamp(1.125rem, 4.7vw, 1.25rem);
+  font-size: clamp(1rem, 4.7vw, 1.25rem);
   font-weight: 600;
   line-height: 1.4;
   letter-spacing: 0.015em;
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
+  animation: riana-loader-message 420ms ease-out both;
 }
-
-.riana-loader__letter {
-  display: inline-block;
-  transform-origin: center bottom;
-  opacity: 0;
-  animation: riana-loader-letter-reveal 420ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
-  animation-delay: calc(var(--animation-order) * 65ms + 120ms);
-}
-
-.riana-loader__letter--space { width: 0.35em; }
 .riana-loader__message { min-height: 1.125rem; margin-top: 0.75rem; color: #557887; font-size: 0.75rem; font-weight: 400; line-height: 1.5; animation: riana-loader-message 240ms ease-out both; }
 
 .riana-loader__progress {
@@ -119,11 +120,6 @@
   50% { opacity: 1; transform: scale(1.035); }
 }
 
-@keyframes riana-loader-letter-reveal {
-  from { opacity: 0; transform: translateY(0.2rem); }
-  to { opacity: 1; transform: translateY(0); }
-}
-
 @keyframes riana-loader-message {
   from { opacity: 0; transform: translateY(0.125rem); }
   to { opacity: 1; transform: translateY(0); }
@@ -151,13 +147,11 @@
   .riana-loader,
   .riana-loader__logo img,
   .riana-loader__node,
-  .riana-loader__letter,
   .riana-loader__message,
   .riana-loader__progress-value { animation: none; }
   .riana-loader__signals { display: none; }
   .riana-loader__logo img { opacity: 1; transform: none; }
   .riana-loader__node { opacity: 0.78; transform: none; }
-  .riana-loader__letter { opacity: 1; transform: none; }
   .riana-loader__message { opacity: 1; transform: none; }
   .riana-loader__progress-value { left: 0; width: 100%; opacity: 0.72; }
 }

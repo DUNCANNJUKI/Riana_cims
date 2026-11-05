@@ -8,7 +8,6 @@ interface SiteLoaderProps {
   status?: string;
 }
 
-const LOADER_LETTERS = "RIANA CIMS".split("");
 const NETWORK_NODES = [
   { cx: 20, cy: 74, delay: 0 }, { cx: 76, cy: 52, delay: 1 },
   { cx: 116, cy: 78, delay: 2 }, { cx: 180, cy: 45, delay: 3 },
@@ -26,7 +25,24 @@ export const SiteLoader = ({
   status = "Initializing workspace...",
 }: SiteLoaderProps) => {
   const [showLoader, setShowLoader] = useState(isLoading);
+  const [companyName, setCompanyName] = useState("RIANA CIMS");
+  const [companyLogo, setCompanyLogo] = useState("/Riana_logo_transparent.png");
   const visibleSince = useRef(isLoading ? Date.now() : 0);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    fetch("/api/public/company-branding", { credentials: "same-origin", signal: controller.signal })
+      .then((response) => response.ok ? response.json() : null)
+      .then((branding) => {
+        if (!branding || controller.signal.aborted) return;
+        if (typeof branding.name === "string" && branding.name.trim()) setCompanyName(branding.name.trim());
+        if (typeof branding.logo_path === "string" && branding.logo_path.trim()) setCompanyLogo(branding.logo_path.trim());
+      })
+      .catch(() => {
+        // Keep the bundled RIANA logo and name when public branding is unavailable.
+      });
+    return () => controller.abort();
+  }, []);
 
   useEffect(() => {
     if (isLoading) {
@@ -71,22 +87,18 @@ export const SiteLoader = ({
             ))}
           </svg>
           <span className="riana-loader__logo" aria-hidden="true">
-            <img src="/Riana_logo_transparent.png" alt="" />
+            <img
+              src={companyLogo}
+              alt=""
+              onError={(event) => {
+                if (event.currentTarget.src.endsWith("/Riana_logo_transparent.png")) return;
+                event.currentTarget.src = "/Riana_logo_transparent.png";
+              }}
+            />
           </span>
         </div>
 
-        <div className="riana-loader__title" aria-label="RIANA CIMS">
-          {LOADER_LETTERS.map((letter, index) => (
-            <span
-              key={`${letter}-${index}`}
-              aria-hidden="true"
-              className={letter === " " ? "riana-loader__letter riana-loader__letter--space" : "riana-loader__letter"}
-              style={{ "--animation-order": index } as AnimationStyle}
-            >
-              {letter === " " ? "\u00A0" : letter}
-            </span>
-          ))}
-        </div>
+        <div className="riana-loader__title" aria-label={companyName}>{companyName}</div>
 
         <p className="riana-loader__message" aria-atomic="true">{status}</p>
         <div className="riana-loader__progress" role="progressbar" aria-label="Loading application">
