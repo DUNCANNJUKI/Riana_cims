@@ -40,15 +40,8 @@
   left: 50%;
   top: 58.5%;
   display: block;
-  box-sizing: border-box;
-  width: clamp(3.25rem, 17vw, 4.75rem);
-  height: clamp(3.25rem, 17vw, 4.75rem);
-  padding: 0.35rem;
-  border: 1px solid rgb(8 111 118 / 14%);
-  border-radius: 1rem;
-  background: rgb(255 255 255 / 94%);
-  box-shadow: 0 5px 18px rgb(24 78 91 / 16%);
-  overflow: hidden;
+  width: clamp(2.625rem, 14vw, 4rem);
+  height: clamp(3.75rem, 20vw, 5.25rem);
   transform: translate(-50%, -50%);
 }
 

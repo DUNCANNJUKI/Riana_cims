@@ -4726,7 +4726,7 @@ app.get('/api/public/company-pwa-icon/:size.png', async (req, res) => {
     const sharp = getPwaSharp();
     if (!sharp) return res.status(503).json({ error: 'PWA icon generation is unavailable.' });
 
-    const [[brand] = []] = await pool.query('SELECT logo_path,primary_color FROM company_settings ORDER BY id LIMIT 1');
+    const [[brand] = []] = await pool.query('SELECT logo_path FROM company_settings ORDER BY id LIMIT 1');
     const logoPath = String(brand?.logo_path || '').trim();
     const storedLogo = normalizeStoredFileReference(logoPath);
     let sourcePath = null;
@@ -4739,13 +4739,10 @@ app.get('/api/public/company-pwa-icon/:size.png', async (req, res) => {
         sourcePath = resolveExistingUpload(storedLogo);
       }
     }
-    if (!sourcePath || !fs.existsSync(sourcePath)) sourcePath = path.join(__dirname, '../dist/Riana_logo.png');
-    if (!fs.existsSync(sourcePath)) sourcePath = path.join(__dirname, '../public/Riana_logo.png');
+    if (!sourcePath || !fs.existsSync(sourcePath)) sourcePath = path.join(__dirname, '../dist/Riana_mark_color_trimmed.png');
+    if (!fs.existsSync(sourcePath)) sourcePath = path.join(__dirname, '../public/Riana_mark_color_trimmed.png');
     if (!fs.existsSync(sourcePath)) return res.status(404).end();
 
-    const primary = /^#[\da-f]{6}$/i.test(String(brand?.primary_color || ''))
-      ? brand.primary_color
-      : '#086f76';
     const inset = Math.round(size * 0.76);
     const logo = await sharp(sourcePath, { limitInputPixels: 16000000, failOn: 'none' })
       .rotate().resize(inset, inset, { fit: 'contain', background: { r: 255, g: 255, b: 255, alpha: 0 } })
@@ -4753,7 +4750,7 @@ app.get('/api/public/company-pwa-icon/:size.png', async (req, res) => {
     const metadata = await sharp(logo).metadata();
     const left = Math.max(0, Math.round((size - (metadata.width || inset)) / 2));
     const top = Math.max(0, Math.round((size - (metadata.height || inset)) / 2));
-    const icon = await sharp({ create: { width: size, height: size, channels: 4, background: primary } })
+    const icon = await sharp({ create: { width: size, height: size, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } } })
       .composite([{ input: logo, left, top }]).png().toBuffer();
     res.setHeader('Cache-Control', 'public, max-age=300, stale-while-revalidate=3600');
     res.setHeader('X-Content-Type-Options', 'nosniff');
@@ -6349,7 +6346,8 @@ app.post('/api/chat/calls', authMiddleware, async (req, res) => {
   } catch (err) {
     await connection.rollback().catch(() => undefined);
     console.error('Chat call start failed:', err?.code || err?.message || err);
-    res.status(err.code === 'ER_NO_SUCH_TABLE' ? 503 : 500).json({ error: err.code === 'ER_NO_SUCH_TABLE' ? 'Communication database setup is incomplete.' : 'Unable to start the call.', code: err.code === 'ER_NO_SUCH_TABLE' ? 'COMMUNICATION_SCHEMA_INCOMPLETE' : 'CALL_START_FAILED' });
+    if (communicationSchemaUnavailable(err, res)) return;
+    res.status(500).json({ error: 'Unable to start the call.', code: 'CALL_START_FAILED' });
   } finally {
     connection.release();
   }

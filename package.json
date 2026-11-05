@@ -14,7 +14,7 @@
     "notifications:verify": "node server/scripts/verify-notification-providers.cjs",
     "notifications:test-live": "node server/scripts/send-live-notification-test.cjs",
     "communication:retention:dry-run": "node server/scripts/run-message-retention.cjs",
-    "test:communication": "node --test server/tests/messageRetention.test.cjs server/tests/webPushDelivery.test.cjs server/services/communicationCalls.test.cjs && node --experimental-strip-types --test src/hooks/missedCallState.test.ts",
+    "test:communication": "node --test server/tests/messageRetention.test.cjs server/tests/webPushDelivery.test.cjs server/services/communicationCalls.test.cjs && node --experimental-strip-types --test src/hooks/missedCallState.test.ts src/utils/requestErrors.test.ts",
     "test:assistant": "node --test server/services/chatbotKnowledge.test.js server/services/chatbotPolicy.test.js server/security/accessControl.test.js",
     "test:authentication": "node --test server/tests/passkeyService.test.cjs server/tests/accountMfa.test.cjs && node --experimental-strip-types --test src/utils/dateTime.test.ts",
     "test:production-recovery": "node --experimental-strip-types --test src/components/inventory/hardwareCatalog.test.ts",

@@ -203,7 +203,7 @@ export const TechnicianWorkloadCalendar = ({ user }: TechnicianWorkloadCalendarP
                   <article key={assignment.id} className="min-w-0 rounded-lg border bg-card p-4">
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0"><p className="truncate font-semibold">{assignment.client_name}</p><p className="truncate text-xs text-muted-foreground">{assignment.branch || 'No branch listed'}</p></div>
-                      <Badge variant="outline" className="shrink-0 capitalize">{String(assignment.status || 'assigned').replaceAll('_', ' ')}</Badge>
+                      <Badge variant="outline" className="shrink-0 capitalize">{String(assignment.status || 'assigned').replace(/_/g, ' ')}</Badge>
                     </div>
                     <div className="mt-3 grid gap-2 text-xs text-muted-foreground">
                       <span className="flex items-center gap-2"><Calendar className="h-3.5 w-3.5 text-primary" />Start: {assignment.installation_start_date ? format(new Date(assignment.installation_start_date), 'MMM d, yyyy') : 'Not set'}</span>

@@ -26,7 +26,7 @@ export const SiteLoader = ({
 }: SiteLoaderProps) => {
   const [showLoader, setShowLoader] = useState(isLoading);
   const [companyName, setCompanyName] = useState("RIANA CIMS");
-  const [companyLogo, setCompanyLogo] = useState("/Riana_logo_transparent.png");
+  const [companyLogo, setCompanyLogo] = useState("/Riana_mark_color_trimmed.png");
   const visibleSince = useRef(isLoading ? Date.now() : 0);
 
   useEffect(() => {
@@ -36,7 +36,12 @@ export const SiteLoader = ({
       .then((branding) => {
         if (!branding || controller.signal.aborted) return;
         if (typeof branding.name === "string" && branding.name.trim()) setCompanyName(branding.name.trim());
-        if (typeof branding.logo_path === "string" && branding.logo_path.trim()) setCompanyLogo(branding.logo_path.trim());
+        if (typeof branding.logo_path === "string" && branding.logo_path.trim()) {
+          const logoPath = branding.logo_path.trim();
+          setCompanyLogo(["/Riana_logo_transparent.png", "/Riana_mark_transparent.png"].includes(logoPath)
+            ? "/Riana_mark_color_trimmed.png"
+            : logoPath);
+        }
       })
       .catch(() => {
         // Keep the bundled RIANA logo and name when public branding is unavailable.
@@ -91,8 +96,8 @@ export const SiteLoader = ({
               src={companyLogo}
               alt=""
               onError={(event) => {
-                if (event.currentTarget.src.endsWith("/Riana_logo_transparent.png")) return;
-                event.currentTarget.src = "/Riana_logo_transparent.png";
+                if (event.currentTarget.src.endsWith("/Riana_mark_color_trimmed.png")) return;
+                event.currentTarget.src = "/Riana_mark_color_trimmed.png";
               }}
             />
           </span>

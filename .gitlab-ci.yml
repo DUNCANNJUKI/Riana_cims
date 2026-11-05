@@ -109,7 +109,7 @@ deploy:
         $CX_SERVER_USER@$CX_SERVER_HOST:/var/www/riana-cims/cms/
     - echo "=== Deploy - Installing production deps and restarting app ==="
     - |
-      ssh -p 1625 $CX_SERVER_USER@$CX_SERVER_HOST << 'EOF'
+      ssh -p 1625 $CX_SERVER_USER@$CX_SERVER_HOST "APP_RELEASE=$CI_COMMIT_SHA bash -s" << 'EOF'
         set -e
         cd /var/www/riana-cims/cms
         echo "=== Deploy - Installing API production dependencies ==="
@@ -121,10 +121,10 @@ deploy:
         echo "=== Deploy - Applying missing communication migrations ==="
         COMMUNICATION_MIGRATION_BACKUP_VERIFIED=true node server/scripts/apply-communication-migrations.cjs
         echo "=== Deploy - Restarting the API ==="
-        sudo /root/.nvm/versions/node/v23.6.0/bin/pm2 restart riana-cims || sudo /root/.nvm/versions/node/v23.6.0/bin/pm2 start ecosystem.config.cjs --only riana-cims --env production
+        sudo env APP_RELEASE="$APP_RELEASE" /root/.nvm/versions/node/v23.6.0/bin/pm2 restart riana-cims --update-env || sudo env APP_RELEASE="$APP_RELEASE" /root/.nvm/versions/node/v23.6.0/bin/pm2 start ecosystem.config.cjs --only riana-cims --env production
         sudo /root/.nvm/versions/node/v23.6.0/bin/pm2 save
         echo "=== Deploy - Verifying API health ==="
-        node -e 'const http=require("http");let attempts=0;const check=()=>{const request=http.get("http://127.0.0.1:8081/api/health",response=>{response.resume();if(response.statusCode===200){console.log("API health check passed.");process.exit(0)}retry(`Health endpoint returned HTTP ${response.statusCode}.`)});request.setTimeout(3000,()=>request.destroy(new Error("Health request timed out.")));request.on("error",error=>retry(error.message))};const retry=message=>{if(++attempts>=15){console.error(`API health check failed: ${message}`);process.exit(1)}setTimeout(check,2000)};check();'
+        node server/scripts/verify-production-runtime.cjs
         echo "=== Deploy complete ==="
         sudo /root/.nvm/versions/node/v23.6.0/bin/pm2 list
       EOF

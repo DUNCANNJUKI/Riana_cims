@@ -140,7 +140,7 @@ export const FinancesModule = ({ user }: FinancesModuleProps) => {
       ...reportRows(budget).map(row => row.map((value, index) => ({ value: index > 0 && index < 6 ? Number(value || 0) : String(value ?? ""), format: index > 0 && index < 6 ? "#,##0.00" : undefined }))),
       [{ value: "TOTAL INSTALLATION BUDGET", fontWeight: "bold" as const }, { value: Number(budget.total_budget || 0), format: "#,##0.00", fontWeight: "bold" as const }],
     ];
-    await writeXlsxFile(data, { fileName: exportFileName(budget, "xlsx"), sheet: "Budget" });
+    await writeXlsxFile(data, { sheet: "Budget" }).toFile(exportFileName(budget, "xlsx"));
   };
   const exportPdf = (budget: Budget) => {
     const doc = new jsPDF();

@@ -2,6 +2,8 @@ export function friendlyRequestError(status: number, payload: unknown): string {
   const data = payload && typeof payload === 'object' ? payload as Record<string, unknown> : {};
   const candidate = typeof data.error === 'string' ? data.error : typeof data.message === 'string' ? data.message : '';
   const unsafe = /SQLSTATE|ER_[A-Z_]+|SELECT\s.+FROM|INSERT\s+INTO|stack trace|node_modules|ECONNREFUSED|<html|<!doctype/i.test(candidate);
+  if (data.code === 'COMMUNICATION_MIGRATION_REQUIRED' || data.code === 'COMMUNICATION_SCHEMA_INCOMPLETE')
+    return 'Communication is temporarily unavailable while a required system update is completed. Please try again shortly or contact your administrator.';
   if (status >= 500 && data.code !== 'MAINTENANCE_MODE')
     return 'The service is temporarily unavailable. Please try again shortly. If this continues, contact your administrator.';
   if (candidate && candidate.length <= 1000 && !unsafe) return candidate;
