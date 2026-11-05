@@ -132,7 +132,7 @@ deploy:
     - main
   environment:
     name: production
-    url: https://rianacims.name.ng
+    url: https://rianacims.marezi.co/
   when: on_success
 
 
