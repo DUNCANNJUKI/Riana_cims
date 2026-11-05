@@ -107,6 +107,7 @@ const PUBLIC_API_RULES = [
   ['GET', /^\/feedback_questions$/],
   ['GET', /^\/public\/company-branding$/],
   ['GET', /^\/public\/company-logo\/[^/]+$/],
+  ['GET', /^\/public\/company-pwa-icon\/(?:180|192|512)\.png$/],
   ['GET', /^\/public\/hardware\/[A-Za-z0-9-]{1,36}$/],
   ['GET', /^\/public\/feedback-links\/[^/]+$/],
   ['POST', /^\/public\/installation-feedback$/],

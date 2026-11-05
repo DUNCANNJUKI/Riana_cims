@@ -59,11 +59,16 @@ test('global API policy allows only explicit public paths', async () => {
     { method: 'POST', path: '/auth/login' },
     { method: 'GET', path: '/public/hardware/550e8400-e29b-41d4-a716-446655440000' },
     { method: 'GET', path: '/public/feedback-links/token' },
+    { method: 'GET', path: '/public/company-pwa-icon/180.png' },
+    { method: 'GET', path: '/public/company-pwa-icon/192.png' },
+    { method: 'GET', path: '/public/company-pwa-icon/512.png' },
     { method: 'POST', path: '/public/installation-feedback' },
   ]) policy(req, response(), () => {});
+  policy({ method: 'GET', path: '/public/company-pwa-icon/1024.png' }, response(), () => {});
+  policy({ method: 'GET', path: '/public/company-pwa-icon/192.png/extra' }, response(), () => {});
   policy({ method: 'GET', path: '/clients' }, response(), () => {});
   policy({ method: 'POST', path: '/admin/backup' }, response(), () => {});
-  assert.equal(authenticated, 2);
+  assert.equal(authenticated, 4);
 });
 
 test('locked sessions deny protected APIs but allow only server-side unlock routes', async () => {

@@ -5,7 +5,8 @@ The install manifest, browser favicon, and Apple touch icon use the public
 and 512 pixels. The API generates square PNG artwork from the logo referenced by
 `company_settings`, using the configured primary color as the background. Logo
 uploads are resolved through the existing upload safety helper and are accepted
-only when the company settings row references that file. Remote logo URLs are
+only when the company settings row references that file. The global API policy
+allows only those three icon sizes without authentication. Remote logo URLs are
 not fetched server-side.
 
 If an uploaded logo is absent or unavailable, generated icons fall back to the
