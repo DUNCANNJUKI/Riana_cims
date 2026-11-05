@@ -499,6 +499,34 @@ All colors MUST be HSL.
     box-shadow: 0 22px 70px -32px hsl(var(--comm-shadow) / 0.45);
   }
 
+  .chat-conversation-surface {
+    isolation: isolate;
+  }
+
+  .chat-conversation-surface::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    opacity: 0.48;
+    background-image:
+      radial-gradient(circle at 8% 14%, hsl(var(--primary) / 0.30) 0 2px, transparent 3px),
+      radial-gradient(circle at 28% 38%, hsl(var(--primary) / 0.20) 0 2px, transparent 3px),
+      radial-gradient(circle at 74% 18%, hsl(var(--primary) / 0.24) 0 2px, transparent 3px),
+      radial-gradient(circle at 91% 58%, hsl(var(--primary) / 0.22) 0 2px, transparent 3px),
+      radial-gradient(circle at 44% 82%, hsl(var(--primary) / 0.18) 0 2px, transparent 3px),
+      linear-gradient(28deg, transparent 49.82%, hsl(var(--primary) / 0.09) 49.94% 50.06%, transparent 50.18%),
+      linear-gradient(148deg, transparent 49.88%, hsl(var(--primary) / 0.07) 49.96% 50.04%, transparent 50.12%);
+    background-size: 210px 190px, 260px 240px, 300px 230px, 250px 260px, 320px 280px, 290px 250px, 330px 300px;
+    background-position: 0 0, 35px 22px, 10px 50px, 40px 0, 15px 15px, 0 0, 20px 10px;
+    mask-image: linear-gradient(to bottom, transparent, black 12%, black 88%, transparent);
+  }
+
+  .dark .chat-conversation-surface::before {
+    opacity: 0.3;
+  }
+
   .call-panel {
     background:
       linear-gradient(135deg, hsl(var(--comm-panel-elevated) / 0.98), hsl(var(--primary) / 0.08)),

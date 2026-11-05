@@ -453,7 +453,7 @@ export const ChatModule = ({ currentUser, chat, onClose, onMinimize, onToggleFul
           void getCallIceServers().then(servers => {
             if (servers.length) {
               iceServersRef.current = servers;
-              connection.setConfiguration({ iceServers });
+              connection.setConfiguration({ iceServers: servers });
             }
             return connection.createOffer({ iceRestart: true });
           }).then(async offer => {
@@ -1293,28 +1293,28 @@ export const ChatModule = ({ currentUser, chat, onClose, onMinimize, onToggleFul
         </ScrollArea>
       </div>
 
-      <div className={cn("relative min-w-0 flex-1 flex-col bg-[hsl(var(--comm-page))]", isSidebarOpen ? "hidden md:flex" : "flex", activeCall && "lg:grid lg:grid-cols-[minmax(0,1.35fr)_minmax(320px,0.65fr)] lg:grid-rows-[auto_minmax(0,1fr)_auto]")}>
+      <div className={cn("chat-conversation-surface relative min-w-0 flex-1 flex-col bg-[hsl(var(--comm-page))]", isSidebarOpen ? "hidden md:flex" : "flex", activeCall && "lg:grid lg:grid-cols-[minmax(0,1.35fr)_minmax(320px,0.65fr)] lg:grid-rows-[auto_minmax(0,1fr)_auto]")}>
         {activeChatUserId ? (
           <>
-            <header className={cn("z-[var(--z-sticky)] flex min-w-0 items-center justify-between gap-2 border-b border-[hsl(var(--comm-border))] bg-[hsl(var(--comm-panel-elevated))] px-3 py-3 shadow-sm backdrop-blur-xl sm:px-5", activeCall && "lg:col-span-2 lg:col-start-1 lg:row-start-1")}>
-              <div className="flex min-w-0 items-center gap-3 sm:gap-4">
+            <header className={cn("z-[var(--z-sticky)] flex min-w-0 flex-wrap items-center justify-between gap-x-2 gap-y-1 border-b border-[hsl(var(--comm-border))] bg-[hsl(var(--comm-panel-elevated))] px-3 py-2.5 shadow-sm backdrop-blur-xl sm:flex-nowrap sm:gap-2 sm:px-5 sm:py-3", activeCall && "lg:col-span-2 lg:col-start-1 lg:row-start-1")}>
+              <div className="flex min-w-0 flex-1 items-center gap-2 sm:gap-4">
                 <Button variant="ghost" size="icon" className="-ml-2 h-11 w-11 rounded-full md:hidden" onClick={() => setIsSidebarOpen(!isSidebarOpen)} aria-label="Back to conversations"><Users className="h-5 w-5" /></Button>
-                <div className="relative">
+                <div className="relative shrink-0">
                   <Avatar className="h-11 w-11 border-2 border-primary/10">
                     <AvatarImage src={resolveAvatarUrl(activeUser?.avatar_url)} alt={formatUserName(activeUser)} />
                     <AvatarFallback className="bg-primary/5 font-bold text-primary">{(activeUser?.first_name?.[0] || activeUser?.email?.[0] || "?").toUpperCase()}</AvatarFallback>
                   </Avatar>
                   <div className={cn("absolute bottom-0 right-0 h-3 w-3 rounded-full border-2 border-background", activeUser?.online ? "bg-green-500" : "bg-slate-400")} />
                 </div>
-                <div>
-                  <h3 className="text-base font-bold leading-tight text-foreground">{formatUserName(activeUser)}</h3>
-                  <p className="text-[11px] font-medium text-primary/70">{activeUserPresenceLabel}<span className="mx-1 text-muted-foreground/60">/</span>{activeUser?.designation || activeUser?.role}</p>
+                <div className="min-w-0 flex-1">
+                  <h3 className="truncate text-sm font-bold leading-tight text-foreground sm:text-base">{formatUserName(activeUser)}</h3>
+                  <p className="truncate text-[10px] font-medium leading-snug text-primary/70 sm:text-[11px]">{activeUserPresenceLabel}<span className="mx-1 text-muted-foreground/60">/</span>{activeUser?.designation || activeUser?.role}</p>
                 </div>
               </div>
-              <div className="flex shrink-0 items-center gap-1">
+              <div className="flex shrink-0 items-center gap-0 sm:gap-1">
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
-                    <Button variant="ghost" size="icon" className="h-11 w-11 rounded-full text-primary/80 hover:bg-primary/10 hover:text-primary focus-visible:ring-primary/30" title="Select call participants" aria-label="Select call participants"><Users className="h-4 w-4" /></Button>
+                    <Button variant="ghost" size="icon" className="h-9 w-9 rounded-full text-primary/80 hover:bg-primary/10 hover:text-primary focus-visible:ring-primary/30 sm:h-11 sm:w-11" title="Select call participants" aria-label="Select call participants"><Users className="h-4 w-4" /></Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end" className="w-64">
                     <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground">Add colleagues to this call</div>
@@ -1332,11 +1332,11 @@ export const ChatModule = ({ currentUser, chat, onClose, onMinimize, onToggleFul
                     ))}
                   </DropdownMenuContent>
                 </DropdownMenu>
-                <Button variant="ghost" size="icon" className="h-11 w-11 rounded-full text-primary/80 hover:bg-primary/10 hover:text-primary focus-visible:ring-primary/30" onClick={() => void startOutgoingCall("audio")} title={selectedCallTargets.length > 1 ? "Start group phone call" : "Start phone call"} aria-label={selectedCallTargets.length > 1 ? "Start group phone call" : "Start phone call"}><Phone className="h-4 w-4" /></Button>
-                <Button variant="ghost" size="icon" className="h-11 w-11 rounded-full text-primary/80 hover:bg-primary/10 hover:text-primary focus-visible:ring-primary/30" onClick={() => void startOutgoingCall("video")} title={selectedCallTargets.length > 1 ? "Start group video call" : "Start video call"} aria-label={selectedCallTargets.length > 1 ? "Start group video call" : "Start video call"}><Video className="h-4 w-4" /></Button>
-                {onMinimize && <Button variant="ghost" size="icon" className="h-11 w-11 rounded-full text-muted-foreground hover:bg-primary/10 hover:text-primary" onClick={onMinimize} title="Minimize messages" aria-label="Minimize messaging window"><Minus className="h-5 w-5" /></Button>}
-                {onToggleFullscreen && <Button variant="ghost" size="icon" className="h-11 w-11 rounded-full text-muted-foreground hover:bg-primary/10 hover:text-primary" onClick={onToggleFullscreen} title={isFullscreen ? "Exit full screen" : "Full screen"} aria-label={isFullscreen ? "Exit full screen messaging" : "Open messaging full screen"} aria-pressed={isFullscreen}>{isFullscreen ? <Minimize2 className="h-5 w-5" /> : <Maximize2 className="h-5 w-5" />}</Button>}
-                {onClose && <Button variant="ghost" size="icon" onClick={onClose} className="rounded-full text-muted-foreground hover:bg-red-50 hover:text-red-500"><X className="h-5 w-5" /></Button>}
+                <Button variant="ghost" size="icon" className="h-9 w-9 rounded-full text-primary/80 hover:bg-primary/10 hover:text-primary focus-visible:ring-primary/30 sm:h-11 sm:w-11" onClick={() => void startOutgoingCall("audio")} title={selectedCallTargets.length > 1 ? "Start group phone call" : "Start phone call"} aria-label={selectedCallTargets.length > 1 ? "Start group phone call" : "Start phone call"}><Phone className="h-4 w-4" /></Button>
+                <Button variant="ghost" size="icon" className="h-9 w-9 rounded-full text-primary/80 hover:bg-primary/10 hover:text-primary focus-visible:ring-primary/30 sm:h-11 sm:w-11" onClick={() => void startOutgoingCall("video")} title={selectedCallTargets.length > 1 ? "Start group video call" : "Start video call"} aria-label={selectedCallTargets.length > 1 ? "Start group video call" : "Start video call"}><Video className="h-4 w-4" /></Button>
+                {onMinimize && <Button variant="ghost" size="icon" className="h-9 w-9 rounded-full text-muted-foreground hover:bg-primary/10 hover:text-primary sm:h-11 sm:w-11" onClick={onMinimize} title="Minimize messages" aria-label="Minimize messaging window"><Minus className="h-5 w-5" /></Button>}
+                {onToggleFullscreen && <Button variant="ghost" size="icon" className="h-9 w-9 rounded-full text-muted-foreground hover:bg-primary/10 hover:text-primary sm:h-11 sm:w-11" onClick={onToggleFullscreen} title={isFullscreen ? "Exit full screen" : "Full screen"} aria-label={isFullscreen ? "Exit full screen messaging" : "Open messaging full screen"} aria-pressed={isFullscreen}>{isFullscreen ? <Minimize2 className="h-5 w-5" /> : <Maximize2 className="h-5 w-5" />}</Button>}
+                {onClose && <Button variant="ghost" size="icon" onClick={onClose} className="h-9 w-9 rounded-full text-muted-foreground hover:bg-red-50 hover:text-red-500 sm:h-11 sm:w-11" aria-label="Close messaging"><X className="h-5 w-5" /></Button>}
               </div>
             </header>
 
@@ -1390,11 +1390,11 @@ export const ChatModule = ({ currentUser, chat, onClose, onMinimize, onToggleFul
                     <Button size="sm" variant={callLayout === "gallery" ? "default" : "outline"} className={cn("h-10 rounded-full px-3", callLayout === "gallery" ? "call-control-active" : "call-control-button")} onClick={() => setCallLayout("gallery")} aria-pressed={callLayout === "gallery"}><LayoutGrid className="mr-2 h-4 w-4" />Gallery</Button>
                     <Button size="sm" variant={callLayout === "speaker" ? "default" : "outline"} className={cn("h-10 rounded-full px-3", callLayout === "speaker" ? "call-control-active" : "call-control-button")} onClick={() => setCallLayout("speaker")} aria-pressed={callLayout === "speaker"}><PanelTop className="mr-2 h-4 w-4" />Speaker</Button>
                   </div>
-                  <div className="flex min-w-0 items-center gap-2 border-l border-[hsl(var(--comm-border))] pl-2 max-sm:border-l-0 max-sm:pl-0">
+                  <div className="flex min-w-0 items-center gap-2 border-l border-[hsl(var(--comm-border))] pl-2 max-sm:border-l-0 max-sm:pl-0" role="group" aria-label="Meeting views">
                     <Button type="button" size="sm" variant={showInvitePanel ? "default" : "outline"} className={cn("h-10 rounded-full px-3", showInvitePanel ? "call-control-active" : "call-control-button")} onClick={() => setShowInvitePanel(value => !value)} aria-expanded={showInvitePanel} aria-controls="meeting-invite-panel"><UserPlus className="mr-2 h-4 w-4" />Invite</Button>
                     <Badge variant="secondary" className="rounded-full"><Users className="mr-1 h-3 w-3" />{activeCallParticipantIds.length}</Badge>
-                    <Button type="button" size="sm" variant={mobileMeetingView === "participants" || isDesktopParticipantsOpen ? "default" : "outline"} className="h-10 rounded-full px-3" onClick={handleMeetingParticipantsToggle} aria-pressed={mobileMeetingView === "participants" || isDesktopParticipantsOpen}><Users className="mr-2 h-4 w-4" />People</Button>
-                    <Button type="button" size="sm" variant={mobileMeetingView === "chat" || !isDesktopChatOpen ? "default" : "outline"} className="h-10 rounded-full px-3" onClick={handleMeetingChatToggle} aria-pressed={mobileMeetingView === "chat" || !isDesktopChatOpen}><MessageSquare className="mr-2 h-4 w-4" />Chat</Button>
+                    <Button type="button" size="sm" variant={mobileMeetingView === "participants" || isDesktopParticipantsOpen ? "default" : "outline"} className={cn("h-10 rounded-full px-3 max-[380px]:h-9 max-[380px]:gap-0.5 max-[380px]:px-2", mobileMeetingView === "participants" || isDesktopParticipantsOpen ? "call-control-active" : "call-control-button")} onClick={handleMeetingParticipantsToggle} aria-label="Show meeting people" aria-pressed={mobileMeetingView === "participants" || isDesktopParticipantsOpen}><Users className="h-4 w-4 max-[380px]:mr-1" /><span className="max-[340px]:hidden">People</span></Button>
+                    <Button type="button" size="sm" variant={mobileMeetingView === "chat" || !isDesktopChatOpen ? "default" : "outline"} className={cn("h-10 rounded-full px-3 max-[380px]:h-9 max-[380px]:gap-0.5 max-[380px]:px-2", mobileMeetingView === "chat" || !isDesktopChatOpen ? "call-control-active" : "call-control-button")} onClick={handleMeetingChatToggle} aria-label="Show meeting chat" aria-pressed={mobileMeetingView === "chat" || !isDesktopChatOpen}><MessageSquare className="mr-2 h-4 w-4 max-[380px]:mr-1" /><span>Chat</span></Button>
                   </div>
                   <div className="ml-auto flex min-w-0 flex-wrap items-center justify-end gap-2 border-l border-[hsl(var(--comm-border))] pl-2 max-sm:ml-0 max-sm:justify-start max-sm:border-l-0 max-sm:pl-0" role="group" aria-label="Call actions">
                     <Button size="icon" variant={showDeviceSettings ? "default" : "outline"} className={cn("h-10 w-10 rounded-full", showDeviceSettings ? "call-control-active" : "call-control-button")} onClick={() => setShowDeviceSettings(value => !value)} title="Media devices" aria-label="Media device settings" aria-expanded={showDeviceSettings}><Settings2 className="h-4 w-4" /></Button>
