@@ -61,8 +61,11 @@ build:
   script:
     - echo "=== Build - Installing dependencies ==="
     - npm ci
-    - echo "=== Build - Building production frontend ==="
-    - npm run build
+    - npm ci --prefix CRMS
+    - echo "=== Build - Running communication regression suite ==="
+    - npm run test:communication
+    - echo "=== Build - Building CIMS and Developers production frontends ==="
+    - npm run build:all
     - echo "=== Build - Verifying dist output ==="
     - ls -la dist/
   artifacts:
@@ -107,10 +110,21 @@ deploy:
     - echo "=== Deploy - Installing production deps and restarting app ==="
     - |
       ssh -p 1625 $CX_SERVER_USER@$CX_SERVER_HOST << 'EOF'
+        set -e
         cd /var/www/riana-cims/cms
-        npm ci --omit=dev
+        echo "=== Deploy - Installing API production dependencies ==="
+        npm --prefix server ci --omit=dev
+        echo "=== Deploy - Creating and verifying a database backup ==="
+        node server/scripts/verify-backup.cjs
+        chmod 700 server/backups
+        find server/backups -maxdepth 1 -type f -name '*.sql' -exec chmod 600 {} +
+        echo "=== Deploy - Applying missing communication migrations ==="
+        COMMUNICATION_MIGRATION_BACKUP_VERIFIED=true node server/scripts/apply-communication-migrations.cjs
+        echo "=== Deploy - Restarting the API ==="
         sudo /root/.nvm/versions/node/v23.6.0/bin/pm2 restart riana-cims || sudo /root/.nvm/versions/node/v23.6.0/bin/pm2 start ecosystem.config.cjs --only riana-cims --env production
         sudo /root/.nvm/versions/node/v23.6.0/bin/pm2 save
+        echo "=== Deploy - Verifying API health ==="
+        node -e 'const http=require("http");let attempts=0;const check=()=>{const request=http.get("http://127.0.0.1:8081/api/health",response=>{response.resume();if(response.statusCode===200){console.log("API health check passed.");process.exit(0)}retry(`Health endpoint returned HTTP ${response.statusCode}.`)});request.setTimeout(3000,()=>request.destroy(new Error("Health request timed out.")));request.on("error",error=>retry(error.message))};const retry=message=>{if(++attempts>=15){console.error(`API health check failed: ${message}`);process.exit(1)}setTimeout(check,2000)};check();'
         echo "=== Deploy complete ==="
         sudo /root/.nvm/versions/node/v23.6.0/bin/pm2 list
       EOF
