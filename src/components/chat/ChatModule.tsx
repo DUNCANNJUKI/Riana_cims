@@ -12,6 +12,7 @@ import { X, Send, Check, CheckCheck, Search, Users, UserPlus, MessageSquare, Pho
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
 import { resolveAvatarUrl } from "@/utils/avatar";
+import { isHostedPlaceholderMessage, stripHostedPlaceholderLines } from "@/utils/chatMessageVisibility";
 import { useToast } from "@/hooks/use-toast";
 import { playCallHangupSound, playCallPickupSound, playCallRingSound } from "@/utils/notificationSound";
 
@@ -72,21 +73,6 @@ const isRtcStateConflict = (error: unknown) => {
   return (error instanceof DOMException && error.name === "InvalidStateError")
     || /wrong state|signalingstate|stable|closed/i.test(message);
 };
-const HOSTED_PLACEHOLDER_LINE_RE = /^[\s\u00a0]*(?:[oO0]|\u039f|\u03bf|\uff2f|\uff4f|\uff10|\u25cb|\u25ef)[\s\u00a0]*$/u;
-const stripHostedPlaceholderLines = (value?: string | null) => String(value || "")
-  .replace(/\r\n?/g, "\n")
-  .split("\n")
-  .filter((line) => !HOSTED_PLACEHOLDER_LINE_RE.test(line))
-  .join("\n")
-  .trim();
-
-const isHostedPlaceholderMessage = (message: ChatMessage) => {
-  const content = stripHostedPlaceholderLines(message.content);
-  return !message.reply_to_message_id
-    && !message.attachment_file_path
-    && !content;
-};
-
 const EMOJI_SHORTCUTS = ["\u{1F600}", "\u{1F602}", "\u{1F60D}", "\u{1F44D}", "\u{1F64F}", "\u{1F389}", "\u2705", "\u{1F525}", "\u2764\uFE0F", "\u{1F622}", "\u{1F62E}", "\u{1F621}"];
 const REACTION_OPTIONS = [
   { type: "like", label: "Like", icon: "\u{1F44D}" },
