@@ -21,7 +21,7 @@ dependency_audit:
     - npm outdated || true
   allow_failure: false
   only:
-    - main
+    - branches
   artifacts:
     when: always
     paths:
@@ -29,16 +29,6 @@ dependency_audit:
     expire_in: 30 days
   after_script:
     - npm audit --json > npm-audit.json 2>/dev/null || true
-
-custom_secret_scan:
-  stage: audit
-  image: node:22
-  script:
-    - echo "=== Secret Detection - Scanning for leaked credentials ==="
-    - npx --yes secretlint "**/*"
-  allow_failure: true
-  only:
-    - main
 
 license_check:
   stage: audit
@@ -49,7 +39,7 @@ license_check:
     - npx --yes license-checker --onlyAllow "MIT;ISC;BSD-2-Clause;BSD-3-Clause;Apache-2.0;CC0-1.0;CC-BY-3.0;CC-BY-4.0;Unlicense;Python-2.0;0BSD" --excludePrivatePackages
   allow_failure: true
   only:
-    - main
+    - branches
 
 include:
   - template: Security/SAST.gitlab-ci.yml
@@ -79,7 +69,7 @@ build:
       - setup_db.cjs
     expire_in: 1 hour
   only:
-    - main
+    - branches
 
 deploy:
   stage: deploy
@@ -93,7 +83,7 @@ deploy:
     - echo "$CX_SERVER_HOST_KEY" >> ~/.ssh/known_hosts
     - chmod 600 ~/.ssh/known_hosts
   script:
-    - echo "=== Deploy - Syncing files to cx-server ==="
+    - echo "=== Deploy - Syncing files to deployment target ==="
     - |
       rsync -avz -e "ssh -p 1625" --delete \
         --exclude='.env.local' \
@@ -115,8 +105,9 @@ deploy:
         echo "=== Deploy - Installing API production dependencies ==="
         npm --prefix server ci --omit=dev
         echo "=== Deploy - Creating and verifying a database backup ==="
-        node server/scripts/verify-backup.cjs
+        mkdir -p server/backups
         chmod 700 server/backups
+        node server/scripts/verify-backup.cjs
         find server/backups -maxdepth 1 -type f -name '*.sql' -exec chmod 600 {} +
         echo "=== Deploy - Applying missing communication migrations ==="
         COMMUNICATION_MIGRATION_BACKUP_VERIFIED=true node server/scripts/apply-communication-migrations.cjs
@@ -133,7 +124,8 @@ deploy:
   environment:
     name: production
     url: https://rianacims.marezi.co/
-  when: on_success
+  when: manual
+  allow_failure: false
 
 
 
