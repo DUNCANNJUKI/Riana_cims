@@ -109,10 +109,18 @@ async function validateAuthenticatedSession(pool, { userId, sessionId, token }) 
       : sessionError('SESSION_REVOKED', 'Your session is no longer active. Please sign in again.');
   }
 
-  const [rows] = await pool.query(
-    'SELECT session_id,token_hash,expires_at,revoked_at,revoke_reason FROM user_sessions WHERE user_id = ? AND session_id = ? LIMIT 1',
-    [userId, sessionId],
-  );
+  let rows;
+  try {
+    [rows] = await pool.query(
+      `SELECT s.session_id,s.token_hash,s.expires_at,s.revoked_at,s.revoke_reason,l.locked_at,l.reason AS lock_reason
+       FROM user_sessions s LEFT JOIN user_session_locks l ON l.session_id=s.session_id AND l.unlocked_at IS NULL
+       WHERE s.user_id=? AND s.session_id=? LIMIT 1`,
+      [userId, sessionId],
+    );
+  } catch (error) {
+    if (error.code !== 'ER_NO_SUCH_TABLE') throw error;
+    [rows] = await pool.query('SELECT session_id,token_hash,expires_at,revoked_at,revoke_reason FROM user_sessions WHERE user_id = ? AND session_id = ? LIMIT 1', [userId, sessionId]);
+  }
   const session = rows[0];
   if (!session) {
     const [active] = await pool.query(
@@ -134,6 +142,7 @@ async function validateAuthenticatedSession(pool, { userId, sessionId, token }) 
   if (session.token_hash && token && session.token_hash !== hashValue(token)) {
     return sessionError('SESSION_REVOKED', 'Your session is no longer active. Please sign in again.');
   }
+  if (session.locked_at) return { ...sessionError('SESSION_LOCKED', 'Unlock CIMS to continue.'), locked: true, reason: session.lock_reason || 'manual' };
   await pool.query('UPDATE user_sessions SET last_activity_at = NOW() WHERE user_id = ? AND session_id = ?', [userId, sessionId]);
   return { valid: true };
 }

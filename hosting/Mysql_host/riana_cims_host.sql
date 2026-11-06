@@ -1,5 +1,5 @@
 -- RIANA CIMS MySQL hosting database
--- Generated 2026-10-16T10:48:45.747Z
+-- Generated 2026-11-04T22:25:01.798Z
 -- Complete schema with sanitized reference data; no credentials or customer records.
 SET NAMES utf8mb4;
 SET FOREIGN_KEY_CHECKS = 0;
@@ -81,6 +81,20 @@ CREATE TABLE `audit_logs` (
   CONSTRAINT `fk_audit_logs_user` FOREIGN KEY (`user_id`) REFERENCES `user_profiles` (`id`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+DROP TABLE IF EXISTS `auth_mfa_login_challenges`;
+CREATE TABLE `auth_mfa_login_challenges` (
+  `id` char(36) NOT NULL,
+  `user_id` varchar(36) NOT NULL,
+  `method` enum('totp') NOT NULL,
+  `expires_at` datetime NOT NULL,
+  `attempts` tinyint(3) unsigned NOT NULL DEFAULT 0,
+  `verified_at` datetime DEFAULT NULL,
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`id`),
+  KEY `idx_auth_mfa_challenge_active` (`user_id`,`method`,`expires_at`,`verified_at`),
+  CONSTRAINT `fk_auth_mfa_challenge_user` FOREIGN KEY (`user_id`) REFERENCES `user_profiles` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 DROP TABLE IF EXISTS `auth_two_factor_challenges`;
 CREATE TABLE `auth_two_factor_challenges` (
   `id` char(36) NOT NULL,
@@ -95,6 +109,25 @@ CREATE TABLE `auth_two_factor_challenges` (
   PRIMARY KEY (`id`),
   KEY `idx_2fa_user_active` (`user_id`,`verified_at`,`expires_at`),
   CONSTRAINT `fk_2fa_user` FOREIGN KEY (`user_id`) REFERENCES `user_profiles` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+DROP TABLE IF EXISTS `call_device_sessions`;
+CREATE TABLE `call_device_sessions` (
+  `id` varchar(36) NOT NULL,
+  `call_id` varchar(36) NOT NULL,
+  `user_id` varchar(36) NOT NULL,
+  `device_id` varchar(80) NOT NULL,
+  `status` enum('ringing','accepted','canceled','disconnected','missed') NOT NULL DEFAULT 'ringing',
+  `accepted_at` datetime DEFAULT NULL,
+  `resolved_at` datetime DEFAULT NULL,
+  `last_seen_at` datetime DEFAULT NULL,
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  `updated_at` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_call_device_session` (`call_id`,`user_id`,`device_id`),
+  KEY `idx_call_device_user_status` (`user_id`,`status`,`created_at`),
+  CONSTRAINT `fk_call_device_call` FOREIGN KEY (`call_id`) REFERENCES `messages` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_call_device_user` FOREIGN KEY (`user_id`) REFERENCES `user_profiles` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 DROP TABLE IF EXISTS `call_participants`;
@@ -212,6 +245,23 @@ CREATE TABLE `client_departments` (
   KEY `idx_client_departments_client_status` (`client_id`,`status`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
+DROP TABLE IF EXISTS `communication_preferences`;
+CREATE TABLE `communication_preferences` (
+  `user_id` varchar(36) NOT NULL,
+  `keep_history` tinyint(1) NOT NULL DEFAULT 0,
+  `notifications_enabled` tinyint(1) NOT NULL DEFAULT 1,
+  `message_notifications` tinyint(1) NOT NULL DEFAULT 1,
+  `call_notifications` tinyint(1) NOT NULL DEFAULT 1,
+  `do_not_disturb` tinyint(1) NOT NULL DEFAULT 0,
+  `quiet_hours_enabled` tinyint(1) NOT NULL DEFAULT 0,
+  `quiet_hours_start` time DEFAULT NULL,
+  `quiet_hours_end` time DEFAULT NULL,
+  `timezone` varchar(80) NOT NULL DEFAULT 'Africa/Nairobi',
+  `updated_at` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  PRIMARY KEY (`user_id`),
+  CONSTRAINT `fk_communication_preferences_user` FOREIGN KEY (`user_id`) REFERENCES `user_profiles` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 DROP TABLE IF EXISTS `companies`;
 CREATE TABLE `companies` (
   `id` varchar(36) NOT NULL,
@@ -268,7 +318,7 @@ CREATE TABLE `company_settings` (
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-INSERT INTO `company_settings` (`id`, `name`, `logo_path`, `font_color`, `primary_color`, `font_type`, `contract_types`, `backup_schedule`, `updated_at`, `backup_day`, `backup_time`, `tagline`, `website`, `email`, `phone`, `address`, `contract_durations`, `secondary_color`, `accent_color`, `timezone`, `date_format`, `enable_email_notifications`, `enable_sms_notifications`, `enable_push_notifications`, `auto_reminder_days`, `maintenance_enabled`, `maintenance_reason`, `maintenance_message`, `estimated_completion`, `maintenance_enabled_by`, `maintenance_enabled_at`, `maintenance_disabled_by`, `maintenance_disabled_at`, `maintenance_allow_api_access`, `maintenance_force_logout`, `maintenance_notify_users`, `maintenance_backup_before_enable`, `maintenance_allow_super_admin_only`) VALUES (1, 'RIANA CIMS', '81558c19-3eeb-4c18-8367-40714cc8e9a0.png', '#000000', '#1A91AB', 'Inter', '[\"AMC\",\"Once-off\",\"Subscription\"]', '0 2 * * *', '2026-07-24 16:16:00.000', 'Daily', '02:00', 'Innovative Technology Solutions', 'https://www.riana.co', 'info@riana.co', '+254 700 000 000', '6th Floor, Allianz Plaza, 96 Riverside Drive, Nairobi, Kenya', '{\"AMC\":\"12 months\",\"WARRANTY\":\"24 months\",\"LEASE\":\"36 months\",\"POC\":\"3 months\"}', '#10b981', '#f59e0b', 'Africa/Nairobi', 'DD/MM/YYYY', 1, 1, 1, 3, 0, 'Database clean-up in progress', 'RIANA CIMS is temporarily unavailable while scheduled maintenance is in progress.', '2026-07-24 07:10:00.000', '00000000-0000-4000-8000-000000000001', '2026-07-24 16:11:13.000', '00000000-0000-4000-8000-000000000001', '2026-07-24 16:12:54.000', 1, 1, 0, 1, 1);
+INSERT INTO `company_settings` (`id`, `name`, `logo_path`, `font_color`, `primary_color`, `font_type`, `contract_types`, `backup_schedule`, `updated_at`, `backup_day`, `backup_time`, `tagline`, `website`, `email`, `phone`, `address`, `contract_durations`, `secondary_color`, `accent_color`, `timezone`, `date_format`, `enable_email_notifications`, `enable_sms_notifications`, `enable_push_notifications`, `auto_reminder_days`, `maintenance_enabled`, `maintenance_reason`, `maintenance_message`, `estimated_completion`, `maintenance_enabled_by`, `maintenance_enabled_at`, `maintenance_disabled_by`, `maintenance_disabled_at`, `maintenance_allow_api_access`, `maintenance_force_logout`, `maintenance_notify_users`, `maintenance_backup_before_enable`, `maintenance_allow_super_admin_only`) VALUES (1, 'RIANA CIMS', '81558c19-3eeb-4c18-8367-40714cc8e9a0.png', '#000000', '#1A91AB', 'Inter', '[\"AMC\",\"Once-off\",\"Subscription\"]', '00 02 * * 1', '2026-10-31 09:27:03.000', 'Monday', '02:00', 'Innovative Technology Solutions', 'https://www.riana.co', 'info@riana.co', '+254 700 000 000', '6th Floor, Allianz Plaza, 96 Riverside Drive, Nairobi, Kenya', '{\"AMC\":\"12 months\",\"WARRANTY\":\"24 months\",\"LEASE\":\"36 months\",\"POC\":\"3 months\"}', '#10b981', '#f59e0b', 'Africa/Nairobi', 'DD/MM/YYYY', 1, 1, 1, 3, 0, 'Database clean-up in progress', 'RIANA CIMS is temporarily unavailable while scheduled maintenance is in progress.', '2026-10-31 05:10:00.000', '00000000-0000-4000-8000-000000000001', '2026-10-31 09:25:13.000', '00000000-0000-4000-8000-000000000001', '2026-10-31 09:26:28.000', 1, 1, 0, 1, 1);
 
 DROP TABLE IF EXISTS `contact_reveal_audit`;
 CREATE TABLE `contact_reveal_audit` (
@@ -786,13 +836,21 @@ DROP TABLE IF EXISTS `installation_budgets`;
 CREATE TABLE `installation_budgets` (
   `id` varchar(36) NOT NULL,
   `installation_id` varchar(36) NOT NULL,
-  `total_budget` float DEFAULT 0,
+  `client_id` varchar(36) DEFAULT NULL,
+  `branch_id` varchar(36) DEFAULT NULL,
+  `budget_model` varchar(30) NOT NULL DEFAULT 'legacy',
+  `revision_number` int(10) unsigned NOT NULL DEFAULT 1,
+  `is_current` tinyint(1) NOT NULL DEFAULT 1,
+  `supersedes_budget_id` varchar(36) DEFAULT NULL,
+  `total_budget` decimal(15,2) NOT NULL DEFAULT 0.00,
   `labor_cost` float DEFAULT 0,
   `equipment_cost` float DEFAULT 0,
   `transport_cost` float DEFAULT 0,
   `miscellaneous_cost` float DEFAULT 0,
   `notes` text DEFAULT NULL,
   `created_by` varchar(36) DEFAULT NULL,
+  `approved_by` varchar(36) DEFAULT NULL,
+  `approved_at` datetime DEFAULT NULL,
   `currency` varchar(10) DEFAULT 'KES',
   `branch` varchar(100) DEFAULT NULL,
   `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
@@ -801,8 +859,49 @@ CREATE TABLE `installation_budgets` (
   KEY `installation_id` (`installation_id`),
   KEY `created_by` (`created_by`),
   KEY `idx_installation_budgets_installation` (`installation_id`,`created_at`),
+  KEY `idx_installation_budget_scope` (`client_id`,`branch_id`,`installation_id`),
+  KEY `idx_installation_budget_current` (`installation_id`,`budget_model`,`is_current`,`revision_number`),
   CONSTRAINT `installation_budgets_ibfk_1` FOREIGN KEY (`installation_id`) REFERENCES `installations` (`id`) ON DELETE CASCADE,
   CONSTRAINT `installation_budgets_ibfk_2` FOREIGN KEY (`created_by`) REFERENCES `user_profiles` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+DROP TABLE IF EXISTS `installation_budget_audit`;
+CREATE TABLE `installation_budget_audit` (
+  `id` varchar(36) NOT NULL,
+  `budget_id` varchar(36) NOT NULL,
+  `installation_id` varchar(36) NOT NULL,
+  `action` varchar(30) NOT NULL,
+  `actor_id` varchar(36) DEFAULT NULL,
+  `revision_number` int(10) unsigned NOT NULL,
+  `total_budget` decimal(15,2) NOT NULL,
+  `change_summary` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL CHECK (json_valid(`change_summary`)),
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`id`),
+  KEY `idx_budget_audit_budget` (`budget_id`,`created_at`),
+  KEY `idx_budget_audit_installation` (`installation_id`,`created_at`),
+  KEY `fk_budget_audit_actor` (`actor_id`),
+  CONSTRAINT `fk_budget_audit_actor` FOREIGN KEY (`actor_id`) REFERENCES `user_profiles` (`id`) ON DELETE SET NULL,
+  CONSTRAINT `fk_budget_audit_budget` FOREIGN KEY (`budget_id`) REFERENCES `installation_budgets` (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+DROP TABLE IF EXISTS `installation_budget_technician_expenses`;
+CREATE TABLE `installation_budget_technician_expenses` (
+  `id` varchar(36) NOT NULL,
+  `budget_id` varchar(36) NOT NULL,
+  `technician_id` varchar(36) NOT NULL,
+  `accommodation_cost` decimal(15,2) NOT NULL DEFAULT 0.00,
+  `transport_cost` decimal(15,2) NOT NULL DEFAULT 0.00,
+  `meals_cost` decimal(15,2) NOT NULL DEFAULT 0.00,
+  `other_expenses` decimal(15,2) NOT NULL DEFAULT 0.00,
+  `technician_total` decimal(15,2) NOT NULL DEFAULT 0.00,
+  `expense_notes` varchar(1000) DEFAULT NULL,
+  `technician_name_snapshot` varchar(201) NOT NULL,
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_budget_technician` (`budget_id`,`technician_id`),
+  KEY `idx_budget_expense_technician` (`technician_id`,`budget_id`),
+  CONSTRAINT `fk_budget_expense_budget` FOREIGN KEY (`budget_id`) REFERENCES `installation_budgets` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_budget_expense_technician` FOREIGN KEY (`technician_id`) REFERENCES `user_profiles` (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 DROP TABLE IF EXISTS `installation_feedback`;
@@ -811,12 +910,12 @@ CREATE TABLE `installation_feedback` (
   `installation_id` varchar(36) NOT NULL,
   `client_id` varchar(36) NOT NULL,
   `feedback_date` date NOT NULL,
-  `installation_quality_rating` int(11) NOT NULL,
-  `installation_timeliness_rating` int(11) NOT NULL,
-  `installation_communication_rating` int(11) NOT NULL,
-  `technician_knowledge_rating` int(11) NOT NULL,
-  `technician_professionalism_rating` int(11) NOT NULL,
-  `technician_helpfulness_rating` int(11) NOT NULL,
+  `installation_quality_rating` int(11) DEFAULT NULL,
+  `installation_timeliness_rating` int(11) DEFAULT NULL,
+  `installation_communication_rating` int(11) DEFAULT NULL,
+  `technician_knowledge_rating` int(11) DEFAULT NULL,
+  `technician_professionalism_rating` int(11) DEFAULT NULL,
+  `technician_helpfulness_rating` int(11) DEFAULT NULL,
   `recommendation_score` int(11) NOT NULL,
   `overall_satisfaction` int(11) NOT NULL,
   `positive_feedback` text DEFAULT NULL,
@@ -902,6 +1001,24 @@ CREATE TABLE `message_edit_history` (
   CONSTRAINT `fk_message_edit_history_user` FOREIGN KEY (`edited_by`) REFERENCES `user_profiles` (`id`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+DROP TABLE IF EXISTS `message_legal_holds`;
+CREATE TABLE `message_legal_holds` (
+  `id` varchar(36) NOT NULL,
+  `message_id` varchar(36) NOT NULL,
+  `reason` varchar(255) NOT NULL,
+  `placed_by` varchar(36) DEFAULT NULL,
+  `released_by` varchar(36) DEFAULT NULL,
+  `placed_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  `released_at` datetime DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  KEY `idx_message_legal_hold_active` (`message_id`,`released_at`),
+  KEY `fk_legal_hold_placed_by` (`placed_by`),
+  KEY `fk_legal_hold_released_by` (`released_by`),
+  CONSTRAINT `fk_legal_hold_message` FOREIGN KEY (`message_id`) REFERENCES `messages` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_legal_hold_placed_by` FOREIGN KEY (`placed_by`) REFERENCES `user_profiles` (`id`) ON DELETE SET NULL,
+  CONSTRAINT `fk_legal_hold_released_by` FOREIGN KEY (`released_by`) REFERENCES `user_profiles` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 DROP TABLE IF EXISTS `message_reactions`;
 CREATE TABLE `message_reactions` (
   `id` varchar(36) NOT NULL,
@@ -944,6 +1061,23 @@ CREATE TABLE `message_user_deletions` (
   CONSTRAINT `fk_message_user_deletions_user` FOREIGN KEY (`user_id`) REFERENCES `user_profiles` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+DROP TABLE IF EXISTS `message_user_visibility`;
+CREATE TABLE `message_user_visibility` (
+  `id` varchar(36) NOT NULL,
+  `message_id` varchar(36) NOT NULL,
+  `user_id` varchar(36) NOT NULL,
+  `hidden_at` datetime DEFAULT NULL,
+  `retained_until` datetime DEFAULT NULL,
+  `archived_at` datetime DEFAULT NULL,
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  `updated_at` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_message_user_visibility` (`message_id`,`user_id`),
+  KEY `idx_message_visibility_cleanup` (`user_id`,`hidden_at`,`retained_until`),
+  CONSTRAINT `fk_message_visibility_message` FOREIGN KEY (`message_id`) REFERENCES `messages` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_message_visibility_user` FOREIGN KEY (`user_id`) REFERENCES `user_profiles` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 DROP TABLE IF EXISTS `migration_history`;
 CREATE TABLE `migration_history` (
   `migration_id` varchar(100) NOT NULL,
@@ -972,7 +1106,16 @@ INSERT INTO `migration_history` (`migration_id`, `description`, `applied_at`) VA
 INSERT INTO `migration_history` (`migration_id`, `description`, `applied_at`) VALUES ('20260728_installation_screen_count', 'Repairs maintenance settings columns, adds installation screen_count, and refreshes optimizer statistics', '2026-07-28 01:38:18.000');
 INSERT INTO `migration_history` (`migration_id`, `description`, `applied_at`) VALUES ('20260729_user_sessions_live_repair', 'Applied from 20260729_user_sessions_live_repair.sql', '2026-07-28 02:47:28.000');
 INSERT INTO `migration_history` (`migration_id`, `description`, `applied_at`) VALUES ('20261012_hardware_inventory', 'Additive Marezi hardware and inventory lifecycle schema', '2026-10-12 23:45:19.000');
+INSERT INTO `migration_history` (`migration_id`, `description`, `applied_at`) VALUES ('20261014_equipment_serial_requirements', 'Applied from 20261014_equipment_serial_requirements.sql', '2026-11-01 02:58:32.000');
+INSERT INTO `migration_history` (`migration_id`, `description`, `applied_at`) VALUES ('20261015_hybrid_equipment', 'Applied from 20261015_hybrid_equipment.sql', '2026-11-01 02:58:32.000');
+INSERT INTO `migration_history` (`migration_id`, `description`, `applied_at`) VALUES ('20261016_inventory_operations', 'Applied from 20261016_inventory_operations.sql', '2026-11-01 02:58:32.000');
+INSERT INTO `migration_history` (`migration_id`, `description`, `applied_at`) VALUES ('20261016_missed_call_dismissals_compatibility', 'Applied from 20261016_missed_call_dismissals_compatibility.sql', '2026-11-01 02:58:32.000');
 INSERT INTO `migration_history` (`migration_id`, `description`, `applied_at`) VALUES ('20261016_scheduling', 'Additive scoped scheduling and durable in-app reminders', '2026-10-16 13:10:02.000');
+INSERT INTO `migration_history` (`migration_id`, `description`, `applied_at`) VALUES ('20261030_installation_feedback_rating_nullability', 'Allows uncollected legacy installation-feedback ratings to remain null without artificial defaults', '2026-10-30 11:57:19.000');
+INSERT INTO `migration_history` (`migration_id`, `description`, `applied_at`) VALUES ('20261031_communication_backend_foundation', 'Applied from 20261031_communication_backend_foundation.sql', '2026-11-01 02:58:32.000');
+INSERT INTO `migration_history` (`migration_id`, `description`, `applied_at`) VALUES ('20261101_passkeys_and_account_security', 'Applied from 20261101_passkeys_and_account_security.sql', '2026-11-01 03:26:52.000');
+INSERT INTO `migration_history` (`migration_id`, `description`, `applied_at`) VALUES ('20261101_totp_recovery_and_preferences', 'Applied from 20261101_totp_recovery_and_preferences.sql', '2026-11-01 21:35:14.000');
+INSERT INTO `migration_history` (`migration_id`, `description`, `applied_at`) VALUES ('20261102_technician_installation_budgets', 'Applied from 20261102_technician_installation_budgets.sql', '2026-11-02 20:34:58.000');
 
 DROP TABLE IF EXISTS `missed_call_dismissals`;
 CREATE TABLE `missed_call_dismissals` (
@@ -1000,6 +1143,28 @@ CREATE TABLE `modules` (
 
 INSERT INTO `modules` (`id`, `code`, `name`, `is_active`, `created_at`) VALUES ('cims', 'cims', 'Client Installation Management', 1, '2026-06-21 06:41:40.000');
 INSERT INTO `modules` (`id`, `code`, `name`, `is_active`, `created_at`) VALUES ('crms', 'crms', 'Change Request Management', 1, '2026-06-21 06:41:40.000');
+
+DROP TABLE IF EXISTS `notification_deliveries`;
+CREATE TABLE `notification_deliveries` (
+  `id` varchar(36) NOT NULL,
+  `user_id` varchar(36) NOT NULL,
+  `subscription_id` varchar(36) DEFAULT NULL,
+  `deduplication_key` varchar(160) NOT NULL,
+  `notification_type` varchar(50) NOT NULL,
+  `entity_id` varchar(36) DEFAULT NULL,
+  `status` enum('pending','sent','failed','expired','suppressed') NOT NULL DEFAULT 'pending',
+  `attempt_count` int(10) unsigned NOT NULL DEFAULT 0,
+  `last_error_code` varchar(80) DEFAULT NULL,
+  `delivered_at` datetime DEFAULT NULL,
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  `updated_at` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_notification_delivery_dedup` (`user_id`,`deduplication_key`,`subscription_id`),
+  KEY `idx_notification_delivery_status` (`status`,`created_at`),
+  KEY `fk_notification_delivery_subscription` (`subscription_id`),
+  CONSTRAINT `fk_notification_delivery_subscription` FOREIGN KEY (`subscription_id`) REFERENCES `push_subscriptions` (`id`) ON DELETE SET NULL,
+  CONSTRAINT `fk_notification_delivery_user` FOREIGN KEY (`user_id`) REFERENCES `user_profiles` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 DROP TABLE IF EXISTS `password_reset_tokens`;
 CREATE TABLE `password_reset_tokens` (
@@ -1088,6 +1253,30 @@ INSERT INTO `permissions` (`id`, `module_id`, `code`, `description`) VALUES ('pr
 INSERT INTO `permissions` (`id`, `module_id`, `code`, `description`) VALUES ('reports.view', 'cims', 'reports.view', 'Preview and download all reports');
 INSERT INTO `permissions` (`id`, `module_id`, `code`, `description`) VALUES ('subsidiaries.manage', 'cims', 'subsidiaries.manage', 'Add, edit, and delete subsidiaries');
 INSERT INTO `permissions` (`id`, `module_id`, `code`, `description`) VALUES ('users.manage', 'cims', 'users.manage', 'Manage non-privileged users');
+
+DROP TABLE IF EXISTS `push_subscriptions`;
+CREATE TABLE `push_subscriptions` (
+  `id` varchar(36) NOT NULL,
+  `user_id` varchar(36) NOT NULL,
+  `endpoint_hash` char(64) NOT NULL,
+  `device_id` varchar(80) NOT NULL,
+  `endpoint` text NOT NULL,
+  `p256dh` varchar(255) NOT NULL,
+  `auth_secret` varchar(255) NOT NULL,
+  `device_label` varchar(120) DEFAULT NULL,
+  `user_agent` varchar(255) DEFAULT NULL,
+  `expires_at` datetime DEFAULT NULL,
+  `last_success_at` datetime DEFAULT NULL,
+  `failure_count` int(10) unsigned NOT NULL DEFAULT 0,
+  `disabled_at` datetime DEFAULT NULL,
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  `updated_at` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_push_subscription_endpoint` (`endpoint_hash`),
+  UNIQUE KEY `uq_push_subscription_device` (`user_id`,`device_id`),
+  KEY `idx_push_subscription_user_active` (`user_id`,`disabled_at`),
+  CONSTRAINT `fk_push_subscription_user` FOREIGN KEY (`user_id`) REFERENCES `user_profiles` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 DROP TABLE IF EXISTS `roles`;
 CREATE TABLE `roles` (
@@ -1234,6 +1423,19 @@ INSERT INTO `role_permissions` (`role_id`, `permission_id`) VALUES ('crms:Teamle
 INSERT INTO `role_permissions` (`role_id`, `permission_id`) VALUES ('crms:Teamlead', 'crms:create');
 INSERT INTO `role_permissions` (`role_id`, `permission_id`) VALUES ('crms:Teamlead', 'crms:implement');
 INSERT INTO `role_permissions` (`role_id`, `permission_id`) VALUES ('crms:Teamlead', 'crms:read');
+
+DROP TABLE IF EXISTS `saved_messages`;
+CREATE TABLE `saved_messages` (
+  `id` varchar(36) NOT NULL,
+  `message_id` varchar(36) NOT NULL,
+  `user_id` varchar(36) NOT NULL,
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_saved_message_user` (`message_id`,`user_id`),
+  KEY `idx_saved_messages_user_created` (`user_id`,`created_at`),
+  CONSTRAINT `fk_saved_message_message` FOREIGN KEY (`message_id`) REFERENCES `messages` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_saved_message_user` FOREIGN KEY (`user_id`) REFERENCES `user_profiles` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 DROP TABLE IF EXISTS `scheduling_events`;
 CREATE TABLE `scheduling_events` (
@@ -1462,7 +1664,7 @@ CREATE TABLE `uploaded_files` (
   KEY `idx_file_status` (`status`),
   KEY `idx_file_checksum` (`checksum_sha256`),
   KEY `idx_handover_identity` (`related_entity_type`,`related_entity_id`,`file_category`,`checksum_sha256`)
-) ENGINE=InnoDB AUTO_INCREMENT=3 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=11 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 DROP TABLE IF EXISTS `uploaded_file_variants`;
 CREATE TABLE `uploaded_file_variants` (
@@ -1497,6 +1699,48 @@ CREATE TABLE `user_access_scopes` (
   UNIQUE KEY `uq_user_access_scope` (`user_id`,`scope_type`,`client_id`,`branch_id`,`department_id`),
   KEY `idx_user_access_scope_user` (`user_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+DROP TABLE IF EXISTS `user_identity_change_requests`;
+CREATE TABLE `user_identity_change_requests` (
+  `id` char(36) NOT NULL,
+  `user_id` varchar(36) NOT NULL,
+  `change_type` enum('email','phone') NOT NULL,
+  `proposed_value` varchar(255) NOT NULL,
+  `code_hash` char(64) NOT NULL,
+  `expires_at` datetime NOT NULL,
+  `attempts` tinyint(3) unsigned NOT NULL DEFAULT 0,
+  `used_at` datetime DEFAULT NULL,
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`id`),
+  KEY `idx_identity_change_active` (`user_id`,`change_type`,`used_at`,`expires_at`),
+  CONSTRAINT `fk_identity_change_user` FOREIGN KEY (`user_id`) REFERENCES `user_profiles` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+DROP TABLE IF EXISTS `user_interface_preferences`;
+CREATE TABLE `user_interface_preferences` (
+  `user_id` varchar(36) NOT NULL,
+  `language` varchar(12) NOT NULL DEFAULT 'en',
+  `theme` enum('light','dark','system') NOT NULL DEFAULT 'system',
+  `inactivity_timeout_minutes` smallint(5) unsigned NOT NULL DEFAULT 10,
+  `lock_on_resume` tinyint(1) NOT NULL DEFAULT 0,
+  `updated_at` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  PRIMARY KEY (`user_id`),
+  CONSTRAINT `fk_ui_preferences_user` FOREIGN KEY (`user_id`) REFERENCES `user_profiles` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+DROP TABLE IF EXISTS `user_mfa_recovery_codes`;
+CREATE TABLE `user_mfa_recovery_codes` (
+  `id` char(36) NOT NULL,
+  `user_id` varchar(36) NOT NULL,
+  `batch_id` char(36) NOT NULL,
+  `code_hash` char(64) NOT NULL,
+  `used_at` datetime DEFAULT NULL,
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_mfa_recovery_hash` (`user_id`,`code_hash`),
+  KEY `idx_mfa_recovery_available` (`user_id`,`used_at`),
+  CONSTRAINT `fk_mfa_recovery_user` FOREIGN KEY (`user_id`) REFERENCES `user_profiles` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 DROP TABLE IF EXISTS `user_module_roles`;
 CREATE TABLE `user_module_roles` (
@@ -1546,7 +1790,7 @@ CREATE TABLE `user_profiles` (
   `updated_at` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
   `password` varchar(255) DEFAULT NULL,
   `two_factor_enabled` tinyint(1) NOT NULL DEFAULT 0,
-  `two_factor_method` enum('email','sms','call') NOT NULL DEFAULT 'email',
+  `two_factor_method` enum('email','sms','call','totp') NOT NULL DEFAULT 'email',
   `two_factor_phone` varchar(30) DEFAULT NULL,
   `session_version` int(10) unsigned NOT NULL DEFAULT 0,
   `avatar_url` varchar(255) DEFAULT NULL,
@@ -1579,57 +1823,164 @@ CREATE TABLE `user_sessions` (
   KEY `idx_user_sessions_session_id` (`session_id`),
   KEY `idx_user_sessions_active` (`user_id`,`revoked_at`,`expires_at`),
   CONSTRAINT `fk_user_sessions_user` FOREIGN KEY (`user_id`) REFERENCES `user_profiles` (`id`) ON DELETE CASCADE
-) ENGINE=InnoDB AUTO_INCREMENT=69 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=109 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Pending idempotent migration: 20261014_equipment_serial_requirements.sql
-CREATE TABLE IF NOT EXISTS hardware_equipment_requirements (
-  subsidiary_id VARCHAR(36) NOT NULL,
-  equipment_field VARCHAR(64) NOT NULL,
-  serial_required BOOLEAN NOT NULL DEFAULT FALSE,
-  updated_by VARCHAR(36) NOT NULL,
-  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  PRIMARY KEY (subsidiary_id,equipment_field),
-  FOREIGN KEY (subsidiary_id) REFERENCES subsidiaries(id) ON DELETE RESTRICT,
-  FOREIGN KEY (updated_by) REFERENCES user_profiles(id) ON DELETE RESTRICT
+DROP TABLE IF EXISTS `user_session_locks`;
+CREATE TABLE `user_session_locks` (
+  `session_id` varchar(128) NOT NULL,
+  `user_id` varchar(36) NOT NULL,
+  `reason` enum('manual','inactivity','resume') NOT NULL DEFAULT 'manual',
+  `locked_at` datetime NOT NULL DEFAULT current_timestamp(),
+  `unlocked_at` datetime DEFAULT NULL,
+  PRIMARY KEY (`session_id`),
+  KEY `idx_session_locks_user_active` (`user_id`,`unlocked_at`),
+  CONSTRAINT `fk_session_lock_session` FOREIGN KEY (`session_id`) REFERENCES `user_sessions` (`session_id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_session_lock_user` FOREIGN KEY (`user_id`) REFERENCES `user_profiles` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Pending idempotent migration: 20261015_hybrid_equipment.sql
--- Additive hybrid equipment storage. Existing built-in columns remain unchanged.
+DROP TABLE IF EXISTS `user_totp_credentials`;
+CREATE TABLE `user_totp_credentials` (
+  `id` char(36) NOT NULL,
+  `user_id` varchar(36) NOT NULL,
+  `secret_ciphertext` varbinary(512) NOT NULL,
+  `secret_iv` varbinary(32) NOT NULL,
+  `secret_tag` varbinary(32) NOT NULL,
+  `enrollment_expires_at` datetime NOT NULL,
+  `confirmed_at` datetime DEFAULT NULL,
+  `last_used_step` bigint(20) DEFAULT NULL,
+  `last_used_at` datetime DEFAULT NULL,
+  `revoked_at` datetime DEFAULT NULL,
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_user_totp_user` (`user_id`),
+  KEY `idx_user_totp_active` (`user_id`,`confirmed_at`,`revoked_at`),
+  CONSTRAINT `fk_user_totp_user` FOREIGN KEY (`user_id`) REFERENCES `user_profiles` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+DROP TABLE IF EXISTS `webauthn_challenges`;
+CREATE TABLE `webauthn_challenges` (
+  `id` char(36) NOT NULL,
+  `user_id` varchar(36) NOT NULL,
+  `purpose` enum('registration','authentication') NOT NULL,
+  `challenge` varchar(1024) NOT NULL,
+  `session_id` varchar(128) DEFAULT NULL,
+  `rp_id` varchar(255) NOT NULL,
+  `origin` varchar(512) NOT NULL,
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  `expires_at` datetime NOT NULL,
+  `used_at` timestamp NULL DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  KEY `idx_webauthn_challenge_active` (`user_id`,`purpose`,`expires_at`,`used_at`),
+  CONSTRAINT `fk_webauthn_challenge_user` FOREIGN KEY (`user_id`) REFERENCES `user_profiles` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+DROP TABLE IF EXISTS `webauthn_credentials`;
+CREATE TABLE `webauthn_credentials` (
+  `id` char(36) NOT NULL,
+  `user_id` varchar(36) NOT NULL,
+  `credential_id` varchar(1024) NOT NULL,
+  `public_key` blob NOT NULL,
+  `counter` bigint(20) unsigned NOT NULL DEFAULT 0,
+  `transports` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL CHECK (json_valid(`transports`)),
+  `device_type` varchar(32) DEFAULT NULL,
+  `backed_up` tinyint(1) NOT NULL DEFAULT 0,
+  `display_name` varchar(120) NOT NULL DEFAULT 'Passkey',
+  `aaguid` varchar(64) DEFAULT NULL,
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  `last_used_at` timestamp NULL DEFAULT NULL,
+  `revoked_at` timestamp NULL DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_webauthn_credential_id` (`credential_id`(255)),
+  KEY `idx_webauthn_user_active` (`user_id`,`revoked_at`),
+  CONSTRAINT `fk_webauthn_credential_user` FOREIGN KEY (`user_id`) REFERENCES `user_profiles` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Safe inventory policy bootstrap: issuance remains disabled until formally approved.
+INSERT IGNORE INTO `hardware_policy` (`id`,`sequence_partition`,`issuance_approved`,`field_approval_required`,`approved_by`,`approved_at`,`approval_reference`) VALUES (1,'per_model_year',0,1,NULL,NULL,NULL);
+
+-- Pending idempotent migration: 20261104_communication_meeting_state.sql
+-- Persistent meeting engagement/media state and complete invitation outcomes.
+-- Additive only. Existing participant and message rows are preserved.
+-- Apply first to a disposable staging restore; do not run against production
+-- without a separately approved migration window and verified backup.
+-- Rollback: roll back the application first and retain these additive fields/table.
+
+SET NAMES utf8mb4;
+
+ALTER TABLE call_participants
+  MODIFY COLUMN status ENUM('invited','ringing','accepted','declined','ended','missed','cancelled','expired','failed') NOT NULL DEFAULT 'ringing';
+
 DELIMITER $$
-DROP PROCEDURE IF EXISTS cims_add_hybrid_equipment$$
-CREATE PROCEDURE cims_add_hybrid_equipment()
+
+DROP PROCEDURE IF EXISTS riana_add_call_participant_state_column $$
+CREATE PROCEDURE riana_add_call_participant_state_column(IN p_column VARCHAR(64), IN p_definition VARCHAR(255))
 BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM information_schema.COLUMNS
-        WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='installations'
-          AND COLUMN_NAME='equipment_quantities'
-    ) THEN
-        ALTER TABLE installations ADD COLUMN equipment_quantities JSON NULL;
-    END IF;
-END$$
-CALL cims_add_hybrid_equipment()$$
-DROP PROCEDURE cims_add_hybrid_equipment$$
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'call_participants' AND COLUMN_NAME = p_column
+  ) THEN
+    SET @riana_call_state_sql = CONCAT('ALTER TABLE call_participants ADD COLUMN ', p_column, ' ', p_definition);
+    PREPARE riana_call_state_stmt FROM @riana_call_state_sql;
+    EXECUTE riana_call_state_stmt;
+    DEALLOCATE PREPARE riana_call_state_stmt;
+  END IF;
+END $$
+
 DELIMITER ;
 
--- Pending idempotent migration: 20261016_inventory_operations.sql
--- Additive update. Variant deletion retains a tombstone so seed replay cannot restore it.
-DELIMITER $$
-DROP PROCEDURE IF EXISTS cims_inventory_operations_upgrade$$
-CREATE PROCEDURE cims_inventory_operations_upgrade()
-BEGIN
-    IF NOT EXISTS (SELECT 1 FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE()
-        AND TABLE_NAME='hardware_variants' AND COLUMN_NAME='deleted_at') THEN
-        ALTER TABLE hardware_variants ADD COLUMN deleted_at DATETIME NULL;
-    END IF;
-    IF NOT EXISTS (SELECT 1 FROM information_schema.STATISTICS WHERE TABLE_SCHEMA=DATABASE()
-        AND TABLE_NAME='uploaded_files' AND INDEX_NAME='idx_handover_identity') THEN
-        ALTER TABLE uploaded_files ADD INDEX idx_handover_identity
-            (related_entity_type,related_entity_id,file_category,checksum_sha256);
-    END IF;
-END$$
-CALL cims_inventory_operations_upgrade()$$
-DROP PROCEDURE cims_inventory_operations_upgrade$$
-DELIMITER ;
+CALL riana_add_call_participant_state_column('hand_raised', 'BOOLEAN NOT NULL DEFAULT FALSE');
+CALL riana_add_call_participant_state_column('hand_raised_at', 'DATETIME NULL');
+CALL riana_add_call_participant_state_column('audio_enabled', 'BOOLEAN NULL');
+CALL riana_add_call_participant_state_column('video_enabled', 'BOOLEAN NULL');
+CALL riana_add_call_participant_state_column('screen_sharing', 'BOOLEAN NOT NULL DEFAULT FALSE');
+
+DROP PROCEDURE IF EXISTS riana_add_call_participant_state_column;
+
+CREATE TABLE IF NOT EXISTS call_meeting_state (
+  call_id VARCHAR(36) PRIMARY KEY,
+  spotlight_user_id VARCHAR(36) NULL,
+  updated_by VARCHAR(36) NULL,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  CONSTRAINT fk_call_meeting_state_call FOREIGN KEY (call_id) REFERENCES messages(id) ON DELETE CASCADE,
+  CONSTRAINT fk_call_meeting_state_spotlight_user FOREIGN KEY (spotlight_user_id) REFERENCES user_profiles(id) ON DELETE SET NULL,
+  CONSTRAINT fk_call_meeting_state_updated_by FOREIGN KEY (updated_by) REFERENCES user_profiles(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+INSERT INTO migration_history (migration_id,description)
+VALUES ('20261104_communication_meeting_state','Adds persistent call participant media/hand state, meeting spotlight state, and invitation lifecycle outcomes')
+ON DUPLICATE KEY UPDATE description=VALUES(description);
+
+-- Pending idempotent migration: 20261105_hardware_policy_default_bootstrap.sql
+-- Restore the required singleton serialization policy without authorizing issuance.
+-- Idempotent and non-destructive: existing approval state is never changed.
+SET NAMES utf8mb4;
+
+CREATE TABLE IF NOT EXISTS hardware_policy (
+  id TINYINT PRIMARY KEY,
+  sequence_partition VARCHAR(30) NOT NULL DEFAULT 'per_model_year',
+  issuance_approved BOOLEAN NOT NULL DEFAULT FALSE,
+  field_approval_required BOOLEAN NOT NULL DEFAULT TRUE,
+  approved_by VARCHAR(36) NULL,
+  approved_at DATETIME NULL,
+  approval_reference VARCHAR(255) NULL,
+  KEY approved_by (approved_by),
+  CONSTRAINT hardware_policy_ibfk_1 FOREIGN KEY (approved_by) REFERENCES user_profiles(id) ON DELETE RESTRICT
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+INSERT IGNORE INTO hardware_policy
+  (id, sequence_partition, issuance_approved, field_approval_required, approved_by, approved_at, approval_reference)
+VALUES
+  (1, 'per_model_year', FALSE, TRUE, NULL, NULL, NULL);
+
+CREATE TABLE IF NOT EXISTS migration_history (
+  migration_id VARCHAR(100) PRIMARY KEY,
+  description TEXT,
+  applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+INSERT INTO migration_history (migration_id, description)
+VALUES ('20261105_hardware_policy_default_bootstrap','Ensures the default unapproved hardware serialization policy exists')
+ON DUPLICATE KEY UPDATE description=VALUES(description);
 
 -- Inactive bootstrap principal: it has no password and cannot sign in until explicitly activated.
 -- Set a private SUPERADMIN_PASSWORD during the one-time deployment bootstrap; never distribute a default password.

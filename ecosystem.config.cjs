@@ -14,7 +14,7 @@ module.exports = {
       kill_timeout: 10000,
       max_memory_restart: '750M',
       time: true,
-      env_production: { NODE_ENV: 'production', PORT: 8081 },
+      env_production: { NODE_ENV: 'production', PORT: 8081, APP_RELEASE: process.env.APP_RELEASE || 'unversioned' },
     },
     {
       name: 'riana-cims-web',

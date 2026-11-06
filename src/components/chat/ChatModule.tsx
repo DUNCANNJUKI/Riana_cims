@@ -8,7 +8,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { X, Send, Check, CheckCheck, Search, Users, MessageSquare, Phone, Video, Paperclip, Download, Image as ImageIcon, FileText, Reply, PhoneOff, Mic, MonitorUp, MoreVertical, Copy, SmilePlus, Edit3, Trash2, BellOff } from "lucide-react";
+import { X, Send, Check, CheckCheck, Search, Users, UserPlus, MessageSquare, Phone, Video, VideoOff, Paperclip, Download, Image as ImageIcon, FileText, Reply, PhoneOff, Mic, MicOff, MonitorUp, MoreVertical, Copy, SmilePlus, Edit3, Trash2, BellOff, ScreenShare, ScreenShareOff, LayoutGrid, PanelTop, Settings2, Maximize2, Minimize2, Minus, Hand, Pin, PinOff, PictureInPicture2, ChevronLeft, ChevronRight } from "lucide-react";
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
 import { resolveAvatarUrl } from "@/utils/avatar";
@@ -19,6 +19,9 @@ interface ChatModuleProps {
   currentUser: User;
   chat: ReturnType<typeof useChat>;
   onClose?: () => void;
+  onMinimize?: () => void;
+  onToggleFullscreen?: () => void;
+  isFullscreen?: boolean;
 }
 
 const formatUserName = (user?: Partial<User> | null) => {
@@ -93,13 +96,84 @@ const REACTION_OPTIONS = [
   { type: "sad", label: "Sad", icon: "\u{1F622}" },
   { type: "angry", label: "Angry", icon: "\u{1F621}" },
 ];
+const MEETING_REACTIONS = [
+  "\u{1F44D}",
+  "\u2764\uFE0F",
+  "\u{1F44F}",
+  "\u{1F602}",
+  "\u{1F389}",
+  "\u{1F60A}",
+] as const;
+type MeetingReaction = { id: string; userId: string; emoji: string; expiresAt: number };
 
-export const ChatModule = ({ currentUser, chat, onClose }: ChatModuleProps) => {
+type SinkSelectableMediaElement = HTMLMediaElement & { setSinkId?: (deviceId: string) => Promise<void> };
+
+const RemoteCallMedia = ({ stream, video, label, avatarUrl, outputDeviceId, videoEnabled }: { stream: MediaStream; video: boolean; label: string; avatarUrl?: string; outputDeviceId: string; videoEnabled?: boolean }) => {
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const audioRef = useRef<HTMLAudioElement>(null);
+  const [playbackBlocked, setPlaybackBlocked] = useState(false);
+  const [hasLiveVideo, setHasLiveVideo] = useState(() => stream.getVideoTracks().some(track => track.readyState === "live" && track.enabled && !track.muted));
+
+  useEffect(() => {
+    const element = video ? videoRef.current : audioRef.current;
+    if (!element) return;
+    element.srcObject = stream;
+    void element.play().then(() => setPlaybackBlocked(false)).catch(() => setPlaybackBlocked(true));
+    return () => { element.srcObject = null; };
+  }, [stream, video]);
+
+  useEffect(() => {
+    if (!video) return;
+    const updateVideoState = () => setHasLiveVideo(stream.getVideoTracks().some(track => track.readyState === "live" && track.enabled && !track.muted));
+    const tracks = stream.getVideoTracks();
+    updateVideoState();
+    tracks.forEach(track => {
+      track.addEventListener("mute", updateVideoState);
+      track.addEventListener("unmute", updateVideoState);
+      track.addEventListener("ended", updateVideoState);
+    });
+    stream.addEventListener("addtrack", updateVideoState);
+    stream.addEventListener("removetrack", updateVideoState);
+    return () => {
+      tracks.forEach(track => {
+        track.removeEventListener("mute", updateVideoState);
+        track.removeEventListener("unmute", updateVideoState);
+        track.removeEventListener("ended", updateVideoState);
+      });
+      stream.removeEventListener("addtrack", updateVideoState);
+      stream.removeEventListener("removetrack", updateVideoState);
+    };
+  }, [stream, video]);
+
+  useEffect(() => {
+    const element = (video ? videoRef.current : audioRef.current) as SinkSelectableMediaElement | null;
+    if (!element?.setSinkId || !outputDeviceId) return;
+    void element.setSinkId(outputDeviceId).catch(() => setPlaybackBlocked(true));
+  }, [outputDeviceId, video]);
+
+  const resumePlayback = () => {
+    const element = video ? videoRef.current : audioRef.current;
+    if (element) {
+      void element.play()
+        .then(() => setPlaybackBlocked(false))
+        .catch(() => setPlaybackBlocked(true));
+    }
+  };
+
+  return <div className="relative">
+    {video
+      ? <div className="relative aspect-video w-full overflow-hidden rounded-lg bg-muted/60"><video ref={videoRef} autoPlay playsInline aria-label={`${label} video`} className={cn("h-full w-full bg-black object-cover", (!hasLiveVideo || videoEnabled === false) && "invisible")} />{(!hasLiveVideo || videoEnabled === false) && <div className="absolute inset-0 flex flex-col items-center justify-center gap-3"><Avatar className="h-20 w-20 border-4 border-background shadow-lg"><AvatarImage src={resolveAvatarUrl(avatarUrl)} alt={label} /><AvatarFallback className="bg-primary text-xl font-bold text-primary-foreground">{label.split(/\s+/).map(part => part[0]).join("").slice(0, 2).toUpperCase()}</AvatarFallback></Avatar><span className="text-xs font-semibold text-muted-foreground">{videoEnabled === false ? "Camera off" : "Video unavailable"}</span></div>}</div>
+      : <><audio ref={audioRef} autoPlay aria-label={`${label} audio`} /><div className="flex h-36 items-center justify-center rounded-lg bg-muted/60 text-sm text-muted-foreground">Audio connected</div></>}
+    {playbackBlocked && <Button type="button" size="sm" className="absolute inset-x-4 bottom-4" onClick={resumePlayback}>Play {label}&apos;s audio</Button>}
+  </div>;
+};
+
+export const ChatModule = ({ currentUser, chat, onClose, onMinimize, onToggleFullscreen, isFullscreen = false }: ChatModuleProps) => {
   const {
     messages, users, activeChatUserId, setActiveChatUserId,
     sendMessage, editMessage, setReaction, removeReaction, deleteMessageForMe, deleteMessageForEveryone, setTyping, typingUsers, unreadCounts, isConnected,
     incomingCall, activeCall, callSignals, startCall, updateCallStatus,
-    sendCallSignal, clearCallSignals, clearCallState, onlineUserCount, isLoadingUsers, usersError, loadUsers,
+    sendCallSignal, clearCallSignals, clearCallState, inviteCallParticipants, cancelCallInvitation, getCallIceServers, onlineUserCount, isLoadingUsers, usersError, loadUsers,
   } = chat;
   const { toast } = useToast();
   const [inputText, setInputText] = useState("");
@@ -110,35 +184,180 @@ export const ChatModule = ({ currentUser, chat, onClose }: ChatModuleProps) => {
   const [editingMessage, setEditingMessage] = useState<ChatMessage | null>(null);
   const [isSending, setIsSending] = useState(false);
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
-  const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
+  const [remoteStreams, setRemoteStreams] = useState<Record<string, MediaStream>>({});
   const [callError, setCallError] = useState<string | null>(null);
   const [selectedCallParticipantIds, setSelectedCallParticipantIds] = useState<string[]>([]);
   const [isRingtoneSilenced, setIsRingtoneSilenced] = useState(false);
+  const [isMicrophoneMuted, setIsMicrophoneMuted] = useState(false);
+  const [isCameraEnabled, setIsCameraEnabled] = useState(true);
+  const [hasLiveLocalVideo, setHasLiveLocalVideo] = useState(false);
+  const [isScreenSharing, setIsScreenSharing] = useState(false);
+  const [activeSpeakerId, setActiveSpeakerId] = useState<string | null>(null);
+  const [callLayout, setCallLayout] = useState<"gallery" | "speaker">("gallery");
+  const [galleryPage, setGalleryPage] = useState(0);
+  const [mediaDevices, setMediaDevices] = useState<MediaDeviceInfo[]>([]);
+  const [audioInputDeviceId, setAudioInputDeviceId] = useState("");
+  const [videoInputDeviceId, setVideoInputDeviceId] = useState("");
+  const [audioOutputDeviceId, setAudioOutputDeviceId] = useState("");
+  const [showDeviceSettings, setShowDeviceSettings] = useState(false);
+  const [showInvitePanel, setShowInvitePanel] = useState(false);
+  const [meetingInviteSearchTerm, setMeetingInviteSearchTerm] = useState("");
+  const [meetingInviteSelection, setMeetingInviteSelection] = useState<string[]>([]);
+  const [isInvitingParticipants, setIsInvitingParticipants] = useState(false);
+  const [isTestingMicrophone, setIsTestingMicrophone] = useState(false);
+  const [microphoneLevel, setMicrophoneLevel] = useState(0);
+  const [raisedHands, setRaisedHands] = useState<Record<string, boolean>>({});
+  const [raisedHandOrder, setRaisedHandOrder] = useState<Record<string, number>>({});
+  const [remoteMediaStates, setRemoteMediaStates] = useState<Record<string, { audioEnabled: boolean; videoEnabled: boolean; screenSharing: boolean }>>({});
+  const [spotlightParticipantId, setSpotlightParticipantId] = useState<string | null>(null);
+  const [pinnedParticipantId, setPinnedParticipantId] = useState<string | null>(null);
+  const [isSelfViewPip, setIsSelfViewPip] = useState(false);
+  const [pipPosition, setPipPosition] = useState({ left: 62, top: 58 });
+  const [mobileMeetingView, setMobileMeetingView] = useState<"gallery" | "participants" | "chat">("gallery");
+  const [isDesktopChatOpen, setIsDesktopChatOpen] = useState(true);
+  const [isDesktopParticipantsOpen, setIsDesktopParticipantsOpen] = useState(false);
+  const [meetingReactions, setMeetingReactions] = useState<MeetingReaction[]>([]);
   const scrollRef = useRef<HTMLDivElement>(null);
   const typingTimerRef = useRef<number | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const peerRefs = useRef<Map<string, RTCPeerConnection>>(new Map());
   const localVideoRef = useRef<HTMLVideoElement>(null);
-  const remoteVideoRef = useRef<HTMLVideoElement>(null);
-  const remoteAudioRef = useRef<HTMLAudioElement>(null);
   const localStreamRef = useRef<MediaStream | null>(null);
+  const screenStreamRef = useRef<MediaStream | null>(null);
   const processedSignalsRef = useRef<Set<string>>(new Set());
   const pendingIceCandidatesRef = useRef<Map<string, RTCIceCandidateInit[]>>(new Map());
   const ringtoneTimerRef = useRef<number | null>(null);
+  const endLocalCallStateRef = useRef<() => void>(() => undefined);
+  const createPeerConnectionRef = useRef<(call: ChatMessage, targetUserId: string) => RTCPeerConnection>(() => {
+    throw new Error("Call connection is not initialized.");
+  });
+  const microphoneTestCleanupRef = useRef<() => void>(() => undefined);
+  const lastMeetingReactionAtRef = useRef(0);
+  const raisedHandsRef = useRef<Record<string, boolean>>({});
+  const screenSharingRef = useRef(false);
+  const iceServersRef = useRef<RTCIceServer[]>([{ urls: "stun:stun.l.google.com:19302" }]);
+  const iceRestartTimersRef = useRef<Map<string, number>>(new Map());
+  const iceRestartAttemptsRef = useRef<Set<string>>(new Set());
+  const mediaGalleryRef = useRef<HTMLDivElement>(null);
+  const pipDragRef = useRef<{ pointerId: number; startX: number; startY: number; left: number; top: number } | null>(null);
 
   const visibleUsers = users.filter(user => user.id !== currentUser.id);
+  raisedHandsRef.current = raisedHands;
+  screenSharingRef.current = isScreenSharing;
+  const activeCallId = activeCall?.id;
   const activeUser = visibleUsers.find(u => u.id === activeChatUserId);
   const activeCallParticipantIds = activeCall
-    ? Array.from(new Set([activeCall.sender_id, activeCall.receiver_id, ...(activeCall.call_participant_ids || [])].filter(Boolean)))
+    ? Array.from(new Set(Array.isArray(activeCall.call_participants)
+      ? activeCall.call_participants.filter(participant => String(participant.status) === "accepted").map(participant => participant.user_id)
+      : [activeCall.sender_id, activeCall.receiver_id, ...(activeCall.call_participant_ids || [])].filter(Boolean)))
     : [];
+  const activeCallPendingInviteIds = activeCall?.call_participants?.filter(participant => ["invited", "ringing"].includes(String(participant.status))).map(participant => participant.user_id) || [];
   const activeCallOtherParticipants = activeCallParticipantIds.filter(id => id !== currentUser.id);
   const activeCallUsers = activeCallOtherParticipants.map(id => users.find(user => user.id === id)).filter(Boolean) as User[];
+  const orderedCallParticipantIds = [...activeCallOtherParticipants].sort((left, right) => {
+    if (spotlightParticipantId === left) return -1;
+    if (spotlightParticipantId === right) return 1;
+    if (pinnedParticipantId === left) return -1;
+    if (pinnedParticipantId === right) return 1;
+    return 0;
+  });
+  const activeCallParticipantKey = activeCallParticipantIds.join("|");
+  const galleryPageSize = 11;
+  const galleryPageCount = Math.max(1, Math.ceil(orderedCallParticipantIds.length / galleryPageSize));
+  const visibleGalleryParticipantIds = orderedCallParticipantIds.slice(galleryPage * galleryPageSize, (galleryPage + 1) * galleryPageSize);
+  const meetingParticipantIds = activeCall?.call_participants?.map(participant => participant.user_id) || activeCallParticipantIds;
+  const meetingParticipants = Array.from(new Set(meetingParticipantIds)).map(userId => {
+    const profile = userId === currentUser.id ? currentUser : users.find(user => user.id === userId);
+    const participant = activeCall?.call_participants?.find(item => String(item.user_id) === String(userId));
+    return { userId, profile, status: participant?.status || "accepted", handRaised: Boolean(raisedHands[userId]), raisedAt: raisedHandOrder[userId] || Number.MAX_SAFE_INTEGER };
+  }).sort((left, right) => Number(right.handRaised) - Number(left.handRaised) || left.raisedAt - right.raisedAt || formatUserName(left.profile).localeCompare(formatUserName(right.profile)));
   const activeCallLabel = activeCallOtherParticipants.length > 1
     ? `${activeCall.call_type === "video" ? "Group video" : "Group phone"} call (${activeCallOtherParticipants.length + 1})`
     : `${activeCall?.call_type === "video" ? "Video" : "Phone"} call with ${formatUserName(activeCallUsers[0])}`;
   const selectedCallTargets = activeChatUserId
     ? Array.from(new Set([activeChatUserId, ...selectedCallParticipantIds])).filter(id => id && id !== currentUser.id && visibleUsers.some(user => user.id === id))
     : [];
+
+  const broadcastMeetingEvent = async (signalType: "reaction" | "hand-state", payload: { emoji: string } | { raised: boolean; targetUserId?: string }) => {
+    if (!activeCall) return;
+    // Engagement events are intentionally best-effort while invitees are still joining.
+    // Media/signaling errors remain surfaced through the established call error path.
+    await Promise.allSettled(activeCallOtherParticipants.map(participantId => sendCallSignal(activeCall.id, participantId, signalType, payload)));
+  };
+
+  const publishLocalMediaState = (call: ChatMessage, participantIds: string[]) => {
+    const audioEnabled = Boolean(localStreamRef.current?.getAudioTracks().some(track => track.readyState === "live" && track.enabled));
+    const videoEnabled = Boolean(localStreamRef.current?.getVideoTracks().some(track => track.readyState === "live" && track.enabled));
+    return Promise.allSettled(participantIds.filter(id => id && id !== currentUser.id).map(id => sendCallSignal(call.id, id, "media-state", { audioEnabled, videoEnabled, screenSharing: screenSharingRef.current })));
+  };
+
+  const toggleRaisedHand = () => {
+    if (!activeCall) return;
+    const raised = !raisedHands[currentUser.id];
+    setRaisedHands(current => ({ ...current, [currentUser.id]: raised }));
+    setRaisedHandOrder(current => {
+      const next = { ...current };
+      if (raised) next[currentUser.id] = Date.now();
+      else delete next[currentUser.id];
+      return next;
+    });
+    void broadcastMeetingEvent("hand-state", { raised });
+  };
+
+  const setMeetingSpotlight = (participantId: string | null) => {
+    if (!activeCall || String(activeCall.sender_id) !== String(currentUser.id)) return;
+    setSpotlightParticipantId(participantId);
+    setGalleryPage(0);
+    void Promise.allSettled(activeCallOtherParticipants.map(id => sendCallSignal(activeCall.id, id, "spotlight", { userId: participantId })));
+  };
+
+  const handlePipPointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (!isSelfViewPip || !mediaGalleryRef.current) return;
+    pipDragRef.current = { pointerId: event.pointerId, startX: event.clientX, startY: event.clientY, ...pipPosition };
+    event.currentTarget.setPointerCapture(event.pointerId);
+  };
+
+  const handlePipPointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
+    const drag = pipDragRef.current;
+    const bounds = mediaGalleryRef.current?.getBoundingClientRect();
+    if (!isSelfViewPip || !drag || drag.pointerId !== event.pointerId || !bounds?.width || !bounds.height) return;
+    const left = drag.left + ((event.clientX - drag.startX) / bounds.width) * 100;
+    const top = drag.top + ((event.clientY - drag.startY) / bounds.height) * 100;
+    setPipPosition({ left: Math.min(64, Math.max(0, left)), top: Math.min(76, Math.max(0, top)) });
+  };
+
+  const handleMeetingChatToggle = () => {
+    if (window.matchMedia("(max-width: 1023px)").matches) {
+      setMobileMeetingView(current => current === "chat" ? "gallery" : "chat");
+      return;
+    }
+    setIsDesktopChatOpen(current => !current);
+  };
+
+  const handleMeetingParticipantsToggle = () => {
+    if (window.matchMedia("(max-width: 1023px)").matches) {
+      setMobileMeetingView(current => current === "participants" ? "gallery" : "participants");
+      return;
+    }
+    setIsDesktopParticipantsOpen(current => !current);
+  };
+
+  const lowerRaisedHand = (userId: string) => {
+    if (!activeCall || String(activeCall.sender_id) !== String(currentUser.id)) return;
+    setRaisedHands(current => ({ ...current, [userId]: false }));
+    setRaisedHandOrder(current => { const next = { ...current }; delete next[userId]; return next; });
+    void broadcastMeetingEvent("hand-state", { raised: false, targetUserId: userId });
+  };
+
+  const sendMeetingReaction = (emoji: typeof MEETING_REACTIONS[number]) => {
+    if (!activeCall) return;
+    const now = Date.now();
+    if (now - lastMeetingReactionAtRef.current < 800) return;
+    lastMeetingReactionAtRef.current = now;
+    const reaction: MeetingReaction = { id: crypto.randomUUID(), userId: currentUser.id, emoji, expiresAt: now + 5000 };
+    setMeetingReactions(current => [...current.slice(-7), reaction]);
+    void broadcastMeetingEvent("reaction", { emoji });
+  };
 
   const filteredUsers = visibleUsers.filter(u => {
     const fullName = `${u.first_name || ""} ${u.last_name || ""}`.trim().toLowerCase();
@@ -161,10 +380,15 @@ export const ChatModule = ({ currentUser, chat, onClose }: ChatModuleProps) => {
       : formatLastSeen(activeUser?.last_seen_at);
 
   const stopStreams = () => {
-    localStreamRef.current?.getTracks().forEach(track => track.stop());
+    screenStreamRef.current?.getTracks().forEach(track => { track.onended = null; track.stop(); });
+    localStreamRef.current?.getTracks().forEach(track => { track.onended = null; track.stop(); });
+    screenStreamRef.current = null;
     setLocalStream(null);
-    setRemoteStream(null);
+    setRemoteStreams({});
     localStreamRef.current = null;
+    setIsScreenSharing(false);
+    setIsMicrophoneMuted(false);
+    setIsCameraEnabled(true);
   };
 
   const stopRingtone = () => {
@@ -173,6 +397,9 @@ export const ChatModule = ({ currentUser, chat, onClose }: ChatModuleProps) => {
   };
 
   const closePeer = () => {
+    iceRestartTimersRef.current.forEach(timer => window.clearTimeout(timer));
+    iceRestartTimersRef.current.clear();
+    iceRestartAttemptsRef.current.clear();
     peerRefs.current.forEach(connection => connection.close());
     peerRefs.current.clear();
     processedSignalsRef.current.clear();
@@ -185,6 +412,7 @@ export const ChatModule = ({ currentUser, chat, onClose }: ChatModuleProps) => {
     clearCallSignals(activeCall?.id || incomingCall?.id);
     setCallError(null);
   };
+  endLocalCallStateRef.current = endLocalCallState;
 
   const getCallPeerId = (call: ChatMessage) => call.sender_id === currentUser.id ? call.receiver_id : call.sender_id;
 
@@ -201,23 +429,55 @@ export const ChatModule = ({ currentUser, chat, onClose }: ChatModuleProps) => {
       if (localStreamRef.current) attachLocalStreamToPeer(existingPeer, localStreamRef.current);
       return existingPeer;
     }
-    const connection = new RTCPeerConnection({ iceServers: [{ urls: "stun:stun.l.google.com:19302" }] });
+    const connection = new RTCPeerConnection({ iceServers: iceServersRef.current });
     connection.onicecandidate = event => {
       if (event.candidate) void sendCallSignal(call.id, targetUserId, "ice-candidate", event.candidate.toJSON());
     };
     connection.ontrack = event => {
-      const [stream] = event.streams;
-      if (stream) setRemoteStream(stream);
+      const [eventStream] = event.streams;
+      setRemoteStreams(previous => {
+        const stream = eventStream || previous[targetUserId] || new MediaStream();
+        if (!stream.getTracks().some(track => track.id === event.track.id)) stream.addTrack(event.track);
+        return { ...previous, [targetUserId]: stream };
+      });
     };
     connection.onconnectionstatechange = () => {
-      if (["failed", "disconnected", "closed"].includes(connection.connectionState)) {
-        setCallError(connection.connectionState === "failed" ? "Call connection failed." : null);
+      const state = connection.connectionState;
+      if (state === "failed" || state === "disconnected") {
+        setCallError(state === "failed" ? "Call connection failed. Trying to reconnect…" : "Connection interrupted. Trying to reconnect…");
+        const existingTimer = iceRestartTimersRef.current.get(targetUserId);
+        if (existingTimer) window.clearTimeout(existingTimer);
+        const timer = window.setTimeout(() => {
+          if (connection.connectionState === "closed" || iceRestartAttemptsRef.current.has(targetUserId)) return;
+          iceRestartAttemptsRef.current.add(targetUserId);
+          void getCallIceServers().then(servers => {
+            if (servers.length) {
+              iceServersRef.current = servers;
+              connection.setConfiguration({ iceServers: servers });
+            }
+            return connection.createOffer({ iceRestart: true });
+          }).then(async offer => {
+            await connection.setLocalDescription(offer);
+            await sendCallSignal(call.id, targetUserId, "offer", connection.localDescription || offer);
+          }).catch(() => setCallError("Unable to reconnect this participant. Check the network and try rejoining."));
+        }, state === "failed" ? 300 : 1800);
+        iceRestartTimersRef.current.set(targetUserId, timer);
+      } else if (state === "connected") {
+        const timer = iceRestartTimersRef.current.get(targetUserId);
+        if (timer) window.clearTimeout(timer);
+        iceRestartTimersRef.current.delete(targetUserId);
+        iceRestartAttemptsRef.current.delete(targetUserId);
+        setCallError(null);
+        if (localStreamRef.current) void publishLocalMediaState(call, [targetUserId]);
+        if (raisedHandsRef.current[currentUser.id]) void sendCallSignal(call.id, targetUserId, "hand-state", { raised: true });
+        if (String(call.sender_id) === String(currentUser.id)) void sendCallSignal(call.id, targetUserId, "spotlight", { userId: spotlightParticipantId });
       }
     };
     peerRefs.current.set(targetUserId, connection);
     if (localStreamRef.current) attachLocalStreamToPeer(connection, localStreamRef.current);
     return connection;
   };
+  createPeerConnectionRef.current = createPeerConnection;
 
   const flushPendingIceCandidates = async (targetUserId: string, connection: RTCPeerConnection) => {
     const pending = pendingIceCandidatesRef.current.get(targetUserId) || [];
@@ -230,12 +490,298 @@ export const ChatModule = ({ currentUser, chat, onClose }: ChatModuleProps) => {
 
   const openMedia = async (withVideo: boolean) => {
     if (!navigator.mediaDevices?.getUserMedia) throw new Error("This browser does not support secure audio/video calling.");
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: withVideo });
+    const stream = await navigator.mediaDevices.getUserMedia({
+      audio: { deviceId: audioInputDeviceId ? { exact: audioInputDeviceId } : undefined, echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: { ideal: 1 } },
+      video: withVideo ? { deviceId: videoInputDeviceId ? { exact: videoInputDeviceId } : undefined, width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 24, max: 30 } } : false,
+    });
     localStreamRef.current = stream;
+    const audioTrack = stream.getAudioTracks()[0];
+    const videoTrack = stream.getVideoTracks()[0];
+    setIsMicrophoneMuted(Boolean(audioTrack && !audioTrack.enabled));
+    setIsCameraEnabled(Boolean(videoTrack?.enabled));
+    if (audioTrack) {
+      audioTrack.onmute = () => setIsMicrophoneMuted(true);
+      audioTrack.onunmute = () => setIsMicrophoneMuted(!audioTrack.enabled);
+      audioTrack.onended = () => {
+        setIsMicrophoneMuted(true);
+        setCallError("The selected microphone disconnected. Trying the system default microphone.");
+        void replaceLocalDeviceTrack("audio", "").catch(() => setCallError("No working microphone is available. Connect or select another microphone."));
+      };
+    }
+    if (videoTrack) {
+      videoTrack.onmute = () => setIsCameraEnabled(false);
+      videoTrack.onunmute = () => setIsCameraEnabled(videoTrack.enabled);
+      videoTrack.onended = () => {
+        setIsCameraEnabled(false);
+        if (activeCall) void replaceLocalDeviceTrack("video", "").catch(() => setCallError("No working camera is available. Connect or select another camera."));
+      };
+    }
     peerRefs.current.forEach(connection => attachLocalStreamToPeer(connection, stream));
     setLocalStream(stream);
+    if (navigator.mediaDevices.enumerateDevices) {
+      void navigator.mediaDevices.enumerateDevices().then(setMediaDevices).catch(() => undefined);
+    }
     return stream;
   };
+
+  const replaceLocalDeviceTrack = async (kind: "audio" | "video", deviceId: string) => {
+    if (!activeCall || !navigator.mediaDevices?.getUserMedia) return;
+    const stream = await navigator.mediaDevices.getUserMedia(kind === "audio"
+      ? { audio: { deviceId: deviceId ? { exact: deviceId } : undefined, echoCancellation: true, noiseSuppression: true, autoGainControl: true }, video: false }
+      : { audio: false, video: { deviceId: deviceId ? { exact: deviceId } : undefined, width: { ideal: 1280 }, height: { ideal: 720 } } });
+    const replacement = kind === "audio" ? stream.getAudioTracks()[0] : stream.getVideoTracks()[0];
+    if (!replacement) throw new Error(`The selected ${kind === "audio" ? "microphone" : "camera"} is unavailable.`);
+    const current = kind === "audio" ? localStreamRef.current?.getAudioTracks()[0] : localStreamRef.current?.getVideoTracks()[0];
+    if (kind === "audio") replacement.enabled = !isMicrophoneMuted;
+    if (kind === "video") replacement.enabled = isCameraEnabled;
+    await Promise.all(Array.from(peerRefs.current.values()).map(async connection => {
+      const sender = connection.getSenders().find(item => item.track?.kind === kind);
+      if (sender) await sender.replaceTrack(replacement);
+    }));
+    if (!localStreamRef.current) localStreamRef.current = new MediaStream();
+    if (current) {
+      localStreamRef.current.removeTrack(current);
+      current.onended = null;
+      current.stop();
+    }
+    localStreamRef.current.addTrack(replacement);
+    replacement.onended = () => {
+      setCallError(`The selected ${kind === "audio" ? "microphone" : "camera"} disconnected. Trying the system default device.`);
+      if (kind === "audio") setIsMicrophoneMuted(true);
+      else setIsCameraEnabled(false);
+      void replaceLocalDeviceTrack(kind, "").catch(() => setCallError(`No working ${kind === "audio" ? "microphone" : "camera"} is available. Connect or select another device.`));
+    };
+    setLocalStream(new MediaStream(localStreamRef.current.getTracks()));
+    setCallError(null);
+  };
+
+  const changeInputDevice = async (kind: "audio" | "video", deviceId: string) => {
+    if (kind === "audio") setAudioInputDeviceId(deviceId);
+    else setVideoInputDeviceId(deviceId);
+    if (!activeCall) return;
+    try {
+      await replaceLocalDeviceTrack(kind, deviceId);
+    } catch (error) {
+      setCallError(error instanceof Error ? error.message : "Unable to switch media device.");
+    }
+  };
+
+  const testMicrophone = async () => {
+    microphoneTestCleanupRef.current();
+    if (isTestingMicrophone) return;
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: { deviceId: audioInputDeviceId ? { exact: audioInputDeviceId } : undefined }, video: false });
+      const context = new AudioContext();
+      const analyser = context.createAnalyser();
+      analyser.fftSize = 256;
+      context.createMediaStreamSource(stream).connect(analyser);
+      const levels = new Uint8Array(analyser.frequencyBinCount);
+      const timer = window.setInterval(() => {
+        analyser.getByteFrequencyData(levels);
+        setMicrophoneLevel(Math.min(100, Math.round((levels.reduce((sum, value) => sum + value, 0) / levels.length) * 1.5)));
+      }, 120);
+      microphoneTestCleanupRef.current = () => {
+        window.clearInterval(timer);
+        stream.getTracks().forEach(track => track.stop());
+        void context.close();
+        setIsTestingMicrophone(false);
+        setMicrophoneLevel(0);
+      };
+      setIsTestingMicrophone(true);
+    } catch (error) {
+      setCallError(error instanceof Error ? error.message : "Unable to test the microphone.");
+    }
+  };
+
+  useEffect(() => {
+    if (!navigator.mediaDevices?.enumerateDevices) return;
+    const refreshDevices = () => {
+      void navigator.mediaDevices.enumerateDevices().then(devices => {
+        setMediaDevices(devices);
+        const ids = new Set(devices.map(device => device.deviceId));
+        if (audioInputDeviceId && !ids.has(audioInputDeviceId)) setAudioInputDeviceId("");
+        if (videoInputDeviceId && !ids.has(videoInputDeviceId)) setVideoInputDeviceId("");
+        if (audioOutputDeviceId && !ids.has(audioOutputDeviceId)) setAudioOutputDeviceId("");
+      }).catch(() => undefined);
+    };
+    refreshDevices();
+    navigator.mediaDevices.addEventListener?.("devicechange", refreshDevices);
+    return () => navigator.mediaDevices.removeEventListener?.("devicechange", refreshDevices);
+  }, [audioInputDeviceId, audioOutputDeviceId, videoInputDeviceId]);
+
+  useEffect(() => () => microphoneTestCleanupRef.current(), []);
+
+  const toggleMicrophone = () => {
+    const tracks = localStreamRef.current?.getAudioTracks() || [];
+    if (!tracks.length) return;
+    const nextMuted = !isMicrophoneMuted;
+    tracks.forEach(track => { track.enabled = !nextMuted; });
+    setIsMicrophoneMuted(nextMuted);
+    if (activeCall) void publishLocalMediaState(activeCall, activeCallOtherParticipants);
+  };
+
+  const toggleCamera = () => {
+    const tracks = localStreamRef.current?.getVideoTracks() || [];
+    if (!tracks.length) return;
+    const nextEnabled = !isCameraEnabled;
+    tracks.forEach(track => { track.enabled = nextEnabled; });
+    setIsCameraEnabled(nextEnabled);
+    if (activeCall) void publishLocalMediaState(activeCall, activeCallOtherParticipants);
+  };
+
+  const stopScreenShare = async () => {
+    const cameraTrack = localStreamRef.current?.getVideoTracks()[0] || null;
+    await Promise.all(Array.from(peerRefs.current.values()).map(async connection => {
+      const sender = connection.getSenders().find(item => item.track?.kind === "video");
+      if (sender) await sender.replaceTrack(cameraTrack);
+    }));
+    screenStreamRef.current?.getTracks().forEach(track => track.stop());
+    screenStreamRef.current = null;
+    setLocalStream(localStreamRef.current);
+    setIsScreenSharing(false);
+    screenSharingRef.current = false;
+    if (activeCall) void publishLocalMediaState(activeCall, activeCallOtherParticipants);
+  };
+
+  const toggleScreenShare = async () => {
+    if (isScreenSharing) {
+      await stopScreenShare();
+      return;
+    }
+    if (!navigator.mediaDevices?.getDisplayMedia) {
+      setCallError("Screen sharing is not supported by this browser.");
+      return;
+    }
+    try {
+      const displayStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
+      const screenTrack = displayStream.getVideoTracks()[0];
+      if (!screenTrack) throw new Error("No screen source was selected.");
+      await Promise.all(Array.from(peerRefs.current.values()).map(async connection => {
+        const sender = connection.getSenders().find(item => item.track?.kind === "video");
+        if (sender) await sender.replaceTrack(screenTrack);
+      }));
+      screenStreamRef.current = displayStream;
+      const previewStream = new MediaStream([screenTrack, ...(localStreamRef.current?.getAudioTracks() || [])]);
+      setLocalStream(previewStream);
+      setIsScreenSharing(true);
+      screenSharingRef.current = true;
+      if (activeCall) void publishLocalMediaState(activeCall, activeCallOtherParticipants);
+      screenTrack.onended = () => { void stopScreenShare(); };
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "NotAllowedError") return;
+      setCallError(error instanceof Error ? error.message : "Unable to share the selected screen.");
+    }
+  };
+
+  useEffect(() => {
+    const handleCallControl = (event: Event) => {
+      const action = (event as CustomEvent<{ action?: string }>).detail?.action;
+      if (action === "microphone") toggleMicrophone();
+      else if (action === "camera") toggleCamera();
+      else if (action === "hangup") void hangUpCall();
+    };
+    window.addEventListener("riana-call-control", handleCallControl);
+    return () => window.removeEventListener("riana-call-control", handleCallControl);
+  });
+
+  useEffect(() => {
+    if (!activeCall || Object.keys(remoteStreams).length === 0) {
+      setActiveSpeakerId(null);
+      return;
+    }
+    const AudioContextConstructor = window.AudioContext || (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+    if (!AudioContextConstructor) return;
+    const context = new AudioContextConstructor();
+    const meters = Object.entries(remoteStreams).flatMap(([participantId, stream]) => {
+      if (!stream.getAudioTracks().some(track => track.readyState === "live")) return [];
+      const analyser = context.createAnalyser();
+      analyser.fftSize = 256;
+      context.createMediaStreamSource(stream).connect(analyser);
+      return [{ participantId, analyser, samples: new Uint8Array(analyser.fftSize) }];
+    });
+    let previousSpeaker: string | null = null;
+    const interval = window.setInterval(() => {
+      let loudestId: string | null = null;
+      let loudestLevel = 0.04;
+      meters.forEach(meter => {
+        meter.analyser.getByteTimeDomainData(meter.samples);
+        const rms = Math.sqrt(meter.samples.reduce((sum, sample) => sum + ((sample - 128) / 128) ** 2, 0) / meter.samples.length);
+        if (rms > loudestLevel) { loudestLevel = rms; loudestId = meter.participantId; }
+      });
+      if (loudestId && loudestId !== previousSpeaker) {
+        previousSpeaker = loudestId;
+        setActiveSpeakerId(loudestId);
+      }
+    }, 350);
+    return () => {
+      window.clearInterval(interval);
+      void context.close();
+    };
+  }, [activeCall, remoteStreams]);
+
+  useEffect(() => {
+    setRaisedHands({});
+    setRaisedHandOrder({});
+    setMeetingReactions([]);
+    setRemoteMediaStates({});
+    setSpotlightParticipantId(null);
+    setPinnedParticipantId(null);
+    setIsSelfViewPip(false);
+    setMobileMeetingView("gallery");
+    setIsDesktopParticipantsOpen(false);
+    setShowInvitePanel(false);
+    setMeetingInviteSelection([]);
+  }, [activeCall?.id]);
+
+  useEffect(() => {
+    setGalleryPage(page => Math.min(page, Math.max(0, Math.ceil(activeCallOtherParticipants.length / galleryPageSize) - 1)));
+  }, [activeCallOtherParticipants.length]);
+
+  useEffect(() => {
+    if (!activeCall) return;
+    const nextHands: Record<string, boolean> = {};
+    const nextHandOrder: Record<string, number> = {};
+    const nextMediaStates: Record<string, { audioEnabled: boolean; videoEnabled: boolean; screenSharing: boolean }> = {};
+    activeCall.call_participants?.forEach(participant => {
+      if (participant.hand_raised) {
+        nextHands[participant.user_id] = true;
+        const raisedAt = participant.hand_raised_at ? new Date(participant.hand_raised_at).getTime() : Date.now();
+        nextHandOrder[participant.user_id] = Number.isFinite(raisedAt) ? raisedAt : Date.now();
+      }
+      if (typeof participant.audio_enabled === "boolean" && typeof participant.video_enabled === "boolean") {
+        nextMediaStates[participant.user_id] = { audioEnabled: participant.audio_enabled, videoEnabled: participant.video_enabled, screenSharing: participant.screen_sharing === true };
+      }
+    });
+    setRaisedHands(nextHands);
+    setRaisedHandOrder(nextHandOrder);
+    setRemoteMediaStates(nextMediaStates);
+    setSpotlightParticipantId(activeCall.spotlight_user_id || null);
+  }, [activeCall]);
+
+  useEffect(() => {
+    if (!activeCallId) return;
+    const activeIds = new Set(activeCallParticipantKey ? activeCallParticipantKey.split("|") : []);
+    setRaisedHands(current => Object.fromEntries(Object.entries(current).filter(([userId]) => activeIds.has(userId))));
+    setRaisedHandOrder(current => Object.fromEntries(Object.entries(current).filter(([userId]) => activeIds.has(userId))));
+    setRemoteMediaStates(current => Object.fromEntries(Object.entries(current).filter(([userId]) => activeIds.has(userId))));
+    if (spotlightParticipantId && !activeIds.has(spotlightParticipantId)) setSpotlightParticipantId(null);
+  }, [activeCallId, activeCallParticipantKey, spotlightParticipantId]);
+
+  useEffect(() => {
+    if (!activeCallId) return;
+    let disposed = false;
+    void getCallIceServers().then(servers => { if (!disposed && servers.length) iceServersRef.current = servers; }).catch(() => undefined);
+    return () => { disposed = true; };
+  }, [activeCallId, getCallIceServers]);
+
+  useEffect(() => {
+    if (meetingReactions.length === 0) return;
+    const timer = window.setInterval(() => {
+      const now = Date.now();
+      setMeetingReactions(current => current.filter(reaction => reaction.expiresAt > now));
+    }, 500);
+    return () => window.clearInterval(timer);
+  }, [meetingReactions.length]);
 
   useEffect(() => {
     if (scrollRef.current) scrollRef.current.scrollIntoView({ behavior: "smooth" });
@@ -261,21 +807,31 @@ export const ChatModule = ({ currentUser, chat, onClose }: ChatModuleProps) => {
     if (!localVideoRef.current) return;
     localVideoRef.current.srcObject = localStream;
     if (localStream) void localVideoRef.current.play().catch(() => undefined);
+  }, [localStream, hasLiveLocalVideo]);
+
+  useEffect(() => {
+    const updateLocalVideo = () => setHasLiveLocalVideo(Boolean(localStream?.getVideoTracks().some(track => track.readyState === "live" && track.enabled && !track.muted)));
+    updateLocalVideo();
+    const tracks = localStream?.getVideoTracks() || [];
+    tracks.forEach(track => {
+      track.addEventListener("mute", updateLocalVideo);
+      track.addEventListener("unmute", updateLocalVideo);
+      track.addEventListener("ended", updateLocalVideo);
+    });
+    return () => tracks.forEach(track => {
+      track.removeEventListener("mute", updateLocalVideo);
+      track.removeEventListener("unmute", updateLocalVideo);
+      track.removeEventListener("ended", updateLocalVideo);
+    });
   }, [localStream]);
 
-  useEffect(() => {
-    if (remoteVideoRef.current) {
-      remoteVideoRef.current.srcObject = remoteStream;
-      if (remoteStream) void remoteVideoRef.current.play().catch(() => undefined);
-    }
-    if (remoteAudioRef.current) {
-      remoteAudioRef.current.srcObject = remoteStream;
-      if (remoteStream) void remoteAudioRef.current.play().catch(() => undefined);
-    }
-  }, [remoteStream]);
+  const incomingCallId = incomingCall?.id;
+  const shouldRing = Boolean(incomingCallId && !activeCallId && !isRingtoneSilenced);
+  const shouldResetRingtoneSilence = !incomingCallId;
+  const shouldEndLocalCall = (!activeCallId && !incomingCallId) || ["ended", "declined", "missed"].includes(String(activeCall?.call_status));
 
   useEffect(() => {
-    if (!incomingCall || activeCall || isRingtoneSilenced) {
+    if (!shouldRing) {
       stopRingtone();
       return;
     }
@@ -283,21 +839,15 @@ export const ChatModule = ({ currentUser, chat, onClose }: ChatModuleProps) => {
     playCallRingSound();
     ringtoneTimerRef.current = window.setInterval(() => playCallRingSound(), 2200);
     return stopRingtone;
-  }, [incomingCall?.id, activeCall?.id, isRingtoneSilenced]);
+  }, [shouldRing]);
 
   useEffect(() => {
-    if (!incomingCall) setIsRingtoneSilenced(false);
-  }, [incomingCall?.id]);
+    if (shouldResetRingtoneSilence) setIsRingtoneSilenced(false);
+  }, [shouldResetRingtoneSilence]);
 
   useEffect(() => {
-    if (!activeCall) {
-      if (!incomingCall) endLocalCallState();
-      return;
-    }
-    if (["ended", "declined", "missed"].includes(String(activeCall.call_status))) {
-      endLocalCallState();
-    }
-  }, [activeCall?.id, activeCall?.call_status, incomingCall?.id]);
+    if (shouldEndLocalCall) endLocalCallStateRef.current();
+  }, [shouldEndLocalCall]);
 
   useEffect(() => {
     const processSignals = async () => {
@@ -308,10 +858,56 @@ export const ChatModule = ({ currentUser, chat, onClose }: ChatModuleProps) => {
         if (signal.callId !== call.id || processedSignalsRef.current.has(key)) continue;
         processedSignalsRef.current.add(key);
         const targetUserId = signal.senderId;
+        if (signal.signalType === "reaction") {
+          const emoji = (signal.payload as { emoji?: unknown }).emoji;
+          if (typeof emoji === "string" && (MEETING_REACTIONS as readonly string[]).includes(emoji)) {
+            setMeetingReactions(current => [...current.slice(-7), { id: signal.signalId || `${targetUserId}-${Date.now()}`, userId: targetUserId, emoji, expiresAt: Date.now() + 5000 }]);
+          }
+          continue;
+        }
+        if (signal.signalType === "hand-state") {
+          const handPayload = signal.payload as { raised?: unknown; targetUserId?: unknown };
+          const raised = handPayload.raised;
+          const handUserId = typeof handPayload.targetUserId === "string" ? handPayload.targetUserId : targetUserId;
+          if (typeof raised === "boolean") {
+            setRaisedHands(current => ({ ...current, [handUserId]: raised }));
+            setRaisedHandOrder(current => {
+              const next = { ...current };
+              if (raised) next[handUserId] = next[handUserId] || Date.now();
+              else delete next[handUserId];
+              return next;
+            });
+          }
+          continue;
+        }
+        if (signal.signalType === "media-state") {
+          const mediaState = signal.payload as { audioEnabled?: unknown; videoEnabled?: unknown; screenSharing?: unknown };
+          if (typeof mediaState.audioEnabled === "boolean" && typeof mediaState.videoEnabled === "boolean" && typeof mediaState.screenSharing === "boolean") {
+            setRemoteMediaStates(current => ({ ...current, [targetUserId]: { audioEnabled: mediaState.audioEnabled as boolean, videoEnabled: mediaState.videoEnabled as boolean, screenSharing: mediaState.screenSharing as boolean } }));
+          }
+          continue;
+        }
+        if (signal.signalType === "spotlight") {
+          const userId = (signal.payload as { userId?: unknown }).userId;
+          setSpotlightParticipantId(typeof userId === "string" && activeCallParticipantKey.split("|").includes(userId) ? userId : null);
+          continue;
+        }
+        if (signal.signalType === "rejoin") {
+          try {
+            const connection = createPeerConnectionRef.current(call, targetUserId);
+            if (connection.signalingState !== "stable") continue;
+            const offer = await connection.createOffer({ iceRestart: Boolean(connection.remoteDescription) });
+            await connection.setLocalDescription(offer);
+            await sendCallSignal(call.id, targetUserId, "offer", connection.localDescription || offer);
+          } catch (error) {
+            setCallError(error instanceof Error ? error.message : "Unable to restart a participant connection.");
+          }
+          continue;
+        }
         try {
-          const connection = createPeerConnection(call, targetUserId);
+          const connection = createPeerConnectionRef.current(call, targetUserId);
           if (signal.signalType === "offer") {
-            if (connection.remoteDescription || connection.signalingState !== "stable") continue;
+            if (connection.signalingState !== "stable") continue;
             await connection.setRemoteDescription(new RTCSessionDescription(signal.payload as RTCSessionDescriptionInit));
             // setRemoteDescription changes state, but TypeScript retains the pre-await narrowing.
             if ((connection.signalingState as RTCSignalingState) !== "have-remote-offer") continue;
@@ -342,7 +938,7 @@ export const ChatModule = ({ currentUser, chat, onClose }: ChatModuleProps) => {
       }
     };
     void processSignals();
-  }, [activeCall, callSignals, sendCallSignal]);
+  }, [activeCall, activeCallParticipantKey, callSignals, sendCallSignal]);
 
   const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -410,6 +1006,8 @@ export const ChatModule = ({ currentUser, chat, onClose }: ChatModuleProps) => {
     if (!selectedCallTargets.length) return;
     try {
       setCallError(null);
+      const iceServers = await getCallIceServers();
+      if (iceServers.length) iceServersRef.current = iceServers;
       await openMedia(callType === "video");
       const call = await startCall(selectedCallTargets, callType);
       await Promise.all(selectedCallTargets.map(async targetId => {
@@ -419,10 +1017,34 @@ export const ChatModule = ({ currentUser, chat, onClose }: ChatModuleProps) => {
         await connection.setLocalDescription(offer);
         await sendCallSignal(call.id, targetId, "offer", connection.localDescription || offer);
       }));
+      await publishLocalMediaState(call, selectedCallTargets);
     } catch (error) {
       endLocalCallState();
       clearCallState();
       toast({ title: "Call failed", description: error instanceof Error ? error.message : "Unable to start the call.", variant: "destructive" });
+    }
+  };
+
+  const inviteSelectedParticipants = async () => {
+    if (!activeCall || !meetingInviteSelection.length || isInvitingParticipants) return;
+    setIsInvitingParticipants(true);
+    try {
+      const result = await inviteCallParticipants(activeCall.id, meetingInviteSelection);
+      await Promise.all(result.invited_user_ids.map(async targetId => {
+        const connection = createPeerConnection(result.call, targetId);
+        if (connection.signalingState !== "stable" || connection.localDescription) return;
+        const offer = await connection.createOffer();
+        await connection.setLocalDescription(offer);
+        await sendCallSignal(result.call.id, targetId, "offer", connection.localDescription || offer);
+      }));
+      await publishLocalMediaState(result.call, result.invited_user_ids);
+      setMeetingInviteSelection([]);
+      setShowInvitePanel(false);
+      toast({ title: "Invitations sent", description: result.invited_user_ids.length ? `${result.invited_user_ids.length} colleague${result.invited_user_ids.length === 1 ? " was" : "s were"} invited to the meeting.` : "Those colleagues are already invited or in the meeting." });
+    } catch (error) {
+      toast({ title: "Invitations not sent", description: error instanceof Error ? error.message : "Unable to invite colleagues.", variant: "destructive" });
+    } finally {
+      setIsInvitingParticipants(false);
     }
   };
 
@@ -434,10 +1056,31 @@ export const ChatModule = ({ currentUser, chat, onClose }: ChatModuleProps) => {
       await openMedia(incomingCall.call_type === "video");
       const call = await updateCallStatus(incomingCall.id, "accepted");
       createPeerConnection(call, call.sender_id);
+      await publishLocalMediaState(call, call.call_participant_ids || [call.sender_id]);
       playCallPickupSound();
     } catch (error) {
       endLocalCallState();
       toast({ title: "Unable to answer", description: error instanceof Error ? error.message : "Check microphone/camera permissions.", variant: "destructive" });
+    }
+  };
+
+  const rejoinCallMedia = async () => {
+    if (!activeCall) return;
+    try {
+      setCallError(null);
+      await openMedia(activeCall.call_type === "video");
+      const connectedParticipantIds = activeCall.call_participants
+        ?.filter(participant => participant.status === "accepted")
+        .map(participant => participant.user_id)
+        .filter(userId => userId !== currentUser.id) || activeCallOtherParticipants;
+      for (const userId of connectedParticipantIds) {
+        createPeerConnection(activeCall, userId);
+        await sendCallSignal(activeCall.id, userId, "rejoin", {});
+      }
+      await publishLocalMediaState(activeCall, connectedParticipantIds);
+    } catch (error) {
+      setCallError(error instanceof Error ? error.message : "Unable to rejoin meeting media.");
+      toast({ title: "Unable to reconnect media", description: error instanceof Error ? error.message : "Check your camera and microphone permissions.", variant: "destructive" });
     }
   };
 
@@ -459,9 +1102,9 @@ export const ChatModule = ({ currentUser, chat, onClose }: ChatModuleProps) => {
     const callId = activeCall?.id || incomingCall?.id;
     stopRingtone();
     playCallHangupSound();
-    if (callId) await updateCallStatus(callId, "ended").catch(() => undefined);
     clearCallState();
     endLocalCallState();
+    if (callId) await updateCallStatus(callId, "ended").catch(() => undefined);
   };
 
 
@@ -590,7 +1233,7 @@ export const ChatModule = ({ currentUser, chat, onClose }: ChatModuleProps) => {
   );
 
   return (
-    <div className="chat-shell flex h-full min-h-0 w-full max-w-6xl overflow-hidden rounded-2xl border border-[hsl(var(--comm-border))] bg-[hsl(var(--comm-surface))] shadow-2xl">
+    <div className={cn("chat-shell flex h-full min-h-0 w-full max-w-6xl overflow-hidden rounded-2xl border border-[hsl(var(--comm-border))] bg-[hsl(var(--comm-surface))] shadow-2xl", isFullscreen && "max-w-none rounded-none border-0")}>
       <div className={cn("flex flex-col border-r border-[hsl(var(--comm-border))] bg-[hsl(var(--comm-panel))] backdrop-blur transition-all duration-300", isSidebarOpen ? "w-full md:w-[336px]" : "w-0 overflow-hidden")}>
         <div className="space-y-3 border-b border-[hsl(var(--comm-border))] bg-[hsl(var(--comm-panel-elevated))] p-4">
           <div className="flex items-center justify-between">
@@ -650,28 +1293,28 @@ export const ChatModule = ({ currentUser, chat, onClose }: ChatModuleProps) => {
         </ScrollArea>
       </div>
 
-      <div className={cn("relative min-w-0 flex-1 flex-col bg-[hsl(var(--comm-page))]", isSidebarOpen ? "hidden md:flex" : "flex")}>
+      <div className={cn("chat-conversation-surface relative min-w-0 flex-1 flex-col bg-[hsl(var(--comm-page))]", isSidebarOpen ? "hidden md:flex" : "flex", activeCall && "lg:grid lg:grid-cols-[minmax(0,1.35fr)_minmax(320px,0.65fr)] lg:grid-rows-[auto_minmax(0,1fr)_auto]")}>
         {activeChatUserId ? (
           <>
-            <header className="z-[var(--z-sticky)] flex min-w-0 items-center justify-between gap-2 border-b border-[hsl(var(--comm-border))] bg-[hsl(var(--comm-panel-elevated))] px-3 py-3 shadow-sm backdrop-blur-xl sm:px-5">
-              <div className="flex min-w-0 items-center gap-3 sm:gap-4">
+            <header className={cn("z-[var(--z-sticky)] flex min-w-0 flex-wrap items-center justify-between gap-x-2 gap-y-1 border-b border-[hsl(var(--comm-border))] bg-[hsl(var(--comm-panel-elevated))] px-3 py-2.5 shadow-sm backdrop-blur-xl sm:flex-nowrap sm:gap-2 sm:px-5 sm:py-3", activeCall && "lg:col-span-2 lg:col-start-1 lg:row-start-1")}>
+              <div className="flex min-w-0 flex-1 items-center gap-2 sm:gap-4">
                 <Button variant="ghost" size="icon" className="-ml-2 h-11 w-11 rounded-full md:hidden" onClick={() => setIsSidebarOpen(!isSidebarOpen)} aria-label="Back to conversations"><Users className="h-5 w-5" /></Button>
-                <div className="relative">
+                <div className="relative shrink-0">
                   <Avatar className="h-11 w-11 border-2 border-primary/10">
                     <AvatarImage src={resolveAvatarUrl(activeUser?.avatar_url)} alt={formatUserName(activeUser)} />
                     <AvatarFallback className="bg-primary/5 font-bold text-primary">{(activeUser?.first_name?.[0] || activeUser?.email?.[0] || "?").toUpperCase()}</AvatarFallback>
                   </Avatar>
                   <div className={cn("absolute bottom-0 right-0 h-3 w-3 rounded-full border-2 border-background", activeUser?.online ? "bg-green-500" : "bg-slate-400")} />
                 </div>
-                <div>
-                  <h3 className="text-base font-bold leading-tight text-foreground">{formatUserName(activeUser)}</h3>
-                  <p className="text-[11px] font-medium text-primary/70">{activeUserPresenceLabel}<span className="mx-1 text-muted-foreground/60">/</span>{activeUser?.designation || activeUser?.role}</p>
+                <div className="min-w-0 flex-1">
+                  <h3 className="truncate text-sm font-bold leading-tight text-foreground sm:text-base">{formatUserName(activeUser)}</h3>
+                  <p className="truncate text-[10px] font-medium leading-snug text-primary/70 sm:text-[11px]">{activeUserPresenceLabel}<span className="mx-1 text-muted-foreground/60">/</span>{activeUser?.designation || activeUser?.role}</p>
                 </div>
               </div>
-              <div className="flex shrink-0 items-center gap-1">
+              <div className="flex shrink-0 items-center gap-0 sm:gap-1">
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
-                    <Button variant="ghost" size="icon" className="h-11 w-11 rounded-full text-primary/80 hover:bg-primary/10 hover:text-primary focus-visible:ring-primary/30" title="Select call participants" aria-label="Select call participants"><Users className="h-4 w-4" /></Button>
+                    <Button variant="ghost" size="icon" className="h-9 w-9 rounded-full text-primary/80 hover:bg-primary/10 hover:text-primary focus-visible:ring-primary/30 sm:h-11 sm:w-11" title="Select call participants" aria-label="Select call participants"><Users className="h-4 w-4" /></Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end" className="w-64">
                     <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground">Add colleagues to this call</div>
@@ -689,9 +1332,11 @@ export const ChatModule = ({ currentUser, chat, onClose }: ChatModuleProps) => {
                     ))}
                   </DropdownMenuContent>
                 </DropdownMenu>
-                <Button variant="ghost" size="icon" className="h-11 w-11 rounded-full text-primary/80 hover:bg-primary/10 hover:text-primary focus-visible:ring-primary/30" onClick={() => void startOutgoingCall("audio")} title={selectedCallTargets.length > 1 ? "Start group phone call" : "Start phone call"} aria-label={selectedCallTargets.length > 1 ? "Start group phone call" : "Start phone call"}><Phone className="h-4 w-4" /></Button>
-                <Button variant="ghost" size="icon" className="h-11 w-11 rounded-full text-primary/80 hover:bg-primary/10 hover:text-primary focus-visible:ring-primary/30" onClick={() => void startOutgoingCall("video")} title={selectedCallTargets.length > 1 ? "Start group video call" : "Start video call"} aria-label={selectedCallTargets.length > 1 ? "Start group video call" : "Start video call"}><Video className="h-4 w-4" /></Button>
-                {onClose && <Button variant="ghost" size="icon" onClick={onClose} className="rounded-full text-muted-foreground hover:bg-red-50 hover:text-red-500"><X className="h-5 w-5" /></Button>}
+                <Button variant="ghost" size="icon" className="h-9 w-9 rounded-full text-primary/80 hover:bg-primary/10 hover:text-primary focus-visible:ring-primary/30 sm:h-11 sm:w-11" onClick={() => void startOutgoingCall("audio")} title={selectedCallTargets.length > 1 ? "Start group phone call" : "Start phone call"} aria-label={selectedCallTargets.length > 1 ? "Start group phone call" : "Start phone call"}><Phone className="h-4 w-4" /></Button>
+                <Button variant="ghost" size="icon" className="h-9 w-9 rounded-full text-primary/80 hover:bg-primary/10 hover:text-primary focus-visible:ring-primary/30 sm:h-11 sm:w-11" onClick={() => void startOutgoingCall("video")} title={selectedCallTargets.length > 1 ? "Start group video call" : "Start video call"} aria-label={selectedCallTargets.length > 1 ? "Start group video call" : "Start video call"}><Video className="h-4 w-4" /></Button>
+                {onMinimize && <Button variant="ghost" size="icon" className="h-9 w-9 rounded-full text-muted-foreground hover:bg-primary/10 hover:text-primary sm:h-11 sm:w-11" onClick={onMinimize} title="Minimize messages" aria-label="Minimize messaging window"><Minus className="h-5 w-5" /></Button>}
+                {onToggleFullscreen && <Button variant="ghost" size="icon" className="h-9 w-9 rounded-full text-muted-foreground hover:bg-primary/10 hover:text-primary sm:h-11 sm:w-11" onClick={onToggleFullscreen} title={isFullscreen ? "Exit full screen" : "Full screen"} aria-label={isFullscreen ? "Exit full screen messaging" : "Open messaging full screen"} aria-pressed={isFullscreen}>{isFullscreen ? <Minimize2 className="h-5 w-5" /> : <Maximize2 className="h-5 w-5" />}</Button>}
+                {onClose && <Button variant="ghost" size="icon" onClick={onClose} className="h-9 w-9 rounded-full text-muted-foreground hover:bg-red-50 hover:text-red-500 sm:h-11 sm:w-11" aria-label="Close messaging"><X className="h-5 w-5" /></Button>}
               </div>
             </header>
 
@@ -717,8 +1362,8 @@ export const ChatModule = ({ currentUser, chat, onClose }: ChatModuleProps) => {
             )}
 
             {activeCall && (
-              <div className="call-panel mx-3 mt-3 rounded-xl border border-[hsl(var(--comm-border-strong))] p-4 shadow-lg sm:mx-6 sm:mt-4">
-                <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="call-panel relative mx-3 mt-3 overflow-x-hidden rounded-xl border border-[hsl(var(--comm-border-strong))] p-4 shadow-lg sm:mx-6 sm:mt-4 lg:col-start-1 lg:row-start-2 lg:row-span-2 lg:m-4 lg:min-h-0 lg:overflow-y-auto">
+                <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                   <div className="flex min-w-0 items-center gap-3 text-sm font-semibold">
                     <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
                       {activeCall.call_type === "video" ? <Video className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
@@ -728,23 +1373,132 @@ export const ChatModule = ({ currentUser, chat, onClose }: ChatModuleProps) => {
                       <p className="text-[11px] font-medium text-muted-foreground">Secure team call</p>
                     </div>
                     <Badge variant="outline" className="rounded-full border-primary/20 bg-primary/5 capitalize">{activeCall.call_status || "ringing"}</Badge>
+                    {Object.values(raisedHands).filter(Boolean).length > 0 && <Badge variant="secondary" className="rounded-full"><Hand className="mr-1 h-3 w-3" />{Object.values(raisedHands).filter(Boolean).length} raised</Badge>}
                   </div>
-                  <Button size="sm" variant="destructive" className="rounded-full px-4" onClick={() => void hangUpCall()}><PhoneOff className="mr-2 h-4 w-4" />Hang up</Button>
                 </div>
                 {callError && <p className="mb-3 rounded-lg border border-destructive/20 bg-destructive/10 px-3 py-2 text-xs text-destructive">{callError}</p>}
-                <div className="grid gap-3 sm:grid-cols-2" aria-label="Active call media">
-                  <div className="min-h-32 rounded-xl border border-white/10 bg-background/60 p-2 shadow-inner">
-                    {activeCall.call_type === "video" ? <video ref={localVideoRef} autoPlay muted playsInline className="aspect-video h-auto max-h-64 w-full rounded-lg bg-black object-cover" /> : <div className="flex h-36 items-center justify-center gap-3 rounded-lg bg-muted/60 text-sm font-medium text-muted-foreground"><Mic className="h-5 w-5 text-primary" /> Your microphone is active</div>}
+                {!localStream?.getTracks().some(track => track.readyState === "live") && <Button type="button" size="sm" className="mb-3 rounded-full" onClick={() => void rejoinCallMedia()}><Video className="mr-2 h-4 w-4" />Reconnect camera and microphone</Button>}
+                <div className="mb-4 flex min-w-0 flex-wrap items-center gap-2 rounded-xl border border-[hsl(var(--comm-border))] bg-background/70 p-2" role="toolbar" aria-label="Call controls">
+                  <div className="flex min-w-0 flex-wrap items-center gap-2" role="group" aria-label="Media controls">
+                    <Button size="icon" variant={isMicrophoneMuted ? "destructive" : "outline"} className={cn("h-10 w-10 rounded-full", !isMicrophoneMuted && "call-control-button")} onClick={toggleMicrophone} title={isMicrophoneMuted ? "Unmute microphone" : "Mute microphone"} aria-label={isMicrophoneMuted ? "Unmute microphone" : "Mute microphone"} aria-pressed={isMicrophoneMuted}>{isMicrophoneMuted ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}</Button>
+                    {activeCall.call_type === "video" && <Button size="icon" variant={isCameraEnabled ? "outline" : "destructive"} className={cn("h-10 w-10 rounded-full", isCameraEnabled && "call-control-button")} onClick={toggleCamera} title={isCameraEnabled ? "Turn camera off" : "Turn camera on"} aria-label={isCameraEnabled ? "Turn camera off" : "Turn camera on"} aria-pressed={!isCameraEnabled}>{isCameraEnabled ? <Video className="h-4 w-4" /> : <VideoOff className="h-4 w-4" />}</Button>}
+                    <Button size="icon" variant={isScreenSharing ? "default" : "outline"} className={cn("h-10 w-10 rounded-full", isScreenSharing ? "call-control-active" : "call-control-button")} onClick={() => void toggleScreenShare()} title={isScreenSharing ? "Stop sharing" : "Share screen"} aria-label={isScreenSharing ? "Stop sharing" : "Share screen"} aria-pressed={isScreenSharing}>{isScreenSharing ? <ScreenShareOff className="h-4 w-4" /> : <ScreenShare className="h-4 w-4" />}</Button>
+                    <Button size="icon" variant={raisedHands[currentUser.id] ? "default" : "outline"} className={cn("h-10 w-10 rounded-full", raisedHands[currentUser.id] ? "call-control-active" : "call-control-button")} onClick={toggleRaisedHand} title={raisedHands[currentUser.id] ? "Lower hand" : "Raise hand"} aria-label={raisedHands[currentUser.id] ? "Lower hand" : "Raise hand"} aria-pressed={Boolean(raisedHands[currentUser.id])}><Hand className="h-4 w-4" /></Button>
+                    <DropdownMenu><DropdownMenuTrigger asChild><Button size="icon" variant="outline" className="call-control-button h-10 w-10 rounded-full" title="Send reaction" aria-label="Send meeting reaction"><SmilePlus className="h-4 w-4" /></Button></DropdownMenuTrigger><DropdownMenuContent align="start" className="min-w-0"><div className="flex gap-1 p-1">{MEETING_REACTIONS.map(emoji => <button key={emoji} type="button" className="rounded-md p-2 text-xl hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary" onClick={() => sendMeetingReaction(emoji)} aria-label={`React ${emoji}`}>{emoji}</button>)}</div></DropdownMenuContent></DropdownMenu>
                   </div>
-                  <div className="min-h-32 rounded-xl border border-white/10 bg-background/60 p-2 shadow-inner">
-                    {activeCall.call_type === "video" ? <div className="relative"><video ref={remoteVideoRef} autoPlay playsInline className="aspect-video h-auto max-h-64 w-full rounded-lg bg-black object-cover" />{!remoteStream && <div className="absolute inset-0 flex items-center justify-center rounded-lg bg-black/55 text-xs font-semibold text-white">Waiting for live video</div>}</div> : <div className="flex h-36 items-center justify-center gap-3 rounded-lg bg-muted/60 text-sm font-medium text-muted-foreground"><MonitorUp className="h-5 w-5 text-primary" /> Waiting for remote audio</div>}
-                    <audio ref={remoteAudioRef} autoPlay />
+                  <div className="flex min-w-0 flex-wrap items-center gap-2 border-l border-[hsl(var(--comm-border))] pl-2 max-sm:border-l-0 max-sm:pl-0" role="group" aria-label="Call layout">
+                    <Button size="sm" variant={callLayout === "gallery" ? "default" : "outline"} className={cn("h-10 rounded-full px-3", callLayout === "gallery" ? "call-control-active" : "call-control-button")} onClick={() => setCallLayout("gallery")} aria-pressed={callLayout === "gallery"}><LayoutGrid className="mr-2 h-4 w-4" />Gallery</Button>
+                    <Button size="sm" variant={callLayout === "speaker" ? "default" : "outline"} className={cn("h-10 rounded-full px-3", callLayout === "speaker" ? "call-control-active" : "call-control-button")} onClick={() => setCallLayout("speaker")} aria-pressed={callLayout === "speaker"}><PanelTop className="mr-2 h-4 w-4" />Speaker</Button>
+                  </div>
+                  <div className="flex min-w-0 items-center gap-2 border-l border-[hsl(var(--comm-border))] pl-2 max-sm:border-l-0 max-sm:pl-0" role="group" aria-label="Meeting views">
+                    <Button type="button" size="sm" variant={showInvitePanel ? "default" : "outline"} className={cn("h-10 rounded-full px-3", showInvitePanel ? "call-control-active" : "call-control-button")} onClick={() => setShowInvitePanel(value => !value)} aria-expanded={showInvitePanel} aria-controls="meeting-invite-panel"><UserPlus className="mr-2 h-4 w-4" />Invite</Button>
+                    <Badge variant="secondary" className="rounded-full"><Users className="mr-1 h-3 w-3" />{activeCallParticipantIds.length}</Badge>
+                    <Button type="button" size="sm" variant={mobileMeetingView === "participants" || isDesktopParticipantsOpen ? "default" : "outline"} className={cn("h-10 rounded-full px-3 max-[380px]:h-9 max-[380px]:gap-0.5 max-[380px]:px-2", mobileMeetingView === "participants" || isDesktopParticipantsOpen ? "call-control-active" : "call-control-button")} onClick={handleMeetingParticipantsToggle} aria-label="Show meeting people" aria-pressed={mobileMeetingView === "participants" || isDesktopParticipantsOpen}><Users className="h-4 w-4 max-[380px]:mr-1" /><span className="max-[340px]:hidden">People</span></Button>
+                    <Button type="button" size="sm" variant={mobileMeetingView === "chat" || !isDesktopChatOpen ? "default" : "outline"} className={cn("h-10 rounded-full px-3 max-[380px]:h-9 max-[380px]:gap-0.5 max-[380px]:px-2", mobileMeetingView === "chat" || !isDesktopChatOpen ? "call-control-active" : "call-control-button")} onClick={handleMeetingChatToggle} aria-label="Show meeting chat" aria-pressed={mobileMeetingView === "chat" || !isDesktopChatOpen}><MessageSquare className="mr-2 h-4 w-4 max-[380px]:mr-1" /><span>Chat</span></Button>
+                  </div>
+                  <div className="ml-auto flex min-w-0 flex-wrap items-center justify-end gap-2 border-l border-[hsl(var(--comm-border))] pl-2 max-sm:ml-0 max-sm:justify-start max-sm:border-l-0 max-sm:pl-0" role="group" aria-label="Call actions">
+                    <Button size="icon" variant={showDeviceSettings ? "default" : "outline"} className={cn("h-10 w-10 rounded-full", showDeviceSettings ? "call-control-active" : "call-control-button")} onClick={() => setShowDeviceSettings(value => !value)} title="Media devices" aria-label="Media device settings" aria-expanded={showDeviceSettings}><Settings2 className="h-4 w-4" /></Button>
+                    {onMinimize && <Button size="icon" variant="outline" className="call-control-button h-10 w-10 rounded-full" onClick={onMinimize} title="Minimize call" aria-label="Minimize active call"><Minus className="h-4 w-4" /></Button>}
+                    {activeCall.call_type === "video" && <Button size="icon" variant={isSelfViewPip ? "default" : "outline"} className="h-10 w-10 rounded-full" onClick={() => setIsSelfViewPip(value => !value)} title={isSelfViewPip ? "Restore self view to gallery" : "Move self view"} aria-label={isSelfViewPip ? "Restore self view to gallery" : "Move self view"} aria-pressed={isSelfViewPip}><PictureInPicture2 className="h-4 w-4" /></Button>}
+                    {onToggleFullscreen && <Button size="icon" variant="outline" className="call-control-button h-10 w-10 rounded-full" onClick={onToggleFullscreen} title={isFullscreen ? "Exit full screen" : "Full screen call"} aria-label={isFullscreen ? "Exit full screen call" : "Open call full screen"} aria-pressed={isFullscreen}>{isFullscreen ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}</Button>}
+                    <Button size="sm" variant="destructive" className="call-hangup h-10 rounded-full px-4" onClick={() => void hangUpCall()} aria-label="Hang up call"><PhoneOff className="mr-2 h-4 w-4" />Hang up</Button>
                   </div>
                 </div>
+                {showInvitePanel && <section id="meeting-invite-panel" className="mb-4 rounded-xl border border-[hsl(var(--comm-border))] bg-background/90 p-3" aria-label="Invite meeting participants">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+                    <label className="grid min-w-0 flex-1 gap-1 text-xs font-semibold text-muted-foreground">Find colleagues<Input value={meetingInviteSearchTerm} onChange={event => setMeetingInviteSearchTerm(event.target.value)} placeholder="Search by name or email" className="h-10" aria-label="Search colleagues to invite" /></label>
+                    <Button type="button" onClick={() => void inviteSelectedParticipants()} disabled={!meetingInviteSelection.length || isInvitingParticipants} className="h-10 rounded-full">{isInvitingParticipants ? "Inviting…" : `Invite ${meetingInviteSelection.length || "selected"}`}</Button>
+                  </div>
+                  <div className="mt-3 grid max-h-40 gap-1 overflow-y-auto sm:grid-cols-2">
+                    {visibleUsers.filter(user => !activeCallParticipantIds.includes(user.id) && !activeCallPendingInviteIds.includes(user.id) && `${user.first_name || ""} ${user.last_name || ""} ${user.email || ""}`.toLowerCase().includes(meetingInviteSearchTerm.toLowerCase())).map(user => <label key={user.id} className="flex cursor-pointer items-center gap-2 rounded-lg px-2 py-2 hover:bg-muted"><input type="checkbox" checked={meetingInviteSelection.includes(user.id)} onChange={event => setMeetingInviteSelection(current => event.target.checked ? [...new Set([...current, user.id])] : current.filter(id => id !== user.id))} aria-label={`Invite ${formatUserName(user)}`} /><Avatar className="h-8 w-8"><AvatarImage src={resolveAvatarUrl(user.avatar_url)} alt="" /><AvatarFallback>{(user.first_name?.[0] || user.email?.[0] || "?").toUpperCase()}</AvatarFallback></Avatar><span className="min-w-0 truncate text-sm">{formatUserName(user)}</span><span className="ml-auto text-xs text-muted-foreground">{user.online ? "Online" : "Offline"}</span></label>)}
+                    {visibleUsers.filter(user => !activeCallParticipantIds.includes(user.id) && !activeCallPendingInviteIds.includes(user.id) && `${user.first_name || ""} ${user.last_name || ""} ${user.email || ""}`.toLowerCase().includes(meetingInviteSearchTerm.toLowerCase())).length === 0 && <p className="py-3 text-sm text-muted-foreground">No eligible colleagues found.</p>}
+                  </div>
+                </section>}
+                {(mobileMeetingView === "participants" || isDesktopParticipantsOpen) && <section className="mb-4 max-h-[min(48vh,520px)] overflow-y-auto rounded-xl border border-[hsl(var(--comm-border))] bg-background/90 p-3" aria-label="Meeting participants">
+                  <div className="mb-2 flex items-center justify-between"><h4 className="text-sm font-semibold">Participants ({activeCallParticipantIds.length} in meeting)</h4><Button type="button" size="sm" variant="ghost" className="lg:hidden" onClick={() => setMobileMeetingView("gallery")} aria-label="Close participants panel"><X className="h-4 w-4" /></Button></div>
+                  <ul className="grid gap-1 sm:grid-cols-2 lg:grid-cols-1">
+                    {meetingParticipants.map(participant => <li key={participant.userId} className="flex min-w-0 items-center gap-2 rounded-lg border border-transparent px-2 py-2 hover:border-border hover:bg-muted/50">
+                      <Avatar className="h-9 w-9 shrink-0"><AvatarImage src={resolveAvatarUrl(participant.profile?.avatar_url)} alt={formatUserName(participant.profile)} /><AvatarFallback>{formatUserName(participant.profile).split(/\s+/).map(part => part[0]).join("").slice(0, 2).toUpperCase()}</AvatarFallback></Avatar>
+                      <div className="min-w-0 flex-1"><p className="truncate text-sm font-medium">{participant.userId === currentUser.id ? `${formatUserName(currentUser)} (You)` : formatUserName(participant.profile)}</p><p className="truncate text-[11px] text-muted-foreground">{participant.status === "accepted" ? participant.userId === currentUser.id || remoteStreams[participant.userId] ? "Connected" : "Connecting" : participant.status === "invited" ? "Invited" : participant.status === "ringing" ? "Ringing" : participant.status[0].toUpperCase() + participant.status.slice(1)}</p></div>
+                      {participant.handRaised && <Hand className="h-4 w-4 shrink-0 text-amber-600" aria-label="Hand raised" />}
+                      {remoteMediaStates[participant.userId]?.audioEnabled === false && <MicOff className="h-4 w-4 shrink-0 text-muted-foreground" aria-label="Microphone muted" />}
+                      {remoteMediaStates[participant.userId]?.videoEnabled === false && <VideoOff className="h-4 w-4 shrink-0 text-muted-foreground" aria-label="Camera off" />}
+                      {activeCallParticipantIds.includes(participant.userId) && <Button type="button" size="icon" variant="ghost" className="h-8 w-8 shrink-0" onClick={() => setPinnedParticipantId(current => current === participant.userId ? null : participant.userId)} title={pinnedParticipantId === participant.userId ? "Unpin participant" : "Pin participant"} aria-label={pinnedParticipantId === participant.userId ? "Unpin participant" : `Pin ${formatUserName(participant.profile)}`} aria-pressed={pinnedParticipantId === participant.userId}>{pinnedParticipantId === participant.userId ? <PinOff className="h-4 w-4" /> : <Pin className="h-4 w-4" />}</Button>}
+                      {activeCallParticipantIds.includes(participant.userId) && String(activeCall.sender_id) === String(currentUser.id) && <Button type="button" size="icon" variant={spotlightParticipantId === participant.userId ? "default" : "ghost"} className="h-8 w-8 shrink-0" onClick={() => setMeetingSpotlight(spotlightParticipantId === participant.userId ? null : participant.userId)} title={spotlightParticipantId === participant.userId ? "Remove spotlight" : "Spotlight participant"} aria-label={spotlightParticipantId === participant.userId ? "Remove spotlight" : `Spotlight ${formatUserName(participant.profile)}`} aria-pressed={spotlightParticipantId === participant.userId}><PanelTop className="h-4 w-4" /></Button>}
+                      {String(activeCall.sender_id) === String(currentUser.id) && ["invited", "ringing"].includes(participant.status) && <Button type="button" size="sm" variant="outline" className="h-8 shrink-0 px-2" onClick={() => void cancelCallInvitation(activeCall.id, participant.userId).catch(error => toast({ title: "Invitation not cancelled", description: error instanceof Error ? error.message : "Please try again.", variant: "destructive" }))}>Cancel</Button>}
+                      {String(activeCall.sender_id) === String(currentUser.id) && participant.handRaised && participant.userId !== currentUser.id && <Button type="button" size="sm" variant="outline" className="h-8 shrink-0 px-2" onClick={() => lowerRaisedHand(participant.userId)}>Lower</Button>}
+                    </li>)}
+                  </ul>
+                </section>}
+                {showDeviceSettings && (
+                  <div className="mb-4 grid gap-3 rounded-xl border border-[hsl(var(--comm-border))] bg-background/80 p-3 sm:grid-cols-2 lg:grid-cols-3" aria-label="Media device settings">
+                    <label className="grid gap-1 text-xs font-semibold text-muted-foreground">
+                      Microphone
+                      <select className="h-10 rounded-md border border-input bg-background px-3 text-sm font-normal text-foreground" value={audioInputDeviceId} onChange={event => void changeInputDevice("audio", event.target.value)}>
+                        <option value="">System default</option>
+                        {mediaDevices.filter(device => device.kind === "audioinput").map((device, index) => <option key={device.deviceId || `audio-${index}`} value={device.deviceId}>{device.label || `Microphone ${index + 1}`}</option>)}
+                      </select>
+                      <span className="flex items-center gap-2">
+                        <Button type="button" size="sm" variant="outline" onClick={() => void testMicrophone()}>{isTestingMicrophone ? "Stop test" : "Test microphone"}</Button>
+                        <span className="h-2 flex-1 overflow-hidden rounded-full bg-muted" aria-label={`Microphone level ${microphoneLevel}%`}><span className="block h-full bg-primary transition-[width]" style={{ width: `${microphoneLevel}%` }} /></span>
+                      </span>
+                    </label>
+                    {activeCall.call_type === "video" && <label className="grid gap-1 text-xs font-semibold text-muted-foreground">
+                      Camera
+                      <select className="h-10 rounded-md border border-input bg-background px-3 text-sm font-normal text-foreground" value={videoInputDeviceId} onChange={event => void changeInputDevice("video", event.target.value)}>
+                        <option value="">System default</option>
+                        {mediaDevices.filter(device => device.kind === "videoinput").map((device, index) => <option key={device.deviceId || `video-${index}`} value={device.deviceId}>{device.label || `Camera ${index + 1}`}</option>)}
+                      </select>
+                    </label>}
+                    <label className="grid gap-1 text-xs font-semibold text-muted-foreground">
+                      Speaker
+                      <select className="h-10 rounded-md border border-input bg-background px-3 text-sm font-normal text-foreground disabled:opacity-60" value={audioOutputDeviceId} onChange={event => setAudioOutputDeviceId(event.target.value)} disabled={!mediaDevices.some(device => device.kind === "audiooutput")}>
+                        <option value="">System default</option>
+                        {mediaDevices.filter(device => device.kind === "audiooutput").map((device, index) => <option key={device.deviceId || `output-${index}`} value={device.deviceId}>{device.label || `Speaker ${index + 1}`}</option>)}
+                      </select>
+                      {!mediaDevices.some(device => device.kind === "audiooutput") && <span className="font-normal">Output selection is not supported by this browser.</span>}
+                    </label>
+                  </div>
+                )}
+                <div ref={mediaGalleryRef} className={cn("relative grid max-h-[min(48vh,520px)] grid-cols-[repeat(auto-fit,minmax(min(100%,13rem),1fr))] gap-3 overflow-x-hidden overflow-y-auto pr-1", mobileMeetingView === "gallery" && !isDesktopParticipantsOpen ? "grid" : "hidden", mobileMeetingView !== "gallery" && "lg:grid", isDesktopParticipantsOpen && "lg:hidden")} aria-label="Active call media">
+                  <div
+                    className={cn("relative aspect-video min-h-32 min-w-0 overflow-hidden rounded-xl border border-white/10 bg-background/60 p-2 shadow-inner", pinnedParticipantId === currentUser.id && "ring-2 ring-primary", isSelfViewPip && "absolute z-30 w-[38%] max-w-56 cursor-move touch-none shadow-xl")}
+                    style={isSelfViewPip ? { left: `${pipPosition.left}%`, top: `${pipPosition.top}%` } : undefined}
+                    onPointerDown={handlePipPointerDown}
+                    onPointerMove={handlePipPointerMove}
+                    onPointerUp={() => { pipDragRef.current = null; }}
+                    onPointerCancel={() => { pipDragRef.current = null; }}
+                  >
+                    {activeCall.call_type === "video" && hasLiveLocalVideo ? <video ref={localVideoRef} autoPlay muted playsInline aria-label="Your video preview" className="h-full w-full rounded-lg bg-black object-cover -scale-x-100" /> : activeCall.call_type === "video" ? <div className="flex h-full min-h-32 flex-col items-center justify-center gap-2 rounded-lg bg-muted/60 text-sm font-medium text-muted-foreground"><Avatar className="h-16 w-16 border-4 border-background shadow-lg"><AvatarImage src={resolveAvatarUrl(currentUser.avatar_url)} alt={formatUserName(currentUser)} /><AvatarFallback className="bg-primary font-bold text-primary-foreground">{(currentUser.first_name?.[0] || currentUser.email?.[0] || "?").toUpperCase()}{(currentUser.last_name?.[0] || "").toUpperCase()}</AvatarFallback></Avatar><span>{isCameraEnabled ? "Camera unavailable" : "Your camera is off"}</span></div> : <div className="flex h-36 items-center justify-center gap-3 rounded-lg bg-muted/60 text-sm font-medium text-muted-foreground"><Mic className="h-5 w-5 text-primary" />{isMicrophoneMuted ? "Your microphone is muted" : "Your microphone is active"}</div>}
+                    <span className="absolute bottom-4 left-4 rounded-full bg-black/65 px-2 py-1 text-[11px] font-semibold text-white">You{isMicrophoneMuted ? " · Muted" : ""}</span>
+                    {raisedHands[currentUser.id] && <span className="absolute right-4 top-4 rounded-full bg-warning px-2 py-1 text-[10px] font-bold text-warning-foreground"><Hand className="mr-1 inline h-3 w-3" />Hand raised</span>}
+                    {meetingReactions.filter(reaction => reaction.userId === currentUser.id).map(reaction => <span key={reaction.id} className="pointer-events-none absolute right-4 top-4 z-20 animate-in zoom-in rounded-full border bg-background/95 px-3 py-1.5 text-xl shadow-lg motion-reduce:animate-none" aria-label={`You reacted ${reaction.emoji}`}>{reaction.emoji}</span>)}
+                    <Button type="button" size="icon" variant="secondary" className="absolute bottom-2 right-2 h-8 w-8" onPointerDown={event => event.stopPropagation()} onClick={() => setPinnedParticipantId(current => current === currentUser.id ? null : currentUser.id)} title={pinnedParticipantId === currentUser.id ? "Unpin self view" : "Pin self view"} aria-label={pinnedParticipantId === currentUser.id ? "Unpin self view" : "Pin self view"} aria-pressed={pinnedParticipantId === currentUser.id}><Pin className="h-4 w-4" /></Button>
+                  </div>
+                  {visibleGalleryParticipantIds.map(participantId => {
+                    const participantLabel = formatUserName(users.find(user => user.id === participantId));
+                    const stream = remoteStreams[participantId];
+                    return (
+                      <div key={participantId} className={cn("relative aspect-video min-h-32 min-w-0 overflow-hidden rounded-xl border bg-background/60 p-2 shadow-inner transition-[box-shadow,border-color]", activeSpeakerId === participantId || spotlightParticipantId === participantId || pinnedParticipantId === participantId ? "border-primary ring-2 ring-primary/35" : "border-white/10", (spotlightParticipantId === participantId || pinnedParticipantId === participantId || callLayout === "speaker" && activeSpeakerId === participantId) && "col-span-full", spotlightParticipantId === participantId && "order-first")}>
+                        {spotlightParticipantId === participantId && <span className="absolute left-4 top-4 z-10 rounded-full bg-primary px-2 py-1 text-[10px] font-bold text-primary-foreground">Spotlight</span>}
+                        {stream ? <RemoteCallMedia stream={stream} video={activeCall.call_type === "video"} videoEnabled={remoteMediaStates[participantId]?.videoEnabled} label={participantLabel} avatarUrl={users.find(user => user.id === participantId)?.avatar_url} outputDeviceId={audioOutputDeviceId} /> : (
+                          <div className="flex h-36 min-w-0 flex-col items-center justify-center gap-2 rounded-lg bg-muted/60 px-3 text-center text-sm font-medium text-muted-foreground"><MonitorUp className="h-5 w-5 shrink-0 text-primary" /><span className="max-w-full truncate">Waiting for {participantLabel}</span></div>
+                        )}
+                        <span className="absolute bottom-4 left-4 right-4 max-w-[calc(100%-2rem)] truncate rounded-full bg-black/65 px-2 py-1 text-[11px] font-semibold text-white">{participantLabel}</span>
+                        {remoteMediaStates[participantId]?.audioEnabled === false && <span className="absolute bottom-4 right-4 rounded-full bg-black/75 p-1.5 text-white" title="Microphone muted" aria-label="Microphone muted"><MicOff className="h-3 w-3" /></span>}
+                        {remoteMediaStates[participantId]?.screenSharing && <span className="absolute right-4 top-4 rounded-full bg-black/75 px-2 py-1 text-[10px] font-semibold text-white">Sharing screen</span>}
+                        {raisedHands[participantId] && <span className="absolute left-4 top-4 rounded-full bg-warning px-2 py-1 text-[10px] font-bold text-warning-foreground"><Hand className="mr-1 inline h-3 w-3" />Hand raised</span>}
+                        {activeSpeakerId === participantId && <span className="absolute right-4 top-4 rounded-full bg-primary px-2 py-1 text-[10px] font-bold text-primary-foreground">Speaking</span>}
+                        {meetingReactions.filter(reaction => reaction.userId === participantId).map(reaction => <span key={reaction.id} className="pointer-events-none absolute right-4 top-4 z-20 animate-in zoom-in rounded-full border bg-background/95 px-3 py-1.5 text-xl shadow-lg motion-reduce:animate-none" aria-label={`${participantLabel} reacted ${reaction.emoji}`}>{reaction.emoji}</span>)}
+                      </div>
+                    );
+                  })}
+                </div>
+                {galleryPageCount > 1 && <nav className="flex items-center justify-center gap-3" aria-label="Participant gallery pages"><Button type="button" size="sm" variant="outline" onClick={() => setGalleryPage(page => Math.max(0, page - 1))} disabled={galleryPage === 0} aria-label="Previous participant page"><ChevronLeft className="h-4 w-4" /></Button><span className="text-xs text-muted-foreground" aria-live="polite">Page {galleryPage + 1} of {galleryPageCount}</span><Button type="button" size="sm" variant="outline" onClick={() => setGalleryPage(page => Math.min(galleryPageCount - 1, page + 1))} disabled={galleryPage + 1 >= galleryPageCount} aria-label="Next participant page"><ChevronRight className="h-4 w-4" /></Button></nav>}
               </div>
             )}
 
-            <ScrollArea className="min-h-0 flex-1 scroll-smooth px-3 sm:px-6">
+            <ScrollArea className={cn("min-h-0 flex-1 scroll-smooth px-3 sm:px-6", activeCall && "lg:col-start-2 lg:row-start-2 lg:border-l lg:border-[hsl(var(--comm-border))]", activeCall && mobileMeetingView !== "chat" && "hidden lg:flex", activeCall && !isDesktopChatOpen && "lg:hidden", activeCall && isDesktopParticipantsOpen && "lg:hidden")}>
               <div className="space-y-5 py-5">
                 {displayMessages.length === 0 && (
                   <div className="flex min-h-[260px] flex-col items-center justify-center rounded-lg border border-dashed bg-background/60 px-6 text-center text-muted-foreground">
@@ -766,7 +1520,7 @@ export const ChatModule = ({ currentUser, chat, onClose }: ChatModuleProps) => {
                         <div className={cn("group relative max-w-[min(88%,38rem)] px-3 py-2.5 shadow-sm transition-all hover:shadow-md sm:px-4 sm:py-3", isMe ? "chat-bubble-me text-white" : "chat-bubble-other text-card-foreground")}>
                           {msg.reply_to_message_id && <div className={cn("mb-2 rounded-md border-l-2 px-2 py-1 text-xs", isMe ? "border-white/50 bg-white/10 text-white/80" : "border-primary/40 bg-muted text-muted-foreground")}><span className="font-semibold">{msg.reply_sender_first_name || "Reply"}: </span>{msg.reply_attachment_file_name || stripHostedPlaceholderLines(msg.reply_content) || "Original message"}</div>}
                           {msg.is_deleted_for_everyone ? <p className={cn("whitespace-pre-wrap break-words text-[14px] italic leading-relaxed", isMe ? "text-white/80" : "text-muted-foreground")}>This message was deleted.</p> : msg.message_kind === "call" ? renderCallMessage(msg, isMe) : messageText ? <p className="whitespace-pre-wrap break-words text-[14px] font-medium leading-relaxed">{messageText}</p> : null}
-                          {Boolean(msg.is_edited) && !Boolean(msg.is_deleted_for_everyone) && <p className={cn("mt-1 text-[10px] italic", isMe ? "text-white/70" : "text-muted-foreground")}>Edited</p>}
+                          {msg.is_edited && !msg.is_deleted_for_everyone && <p className={cn("mt-1 text-[10px] italic", isMe ? "text-white/70" : "text-muted-foreground")}>Edited</p>}
                           {renderAttachment(msg, isMe)}
                           {renderReactionBar(msg, isMe)}
                           <div className={cn("mt-1.5 flex items-center justify-end gap-1.5 text-[10px]", isMe ? "text-white/80" : "text-muted-foreground")}>
@@ -783,7 +1537,7 @@ export const ChatModule = ({ currentUser, chat, onClose }: ChatModuleProps) => {
               </div>
             </ScrollArea>
 
-            <div className="chat-composer border-t border-[hsl(var(--comm-border))] bg-[hsl(var(--comm-panel-elevated))] p-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] shadow-[0_-12px_30px_rgba(15,108,117,0.08)] backdrop-blur-xl sm:p-4">
+            <div className={cn("chat-composer border-t border-[hsl(var(--comm-border))] bg-[hsl(var(--comm-panel-elevated))] p-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] shadow-[0_-12px_30px_rgba(15,108,117,0.08)] backdrop-blur-xl sm:p-4", activeCall && "lg:col-start-2 lg:row-start-3 lg:border-l lg:border-[hsl(var(--comm-border))]", activeCall && mobileMeetingView !== "chat" && "hidden lg:block", activeCall && !isDesktopChatOpen && "lg:hidden", activeCall && isDesktopParticipantsOpen && "lg:hidden")}>
               {editingMessage && <div className="mb-3 flex items-center justify-between rounded-lg border border-primary/25 bg-primary/10 px-3 py-2 text-xs"><div className="min-w-0"><p className="font-semibold text-foreground">Editing message</p><p className="truncate text-muted-foreground">{editingMessage.content}</p></div><Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => { setEditingMessage(null); setInputText(""); }} aria-label="Cancel editing"><X className="h-4 w-4" /></Button></div>}
               {replyingTo && !editingMessage && <div className="mb-3 flex items-center justify-between rounded-lg border border-[hsl(var(--comm-border))] bg-[hsl(var(--comm-surface))] px-3 py-2 text-xs"><div className="min-w-0"><p className="font-semibold text-foreground">Replying to {replyingTo.sender_id === currentUser.id ? "your message" : replyingTo.sender_first_name || "message"}</p><p className="truncate text-muted-foreground">{replyingTo.attachment_file_name || stripHostedPlaceholderLines(replyingTo.content) || replyingTo.message_kind}</p></div><Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setReplyingTo(null)} aria-label="Cancel reply"><X className="h-4 w-4" /></Button></div>}
               {selectedFile && <div className="mb-3 flex items-center justify-between rounded-lg border border-[hsl(var(--comm-border))] bg-[hsl(var(--comm-surface))] px-3 py-2 text-xs"><div className="flex min-w-0 items-center gap-2"><Paperclip className="h-4 w-4 shrink-0 text-primary" /><span className="truncate font-medium text-foreground">{selectedFile.name}</span><span className="shrink-0 text-muted-foreground">{formatFileSize(selectedFile.size)}</span></div><Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setSelectedFile(null)} aria-label="Remove attachment"><X className="h-4 w-4" /></Button></div>}

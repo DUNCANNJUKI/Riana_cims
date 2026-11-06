@@ -355,6 +355,69 @@
   opacity: 0.68;
 }
 
+.riana-login-card__actions {
+  display: flex;
+  align-items: stretch;
+  gap: 10px;
+  min-width: 0;
+}
+
+.riana-login-card__actions .riana-login-card__submit {
+  flex: 1 1 auto;
+  min-width: 0;
+  width: auto;
+}
+
+.riana-login-card__passkey {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 62px;
+  min-height: 62px;
+  margin-top: 2px;
+  color: #087f92;
+  background: rgba(255, 255, 255, 0.94);
+  border: 1px solid rgba(8, 127, 146, 0.34);
+  border-radius: 13px;
+  cursor: pointer;
+  box-shadow: 0 10px 24px rgba(7, 127, 146, 0.12);
+  transition: transform 160ms ease, border-color 160ms ease, background-color 160ms ease, box-shadow 160ms ease;
+}
+
+.riana-login-card__passkey svg {
+  width: 25px;
+  height: 25px;
+  stroke-width: 2;
+}
+
+.riana-login-card__passkey:hover:not(:disabled) {
+  color: #056d7e;
+  background: #f0fbfc;
+  border-color: rgba(8, 127, 146, 0.58);
+  transform: translateY(-2px);
+  box-shadow: 0 14px 28px rgba(7, 127, 146, 0.17);
+}
+
+.riana-login-card__passkey:focus-visible {
+  outline: 4px solid rgba(20, 177, 202, 0.24);
+  outline-offset: 3px;
+}
+
+.riana-login-card__passkey:active:not(:disabled) { transform: translateY(0); }
+.riana-login-card__passkey:disabled { cursor: not-allowed; opacity: 0.68; }
+
+.riana-login-card__passkey-spinner {
+  width: 22px;
+  height: 22px;
+  border: 2px solid rgba(8, 127, 146, 0.24);
+  border-top-color: #087f92;
+  border-radius: 999px;
+  animation: riana-passkey-spin 700ms linear infinite;
+}
+
+@keyframes riana-passkey-spin { to { transform: rotate(360deg); } }
+
 .riana-login-card__forgot-password {
   margin-top: 2px;
   padding: 4px 10px;
@@ -628,6 +691,8 @@
   .riana-login-card__password-toggle {
     transition: none;
   }
+  .riana-login-card__passkey { transition: none; }
+  .riana-login-card__passkey-spinner { animation-duration: 1.4s; }
 }
 /* Compact responsive sizing pass for laptop-height viewports. */
 .riana-login-page {

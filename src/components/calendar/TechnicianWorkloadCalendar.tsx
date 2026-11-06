@@ -1,9 +1,9 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ChevronLeft, ChevronRight, Calendar, Users, Loader2 } from "lucide-react";
+import { ChevronLeft, ChevronRight, Calendar, Users, Loader2, Clock } from "lucide-react";
 import { User } from "@/types";
 import { apiClient } from "@/integrations/apiClient";
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameMonth, isSameDay, addMonths, subMonths, isToday } from "date-fns";
@@ -30,6 +30,13 @@ interface Assignment {
   branch?: string | null;
 }
 
+interface AssignmentRecord extends Assignment {
+  ht_f?: string | null;
+  ht_l?: string | null;
+  st_f?: string | null;
+  st_l?: string | null;
+}
+
 interface Technician {
   id: string;
   name: string;
@@ -48,21 +55,23 @@ const statusColors: Record<string, string> = {
 export const TechnicianWorkloadCalendar = ({ user }: TechnicianWorkloadCalendarProps) => {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [assignments, setAssignments] = useState<Assignment[]>([]);
+  const [currentAssignments, setCurrentAssignments] = useState<Assignment[]>([]);
   const [technicians, setTechnicians] = useState<Technician[]>([]);
   const [selectedTechnician, setSelectedTechnician] = useState<string>("all");
   const [isLoading, setIsLoading] = useState(true);
   const [selectedDay, setSelectedDay] = useState<Date | null>(null);
+  const loadDataRef = useRef<(showLoading?: boolean) => Promise<void>>(async () => undefined);
 
   useEffect(() => {
-    loadData();
+    void loadDataRef.current();
     
     // Keep background refresh gentle; data-updated events still refresh immediately.
     const interval = setInterval(() => {
-      loadData(false); // Silent refresh
+      void loadDataRef.current(false); // Silent refresh
     }, OPERATIONAL_REFRESH_INTERVAL_MS);
     
     // Listen for manual data refresh events
-    const handleRefresh = () => loadData(false);
+    const handleRefresh = () => { void loadDataRef.current(false); };
     window.addEventListener('data-updated', handleRefresh);
     
     return () => {
@@ -74,14 +83,15 @@ export const TechnicianWorkloadCalendar = ({ user }: TechnicianWorkloadCalendarP
   const loadData = async (showLoading = true) => {
     if (showLoading) setIsLoading(true);
     try {
-      // 1. Fetch technicians from user profiles
-      const users = await apiClient.get('/user_profiles');
+      // Technician accounts do not require access to the complete user directory.
+      const users = (user.role === 'User' ? [user] : await apiClient.get('/user_profiles').catch(() => [])) as User[];
       const techList = (users || [])
-        .filter((u: any) => 
+        .filter((u) =>
+          user.role === 'User' ||
           (u.designation || '').toLowerCase().includes('technician') || 
           (u.designation || '').toLowerCase().includes('field specialist')
         )
-        .map((t: any) => ({
+        .map((t) => ({
           id: t.id,
           name: `${t.first_name || ""} ${t.last_name || ""}`.trim() || t.email,
           email: t.email,
@@ -93,32 +103,39 @@ export const TechnicianWorkloadCalendar = ({ user }: TechnicianWorkloadCalendarP
       const monthStart = startOfMonth(currentDate);
       const monthEnd = endOfMonth(currentDate);
       
-      const assignmentsData = await apiClient.get('/client_assignments');
+      const assignmentsData = await apiClient.get('/client_assignments') as AssignmentRecord[];
       
       // 3. Fetch clients to match names (though local API usually joins them)
       // If the local API /api/client_assignments already includes client_name, we use it.
       // Based on server/index.js, it joins client_name and technician names.
 
-      const filteredAssignments = (assignmentsData || [])
-        .filter((a: any) => {
-          return calendarRangeIntersects(a.installation_start_date,a.scheduled_end_date,format(monthStart,'yyyy-MM-dd'),format(monthEnd,'yyyy-MM-dd'));
-        })
-        .map((a: any) => ({
-          ...a,
-          client_name: a.client_name || "Unknown Client",
-          hardware_technician_name: a.ht_f ? `${a.ht_f} ${a.ht_l || ''}`.trim() : "Unassigned",
-          software_technician_name: a.st_f ? `${a.st_f} ${a.st_l || ''}`.trim() : "Unassigned",
-        }));
+      const authorizedAssignments = (assignmentsData || []).filter((assignment) => user.role !== 'User'
+        || String(assignment.hardware_technician_id || '') === String(user.id)
+        || String(assignment.software_technician_id || '') === String(user.id));
+      const enrichedAuthorizedAssignments = enrichedAssignments(authorizedAssignments.map((assignment) => ({
+        ...assignment,
+        client_name: assignment.client_name || "Unknown Client",
+        hardware_technician_name: assignment.ht_f ? `${assignment.ht_f} ${assignment.ht_l || ''}`.trim() : "Unassigned",
+        software_technician_name: assignment.st_f ? `${assignment.st_f} ${assignment.st_l || ''}`.trim() : "Unassigned",
+      })), techList);
+      setCurrentAssignments(enrichedAuthorizedAssignments.filter(assignment => assignment.status !== 'completed'));
 
-      setAssignments(enrichedAssignments(filteredAssignments, techList));
+      const filteredAssignments = enrichedAuthorizedAssignments
+        .filter((a) => {
+          return calendarRangeIntersects(a.installation_start_date,a.scheduled_end_date,format(monthStart,'yyyy-MM-dd'),format(monthEnd,'yyyy-MM-dd'));
+        });
+
+      setAssignments(filteredAssignments);
+      if (user.role === 'User') setSelectedTechnician(user.id);
     } catch (error) {
       console.error("Error loading calendar data:", error);
     } finally {
       setIsLoading(false);
     }
   };
+  loadDataRef.current = loadData;
 
-  const enrichedAssignments = (data: any[], techs: Technician[]) => {
+  const enrichedAssignments = (data: AssignmentRecord[], techs: Technician[]): Assignment[] => {
     return data.map(a => {
       const hwTech = techs.find(t => t.id === a.hardware_technician_id);
       const swTech = techs.find(t => t.id === a.software_technician_id);
@@ -171,6 +188,34 @@ export const TechnicianWorkloadCalendar = ({ user }: TechnicianWorkloadCalendarP
   return (
     <div className="space-y-4 sm:space-y-6">
       <SchedulingWorkspace user={user}/>
+      {user.role === 'User' && (
+        <Card className="shadow-riana">
+          <CardHeader>
+            <CardTitle className="text-lg">My Current Assignments</CardTitle>
+            <CardDescription>Active installation work assigned to you as hardware or software technician.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {isLoading ? <div className="flex min-h-24 items-center justify-center"><Loader2 className="h-6 w-6 animate-spin text-primary" /></div> : currentAssignments.length === 0 ? (
+              <div className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">No active assignments right now.</div>
+            ) : (
+              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                {currentAssignments.map(assignment => (
+                  <article key={assignment.id} className="min-w-0 rounded-lg border bg-card p-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0"><p className="truncate font-semibold">{assignment.client_name}</p><p className="truncate text-xs text-muted-foreground">{assignment.branch || 'No branch listed'}</p></div>
+                      <Badge variant="outline" className="shrink-0 capitalize">{String(assignment.status || 'assigned').replace(/_/g, ' ')}</Badge>
+                    </div>
+                    <div className="mt-3 grid gap-2 text-xs text-muted-foreground">
+                      <span className="flex items-center gap-2"><Calendar className="h-3.5 w-3.5 text-primary" />Start: {assignment.installation_start_date ? format(new Date(assignment.installation_start_date), 'MMM d, yyyy') : 'Not set'}</span>
+                      <span className="flex items-center gap-2"><Clock className="h-3.5 w-3.5 text-primary" />Due: {assignment.scheduled_end_date ? format(new Date(assignment.scheduled_end_date), 'MMM d, yyyy') : 'Not set'}</span>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <h2 className="text-xl sm:text-2xl font-bold text-foreground flex items-center gap-2">
@@ -178,7 +223,7 @@ export const TechnicianWorkloadCalendar = ({ user }: TechnicianWorkloadCalendarP
             Technician Workload Calendar
           </h2>
           <p className="text-sm text-muted-foreground mt-1">
-            View all technician assignments across dates
+            {user.role === 'User' ? 'View your assigned installation work across dates' : 'View all technician assignments across dates'}
           </p>
         </div>
       </div>
@@ -209,7 +254,7 @@ export const TechnicianWorkloadCalendar = ({ user }: TechnicianWorkloadCalendarP
                   <ChevronRight className="h-4 w-4" />
                 </Button>
               </div>
-              <Select value={selectedTechnician} onValueChange={setSelectedTechnician}>
+              {user.role !== 'User' && <Select value={selectedTechnician} onValueChange={setSelectedTechnician}>
                 <SelectTrigger className="w-full sm:w-[200px]">
                   <SelectValue placeholder="All Technicians" />
                 </SelectTrigger>
@@ -221,7 +266,7 @@ export const TechnicianWorkloadCalendar = ({ user }: TechnicianWorkloadCalendarP
                     </SelectItem>
                   ))}
                 </SelectContent>
-              </Select>
+              </Select>}
             </div>
           </CardHeader>
           <CardContent className="p-2 sm:p-4">

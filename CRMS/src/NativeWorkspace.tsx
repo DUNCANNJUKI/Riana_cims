@@ -89,7 +89,7 @@ export function NativeDevelopersWorkspace({ userId, role }: NativeDevelopersWork
 
   return (
     <section className="crms-native flex min-h-0 min-w-0 flex-col gap-3 sm:gap-4" data-user-id={userId}>
-      <div className="min-w-0 rounded-xl border bg-card p-2 shadow-sm">
+      <div className="min-w-0 border-b border-border/80 bg-background px-1 pb-2">
         <nav className="flex gap-1 overflow-x-auto overscroll-x-contain" aria-label="Developers workspace">
           {visibleNavigation.map((item) => (
             <NavLink
@@ -97,9 +97,9 @@ export function NativeDevelopersWorkspace({ userId, role }: NativeDevelopersWork
               to={item.to}
               end={item.to === "/developers"}
               className={({ isActive }) => cn(
-                "inline-flex shrink-0 items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
+                "inline-flex min-h-10 shrink-0 items-center gap-2 rounded-lg border-b-2 border-transparent px-3 py-2 text-sm font-semibold transition-colors",
                 isActive
-                  ? "bg-primary text-primary-foreground"
+                  ? "border-primary bg-primary/10 text-primary"
                   : "text-muted-foreground hover:bg-muted hover:text-foreground",
               )}
             >
@@ -110,7 +110,7 @@ export function NativeDevelopersWorkspace({ userId, role }: NativeDevelopersWork
         </nav>
       </div>
 
-      <div className="min-h-[calc(100dvh-14rem)] min-w-0 rounded-xl border bg-background p-1 shadow-sm sm:p-3">
+      <div className="min-h-[calc(100dvh-14rem)] min-w-0 bg-background p-1 sm:p-2">
         <Suspense fallback={<div className="flex min-h-[360px] items-center justify-center text-sm text-muted-foreground">Loading Developers workspace...</div>}>
         <Routes>
           <Route path="/developers" element={<Dashboard />} />

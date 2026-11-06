@@ -18,13 +18,22 @@ import { useCurrentUserRole } from '@crms/hooks/useCurrentUserRole';
 export function Header() {
   const { setTheme, resolvedTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
+  const [currentHour, setCurrentHour] = useState(() => new Date().getHours());
   const { toast } = useToast();
   const userRole = useCurrentUserRole();
 
   // Prevent hydration mismatch
   useEffect(() => {
     setMounted(true);
+    const intervalId = window.setInterval(() => setCurrentHour(new Date().getHours()), 60_000);
+    return () => window.clearInterval(intervalId);
   }, []);
+
+  const greeting = currentHour >= 5 && currentHour < 12
+    ? 'Good morning!'
+    : currentHour >= 12 && currentHour < 17
+      ? 'Good afternoon!'
+      : 'Good evening!';
 
   const getInitials = (name: string | null) => {
     if (!name) return 'U';
@@ -86,11 +95,9 @@ export function Header() {
                   {userRole.userName ? getInitials(userRole.userName) : 'U'}
                 </AvatarFallback>
               </Avatar>
-              <div className="hidden md:flex flex-col items-start">
-                <span className="text-sm font-medium text-foreground">{userRole.userName || 'Loading...'}</span>
-                <span className="text-xs text-muted-foreground">
-                  {userRole.roles.length > 0 ? getRoleBadge(userRole.roles[0]) : 'User'}
-                </span>
+              <div className="hidden md:flex flex-col items-start leading-tight" aria-label={`${greeting} Signed in as ${userRole.userName || 'Loading'}`}>
+                <span className="text-[11px] font-medium text-muted-foreground">{greeting}</span>
+                <span className="mt-0.5 text-sm font-semibold text-foreground">{userRole.userName || 'Loading...'}</span>
               </div>
             </Button>
           </DropdownMenuTrigger>

@@ -23,6 +23,7 @@ import { getBranchLabel, getDepartmentLabel, getScopeFileSegment } from "@/utils
 import {
   buildHandoverEquipmentRows,
   defaultHandoverEquipmentConfiguration,
+  installedHandoverEquipmentRows,
   normalizeHandoverEquipmentConfiguration,
 } from "@/utils/equipmentConfiguration";
 
@@ -398,7 +399,8 @@ export const EHandoverForm = ({ client, installation, user }: EHandoverFormProps
       addText('EQUIPMENT DETAILS', margin + 3, yPos + 3, { fontSize: 11, color: primaryColor, fontStyle: 'bold' });
       yPos += 10;
 
-      const equipmentData = equipmentRows.map((row) => [row.label, row.displayValue, row.status]);
+      const equipmentData = installedHandoverEquipmentRows(equipmentRows)
+        .map((row) => [row.label, row.displayValue, row.status]);
 
       autoTable(doc, {
         startY: yPos,

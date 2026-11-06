@@ -1,0 +1,150 @@
+.riana-loader {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  background: #edf8fb;
+  color: #294554;
+  animation: riana-loader-enter 280ms ease-out both;
+}
+
+.riana-loader__content {
+  box-sizing: border-box;
+  display: flex;
+  width: min(100%, 28rem);
+  flex-direction: column;
+  align-items: center;
+  padding: max(1.5rem, env(safe-area-inset-top)) max(1.25rem, env(safe-area-inset-right)) max(1.5rem, env(safe-area-inset-bottom)) max(1.25rem, env(safe-area-inset-left));
+  text-align: center;
+}
+
+.riana-loader__network { position: relative; width: min(100%, 24.75rem); aspect-ratio: 7 / 3; }
+.riana-loader__network svg { display: block; width: 100%; height: 100%; overflow: visible; }
+.riana-loader__links { fill: none; stroke: #42b8c8; stroke-width: 0.85; stroke-linecap: round; stroke-linejoin: round; opacity: 0.72; }
+.riana-loader__orbit { fill: none; stroke: #45becd; stroke-width: 0.8; stroke-dasharray: 5 6; opacity: 0.72; }
+.riana-loader__signals { fill: #04a9ba; opacity: 0.9; }
+
+.riana-loader__node {
+  fill: #0ca2b3;
+  opacity: 0.52;
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: riana-loader-node 2.4s ease-in-out infinite;
+  animation-delay: calc(var(--animation-order) * 115ms);
+}
+
+.riana-loader__logo {
+  position: absolute;
+  left: 50%;
+  top: 58.5%;
+  display: block;
+  width: clamp(2.625rem, 14vw, 4rem);
+  height: clamp(3.75rem, 20vw, 5.25rem);
+  transform: translate(-50%, -50%);
+}
+
+.riana-loader__logo img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  object-position: center;
+  transform-origin: center;
+  animation: riana-loader-logo 2.8s ease-in-out infinite;
+}
+
+.riana-loader__title {
+  display: flex;
+  box-sizing: border-box;
+  width: min(100%, 25rem);
+  min-height: 1.75rem;
+  align-items: center;
+  justify-content: center;
+  margin-top: 0.5rem;
+  color: #294554;
+  font-family: "Plus Jakarta Sans", "Inter", system-ui, sans-serif;
+  font-size: clamp(1rem, 4.7vw, 1.25rem);
+  font-weight: 600;
+  line-height: 1.4;
+  letter-spacing: 0.015em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  animation: riana-loader-message 420ms ease-out both;
+}
+.riana-loader__message { min-height: 1.125rem; margin-top: 0.75rem; color: #557887; font-size: 0.75rem; font-weight: 400; line-height: 1.5; animation: riana-loader-message 240ms ease-out both; }
+
+.riana-loader__progress {
+  position: relative;
+  width: min(100%, 21.875rem);
+  height: 0.3125rem;
+  margin-top: 0.5rem;
+  overflow: hidden;
+  border-radius: 9999px;
+  background: #d2e7ec;
+}
+
+.riana-loader__progress-value {
+  position: absolute;
+  inset-block: 0;
+  left: -45%;
+  width: 45%;
+  border-radius: inherit;
+  background: #079dac;
+  animation: riana-loader-progress 1.8s ease-in-out infinite;
+}
+
+.riana-loader__hint { margin-top: 0.75rem; color: #78929d; font-size: 0.625rem; line-height: 1.4; }
+
+@keyframes riana-loader-node {
+  0%, 55%, 100% { opacity: 0.45; transform: scale(1); }
+  16%, 30% { opacity: 1; transform: scale(1.12); }
+}
+
+@keyframes riana-loader-enter {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes riana-loader-logo {
+  0%, 100% { opacity: 0.92; transform: scale(1); }
+  50% { opacity: 1; transform: scale(1.035); }
+}
+
+@keyframes riana-loader-message {
+  from { opacity: 0; transform: translateY(0.125rem); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes riana-loader-progress {
+  0% { left: -45%; }
+  55% { left: 54%; }
+  100% { left: 100%; }
+}
+
+@media (max-width: 430px) {
+  .riana-loader__content { padding-inline: 1.25rem; }
+  .riana-loader__network { width: min(100%, 20rem); }
+}
+
+@media (max-height: 480px) and (orientation: landscape) {
+  .riana-loader__content { transform: scale(0.82); }
+  .riana-loader__title { margin-top: 0.25rem; }
+  .riana-loader__message { margin-top: 0.375rem; }
+  .riana-loader__hint { margin-top: 0.375rem; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .riana-loader,
+  .riana-loader__logo img,
+  .riana-loader__node,
+  .riana-loader__message,
+  .riana-loader__progress-value { animation: none; }
+  .riana-loader__signals { display: none; }
+  .riana-loader__logo img { opacity: 1; transform: none; }
+  .riana-loader__node { opacity: 0.78; transform: none; }
+  .riana-loader__message { opacity: 1; transform: none; }
+  .riana-loader__progress-value { left: 0; width: 100%; opacity: 0.72; }
+}

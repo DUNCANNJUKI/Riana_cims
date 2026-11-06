@@ -77,6 +77,15 @@ export interface HandoverEquipmentRow {
   status: string;
 }
 
+export const installedHandoverEquipmentRows = (
+  rows: HandoverEquipmentRow[],
+): HandoverEquipmentRow[] => rows.filter((row) => {
+  if (row.field === 'kiosk_type' || row.field === 'screen_with_size') {
+    return String(row.value || '').trim().length > 0;
+  }
+  return Number(row.value) > 0;
+});
+
 export const buildHandoverEquipmentRows = (
   installation: Installation,
   configuration: HandoverEquipmentItem[] | string | null | undefined,

@@ -105,13 +105,13 @@ export const NoticeBoard = () => {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex min-w-0 items-center gap-3">
           <div className="p-2 bg-primary/10 rounded-full">
             <Megaphone className="h-6 w-6 text-primary" />
           </div>
           <div>
-            <h1 className="text-2xl font-bold text-primary">Notice Board</h1>
+            <h2 className="text-xl font-bold text-primary sm:text-2xl">Notice Board</h2>
             <p className="text-sm text-muted-foreground">Internal announcements and updates</p>
           </div>
         </div>
@@ -119,7 +119,7 @@ export const NoticeBoard = () => {
         {(user?.role === 'SuperAdmin' || user?.role === 'Admin' || user?.role === 'Teamlead') && (
           <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
             <DialogTrigger asChild>
-              <Button className="gradient-primary">
+              <Button className="gradient-primary w-full sm:w-auto">
                 <Plus className="h-4 w-4 mr-2" /> Post Announcement
               </Button>
             </DialogTrigger>

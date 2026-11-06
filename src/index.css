@@ -8,8 +8,8 @@ All colors MUST be HSL.
 
 @layer base {
   :root {
-    --background: 0 0% 100%;
-    --foreground: 222.2 84% 4.9%;
+    --background: 200 24% 97%;
+    --foreground: 204 33% 21%;
 
     --card: 0 0% 100%;
     --card-foreground: 222.2 84% 4.9%;
@@ -26,8 +26,8 @@ All colors MUST be HSL.
     --secondary: 200 20% 95%;
     --secondary-foreground: 200 100% 20%;
 
-    --muted: 200 20% 96%;
-    --muted-foreground: 200 10% 46%;
+    --muted: 195 22% 95%;
+    --muted-foreground: 202 13% 42%;
 
     --accent: 200 50% 90%;
     --accent-foreground: 200 100% 20%;
@@ -66,8 +66,8 @@ All colors MUST be HSL.
     --destructive: 0 84.2% 60.2%;
     --destructive-foreground: 210 40% 98%;
 
-    --border: 185 20% 91%;
-    --input: 185 20% 96%;
+    --border: 190 19% 88%;
+    --input: 190 19% 84%;
     --ring: 185 83% 31%;
     /* Communication module surfaces and overlay scale */
     --comm-page: 190 28% 96%;
@@ -91,7 +91,15 @@ All colors MUST be HSL.
     --z-modal: 50;
     --z-call-overlay: 55;
     --z-notification: 60;
-    --radius: 0.625rem;
+    --radius: 0.75rem;
+    --radius-sm: 0.5rem;
+    --radius-lg: 0.875rem;
+    --control-height: 2.5rem;
+    --control-height-touch: 2.75rem;
+    --motion-fast: 150ms;
+    --motion-layout: 220ms;
+    --page-gutter: clamp(0.75rem, 2vw, 1.75rem);
+    --content-max: 120rem;
 
     --sidebar-background: 185 30% 98%;
     --sidebar-foreground: 185 20% 26%;
@@ -190,6 +198,7 @@ All colors MUST be HSL.
     font-family: 'Plus Jakarta Sans', 'Inter', system-ui, sans-serif;
     font-size: 1rem;
     line-height: 1.5;
+    text-rendering: optimizeLegibility;
   }
 
   h1,
@@ -200,6 +209,16 @@ All colors MUST be HSL.
   h6 {
     font-family: 'Plus Jakarta Sans', 'Inter', system-ui, sans-serif;
     @apply font-semibold tracking-tight;
+  }
+
+  :where(button, a, input, select, textarea, [role="button"]):focus-visible {
+    outline: 2px solid hsl(var(--ring));
+    outline-offset: 2px;
+  }
+
+  ::selection {
+    color: hsl(var(--primary-foreground));
+    background: hsl(var(--primary));
   }
 
   /* RIANA Custom Utilities */
@@ -222,18 +241,18 @@ All colors MUST be HSL.
 
   /* Status Color Codes */
   .status-waiting {
-    background: linear-gradient(135deg, hsl(45, 93%, 47%), hsl(45, 93%, 57%));
-    color: hsl(45, 93%, 20%);
+    background: hsl(45, 93%, 47%) !important;
+    color: hsl(45, 93%, 16%) !important;
   }
   
   .status-progress {
-    background: linear-gradient(135deg, hsl(200, 100%, 50%), hsl(200, 100%, 60%));
-    color: hsl(0, 0%, 100%);
+    background: hsl(200, 90%, 34%) !important;
+    color: hsl(0, 0%, 100%) !important;
   }
   
   .status-complete {
-    background: linear-gradient(135deg, hsl(142, 76%, 36%), hsl(142, 76%, 46%));
-    color: hsl(0, 0%, 100%);
+    background: hsl(142, 70%, 29%) !important;
+    color: hsl(0, 0%, 100%) !important;
   }
 
   .crms-native .status-badge {
@@ -395,23 +414,59 @@ All colors MUST be HSL.
 
   /* Contract type color coding */
   .contract-amc {
-    background: linear-gradient(135deg, hsl(142, 76%, 36%), hsl(142, 76%, 46%));
-    color: white;
+    background: hsl(142, 70%, 29%) !important;
+    color: white !important;
   }
 
   .contract-warranty {
-    background: linear-gradient(135deg, hsl(200, 100%, 50%), hsl(200, 100%, 60%));
-    color: white;
+    background: hsl(195, 90%, 48%) !important;
+    color: hsl(200, 100%, 12%) !important;
   }
 
   .contract-lease {
-    background: linear-gradient(135deg, hsl(262, 83%, 58%), hsl(262, 83%, 68%));
-    color: white;
+    background: hsl(262, 72%, 48%) !important;
+    color: white !important;
   }
 
   .contract-poc {
-    background: linear-gradient(135deg, hsl(45, 93%, 47%), hsl(45, 93%, 57%));
-    color: hsl(45, 93%, 20%);
+    background: hsl(45, 93%, 47%) !important;
+    color: hsl(45, 93%, 16%) !important;
+  }
+
+  .call-control-button {
+    border-color: hsl(var(--comm-control-border)) !important;
+    background: hsl(var(--comm-control)) !important;
+    color: hsl(var(--foreground)) !important;
+  }
+
+  .call-control-button:hover:not(:disabled) {
+    border-color: hsl(var(--primary) / 0.55) !important;
+    background: hsl(var(--primary) / 0.12) !important;
+    color: hsl(var(--primary-dark)) !important;
+  }
+
+  .dark .call-control-button:hover:not(:disabled) {
+    color: hsl(var(--primary-light)) !important;
+  }
+
+  .call-control-active {
+    border-color: hsl(185, 83%, 25%) !important;
+    background: hsl(185, 83%, 25%) !important;
+    color: hsl(var(--primary-foreground)) !important;
+  }
+
+  .call-hangup {
+    border-color: hsl(0, 72%, 42%) !important;
+    background: hsl(0, 72%, 42%) !important;
+    color: hsl(0, 0%, 100%) !important;
+  }
+
+  .call-hangup:hover {
+    background: hsl(0, 72%, 36%) !important;
+  }
+
+  .call-control-button:disabled {
+    opacity: 0.62;
   }
 
   /* Button click effect */
@@ -442,6 +497,34 @@ All colors MUST be HSL.
       radial-gradient(circle at 0% 0%, hsl(var(--primary) / 0.10), transparent 32%),
       linear-gradient(145deg, hsl(var(--comm-panel)), hsl(var(--comm-page)));
     box-shadow: 0 22px 70px -32px hsl(var(--comm-shadow) / 0.45);
+  }
+
+  .chat-conversation-surface {
+    isolation: isolate;
+  }
+
+  .chat-conversation-surface::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    opacity: 0.48;
+    background-image:
+      radial-gradient(circle at 8% 14%, hsl(var(--primary) / 0.30) 0 2px, transparent 3px),
+      radial-gradient(circle at 28% 38%, hsl(var(--primary) / 0.20) 0 2px, transparent 3px),
+      radial-gradient(circle at 74% 18%, hsl(var(--primary) / 0.24) 0 2px, transparent 3px),
+      radial-gradient(circle at 91% 58%, hsl(var(--primary) / 0.22) 0 2px, transparent 3px),
+      radial-gradient(circle at 44% 82%, hsl(var(--primary) / 0.18) 0 2px, transparent 3px),
+      linear-gradient(28deg, transparent 49.82%, hsl(var(--primary) / 0.09) 49.94% 50.06%, transparent 50.18%),
+      linear-gradient(148deg, transparent 49.88%, hsl(var(--primary) / 0.07) 49.96% 50.04%, transparent 50.12%);
+    background-size: 210px 190px, 260px 240px, 300px 230px, 250px 260px, 320px 280px, 290px 250px, 330px 300px;
+    background-position: 0 0, 35px 22px, 10px 50px, 40px 0, 15px 15px, 0 0, 20px 10px;
+    mask-image: linear-gradient(to bottom, transparent, black 12%, black 88%, transparent);
+  }
+
+  .dark .chat-conversation-surface::before {
+    opacity: 0.3;
   }
 
   .call-panel {
@@ -572,12 +655,98 @@ All colors MUST be HSL.
 }
 
 @media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+
   .motion-safe\:animate-\[maintenance-node-pulse_3\.8s_ease-in-out_infinite\],
   .motion-safe\:animate-\[maintenance-glow_5s_ease-in-out_infinite\],
   .motion-safe\:animate-\[maintenance-glow_5\.8s_ease-in-out_infinite\],
   .motion-safe\:animate-\[maintenance-glow_5\.4s_ease-in-out_infinite\],
   .motion-safe\:animate-\[maintenance-glow_4\.8s_ease-in-out_infinite\] {
     animation: none !important;
+  }
+}
+
+/* Shared authenticated application canvas. Authentication uses isolated riana-login-* styles. */
+.cims-content {
+  background: linear-gradient(180deg, hsl(var(--background)) 0%, hsl(var(--muted) / 0.36) 100%);
+  scrollbar-gutter: stable;
+}
+
+.cims-content > * {
+  width: min(100%, var(--content-max));
+  margin-inline: auto;
+}
+
+.cims-page-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem 1rem;
+}
+
+.cims-page-title {
+  font-size: clamp(1.5rem, 2vw, 1.75rem);
+  line-height: 1.2;
+  font-weight: 700;
+  letter-spacing: -0.025em;
+}
+
+.cims-section-title {
+  font-size: clamp(1.125rem, 1.5vw, 1.25rem);
+  line-height: 1.35;
+  font-weight: 650;
+  letter-spacing: -0.015em;
+}
+
+.cims-filter-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  border: 1px solid hsl(var(--border));
+  border-radius: var(--radius);
+  background: hsl(var(--card));
+  padding: 0.625rem;
+  box-shadow: 0 1px 2px hsl(var(--foreground) / 0.04);
+}
+
+.cims-data-region {
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid hsl(var(--border));
+  border-radius: var(--radius);
+  background: hsl(var(--card));
+  box-shadow: 0 1px 3px hsl(var(--foreground) / 0.05);
+}
+
+.cims-long-list > * {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 4rem;
+}
+
+.dark .cims-content {
+  background: hsl(var(--background));
+}
+
+.cims-content :where(h1) {
+  text-wrap: balance;
+}
+
+.cims-content :where([data-radix-scroll-area-viewport]) {
+  overscroll-behavior: contain;
+}
+
+@media (max-width: 639px) {
+  .cims-content :where(button, a, [role="button"]) {
+    min-height: 2.75rem;
   }
 }
 /* Subtle animated network accents for system chrome. */

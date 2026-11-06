@@ -55,7 +55,7 @@ export default defineConfig(({ mode }) => ({
     react(),
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['Riana_logo.png', 'Riana_mark_transparent.png', 'marezi-letterhead.png', 'pwa-icon.svg', 'pwa-maskable.svg', 'letterhead.jpg', 'letterhead-full.jpg', 'letterhead-new.jpg'],
+      includeAssets: ['Riana_logo.png', 'Riana_mark_transparent.png', 'Riana_mark_color_trimmed.png', 'marezi-letterhead.png', 'pwa-icon.svg', 'pwa-maskable.svg', 'push-handlers.js', 'letterhead.jpg', 'letterhead-full.jpg', 'letterhead-new.jpg'],
       manifest: {
         id: '/',
         name: 'RIANA CIMS - Client Installation Management System',
@@ -71,25 +71,26 @@ export default defineConfig(({ mode }) => ({
         start_url: '/',
         icons: [
           {
-            src: '/pwa-icon.svg',
-            sizes: 'any',
-            type: 'image/svg+xml',
+            src: '/api/public/company-pwa-icon/192.png',
+            sizes: '192x192',
+            type: 'image/png',
             purpose: 'any'
           },
           {
-            src: '/pwa-maskable.svg',
-            sizes: 'any',
-            type: 'image/svg+xml',
+            src: '/api/public/company-pwa-icon/512.png',
+            sizes: '512x512',
+            type: 'image/png',
             purpose: 'maskable'
           }
         ],
         categories: ['business', 'productivity'],
         shortcuts: [
-          { name: 'Dashboard', short_name: 'Dashboard', url: '/', icons: [{ src: '/pwa-icon.svg', sizes: 'any', type: 'image/svg+xml' }] },
-          { name: 'Install App', short_name: 'Install', url: '/install', icons: [{ src: '/pwa-icon.svg', sizes: 'any', type: 'image/svg+xml' }] },
+          { name: 'Dashboard', short_name: 'Dashboard', url: '/', icons: [{ src: '/api/public/company-pwa-icon/192.png', sizes: '192x192', type: 'image/png' }] },
+          { name: 'Install App', short_name: 'Install', url: '/install', icons: [{ src: '/api/public/company-pwa-icon/192.png', sizes: '192x192', type: 'image/png' }] },
         ],
       },
       workbox: {
+        importScripts: ['push-handlers.js'],
         maximumFileSizeToCacheInBytes: 10 * 1024 * 1024, // 10 MB limit
         globPatterns: ['**/*.{js,css,html,ico,png,svg,jpg,jpeg,webp}'],
         cleanupOutdatedCaches: true,

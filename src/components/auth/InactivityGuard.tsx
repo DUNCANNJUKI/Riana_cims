@@ -2,16 +2,14 @@ import { useEffect, useRef, useState } from "react";
 import { Clock3 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
-const WARNING_AFTER_MS = 9 * 60 * 1000;
-const LOGOUT_AFTER_MS = 10 * 60 * 1000;
-
 interface InactivityGuardProps {
   active: boolean;
-  onLogout: () => void;
+  onLock: () => void;
+  timeoutMinutes: number;
 }
 
-export function InactivityGuard({ active, onLogout }: InactivityGuardProps) {
-  const onLogoutRef = useRef(onLogout);
+export function InactivityGuard({ active, onLock, timeoutMinutes }: InactivityGuardProps) {
+  const onLockRef = useRef(onLock);
   const warningTimerRef = useRef<ReturnType<typeof setTimeout>>();
   const logoutTimerRef = useRef<ReturnType<typeof setTimeout>>();
   const countdownRef = useRef<ReturnType<typeof setInterval>>();
@@ -20,8 +18,8 @@ export function InactivityGuard({ active, onLogout }: InactivityGuardProps) {
   const [remainingSeconds, setRemainingSeconds] = useState(60);
 
   useEffect(() => {
-    onLogoutRef.current = onLogout;
-  }, [onLogout]);
+    onLockRef.current = onLock;
+  }, [onLock]);
 
   useEffect(() => {
     const clearTimers = () => {
@@ -35,16 +33,18 @@ export function InactivityGuard({ active, onLogout }: InactivityGuardProps) {
       setIsWarning(false);
       setRemainingSeconds(60);
       if (!active) return;
+      const lockAfterMs = Math.max(5, timeoutMinutes) * 60 * 1000;
+      const warningAfterMs = Math.max(0, lockAfterMs - 60_000);
 
       warningTimerRef.current = setTimeout(() => {
-        const deadline = Date.now() + (LOGOUT_AFTER_MS - WARNING_AFTER_MS);
+        const deadline = Date.now() + (lockAfterMs - warningAfterMs);
         setIsWarning(true);
         countdownRef.current = setInterval(() => {
           setRemainingSeconds(Math.max(0, Math.ceil((deadline - Date.now()) / 1000)));
         }, 1000);
-      }, WARNING_AFTER_MS);
+      }, warningAfterMs);
 
-      logoutTimerRef.current = setTimeout(() => onLogoutRef.current(), LOGOUT_AFTER_MS);
+      logoutTimerRef.current = setTimeout(() => onLockRef.current(), lockAfterMs);
     };
 
     resetRef.current = reset;
@@ -56,7 +56,7 @@ export function InactivityGuard({ active, onLogout }: InactivityGuardProps) {
       clearTimers();
       activityEvents.forEach((eventName) => window.removeEventListener(eventName, reset));
     };
-  }, [active]);
+  }, [active, timeoutMinutes]);
 
   if (!active || !isWarning) return null;
 
@@ -65,7 +65,7 @@ export function InactivityGuard({ active, onLogout }: InactivityGuardProps) {
       <Clock3 className="size-5 shrink-0 text-warning" aria-hidden="true" />
       <div className="min-w-0 flex-1">
         <p className="font-semibold">Your session is about to expire</p>
-        <p className="text-sm text-muted-foreground">You will be signed out in {remainingSeconds} seconds due to inactivity.</p>
+        <p className="text-sm text-muted-foreground">CIMS will lock in {remainingSeconds} seconds due to inactivity.</p>
       </div>
       <Button size="sm" onClick={() => resetRef.current()}>Stay signed in</Button>
     </div>

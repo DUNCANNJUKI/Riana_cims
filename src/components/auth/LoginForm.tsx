@@ -3,7 +3,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Lock, Mail, Eye, EyeOff, Phone } from "lucide-react";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { Lock, Mail, Eye, EyeOff, Phone, Fingerprint } from "lucide-react";
 import { apiClient } from "@/integrations/apiClient";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
@@ -18,10 +19,12 @@ export const LoginForm = () => {
   const [challengeId, setChallengeId] = useState("");
   const [verificationCode, setVerificationCode] = useState("");
   const [verificationHint, setVerificationHint] = useState("");
+  const [verificationMethod, setVerificationMethod] = useState("");
+  const [useRecoveryCode, setUseRecoveryCode] = useState(false);
   const [showForgotPassword, setShowForgotPassword] = useState(false);
   const [resetEmail, setResetEmail] = useState("");
   const [resetPhone, setResetPhone] = useState("");
-  const { login, verifyTwoFactor, isLoading } = useAuth();
+  const { login, loginWithPasskey, verifyTwoFactor, isLoading } = useAuth();
   const { toast } = useToast();
   const [logoPath, setLogoPath] = useState(LOGIN_LOGO_PATH);
 
@@ -39,12 +42,13 @@ export const LoginForm = () => {
 
     try {
       if (challengeId) {
-        await verifyTwoFactor(challengeId, verificationCode);
+        await verifyTwoFactor(challengeId, verificationCode, verificationMethod, useRecoveryCode);
       } else {
         const result = await login(email, password);
         if (result?.requiresTwoFactor) {
           setChallengeId(result.challengeId);
-          setVerificationHint(`${String(result.method).toUpperCase()} code sent to ${result.destination}`);
+          setVerificationMethod(String(result.method || ""));
+          setVerificationHint(result.method === "totp" ? "Enter the current code from your authenticator app." : `${String(result.method).toUpperCase()} code sent to ${result.destination}`);
           if (result.developmentCode) setVerificationCode(result.developmentCode);
           toast({ title: "Verification Required", description: "Enter the six-digit code to continue." });
           return;
@@ -103,6 +107,37 @@ export const LoginForm = () => {
     }
   };
 
+  const handlePasskeyLogin = async () => {
+    if (!email) {
+      toast({ title: "Email required", description: "Enter your account email before using a passkey.", variant: "destructive" });
+      return;
+    }
+    if (!("PublicKeyCredential" in window) || !navigator.credentials) {
+      toast({ title: "Passkeys unsupported", description: "This browser cannot use passkeys. Sign in with your password or use a supported browser.", variant: "destructive" });
+      return;
+    }
+    try {
+      const result = await loginWithPasskey(email);
+      if (result?.requiresTwoFactor) {
+        setChallengeId(result.challengeId);
+        setVerificationMethod(String(result.method || ""));
+        setVerificationHint(result.method === "totp" ? "Enter the current code from your authenticator app." : `${String(result.method).toUpperCase()} code sent to ${result.destination}`);
+        if (result.developmentCode) setVerificationCode(result.developmentCode);
+        toast({ title: "Verification Required", description: "Complete your mandatory two-factor verification." });
+        return;
+      }
+      toast({ title: "Success", description: "Signed in securely with your passkey." });
+      window.setTimeout(() => window.location.reload(), 500);
+    } catch (error) {
+      const cancelled = error instanceof DOMException && ["AbortError", "NotAllowedError"].includes(error.name);
+      toast({
+        title: cancelled ? "Passkey sign-in cancelled" : "Passkey sign-in failed",
+        description: cancelled ? "No changes were made. Try again when you are ready." : error instanceof Error ? error.message : "Unable to use this passkey.",
+        variant: "destructive",
+      });
+    }
+  };
+
   return (
     <>
       <div className="riana-login-page">
@@ -155,16 +190,21 @@ export const LoginForm = () => {
                   </Label>
                   <Input
                     id="verification-code"
-                    inputMode="numeric"
+                    inputMode={useRecoveryCode ? "text" : "numeric"}
                     autoComplete="one-time-code"
-                    maxLength={6}
+                    maxLength={useRecoveryCode ? 17 : 6}
                     value={verificationCode}
-                    onChange={(e) => setVerificationCode(e.target.value.replace(/\D/g, ''))}
-                    placeholder="Enter 6-digit code"
+                    onChange={(e) => setVerificationCode(useRecoveryCode ? e.target.value.toUpperCase().replace(/[^A-Z0-9-]/g, '') : e.target.value.replace(/\D/g, ''))}
+                    placeholder={useRecoveryCode ? "XXXXX-XXXXX-XXXXX" : "Enter 6-digit code"}
                     className="riana-login-card__input riana-login-card__input--verification"
                     required
                   />
                   <p className="riana-login-card__hint">{verificationHint}</p>
+                  {verificationMethod === "totp" && (
+                    <Button type="button" variant="link" className="h-auto justify-start p-0 text-xs" onClick={() => { setUseRecoveryCode(value => !value); setVerificationCode(""); }}>
+                      {useRecoveryCode ? "Use authenticator code" : "Use a recovery code"}
+                    </Button>
+                  )}
                 </div>
               )}
 
@@ -198,13 +238,34 @@ export const LoginForm = () => {
                 </div>
               </div>
 
-              <button
-                type="submit"
-                className="riana-login-card__submit"
-                disabled={isLoading}
-              >
-                {isLoading ? "Signing in..." : challengeId ? "Verify & Sign In" : "Sign In"}
-              </button>
+              <div className="riana-login-card__actions">
+                <button
+                  type="submit"
+                  className="riana-login-card__submit"
+                  disabled={isLoading}
+                >
+                  {isLoading ? "Signing in..." : challengeId ? "Verify & Sign In" : "Sign In"}
+                </button>
+
+                {!challengeId && (
+                  <TooltipProvider delayDuration={250}>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <button
+                          type="button"
+                          className="riana-login-card__passkey"
+                          disabled={isLoading}
+                          onClick={handlePasskeyLogin}
+                          aria-label="Sign in with passkey"
+                        >
+                          {isLoading ? <span className="riana-login-card__passkey-spinner" aria-hidden="true" /> : <Fingerprint aria-hidden="true" />}
+                        </button>
+                      </TooltipTrigger>
+                      <TooltipContent side="top">Sign in with passkey</TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                )}
+              </div>
               
               <div className="text-center">
                 <button

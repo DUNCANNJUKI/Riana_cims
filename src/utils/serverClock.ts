@@ -6,6 +6,7 @@ let timer:ReturnType<typeof setInterval>|undefined;
 const listeners=new Set<()=>void>();
 const publish=()=>{state={...state};listeners.forEach(listener=>listener());};
 export const serverClockSnapshot=()=>state;
+export const calculateSynchronizedTime=(serverEpoch:number,syncMonotonic:number,currentMonotonic:number)=>serverEpoch+Math.max(0,currentMonotonic-syncMonotonic);
 export function refreshServerClock():Promise<void>{
   if(pending)return pending;
   pending=(async()=>{
@@ -20,12 +21,12 @@ export function refreshServerClock():Promise<void>{
       new Intl.DateTimeFormat('en',{timeZone:data.time_zone}).format();
       anchor=time;monotonic=performance.now();lastSync=monotonic;
       state={ready:true,now:time,timeZone:data.time_zone,error:''};
-    }catch{state={...state,ready:false,error:'Scheduling time could not be verified. Reconnect and try again.'};}
+    }catch{state={...state,ready:state.ready,error:'Server time could not be refreshed. Using the last synchronized time.'};}
     finally{pending=null;publish();}
   })();return pending;
 }
 const tick=()=>{
-  if(state.ready){state={...state,now:anchor+performance.now()-monotonic};publish();}
+  if(state.ready){state={...state,now:calculateSynchronizedTime(anchor,monotonic,performance.now())};publish();}
   if(performance.now()-lastSync>=60000)void refreshServerClock();
 };
 const resume=()=>{if(document.visibilityState==='visible')void refreshServerClock();};

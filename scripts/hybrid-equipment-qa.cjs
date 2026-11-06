@@ -105,12 +105,18 @@ async function main(){
       await page.getByRole('heading',{name:'Installation Details',exact:true}).waitFor();
       assert.equal(installation.equipment_quantities[field],2);assert.equal(savedSelection.assets[0].equipment_field,field);
       assert.deepEqual(installation.led_names,['Reception Display','Service Display']);
-      const rows=await page.evaluate(async({installation,configuration})=>{
-        const {buildHandoverEquipmentRows}=await import('/src/utils/equipmentConfiguration.ts');return buildHandoverEquipmentRows(installation,configuration);
+      const {rows,installedRows}=await page.evaluate(async({installation,configuration})=>{
+        const {buildHandoverEquipmentRows,installedHandoverEquipmentRows}=await import('/src/utils/equipmentConfiguration.ts');
+        const rows=buildHandoverEquipmentRows(installation,configuration);
+        return {rows,installedRows:installedHandoverEquipmentRows(rows)};
       },{installation,configuration:subsidiary.equipment_configuration});
       const row=rows.find((item)=>item.field===field);assert.equal(row.displayValue,'2');assert.equal(row.label,'Managed Routers');assert.equal(row.status,'Connected');
       assert.deepEqual(rows.map((item)=>item.field),subsidiary.equipment_configuration.map((item)=>item.field));
       assert.equal(rows.find((item)=>item.field==='kiosk_type').label,'Installation Category');
+      assert.ok(installedRows.some((item)=>item.field===field));
+      assert.ok(installedRows.some((item)=>item.field==='kiosk_type'));
+      assert.ok(installedRows.some((item)=>item.field==='led_count'));
+      assert.ok(!installedRows.some((item)=>item.field==='counter_count'));
       await page.keyboard.press('Escape');
       subsidiary.equipment_configuration=subsidiary.equipment_configuration.filter((item)=>item.field!=='kiosk_type');
       installation.kiosk_type='';

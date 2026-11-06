@@ -55,6 +55,7 @@ import {
   hardwareActorKey,
   type HardwareAsset,
   type HardwareCatalog,
+  normalizeHardwareCatalog,
 } from "./hardwareApi";
 import { QrScanner } from "./QrScanner";
 import { HardwareTour } from "./HardwareTour";
@@ -281,7 +282,10 @@ export function HardwareInventoryModule({ user }: { user: User }) {
   const [modelProfile, setModelProfile] = useState("");
   const catalog = useQuery<HardwareCatalog>({
     queryKey: ["hardware", "catalog", actorKey],
-    queryFn: () => hardwareGet("/catalog"),
+    queryFn: async () =>
+      normalizeHardwareCatalog(
+        (await hardwareGet("/catalog")) as Record<string, unknown>,
+      ) as HardwareCatalog,
     enabled: can(user, "inventory.view"),
     refetchInterval: 30000,
     retry: false,
@@ -308,6 +312,21 @@ export function HardwareInventoryModule({ user }: { user: User }) {
     queryKey: ["hardware", "assets", actorKey, request],
     queryFn: () => hardwareGet(`/assets?${request}`),
     enabled: can(user, "inventory.view"),
+    refetchInterval: 15000,
+    retry: false,
+  });
+  const replacementAssets = useQuery<{ rows: HardwareAsset[]; total: number }>({
+    queryKey: ["hardware", "replacementAssets", actorKey, form.subsidiary_id],
+    queryFn: () =>
+      hardwareGet(
+        `/assets?${hardwareQuery({
+          eligible: "true",
+          subsidiary_id: form.subsidiary_id,
+          limit: 100,
+          page: 1,
+        })}`,
+      ),
+    enabled: modal === "replace" && !!form.subsidiary_id,
     refetchInterval: 15000,
     retry: false,
   });
@@ -593,6 +612,47 @@ export function HardwareInventoryModule({ user }: { user: User }) {
       />
       Physical identity and serial confirmed
     </label>
+  );
+  const replacementAssetPicker = (
+    <div className="space-y-2 rounded-md border p-3">
+      <HardwareSelect
+        label="Replacement stock asset"
+        value={form.replacement_id || ""}
+        onChange={(value) => set("replacement_id", value)}
+        empty="Select an eligible asset"
+        options={(replacementAssets.data?.rows || [])
+          .filter((asset) => asset.id !== profile)
+          .map((asset) => ({
+            value: asset.id,
+            label: `${asset.serial_number || "Serial unavailable"} · ${asset.model_number} · ${asset.condition_grade || "Condition not recorded"} · ID ${asset.id}`,
+          }))}
+      />
+      <p className="text-xs text-muted-foreground">
+        Only verified, approved Available stock in this subsidiary is listed.
+        Register new stock first, then select its serial or asset ID here.
+      </p>
+      {replacementAssets.isLoading && (
+        <p role="status" className="text-xs text-muted-foreground">
+          Loading eligible replacement stock…
+        </p>
+      )}
+      {replacementAssets.error && (
+        <p role="alert" className="text-xs text-destructive">
+          Unable to load replacement stock. Refresh the inventory and try again.
+        </p>
+      )}
+      {!replacementAssets.isLoading &&
+        !replacementAssets.error &&
+        (replacementAssets.data?.rows || []).filter(
+          (asset) => asset.id !== profile,
+        ).length === 0 && (
+          <p className="text-xs text-muted-foreground">
+            No eligible stock is registered. Register or receive the asset,
+            verify its serial and physical identity, and ensure it is approved
+            and in Available status before replacing hardware.
+          </p>
+        )}
+    </div>
   );
   const onScan = useCallback(
     (value: string) => {
@@ -1009,7 +1069,7 @@ export function HardwareInventoryModule({ user }: { user: User }) {
     }
   }, [profile, dismiss]);
   useEffect(() => {
-    if (catalog.data) {
+    if (catalog.data?.policy) {
       setApproval(Boolean(catalog.data.policy.issuance_approved));
       setFieldApproval(Boolean(catalog.data.policy.field_approval_required));
     }
@@ -1059,6 +1119,15 @@ export function HardwareInventoryModule({ user }: { user: User }) {
       {catalog.error && (
         <Alert variant="destructive">
           <AlertDescription>{catalog.error.message}</AlertDescription>
+        </Alert>
+      )}
+      {catalog.data && catalog.data.policy_available === false && (
+        <Alert variant="destructive">
+          <AlertDescription>
+            Inventory policy data is unavailable. Asset browsing remains
+            available, but governed issuance actions are disabled until an
+            administrator verifies the database recovery and API deployment.
+          </AlertDescription>
         </Alert>
       )}
       {catalog.isLoading && (
@@ -2478,7 +2547,7 @@ export function HardwareInventoryModule({ user }: { user: User }) {
             {["install", "receive_transfer", "replace"].includes(modal) &&
               confirm}
             {modal === "replace" &&
-              input("replacement_id", "Replacement Asset ID")}
+              replacementAssetPicker}
             {modal === "transfer" && (
               <>
                 <HardwareSelect

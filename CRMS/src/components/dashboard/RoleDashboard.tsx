@@ -26,36 +26,36 @@
  
 function RoleCard({ title, description, stats, actions, accentColor }: RoleCardProps) {
   return (
-     <Card className={`border-l-4 ${accentColor} border-y border-r border-border bg-card text-card-foreground shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md`}>
-       <CardHeader className="pb-3">
+     <Card className={`border-l-4 ${accentColor} border-y border-r border-border bg-card text-card-foreground shadow-sm transition-shadow hover:shadow-md`}>
+       <CardHeader className="p-4 pb-2">
          <CardTitle className="flex flex-wrap items-center justify-between gap-2">
-           <span className="text-lg font-semibold text-foreground">{title}</span>
-           <Badge variant="secondary" className="border border-border bg-muted text-xs font-semibold text-foreground">{description}</Badge>
+           <span className="text-base font-semibold text-foreground">{title}</span>
+           <Badge variant="secondary" className="border border-border bg-muted text-[11px] font-semibold text-foreground">{description}</Badge>
          </CardTitle>
        </CardHeader>
-       <CardContent className="space-y-4">
-         <div className="grid grid-cols-2 gap-4">
+       <CardContent className="flex flex-col gap-3 p-4 pt-1">
+         <div className="grid grid-cols-2 gap-3">
            {stats.map((stat, i) => {
              const Icon = stat.icon;
              return (
-               <div key={i} className="flex items-center gap-2">
-                 <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary/10">
+               <div key={stat.label} className="flex min-w-0 items-center gap-2">
+                 <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary/10">
                    <Icon className="h-4 w-4 text-primary" />
                  </div>
                  <div>
-                   <p className="text-xl font-bold text-foreground">{stat.value}</p>
-                   <p className="text-xs text-muted-foreground">{stat.label}</p>
+                   <p className="text-lg font-bold tabular-nums text-foreground">{stat.value}</p>
+                   <p className="truncate text-[11px] text-muted-foreground">{stat.label}</p>
                  </div>
                </div>
              );
            })}
          </div>
-         <div className="flex flex-wrap gap-2 pt-2">
+         <div className="flex flex-wrap gap-2 border-t border-border/70 pt-3">
            {actions.map((action, i) => (
-             <Link key={i} to={action.href}>
+             <Link key={action.href} to={action.href}>
                <Button variant={action.variant || 'default'} size="sm">
                  {action.label}
-                 <ArrowRight className="ml-1 h-3 w-3" />
+                 <ArrowRight className="ml-1" />
                </Button>
              </Link>
            ))}

@@ -19,7 +19,7 @@ const requiredFiles = [
   'FILE_MANIFEST.sha256',
   'DEPLOYMENT_GUIDE.md',
 ];
-const forbiddenSegments = new Set(['.env.local', '.runtime', 'node_modules', 'backups']);
+const forbiddenSegments = new Set(['.env.local', '.runtime', 'node_modules', 'backups', 'private_uploads', 'tmp', 'tests']);
 const productionMarkers = ['http://localhost:8081/api', 'react/jsx-dev-runtime'];
 const bcryptHashPattern = /\$2[aby]\$\d{2}\$[./A-Za-z0-9]{53}/;
 
@@ -45,22 +45,23 @@ for (const file of requiredFiles) {
   if (!fs.statSync(normalizedPath(file), { throwIfNoEntry: false })?.isFile()) fail(`Required file is missing: ${file}`);
 }
 const buildInfo = JSON.parse(fs.readFileSync(normalizedPath('BUILD_INFO.json'), 'utf8'));
-const liveUpdates = buildInfo.liveDatabaseUpdates;
-if (!Array.isArray(liveUpdates) || !liveUpdates.length) fail('BUILD_INFO.json must list at least one live database update.');
-for (const update of liveUpdates) {
+const liveUpdate = buildInfo.liveDatabaseUpdate;
+if (liveUpdate?.packageFile !== 'LIVE_DB_UPDATE_ALL.sql') fail('BUILD_INFO.json must reference the single consolidated live database update.');
+if (!Array.isArray(liveUpdate.migrations) || !liveUpdate.migrations.length) fail('BUILD_INFO.json must list the consolidated live migrations.');
+const packagedUpdate = normalizedPath(liveUpdate.packageFile);
+if (!fs.statSync(packagedUpdate, { throwIfNoEntry: false })?.isFile()) fail(`Required live database update is missing: ${liveUpdate.packageFile}`);
+const liveSql = fs.readFileSync(packagedUpdate, 'utf8');
+for (const update of liveUpdate.migrations) {
   if (!/^\d{8}_[a-z0-9_]+$/.test(update.migrationId || '')) fail(`Invalid live migration ID: ${update.migrationId}`);
   if (!/^\d{8}_[a-z0-9_]+\.sql$/.test(update.sourceFile || '')) fail(`Invalid live migration source: ${update.sourceFile}`);
-  if (!/^LIVE_DB_UPDATE_\d{8}\.sql$/.test(update.packageFile || '')) fail(`Invalid packaged live update: ${update.packageFile}`);
-  const packagedUpdate = normalizedPath(update.packageFile);
-  if (!fs.statSync(packagedUpdate, { throwIfNoEntry: false })?.isFile()) fail(`Required live database update is missing: ${update.packageFile}`);
-  const sourceUpdate = path.join(root, 'hosting', 'Mysql_host', 'live_updates', update.sourceFile);
   const sourceMigration = path.join(root, 'server', 'migrations', update.sourceFile);
-  if (!fs.statSync(sourceUpdate, { throwIfNoEntry: false })?.isFile()) fail(`Live database update source is missing: ${update.sourceFile}`);
   if (!fs.statSync(sourceMigration, { throwIfNoEntry: false })?.isFile()) fail(`Matching server migration is missing: ${update.sourceFile}`);
-  if (fileHash(packagedUpdate) !== fileHash(sourceUpdate)) fail(`Packaged live update is stale: ${update.packageFile}`);
+  const hostedSource = path.join(root, 'hosting', 'Mysql_host', 'live_updates', update.sourceFile);
+  const sourceUpdate = fs.statSync(hostedSource, { throwIfNoEntry: false })?.isFile() ? hostedSource : sourceMigration;
   const migrationSql = fs.readFileSync(sourceMigration, 'utf8');
-  const liveSql = fs.readFileSync(packagedUpdate, 'utf8');
   if (!liveSql.includes(update.migrationId)) fail(`Live update does not record migration ${update.migrationId}.`);
+  const sourceSql = fs.readFileSync(sourceUpdate, 'utf8').trim();
+  if (!liveSql.includes(sourceSql)) fail(`Consolidated live update is stale or incomplete: ${update.sourceFile}`);
   for (const match of migrationSql.matchAll(/ALTER\s+TABLE\s+`?([a-z0-9_]+)`?[\s\S]*?ADD\s+COLUMN(?:\s+IF\s+NOT\s+EXISTS)?\s+`?([a-z0-9_]+)`?\s+([a-z]+(?:\([^)]*\))?)/gi)) {
     const [, table, column, type] = match;
     const escapedType = type.replace(/[()]/g, '\\$&');
@@ -68,6 +69,8 @@ for (const update of liveUpdates) {
     if (!intent.test(liveSql)) fail(`Live update is not aligned with ${table}.${column} (${type}).`);
   }
 }
+const unexpectedLiveUpdates = fs.readdirSync(output).filter((name) => /^LIVE_DB_UPDATE_.+\.sql$/i.test(name) && name !== liveUpdate.packageFile);
+if (unexpectedLiveUpdates.length) fail(`Unexpected duplicate live database updates: ${unexpectedLiveUpdates.join(', ')}`);
 
 const topDirectories = fs.readdirSync(output, { withFileTypes: true }).filter((entry) => entry.isDirectory()).map((entry) => entry.name).sort();
 if (topDirectories.join(',') !== requiredDirectories.slice().sort().join(',')) {
@@ -83,6 +86,7 @@ for (const file of allFiles) {
   const relativePath = path.relative(output, file).split(path.sep).join('/');
   const segments = relativePath.split('/');
   if (segments.some((segment) => forbiddenSegments.has(segment))) fail(`Forbidden runtime content was packaged: ${relativePath}`);
+  if (/\.(?:test|spec)\.(?:c?js|mjs)$/i.test(path.basename(file))) fail(`Test file was packaged: ${relativePath}`);
   if (segments.includes('uploads') && !allowedRuntimePackageFiles.has(relativePath)) fail(`Forbidden runtime upload was packaged: ${relativePath}`);
 }
 
@@ -118,6 +122,9 @@ const sql = fs.readFileSync(normalizedPath('database/riana_cims_host.sql'), 'utf
 if (/^\s*(CREATE\s+DATABASE|USE\s+`)/im.test(sql)) fail('SQL must import into the database selected in cPanel.');
 if (/\bDEFAULT\s+\(?uuid\(\)\)?/i.test(sql)) fail('SQL contains a UUID function default unsupported by older shared-host MySQL releases.');
 if (/`feedback_date`[^\n]*\bDEFAULT\s+\(?curdate\(\)\)?/i.test(sql)) fail('SQL contains a DATE function default unsupported by older shared-host MySQL releases.');
+if (!/INSERT\s+IGNORE\s+INTO\s+`hardware_policy`\s*\(`id`,`sequence_partition`,`issuance_approved`,`field_approval_required`,`approved_by`,`approved_at`,`approval_reference`\)\s*VALUES\s*\(1,'per_model_year',0,1,NULL,NULL,NULL\)/i.test(sql)) {
+  fail('SQL must seed an unapproved hardware policy without copying approval metadata.');
+}
 if ((sql.match(/INSERT\s+INTO\s+`user_profiles`/gi) || []).length !== 1) fail('SQL must contain exactly one user bootstrap statement.');
 if (preserveSuperAdmin) {
   if (!sql.includes('PRESERVED_SUPERADMIN_ACTIVE_BCRYPT') || !bcryptHashPattern.test(sql)) {
@@ -130,6 +137,17 @@ if (preserveSuperAdmin) {
 const packagedServer = fs.readFileSync(normalizedPath('app/server/index.js'), 'utf8');
 if (!packagedServer.includes("corsPolicy: 'same-origin-host-v1'")) {
   fail('Packaged API is missing the production CORS policy deployment marker.');
+}
+for (const route of [
+  "app.patch('/api/auth/profile'",
+  "app.get('/api/auth/passkeys'",
+  "app.post('/api/auth/passkeys/register-options'",
+  "app.post('/api/auth/passkeys/register-verify'",
+  "app.get('/api/notifications/summary'",
+  "app.get('/api/communication/preferences'",
+  "app.patch('/api/communication/preferences/theme'",
+]) {
+  if (!packagedServer.includes(route)) fail(`Packaged API is missing the required route: ${route}`);
 }
 const passengerEntry = fs.readFileSync(normalizedPath('app/passenger_app.js'), 'utf8');
 for (const alias of ['DB_HOST', 'DB_PORT', 'DB_NAME', 'DB_USER', 'DB_PASSWORD', 'DB_PASS']) {
@@ -149,6 +167,10 @@ for (const marker of [
   'BEEM_WHATSAPP_TEMPLATE_ID=479',
   'PRIVATE_UPLOAD_ROOT=/home/CPANEL_USER/riana_private_uploads',
   'FILE_BACKUP_ROOT=/home/CPANEL_USER/riana_private_file_backups',
+  'WEBAUTHN_ORIGIN=https://rianacims.name.ng',
+  'WEBAUTHN_RP_ID=rianacims.name.ng',
+  'WEBAUTHN_RP_NAME=RIANA CIMS',
+  'MFA_ENCRYPTION_KEY=REPLACE_WITH_32_BYTE_BASE64_OR_64_CHARACTER_HEX_KEY',
 ]) {
   if (!packagedEnvironment.includes(marker)) fail(`Packaged notification/private-storage configuration is missing: ${marker}`);
 }

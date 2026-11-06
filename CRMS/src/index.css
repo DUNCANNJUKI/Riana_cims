@@ -160,38 +160,38 @@
   }
 
   .status-pending {
-    background-color: hsl(var(--status-pending-bg));
-    color: hsl(var(--status-pending));
+    background-color: hsl(var(--status-pending-bg)) !important;
+    color: hsl(var(--status-pending)) !important;
   }
 
   .status-approved {
-    background-color: hsl(var(--status-approved-bg));
-    color: hsl(var(--status-approved));
+    background-color: hsl(var(--status-approved-bg)) !important;
+    color: hsl(var(--status-approved)) !important;
   }
 
   .status-rejected {
-    background-color: hsl(var(--status-rejected-bg));
-    color: hsl(var(--status-rejected));
+    background-color: hsl(var(--status-rejected-bg)) !important;
+    color: hsl(var(--status-rejected)) !important;
   }
 
   .status-waiting {
-    background-color: hsl(var(--status-waiting-bg));
-    color: hsl(var(--status-waiting));
+    background-color: hsl(var(--status-waiting-bg)) !important;
+    color: hsl(var(--status-waiting)) !important;
   }
 
   .status-in-progress {
-    background-color: hsl(var(--status-in-progress-bg));
-    color: hsl(var(--status-in-progress));
+    background-color: hsl(var(--status-in-progress-bg)) !important;
+    color: hsl(var(--status-in-progress)) !important;
   }
 
   .status-completed {
-    background-color: hsl(var(--status-completed-bg));
-    color: hsl(var(--status-completed));
+    background-color: hsl(var(--status-completed-bg)) !important;
+    color: hsl(var(--status-completed)) !important;
   }
 
   .status-assigned {
-    background-color: hsl(var(--status-assigned-bg));
-    color: hsl(var(--status-assigned));
+    background-color: hsl(var(--status-assigned-bg)) !important;
+    color: hsl(var(--status-assigned)) !important;
   }
 
   /* Priority indicators */

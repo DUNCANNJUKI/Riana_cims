@@ -24,6 +24,7 @@ import {
   hardwareActorKey,
   type HardwareAsset,
   type HardwareCatalog,
+  normalizeHardwareCatalog,
 } from "./hardwareApi";
 import { HardwareSelect } from "./HardwareInventoryModule";
 import { QrScanner } from "./QrScanner";
@@ -68,7 +69,10 @@ export function InstallationHardware({
   const allowed = can(user, "inventory.view");
   const catalog = useQuery<HardwareCatalog>({
     queryKey: ["hardware", "catalog", actorKey],
-    queryFn: () => hardwareGet("/catalog"),
+    queryFn: async () =>
+      normalizeHardwareCatalog(
+        (await hardwareGet("/catalog")) as Record<string, unknown>,
+      ) as HardwareCatalog,
     enabled: allowed,
     retry: false,
   });
