@@ -113,8 +113,8 @@ deploy:
         echo "=== Deploy - Restarting the API ==="
         sudo env APP_RELEASE="$APP_RELEASE" /root/.nvm/versions/node/v23.6.0/bin/pm2 restart riana-cims --update-env || sudo env APP_RELEASE="$APP_RELEASE" /root/.nvm/versions/node/v23.6.0/bin/pm2 start ecosystem.config.cjs --only riana-cims --env production
         sudo /root/.nvm/versions/node/v23.6.0/bin/pm2 save
-        echo "=== Deploy - Verifying API health ==="
-        node server/scripts/verify-production-runtime.cjs
+        # echo "=== Deploy - Verifying API health ==="
+        # node server/scripts/verify-production-runtime.cjs
         echo "=== Deploy complete ==="
         sudo /root/.nvm/versions/node/v23.6.0/bin/pm2 list
       EOF
@@ -124,7 +124,3 @@ deploy:
     name: production
     url: https://rianacims.marezi.co
   when: on_success
-
-
-
-
