@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { User } from "@/types";
 import { ChatMessage, getChatAttachmentUrl, useChat } from "@/hooks/useChat";
 import { Button } from "@/components/ui/button";
@@ -240,6 +240,12 @@ export const ChatModule = ({ currentUser, chat, onClose, onMinimize, onToggleFul
   const iceRestartAttemptsRef = useRef<Set<string>>(new Set());
   const mediaGalleryRef = useRef<HTMLDivElement>(null);
   const pipDragRef = useRef<{ pointerId: number; startX: number; startY: number; left: number; top: number } | null>(null);
+  const attachLocalVideoElement = useCallback((element: HTMLVideoElement | null) => {
+    localVideoRef.current = element;
+    if (!element) return;
+    element.srcObject = localStream;
+    if (localStream) void element.play().catch(() => undefined);
+  }, [localStream]);
 
   const visibleUsers = users.filter(user => user.id !== currentUser.id);
   raisedHandsRef.current = raisedHands;
@@ -807,7 +813,7 @@ export const ChatModule = ({ currentUser, chat, onClose, onMinimize, onToggleFul
     if (!localVideoRef.current) return;
     localVideoRef.current.srcObject = localStream;
     if (localStream) void localVideoRef.current.play().catch(() => undefined);
-  }, [localStream, hasLiveLocalVideo]);
+  }, [localStream, hasLiveLocalVideo, activeCallId]);
 
   useEffect(() => {
     const updateLocalVideo = () => setHasLiveLocalVideo(Boolean(localStream?.getVideoTracks().some(track => track.readyState === "live" && track.enabled && !track.muted)));
@@ -1469,7 +1475,7 @@ export const ChatModule = ({ currentUser, chat, onClose, onMinimize, onToggleFul
                     onPointerUp={() => { pipDragRef.current = null; }}
                     onPointerCancel={() => { pipDragRef.current = null; }}
                   >
-                    {activeCall.call_type === "video" && hasLiveLocalVideo ? <video ref={localVideoRef} autoPlay muted playsInline aria-label="Your video preview" className="h-full w-full rounded-lg bg-black object-cover -scale-x-100" /> : activeCall.call_type === "video" ? <div className="flex h-full min-h-32 flex-col items-center justify-center gap-2 rounded-lg bg-muted/60 text-sm font-medium text-muted-foreground"><Avatar className="h-16 w-16 border-4 border-background shadow-lg"><AvatarImage src={resolveAvatarUrl(currentUser.avatar_url)} alt={formatUserName(currentUser)} /><AvatarFallback className="bg-primary font-bold text-primary-foreground">{(currentUser.first_name?.[0] || currentUser.email?.[0] || "?").toUpperCase()}{(currentUser.last_name?.[0] || "").toUpperCase()}</AvatarFallback></Avatar><span>{isCameraEnabled ? "Camera unavailable" : "Your camera is off"}</span></div> : <div className="flex h-36 items-center justify-center gap-3 rounded-lg bg-muted/60 text-sm font-medium text-muted-foreground"><Mic className="h-5 w-5 text-primary" />{isMicrophoneMuted ? "Your microphone is muted" : "Your microphone is active"}</div>}
+                    {activeCall.call_type === "video" && hasLiveLocalVideo ? <video ref={attachLocalVideoElement} autoPlay muted playsInline aria-label="Your video preview" className="h-full w-full rounded-lg bg-black object-cover -scale-x-100" /> : activeCall.call_type === "video" ? <div className="flex h-full min-h-32 flex-col items-center justify-center gap-2 rounded-lg bg-muted/60 text-sm font-medium text-muted-foreground"><Avatar className="h-16 w-16 border-4 border-background shadow-lg"><AvatarImage src={resolveAvatarUrl(currentUser.avatar_url)} alt={formatUserName(currentUser)} /><AvatarFallback className="bg-primary font-bold text-primary-foreground">{(currentUser.first_name?.[0] || currentUser.email?.[0] || "?").toUpperCase()}{(currentUser.last_name?.[0] || "").toUpperCase()}</AvatarFallback></Avatar><span>{isCameraEnabled ? "Camera unavailable" : "Your camera is off"}</span></div> : <div className="flex h-36 items-center justify-center gap-3 rounded-lg bg-muted/60 text-sm font-medium text-muted-foreground"><Mic className="h-5 w-5 text-primary" />{isMicrophoneMuted ? "Your microphone is muted" : "Your microphone is active"}</div>}
                     <span className="absolute bottom-4 left-4 rounded-full bg-black/65 px-2 py-1 text-[11px] font-semibold text-white">You{isMicrophoneMuted ? " · Muted" : ""}</span>
                     {raisedHands[currentUser.id] && <span className="absolute right-4 top-4 rounded-full bg-warning px-2 py-1 text-[10px] font-bold text-warning-foreground"><Hand className="mr-1 inline h-3 w-3" />Hand raised</span>}
                     {meetingReactions.filter(reaction => reaction.userId === currentUser.id).map(reaction => <span key={reaction.id} className="pointer-events-none absolute right-4 top-4 z-20 animate-in zoom-in rounded-full border bg-background/95 px-3 py-1.5 text-xl shadow-lg motion-reduce:animate-none" aria-label={`You reacted ${reaction.emoji}`}>{reaction.emoji}</span>)}
