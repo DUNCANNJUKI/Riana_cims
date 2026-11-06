@@ -673,6 +673,22 @@ All colors MUST be HSL.
   }
 }
 
+@keyframes call-reaction-float {
+  0% { opacity: 0; transform: translateY(1rem) scale(0.55) rotate(-12deg); }
+  14% { opacity: 1; transform: translateY(0) scale(1.18) rotate(0); }
+  72% { opacity: 1; transform: translateY(-2.5rem) scale(1); }
+  100% { opacity: 0; transform: translateY(-4.5rem) scale(0.85); }
+}
+
+.call-reaction-float {
+  animation: call-reaction-float 2.8s cubic-bezier(0.2, 0.75, 0.25, 1) both;
+  will-change: transform, opacity;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .call-reaction-float { animation: none; }
+}
+
 /* Shared authenticated application canvas. Authentication uses isolated riana-login-* styles. */
 .cims-content {
   background: linear-gradient(180deg, hsl(var(--background)) 0%, hsl(var(--muted) / 0.36) 100%);

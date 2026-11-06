@@ -8,7 +8,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { X, Send, Check, CheckCheck, Search, Users, UserPlus, MessageSquare, Phone, Video, VideoOff, Paperclip, Download, Image as ImageIcon, FileText, Reply, PhoneOff, Mic, MicOff, MonitorUp, MoreVertical, Copy, SmilePlus, Edit3, Trash2, BellOff, ScreenShare, ScreenShareOff, LayoutGrid, PanelTop, Settings2, Maximize2, Minimize2, Minus, Hand, Pin, PinOff, PictureInPicture2, ChevronLeft, ChevronRight } from "lucide-react";
+import { X, Send, Check, CheckCheck, Search, Users, UserPlus, MessageSquare, Phone, Video, VideoOff, Paperclip, Download, Image as ImageIcon, FileText, Reply, PhoneOff, Mic, MicOff, MonitorUp, MoreVertical, MoreHorizontal, RotateCw, Copy, SmilePlus, Edit3, Trash2, BellOff, ScreenShare, ScreenShareOff, LayoutGrid, PanelTop, Settings2, Maximize2, Minimize2, Minus, Hand, Pin, PinOff, PictureInPicture2, ChevronLeft, ChevronRight } from "lucide-react";
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
 import { resolveAvatarUrl } from "@/utils/avatar";
@@ -94,7 +94,7 @@ type MeetingReaction = { id: string; userId: string; emoji: string; expiresAt: n
 
 type SinkSelectableMediaElement = HTMLMediaElement & { setSinkId?: (deviceId: string) => Promise<void> };
 
-const RemoteCallMedia = ({ stream, video, label, avatarUrl, outputDeviceId, videoEnabled }: { stream: MediaStream; video: boolean; label: string; avatarUrl?: string; outputDeviceId: string; videoEnabled?: boolean }) => {
+const RemoteCallMedia = ({ stream, video, label, avatarUrl, outputDeviceId, videoEnabled, screenSharing }: { stream: MediaStream; video: boolean; label: string; avatarUrl?: string; outputDeviceId: string; videoEnabled?: boolean; screenSharing?: boolean }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
   const [playbackBlocked, setPlaybackBlocked] = useState(false);
@@ -148,7 +148,7 @@ const RemoteCallMedia = ({ stream, video, label, avatarUrl, outputDeviceId, vide
 
   return <div className="relative">
     {video
-      ? <div className="relative aspect-video w-full overflow-hidden rounded-lg bg-muted/60"><video ref={videoRef} autoPlay playsInline aria-label={`${label} video`} className={cn("h-full w-full bg-black object-cover", (!hasLiveVideo || videoEnabled === false) && "invisible")} />{(!hasLiveVideo || videoEnabled === false) && <div className="absolute inset-0 flex flex-col items-center justify-center gap-3"><Avatar className="h-20 w-20 border-4 border-background shadow-lg"><AvatarImage src={resolveAvatarUrl(avatarUrl)} alt={label} /><AvatarFallback className="bg-primary text-xl font-bold text-primary-foreground">{label.split(/\s+/).map(part => part[0]).join("").slice(0, 2).toUpperCase()}</AvatarFallback></Avatar><span className="text-xs font-semibold text-muted-foreground">{videoEnabled === false ? "Camera off" : "Video unavailable"}</span></div>}</div>
+      ? <div className={cn("relative w-full overflow-hidden rounded-lg bg-black", screenSharing ? "aspect-video" : "aspect-video bg-muted/60")}><video ref={videoRef} autoPlay playsInline aria-label={screenSharing ? `${label} shared screen` : `${label} video`} className={cn("h-full w-full bg-black", screenSharing ? "object-contain" : "object-cover", (!hasLiveVideo || videoEnabled === false) && "invisible")} />{(!hasLiveVideo || videoEnabled === false) && <div className="absolute inset-0 flex flex-col items-center justify-center gap-3"><Avatar className="h-20 w-20 border-4 border-background shadow-lg"><AvatarImage src={resolveAvatarUrl(avatarUrl)} alt={label} /><AvatarFallback className="bg-primary text-xl font-bold text-primary-foreground">{label.split(/\s+/).map(part => part[0]).join("").slice(0, 2).toUpperCase()}</AvatarFallback></Avatar><span className="text-xs font-semibold text-muted-foreground">{videoEnabled === false ? "Camera off" : "Video unavailable"}</span></div>}</div>
       : <><audio ref={audioRef} autoPlay aria-label={`${label} audio`} /><div className="flex h-36 items-center justify-center rounded-lg bg-muted/60 text-sm text-muted-foreground">Audio connected</div></>}
     {playbackBlocked && <Button type="button" size="sm" className="absolute inset-x-4 bottom-4" onClick={resumePlayback}>Play {label}&apos;s audio</Button>}
   </div>;
@@ -484,7 +484,7 @@ export const ChatModule = ({ currentUser, chat, onClose, onMinimize, onToggleFul
     if (!navigator.mediaDevices?.getUserMedia) throw new Error("This browser does not support secure audio/video calling.");
     const stream = await navigator.mediaDevices.getUserMedia({
       audio: { deviceId: audioInputDeviceId ? { exact: audioInputDeviceId } : undefined, echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: { ideal: 1 } },
-      video: withVideo ? { deviceId: videoInputDeviceId ? { exact: videoInputDeviceId } : undefined, width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 24, max: 30 } } : false,
+      video: withVideo ? { ...(videoInputDeviceId ? { deviceId: { exact: videoInputDeviceId } } : { facingMode: { ideal: "user" } }), width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 24, max: 30 } } : false,
     });
     localStreamRef.current = stream;
     const audioTrack = stream.getAudioTracks()[0];
@@ -520,7 +520,7 @@ export const ChatModule = ({ currentUser, chat, onClose, onMinimize, onToggleFul
     if (!activeCall || !navigator.mediaDevices?.getUserMedia) return;
     const stream = await navigator.mediaDevices.getUserMedia(kind === "audio"
       ? { audio: { deviceId: deviceId ? { exact: deviceId } : undefined, echoCancellation: true, noiseSuppression: true, autoGainControl: true }, video: false }
-      : { audio: false, video: { deviceId: deviceId ? { exact: deviceId } : undefined, width: { ideal: 1280 }, height: { ideal: 720 } } });
+      : { audio: false, video: { ...(deviceId ? { deviceId: { exact: deviceId } } : { facingMode: { ideal: "user" } }), width: { ideal: 1280 }, height: { ideal: 720 } } });
     const replacement = kind === "audio" ? stream.getAudioTracks()[0] : stream.getVideoTracks()[0];
     if (!replacement) throw new Error(`The selected ${kind === "audio" ? "microphone" : "camera"} is unavailable.`);
     const current = kind === "audio" ? localStreamRef.current?.getAudioTracks()[0] : localStreamRef.current?.getVideoTracks()[0];
@@ -556,6 +556,15 @@ export const ChatModule = ({ currentUser, chat, onClose, onMinimize, onToggleFul
     } catch (error) {
       setCallError(error instanceof Error ? error.message : "Unable to switch media device.");
     }
+  };
+
+  const switchCamera = async () => {
+    const cameras = mediaDevices.filter(device => device.kind === "videoinput");
+    if (cameras.length < 2) return;
+    const currentId = localStreamRef.current?.getVideoTracks()[0]?.getSettings().deviceId || videoInputDeviceId;
+    const currentIndex = cameras.findIndex(device => device.deviceId === currentId);
+    const next = cameras[(currentIndex + 1 + cameras.length) % cameras.length];
+    if (next) await changeInputDevice("video", next.deviceId);
   };
 
   const testMicrophone = async () => {
@@ -1371,29 +1380,58 @@ export const ChatModule = ({ currentUser, chat, onClose, onMinimize, onToggleFul
                 {callError && <p className="mb-3 rounded-lg border border-destructive/20 bg-destructive/10 px-3 py-2 text-xs text-destructive">{callError}</p>}
                 {!localStream?.getTracks().some(track => track.readyState === "live") && <Button type="button" size="sm" className="mb-3 rounded-full" onClick={() => void rejoinCallMedia()}><Video className="mr-2 h-4 w-4" />Reconnect camera and microphone</Button>}
                 <div className="mb-4 flex min-w-0 flex-wrap items-center gap-2 rounded-xl border border-[hsl(var(--comm-border))] bg-background/70 p-2" role="toolbar" aria-label="Call controls">
-                  <div className="flex min-w-0 flex-wrap items-center gap-2" role="group" aria-label="Media controls">
+                  <div className="hidden min-w-0 flex-wrap items-center gap-2 md:flex" role="group" aria-label="Media controls">
                     <Button size="icon" variant={isMicrophoneMuted ? "destructive" : "outline"} className={cn("h-10 w-10 rounded-full", !isMicrophoneMuted && "call-control-button")} onClick={toggleMicrophone} title={isMicrophoneMuted ? "Unmute microphone" : "Mute microphone"} aria-label={isMicrophoneMuted ? "Unmute microphone" : "Mute microphone"} aria-pressed={isMicrophoneMuted}>{isMicrophoneMuted ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}</Button>
                     {activeCall.call_type === "video" && <Button size="icon" variant={isCameraEnabled ? "outline" : "destructive"} className={cn("h-10 w-10 rounded-full", isCameraEnabled && "call-control-button")} onClick={toggleCamera} title={isCameraEnabled ? "Turn camera off" : "Turn camera on"} aria-label={isCameraEnabled ? "Turn camera off" : "Turn camera on"} aria-pressed={!isCameraEnabled}>{isCameraEnabled ? <Video className="h-4 w-4" /> : <VideoOff className="h-4 w-4" />}</Button>}
                     <Button size="icon" variant={isScreenSharing ? "default" : "outline"} className={cn("h-10 w-10 rounded-full", isScreenSharing ? "call-control-active" : "call-control-button")} onClick={() => void toggleScreenShare()} title={isScreenSharing ? "Stop sharing" : "Share screen"} aria-label={isScreenSharing ? "Stop sharing" : "Share screen"} aria-pressed={isScreenSharing}>{isScreenSharing ? <ScreenShareOff className="h-4 w-4" /> : <ScreenShare className="h-4 w-4" />}</Button>
                     <Button size="icon" variant={raisedHands[currentUser.id] ? "default" : "outline"} className={cn("h-10 w-10 rounded-full", raisedHands[currentUser.id] ? "call-control-active" : "call-control-button")} onClick={toggleRaisedHand} title={raisedHands[currentUser.id] ? "Lower hand" : "Raise hand"} aria-label={raisedHands[currentUser.id] ? "Lower hand" : "Raise hand"} aria-pressed={Boolean(raisedHands[currentUser.id])}><Hand className="h-4 w-4" /></Button>
                     <DropdownMenu><DropdownMenuTrigger asChild><Button size="icon" variant="outline" className="call-control-button h-10 w-10 rounded-full" title="Send reaction" aria-label="Send meeting reaction"><SmilePlus className="h-4 w-4" /></Button></DropdownMenuTrigger><DropdownMenuContent align="start" className="min-w-0"><div className="flex gap-1 p-1">{MEETING_REACTIONS.map(emoji => <button key={emoji} type="button" className="rounded-md p-2 text-xl hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary" onClick={() => sendMeetingReaction(emoji)} aria-label={`React ${emoji}`}>{emoji}</button>)}</div></DropdownMenuContent></DropdownMenu>
                   </div>
-                  <div className="flex min-w-0 flex-wrap items-center gap-2 border-l border-[hsl(var(--comm-border))] pl-2 max-sm:border-l-0 max-sm:pl-0" role="group" aria-label="Call layout">
+                  <div className="hidden min-w-0 flex-wrap items-center gap-2 border-l border-[hsl(var(--comm-border))] pl-2 max-sm:border-l-0 max-sm:pl-0 md:flex" role="group" aria-label="Call layout">
                     <Button size="sm" variant={callLayout === "gallery" ? "default" : "outline"} className={cn("h-10 rounded-full px-3", callLayout === "gallery" ? "call-control-active" : "call-control-button")} onClick={() => setCallLayout("gallery")} aria-pressed={callLayout === "gallery"}><LayoutGrid className="mr-2 h-4 w-4" />Gallery</Button>
                     <Button size="sm" variant={callLayout === "speaker" ? "default" : "outline"} className={cn("h-10 rounded-full px-3", callLayout === "speaker" ? "call-control-active" : "call-control-button")} onClick={() => setCallLayout("speaker")} aria-pressed={callLayout === "speaker"}><PanelTop className="mr-2 h-4 w-4" />Speaker</Button>
                   </div>
-                  <div className="flex min-w-0 items-center gap-2 border-l border-[hsl(var(--comm-border))] pl-2 max-sm:border-l-0 max-sm:pl-0" role="group" aria-label="Meeting views">
+                  <div className="hidden min-w-0 items-center gap-2 border-l border-[hsl(var(--comm-border))] pl-2 max-sm:border-l-0 max-sm:pl-0 md:flex" role="group" aria-label="Meeting views">
                     <Button type="button" size="sm" variant={showInvitePanel ? "default" : "outline"} className={cn("h-10 rounded-full px-3", showInvitePanel ? "call-control-active" : "call-control-button")} onClick={() => setShowInvitePanel(value => !value)} aria-expanded={showInvitePanel} aria-controls="meeting-invite-panel"><UserPlus className="mr-2 h-4 w-4" />Invite</Button>
                     <Badge variant="secondary" className="rounded-full"><Users className="mr-1 h-3 w-3" />{activeCallParticipantIds.length}</Badge>
                     <Button type="button" size="sm" variant={mobileMeetingView === "participants" || isDesktopParticipantsOpen ? "default" : "outline"} className={cn("h-10 rounded-full px-3 max-[380px]:h-9 max-[380px]:gap-0.5 max-[380px]:px-2", mobileMeetingView === "participants" || isDesktopParticipantsOpen ? "call-control-active" : "call-control-button")} onClick={handleMeetingParticipantsToggle} aria-label="Show meeting people" aria-pressed={mobileMeetingView === "participants" || isDesktopParticipantsOpen}><Users className="h-4 w-4 max-[380px]:mr-1" /><span className="max-[340px]:hidden">People</span></Button>
                     <Button type="button" size="sm" variant={mobileMeetingView === "chat" || !isDesktopChatOpen ? "default" : "outline"} className={cn("h-10 rounded-full px-3 max-[380px]:h-9 max-[380px]:gap-0.5 max-[380px]:px-2", mobileMeetingView === "chat" || !isDesktopChatOpen ? "call-control-active" : "call-control-button")} onClick={handleMeetingChatToggle} aria-label="Show meeting chat" aria-pressed={mobileMeetingView === "chat" || !isDesktopChatOpen}><MessageSquare className="mr-2 h-4 w-4 max-[380px]:mr-1" /><span>Chat</span></Button>
                   </div>
-                  <div className="ml-auto flex min-w-0 flex-wrap items-center justify-end gap-2 border-l border-[hsl(var(--comm-border))] pl-2 max-sm:ml-0 max-sm:justify-start max-sm:border-l-0 max-sm:pl-0" role="group" aria-label="Call actions">
+                  <div className="ml-auto hidden min-w-0 flex-wrap items-center justify-end gap-2 border-l border-[hsl(var(--comm-border))] pl-2 max-sm:ml-0 max-sm:justify-start max-sm:border-l-0 max-sm:pl-0 md:flex" role="group" aria-label="Call actions">
                     <Button size="icon" variant={showDeviceSettings ? "default" : "outline"} className={cn("h-10 w-10 rounded-full", showDeviceSettings ? "call-control-active" : "call-control-button")} onClick={() => setShowDeviceSettings(value => !value)} title="Media devices" aria-label="Media device settings" aria-expanded={showDeviceSettings}><Settings2 className="h-4 w-4" /></Button>
                     {onMinimize && <Button size="icon" variant="outline" className="call-control-button h-10 w-10 rounded-full" onClick={onMinimize} title="Minimize call" aria-label="Minimize active call"><Minus className="h-4 w-4" /></Button>}
                     {activeCall.call_type === "video" && <Button size="icon" variant={isSelfViewPip ? "default" : "outline"} className="h-10 w-10 rounded-full" onClick={() => setIsSelfViewPip(value => !value)} title={isSelfViewPip ? "Restore self view to gallery" : "Move self view"} aria-label={isSelfViewPip ? "Restore self view to gallery" : "Move self view"} aria-pressed={isSelfViewPip}><PictureInPicture2 className="h-4 w-4" /></Button>}
                     {onToggleFullscreen && <Button size="icon" variant="outline" className="call-control-button h-10 w-10 rounded-full" onClick={onToggleFullscreen} title={isFullscreen ? "Exit full screen" : "Full screen call"} aria-label={isFullscreen ? "Exit full screen call" : "Open call full screen"} aria-pressed={isFullscreen}>{isFullscreen ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}</Button>}
                     <Button size="sm" variant="destructive" className="call-hangup h-10 rounded-full px-4" onClick={() => void hangUpCall()} aria-label="Hang up call"><PhoneOff className="mr-2 h-4 w-4" />Hang up</Button>
+                  </div>
+                  <div className="ml-auto flex md:hidden">
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild><Button type="button" size="icon" variant="outline" className="call-control-button h-10 w-10 rounded-full" aria-label="More call actions"><MoreHorizontal className="h-5 w-5" /></Button></DropdownMenuTrigger>
+                      <DropdownMenuContent align="end" className="max-h-[min(70vh,32rem)] w-64 overflow-y-auto">
+                        <DropdownMenuItem onSelect={toggleMicrophone}><span className="mr-2 flex h-4 w-4 items-center justify-center">{isMicrophoneMuted ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}</span>{isMicrophoneMuted ? "Unmute microphone" : "Mute microphone"}</DropdownMenuItem>
+                        {activeCall.call_type === "video" && <>
+                          <DropdownMenuItem onSelect={toggleCamera}><span className="mr-2 flex h-4 w-4 items-center justify-center">{isCameraEnabled ? <Video className="h-4 w-4" /> : <VideoOff className="h-4 w-4" />}</span>{isCameraEnabled ? "Turn camera off" : "Turn camera on"}</DropdownMenuItem>
+                          {mediaDevices.filter(device => device.kind === "videoinput").length > 1 && <DropdownMenuItem onSelect={() => void switchCamera()}><RotateCw className="mr-2 h-4 w-4" />Switch front/back camera</DropdownMenuItem>}
+                        </>}
+                        <DropdownMenuItem onSelect={() => void toggleScreenShare()}>{isScreenSharing ? <ScreenShareOff className="mr-2 h-4 w-4" /> : <ScreenShare className="mr-2 h-4 w-4" />}{isScreenSharing ? "Stop screen sharing" : "Share screen"}</DropdownMenuItem>
+                        <DropdownMenuItem onSelect={toggleRaisedHand}><Hand className="mr-2 h-4 w-4" />{raisedHands[currentUser.id] ? "Lower hand" : "Raise hand"}</DropdownMenuItem>
+                        <DropdownMenuSeparator />
+                        <div className="flex items-center justify-between px-2 py-1 text-xs text-muted-foreground"><span>Reactions</span><div className="flex gap-1">{MEETING_REACTIONS.map(emoji => <button key={emoji} type="button" className="rounded p-1.5 text-lg hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary" onClick={() => sendMeetingReaction(emoji)} aria-label={`React ${emoji}`}>{emoji}</button>)}</div></div>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem onSelect={() => setCallLayout("gallery")}><LayoutGrid className="mr-2 h-4 w-4" />Gallery layout</DropdownMenuItem>
+                        <DropdownMenuItem onSelect={() => setCallLayout("speaker")}><PanelTop className="mr-2 h-4 w-4" />Speaker layout</DropdownMenuItem>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem onSelect={() => setShowInvitePanel(value => !value)}><UserPlus className="mr-2 h-4 w-4" />{showInvitePanel ? "Close invite panel" : "Invite people"}</DropdownMenuItem>
+                        <DropdownMenuItem onSelect={handleMeetingParticipantsToggle}><Users className="mr-2 h-4 w-4" />People ({activeCallParticipantIds.length})</DropdownMenuItem>
+                        <DropdownMenuItem onSelect={handleMeetingChatToggle}><MessageSquare className="mr-2 h-4 w-4" />Chat</DropdownMenuItem>
+                        <DropdownMenuItem onSelect={() => setShowDeviceSettings(value => !value)}><Settings2 className="mr-2 h-4 w-4" />Media device settings</DropdownMenuItem>
+                        {onMinimize && <DropdownMenuItem onSelect={onMinimize}><Minus className="mr-2 h-4 w-4" />Minimize call</DropdownMenuItem>}
+                        {activeCall.call_type === "video" && <DropdownMenuItem onSelect={() => setIsSelfViewPip(value => !value)}><PictureInPicture2 className="mr-2 h-4 w-4" />{isSelfViewPip ? "Restore self view" : "Move self view"}</DropdownMenuItem>}
+                        {onToggleFullscreen && <DropdownMenuItem onSelect={onToggleFullscreen}>{isFullscreen ? <Minimize2 className="mr-2 h-4 w-4" /> : <Maximize2 className="mr-2 h-4 w-4" />}{isFullscreen ? "Exit full screen" : "Full screen"}</DropdownMenuItem>}
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem className="text-destructive focus:text-destructive" onSelect={() => void hangUpCall()}><PhoneOff className="mr-2 h-4 w-4" />Hang up</DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                   </div>
                 </div>
                 {showInvitePanel && <section id="meeting-invite-panel" className="mb-4 rounded-xl border border-[hsl(var(--comm-border))] bg-background/90 p-3" aria-label="Invite meeting participants">
@@ -1461,10 +1499,10 @@ export const ChatModule = ({ currentUser, chat, onClose, onMinimize, onToggleFul
                     onPointerUp={() => { pipDragRef.current = null; }}
                     onPointerCancel={() => { pipDragRef.current = null; }}
                   >
-                    {activeCall.call_type === "video" && hasLiveLocalVideo ? <video ref={attachLocalVideoElement} autoPlay muted playsInline aria-label="Your video preview" className="h-full w-full rounded-lg bg-black object-cover -scale-x-100" /> : activeCall.call_type === "video" ? <div className="flex h-full min-h-32 flex-col items-center justify-center gap-2 rounded-lg bg-muted/60 text-sm font-medium text-muted-foreground"><Avatar className="h-16 w-16 border-4 border-background shadow-lg"><AvatarImage src={resolveAvatarUrl(currentUser.avatar_url)} alt={formatUserName(currentUser)} /><AvatarFallback className="bg-primary font-bold text-primary-foreground">{(currentUser.first_name?.[0] || currentUser.email?.[0] || "?").toUpperCase()}{(currentUser.last_name?.[0] || "").toUpperCase()}</AvatarFallback></Avatar><span>{isCameraEnabled ? "Camera unavailable" : "Your camera is off"}</span></div> : <div className="flex h-36 items-center justify-center gap-3 rounded-lg bg-muted/60 text-sm font-medium text-muted-foreground"><Mic className="h-5 w-5 text-primary" />{isMicrophoneMuted ? "Your microphone is muted" : "Your microphone is active"}</div>}
+                    {activeCall.call_type === "video" && hasLiveLocalVideo ? <video ref={attachLocalVideoElement} autoPlay muted playsInline aria-label={isScreenSharing ? "Your shared screen preview" : "Your video preview"} className={cn("h-full w-full rounded-lg bg-black", isScreenSharing ? "object-contain" : "object-cover -scale-x-100")} /> : activeCall.call_type === "video" ? <div className="flex h-full min-h-32 flex-col items-center justify-center gap-2 rounded-lg bg-muted/60 text-sm font-medium text-muted-foreground"><Avatar className="h-16 w-16 border-4 border-background shadow-lg"><AvatarImage src={resolveAvatarUrl(currentUser.avatar_url)} alt={formatUserName(currentUser)} /><AvatarFallback className="bg-primary font-bold text-primary-foreground">{(currentUser.first_name?.[0] || currentUser.email?.[0] || "?").toUpperCase()}{(currentUser.last_name?.[0] || "").toUpperCase()}</AvatarFallback></Avatar><span>{isCameraEnabled ? "Camera unavailable" : "Your camera is off"}</span></div> : <div className="flex h-36 items-center justify-center gap-3 rounded-lg bg-muted/60 text-sm font-medium text-muted-foreground"><Mic className="h-5 w-5 text-primary" />{isMicrophoneMuted ? "Your microphone is muted" : "Your microphone is active"}</div>}
                     <span className="absolute bottom-4 left-4 rounded-full bg-black/65 px-2 py-1 text-[11px] font-semibold text-white">You{isMicrophoneMuted ? " · Muted" : ""}</span>
                     {raisedHands[currentUser.id] && <span className="absolute right-4 top-4 rounded-full bg-warning px-2 py-1 text-[10px] font-bold text-warning-foreground"><Hand className="mr-1 inline h-3 w-3" />Hand raised</span>}
-                    {meetingReactions.filter(reaction => reaction.userId === currentUser.id).map(reaction => <span key={reaction.id} className="pointer-events-none absolute right-4 top-4 z-20 animate-in zoom-in rounded-full border bg-background/95 px-3 py-1.5 text-xl shadow-lg motion-reduce:animate-none" aria-label={`You reacted ${reaction.emoji}`}>{reaction.emoji}</span>)}
+                    {meetingReactions.filter(reaction => reaction.userId === currentUser.id).map(reaction => <span key={reaction.id} className="pointer-events-none absolute right-4 top-4 z-20 call-reaction-float rounded-full border bg-background/95 px-3 py-1.5 text-xl shadow-lg motion-reduce:animate-none" aria-label={`You reacted ${reaction.emoji}`}>{reaction.emoji}</span>)}
                     <Button type="button" size="icon" variant="secondary" className="absolute bottom-2 right-2 h-8 w-8" onPointerDown={event => event.stopPropagation()} onClick={() => setPinnedParticipantId(current => current === currentUser.id ? null : currentUser.id)} title={pinnedParticipantId === currentUser.id ? "Unpin self view" : "Pin self view"} aria-label={pinnedParticipantId === currentUser.id ? "Unpin self view" : "Pin self view"} aria-pressed={pinnedParticipantId === currentUser.id}><Pin className="h-4 w-4" /></Button>
                   </div>
                   {visibleGalleryParticipantIds.map(participantId => {
@@ -1473,7 +1511,7 @@ export const ChatModule = ({ currentUser, chat, onClose, onMinimize, onToggleFul
                     return (
                       <div key={participantId} className={cn("relative aspect-video min-h-32 min-w-0 overflow-hidden rounded-xl border bg-background/60 p-2 shadow-inner transition-[box-shadow,border-color]", activeSpeakerId === participantId || spotlightParticipantId === participantId || pinnedParticipantId === participantId ? "border-primary ring-2 ring-primary/35" : "border-white/10", (spotlightParticipantId === participantId || pinnedParticipantId === participantId || callLayout === "speaker" && activeSpeakerId === participantId) && "col-span-full", spotlightParticipantId === participantId && "order-first")}>
                         {spotlightParticipantId === participantId && <span className="absolute left-4 top-4 z-10 rounded-full bg-primary px-2 py-1 text-[10px] font-bold text-primary-foreground">Spotlight</span>}
-                        {stream ? <RemoteCallMedia stream={stream} video={activeCall.call_type === "video"} videoEnabled={remoteMediaStates[participantId]?.videoEnabled} label={participantLabel} avatarUrl={users.find(user => user.id === participantId)?.avatar_url} outputDeviceId={audioOutputDeviceId} /> : (
+                        {stream ? <RemoteCallMedia stream={stream} video={activeCall.call_type === "video"} videoEnabled={remoteMediaStates[participantId]?.videoEnabled} screenSharing={remoteMediaStates[participantId]?.screenSharing} label={participantLabel} avatarUrl={users.find(user => user.id === participantId)?.avatar_url} outputDeviceId={audioOutputDeviceId} /> : (
                           <div className="flex h-36 min-w-0 flex-col items-center justify-center gap-2 rounded-lg bg-muted/60 px-3 text-center text-sm font-medium text-muted-foreground"><MonitorUp className="h-5 w-5 shrink-0 text-primary" /><span className="max-w-full truncate">Waiting for {participantLabel}</span></div>
                         )}
                         <span className="absolute bottom-4 left-4 right-4 max-w-[calc(100%-2rem)] truncate rounded-full bg-black/65 px-2 py-1 text-[11px] font-semibold text-white">{participantLabel}</span>
@@ -1481,7 +1519,7 @@ export const ChatModule = ({ currentUser, chat, onClose, onMinimize, onToggleFul
                         {remoteMediaStates[participantId]?.screenSharing && <span className="absolute right-4 top-4 rounded-full bg-black/75 px-2 py-1 text-[10px] font-semibold text-white">Sharing screen</span>}
                         {raisedHands[participantId] && <span className="absolute left-4 top-4 rounded-full bg-warning px-2 py-1 text-[10px] font-bold text-warning-foreground"><Hand className="mr-1 inline h-3 w-3" />Hand raised</span>}
                         {activeSpeakerId === participantId && <span className="absolute right-4 top-4 rounded-full bg-primary px-2 py-1 text-[10px] font-bold text-primary-foreground">Speaking</span>}
-                        {meetingReactions.filter(reaction => reaction.userId === participantId).map(reaction => <span key={reaction.id} className="pointer-events-none absolute right-4 top-4 z-20 animate-in zoom-in rounded-full border bg-background/95 px-3 py-1.5 text-xl shadow-lg motion-reduce:animate-none" aria-label={`${participantLabel} reacted ${reaction.emoji}`}>{reaction.emoji}</span>)}
+                        {meetingReactions.filter(reaction => reaction.userId === participantId).map(reaction => <span key={reaction.id} className="pointer-events-none absolute right-4 top-4 z-20 call-reaction-float rounded-full border bg-background/95 px-3 py-1.5 text-xl shadow-lg motion-reduce:animate-none" aria-label={`${participantLabel} reacted ${reaction.emoji}`}>{reaction.emoji}</span>)}
                       </div>
                     );
                   })}
