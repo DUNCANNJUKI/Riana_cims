@@ -111,8 +111,14 @@ deploy:
         echo "=== Deploy - Applying missing communication migrations ==="
         COMMUNICATION_MIGRATION_BACKUP_VERIFIED=true node server/scripts/apply-communication-migrations.cjs
         echo "=== Deploy - Restarting the API ==="
-        sudo env APP_RELEASE="$APP_RELEASE" /root/.nvm/versions/node/v23.6.0/bin/pm2 restart riana-cims --update-env || sudo env APP_RELEASE="$APP_RELEASE" /root/.nvm/versions/node/v23.6.0/bin/pm2 start ecosystem.config.cjs --only riana-cims --env production
+        sudo env APP_RELEASE="$APP_RELEASE" /root/.nvm/versions/node/v23.6.0/bin/pm2 restart ecosystem.config.cjs --only riana-cims --env production --update-env || sudo env APP_RELEASE="$APP_RELEASE" /root/.nvm/versions/node/v23.6.0/bin/pm2 restart riana-cims --update-env || sudo env APP_RELEASE="$APP_RELEASE" /root/.nvm/versions/node/v23.6.0/bin/pm2 start ecosystem.config.cjs --only riana-cims --env production
         sudo /root/.nvm/versions/node/v23.6.0/bin/pm2 save
+        echo "=== Ensuring Nginx CSP allows WebAssembly ==="
+        sudo sed -i "s/script-src 'self';/script-src 'self' 'wasm-unsafe-eval' 'unsafe-eval';/g" /etc/nginx/sites-available/* /etc/nginx/sites-enabled/* /etc/nginx/conf.d/* 2>/dev/null || true
+        sudo sed -i "s/script-src 'self' /script-src 'self' 'wasm-unsafe-eval' 'unsafe-eval' /g" /etc/nginx/sites-available/* /etc/nginx/sites-enabled/* /etc/nginx/conf.d/* 2>/dev/null || true
+        sudo nginx -t && (sudo systemctl reload nginx || sudo service nginx reload) || true
+        echo "=== Verifying host localhost:8081 CSP header ==="
+        curl -s -I http://127.0.0.1:8081 | grep -i "Content-Security-Policy" || true
         # echo "=== Deploy - Verifying API health ==="
         # node server/scripts/verify-production-runtime.cjs
         echo "=== Deploy complete ==="

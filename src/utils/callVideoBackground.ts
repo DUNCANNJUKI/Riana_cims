@@ -259,7 +259,22 @@ const buildDualPersonMasks = (
   return true;
 };
 
+export function isWebAssemblySupported(): boolean {
+  try {
+    if (typeof WebAssembly === "object" && typeof WebAssembly.instantiate === "function") {
+      const module = new WebAssembly.Module(Uint8Array.of(0x0, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00));
+      return Boolean(module);
+    }
+  } catch {
+    return false;
+  }
+  return false;
+}
+
 export async function createCallVideoBackground(track: MediaStreamTrack, effect: CallVideoBackground): Promise<BackgroundPipeline> {
+  if (!isWebAssemblySupported()) {
+    throw new Error("Virtual background requires WebAssembly execution, which is restricted in this browser session. Please refresh the page.");
+  }
   const selectedPreset = CALL_VIDEO_BACKGROUND_OPTIONS.find(background => background.value === effect);
   const customImageUrl = !selectedPreset && effect !== "blur" ? String(effect) : null;
   const backgroundUrl = selectedPreset
