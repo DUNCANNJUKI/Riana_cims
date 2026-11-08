@@ -114,11 +114,20 @@ deploy:
         sudo env APP_RELEASE="$APP_RELEASE" /root/.nvm/versions/node/v23.6.0/bin/pm2 restart ecosystem.config.cjs --only riana-cims --env production --update-env || sudo env APP_RELEASE="$APP_RELEASE" /root/.nvm/versions/node/v23.6.0/bin/pm2 restart riana-cims --update-env || sudo env APP_RELEASE="$APP_RELEASE" /root/.nvm/versions/node/v23.6.0/bin/pm2 start ecosystem.config.cjs --only riana-cims --env production
         sudo /root/.nvm/versions/node/v23.6.0/bin/pm2 save
         echo "=== Ensuring Nginx CSP allows WebAssembly ==="
-        sudo sed -i "s/script-src 'self';/script-src 'self' 'wasm-unsafe-eval' 'unsafe-eval';/g" /etc/nginx/sites-available/* /etc/nginx/sites-enabled/* /etc/nginx/conf.d/* 2>/dev/null || true
-        sudo sed -i "s/script-src 'self' /script-src 'self' 'wasm-unsafe-eval' 'unsafe-eval' /g" /etc/nginx/sites-available/* /etc/nginx/sites-enabled/* /etc/nginx/conf.d/* 2>/dev/null || true
+        sudo sed -i "s/script-src 'self';/script-src 'self' 'wasm-unsafe-eval';/g" /etc/nginx/sites-available/* /etc/nginx/sites-enabled/* /etc/nginx/conf.d/* /etc/nginx/nginx.conf 2>/dev/null || true
+        sudo sed -i "s/script-src 'self' 'wasm-unsafe-eval' 'unsafe-eval'/script-src 'self' 'wasm-unsafe-eval'/g" /etc/nginx/sites-available/* /etc/nginx/sites-enabled/* /etc/nginx/conf.d/* /etc/nginx/nginx.conf 2>/dev/null || true
         sudo nginx -t && (sudo systemctl reload nginx || sudo service nginx reload) || true
-        echo "=== Verifying host localhost:8081 CSP header ==="
-        curl -s -I http://127.0.0.1:8081 | grep -i "Content-Security-Policy" || true
+        echo "=== Writing CSP diagnostics to dist/csp-debug.txt ==="
+        {
+          echo "=== PM2 DESCRIBE ==="
+          sudo /root/.nvm/versions/node/v23.6.0/bin/pm2 describe riana-cims | grep -E "script path|exec cwd|status|uptime"
+          echo "=== CURL LOCALHOST 8081 ==="
+          curl -s -I http://127.0.0.1:8081
+          echo "=== NGINX CSP GREP ==="
+          grep -rn "Content-Security-Policy" /etc/nginx/ || true
+          echo "=== FILE apiSecurity.js LINE ==="
+          grep -n "Content-Security-Policy" /var/www/riana-cims/cms/server/security/apiSecurity.js || true
+        } > /var/www/riana-cims/cms/dist/csp-debug.txt 2>&1 || true
         # echo "=== Deploy - Verifying API health ==="
         # node server/scripts/verify-production-runtime.cjs
         echo "=== Deploy complete ==="
