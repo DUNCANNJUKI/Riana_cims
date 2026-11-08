@@ -247,7 +247,7 @@ export const FeedbackForm = () => {
           </CardHeader>
           <CardContent className="text-center space-y-4">
             <p className="text-muted-foreground">
-              Your feedback has been submitted successfully. Thank you for your feedback, we appreciate.
+              Your feedback has been submitted successfully. Thank you for your feedback, we appreciate..
             </p>
             <div className="bg-muted/30 p-4 rounded-lg text-sm">
               <p className="font-medium">What happens next?</p>
