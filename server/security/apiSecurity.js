@@ -100,6 +100,7 @@ const createSessionAuthenticator = ({ pool, jwtSecret }) => async (req, res, nex
 
 const PUBLIC_API_RULES = [
   ['GET', /^\/health$/],
+  ['GET', /^\/csp-info$/],
   ['GET', /^\/time$/],
   ['GET', /^\/maintenance\/status$/],
   ['POST', /^\/auth\/(login|verify-2fa|forgot-password|reset-password|passkey-options|passkey-verify)$/],

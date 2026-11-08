@@ -111,11 +111,12 @@ deploy:
         echo "=== Deploy - Applying missing communication migrations ==="
         COMMUNICATION_MIGRATION_BACKUP_VERIFIED=true node server/scripts/apply-communication-migrations.cjs
         echo "=== Deploy - Restarting the API ==="
-        sudo env APP_RELEASE="$APP_RELEASE" /root/.nvm/versions/node/v23.6.0/bin/pm2 restart ecosystem.config.cjs --only riana-cims --env production --update-env || sudo env APP_RELEASE="$APP_RELEASE" /root/.nvm/versions/node/v23.6.0/bin/pm2 restart riana-cims --update-env || sudo env APP_RELEASE="$APP_RELEASE" /root/.nvm/versions/node/v23.6.0/bin/pm2 start ecosystem.config.cjs --only riana-cims --env production
+        PM2_BIN=$(which pm2 2>/dev/null || find /root/.nvm /usr/local /usr/bin -name pm2 2>/dev/null | head -n 1 || echo "/root/.nvm/versions/node/v23.6.0/bin/pm2")
+        echo "Using PM2 binary: $PM2_BIN"
+        sudo env APP_RELEASE="$APP_RELEASE" "$PM2_BIN" restart ecosystem.config.cjs --only riana-cims --env production --update-env || sudo env APP_RELEASE="$APP_RELEASE" "$PM2_BIN" restart riana-cims --update-env || sudo env APP_RELEASE="$APP_RELEASE" "$PM2_BIN" start ecosystem.config.cjs --only riana-cims --env production
         sudo /root/.nvm/versions/node/v23.6.0/bin/pm2 save
         echo "=== Ensuring Nginx CSP allows WebAssembly ==="
-        sudo sed -i "s/script-src 'self';/script-src 'self' 'wasm-unsafe-eval';/g" /etc/nginx/sites-available/* /etc/nginx/sites-enabled/* /etc/nginx/conf.d/* /etc/nginx/nginx.conf 2>/dev/null || true
-        sudo sed -i "s/script-src 'self' 'wasm-unsafe-eval' 'unsafe-eval'/script-src 'self' 'wasm-unsafe-eval'/g" /etc/nginx/sites-available/* /etc/nginx/sites-enabled/* /etc/nginx/conf.d/* /etc/nginx/nginx.conf 2>/dev/null || true
+        sudo sed -i -E "s/script-src 'self'( 'unsafe-eval')?/script-src 'self' 'wasm-unsafe-eval'/g" /etc/nginx/sites-available/* /etc/nginx/sites-enabled/* /etc/nginx/conf.d/* /etc/nginx/nginx.conf 2>/dev/null || true
         sudo nginx -t && (sudo systemctl reload nginx || sudo service nginx reload) || true
         echo "=== Writing CSP diagnostics to dist/csp-debug.txt ==="
         {

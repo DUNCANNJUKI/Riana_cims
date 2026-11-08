@@ -828,6 +828,16 @@ const initDb = async () => {
       CONSTRAINT fk_user_permissions_grantor FOREIGN KEY (granted_by) REFERENCES user_profiles(id) ON DELETE SET NULL
     )`);
 
+    await pool.query(`CREATE TABLE IF NOT EXISTS user_interface_preferences (
+      user_id VARCHAR(36) NOT NULL PRIMARY KEY,
+      language VARCHAR(12) NOT NULL DEFAULT 'en',
+      theme ENUM('light','dark','system') NOT NULL DEFAULT 'system',
+      inactivity_timeout_minutes SMALLINT UNSIGNED NOT NULL DEFAULT 10,
+      lock_on_resume BOOLEAN NOT NULL DEFAULT FALSE,
+      updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      CONSTRAINT fk_ui_preferences_user FOREIGN KEY (user_id) REFERENCES user_profiles(id) ON DELETE CASCADE
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`);
+
     await pool.query(`CREATE TABLE IF NOT EXISTS uploaded_files (
       id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
       tenant_id VARCHAR(36) NULL,
@@ -1807,6 +1817,13 @@ const initDb = async () => {
 // ------------------------------------------------------------------
 
 // Health Check
+app.get('/api/csp-info', (_req, res) => res.json({
+  csp: res.getHeader('Content-Security-Policy'),
+  appCsp: 'wasm-unsafe-eval-v1',
+  pid: process.pid,
+  uptime: process.uptime(),
+}));
+
 app.get('/api/health', (_req, res) => res.json({
   status: 'ok',
   timestamp: new Date(),

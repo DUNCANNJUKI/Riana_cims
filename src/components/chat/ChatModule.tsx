@@ -1840,7 +1840,17 @@ export const ChatModule = ({ currentUser, chat, onClose, onMinimize, onToggleFul
                   </div>
                   <div className="flex flex-wrap gap-2">
                     <Button size="sm" className="rounded-full px-4 shadow-riana" onClick={() => void acceptIncomingCall()}><Phone className="mr-2 h-4 w-4" />Answer</Button>
-                    <Button size="sm" variant="outline" className="rounded-full" onClick={silenceIncomingCall}><BellOff className="mr-2 h-4 w-4" />Silence</Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="rounded-full border-slate-300 bg-white/95 px-4 text-xs font-semibold text-slate-800 shadow-sm transition-colors hover:border-slate-400 hover:bg-slate-100 hover:text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:hover:bg-slate-700"
+                      onClick={silenceIncomingCall}
+                      title="Silence ringtone"
+                      aria-label="Silence incoming call ringtone"
+                    >
+                      <BellOff className="mr-2 h-4 w-4 text-slate-700 dark:text-slate-200" />
+                      Silence
+                    </Button>
                     <Button size="sm" variant="destructive" className="rounded-full px-4" onClick={() => void declineIncomingCall()}><PhoneOff className="mr-2 h-4 w-4" />Decline</Button>
                   </div>
                 </div>

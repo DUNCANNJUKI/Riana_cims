@@ -8,7 +8,9 @@ const migrationIds = [
   '20260710_chat_audit_logging',
   '20260710_calls_feedback_contact_performance',
   '20261031_communication_backend_foundation',
+  '20261101_totp_recovery_and_preferences',
   '20261104_communication_meeting_state',
+  '20261107_call_recordings',
 ];
 
 const splitSqlStatements = (sql) => {

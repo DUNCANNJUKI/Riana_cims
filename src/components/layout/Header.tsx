@@ -209,12 +209,9 @@ export const Header = ({ user, className, setActiveModule, onOpenMobileMenu, onP
     setIsDarkMode(newMode);
     document.documentElement.classList.toggle('dark', newMode);
     localStorage.setItem('theme', theme);
-    void apiClient.patch('/communication/preferences/theme', { theme }).catch(() => {
-      toast({
-        title: 'Theme saved on this device',
-        description: 'Your account preference could not be synchronized. Check your connection and try again.',
-        variant: 'destructive',
-      });
+    void apiClient.patch('/communication/preferences/theme', { theme }).catch((error) => {
+      // Local theme is already active and persisted in localStorage.
+      console.warn('Account theme synchronization was deferred:', error?.message || error);
     });
   };
   const getUserInitials = () => {
