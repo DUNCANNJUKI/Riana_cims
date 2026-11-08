@@ -8,18 +8,33 @@ const preventStaleLocalShell = () => {
 
   const isLocalHost = ['localhost', '127.0.0.1', '::1'].includes(window.location.hostname);
 
-  if (isLocalHost) {
-    window.addEventListener('load', () => {
-      navigator.serviceWorker.getRegistrations()
-        .then((registrations) => Promise.all(registrations.map((registration) => registration.unregister())))
-        .catch(() => undefined);
+  if (import.meta.env.DEV || isLocalHost) {
+    window.addEventListener('load', async () => {
+      try {
+        const registrations = await navigator.serviceWorker.getRegistrations();
+        const localRegistrations = registrations.filter((registration) => {
+          const scope = new URL(registration.scope);
+          return scope.origin === window.location.origin && ['/', '/developers/'].includes(scope.pathname);
+        });
+        await Promise.all(localRegistrations.map((registration) => registration.unregister()));
 
-      if ('caches' in window) {
-        caches.keys()
-          .then((keys) => Promise.all(keys.map((key) => caches.delete(key))))
-          .catch(() => undefined);
+        if ('caches' in window) {
+          const keys = await caches.keys();
+          const appCaches = keys.filter((key) => key.startsWith('riana-') || key.startsWith('workbox-'));
+          await Promise.all(appCaches.map((key) => caches.delete(key)));
+        }
+
+        const reloadFlag = 'riana-local-worker-reload';
+        if (navigator.serviceWorker.controller && sessionStorage.getItem(reloadFlag) !== '1') {
+          sessionStorage.setItem(reloadFlag, '1');
+          window.location.reload();
+        } else {
+          sessionStorage.removeItem(reloadFlag);
+        }
+      } catch {
+        // Cache cleanup is best-effort; the development app remains usable if browser APIs fail.
       }
-    });
+    }, { once: true });
     return;
   }
 

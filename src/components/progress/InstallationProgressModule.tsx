@@ -225,10 +225,10 @@ export const InstallationProgressModule = ({ user }: InstallationProgressProps) 
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="cims-page-header">
         <div>
-          <h1 className="text-3xl font-bold text-primary">Installation Progress</h1>
-          <p className="text-muted-foreground">Track and manage installation progress across all clients</p>
+          <h1 className="cims-page-title">Installation Progress</h1>
+          <p className="cims-page-subtitle">Track and manage installation progress across all clients</p>
         </div>
       </div>
 
@@ -281,7 +281,7 @@ export const InstallationProgressModule = ({ user }: InstallationProgressProps) 
 
       <Card className="shadow-riana">
         <CardContent className="p-6">
-          <div className="flex items-center gap-4">
+          <div className="flex flex-col sm:flex-row flex-wrap items-stretch sm:items-center gap-3">
             <div className="relative flex-1">
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
               <Input
@@ -292,7 +292,7 @@ export const InstallationProgressModule = ({ user }: InstallationProgressProps) 
               />
             </div>
             <Select value={statusFilter} onValueChange={setStatusFilter}>
-              <SelectTrigger className="w-48">
+              <SelectTrigger className="w-full sm:w-48">
                 <SelectValue placeholder="Filter by status" />
               </SelectTrigger>
               <SelectContent>
@@ -304,7 +304,7 @@ export const InstallationProgressModule = ({ user }: InstallationProgressProps) 
               </SelectContent>
             </Select>
             <Select value={technicianFilter} onValueChange={setTechnicianFilter}>
-              <SelectTrigger className="w-48">
+              <SelectTrigger className="w-full sm:w-48">
                 <SelectValue placeholder="Filter by technician" />
               </SelectTrigger>
               <SelectContent>
@@ -411,7 +411,7 @@ export const InstallationProgressModule = ({ user }: InstallationProgressProps) 
                         <Button
                           variant="outline"
                           size="sm"
-                          onClick={() => handleOpenProgressDialog(installation)}
+                          onClick={() => handleOpenProgressDialog(installation)} title="Update installation progress" aria-label="Update installation progress"
                         >
                           <Edit className="h-3 w-3" />
                         </Button>

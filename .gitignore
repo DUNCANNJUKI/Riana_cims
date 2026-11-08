@@ -49,3 +49,4 @@ Deployment-packages/database_private.zip
 *.sln
 *.sw?
 node_modules
+public/mediapipe/wasm/*.wasm

@@ -1,5 +1,5 @@
 import {Label} from '@/components/ui/label';
-const controlClass='flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm disabled:opacity-50';
+const controlClass='flex h-10 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm shadow-sm transition-colors hover:border-primary/30 focus-visible:border-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/25 disabled:cursor-not-allowed disabled:bg-muted/60 disabled:opacity-60';
 export function HardwareSelect({
   label,
   value,

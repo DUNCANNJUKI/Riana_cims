@@ -1,6 +1,7 @@
 const crypto = require('crypto');
 
 const MEETING_REACTIONS = new Set(['👍', '❤️', '👏', '😂', '🎉', '😊']);
+const RECORDING_AUTHORIZED_ROLES = new Set(['SuperAdmin', 'Admin', 'Management', 'Teamlead']);
 
 const createIceServers = (userId, env = process.env, now = Date.now()) => {
   const iceServers = [{ urls: 'stun:stun.l.google.com:19302' }];
@@ -15,6 +16,15 @@ const createIceServers = (userId, env = process.env, now = Date.now()) => {
   const credential = crypto.createHmac('sha1', sharedSecret).update(username).digest('base64');
   iceServers.push({ urls: turnUrls, username, credential });
   return iceServers;
+};
+
+const canManageCallRecording = (user, callSenderId, recordingInitiatorId = null) => {
+  if (!user || !user.id) return false;
+  const userId = String(user.id);
+  if (callSenderId && userId === String(callSenderId)) return true;
+  if (recordingInitiatorId && userId === String(recordingInitiatorId)) return true;
+  if (user.role && RECORDING_AUTHORIZED_ROLES.has(String(user.role))) return true;
+  return false;
 };
 
 const isValidCallSignalPayload = (signalType, payload) => {
@@ -35,6 +45,13 @@ const isValidCallSignalPayload = (signalType, payload) => {
     case 'spotlight':
       return (payload.userId === null || (typeof payload.userId === 'string' && payload.userId.length <= 64))
         && keys.length === 1 && keys[0] === 'userId';
+    case 'recording-state':
+      return typeof payload.active === 'boolean'
+        && keys.every(key => ['active', 'recordingId', 'startedBy', 'startedByName', 'startedAt'].includes(key))
+        && (payload.recordingId === undefined || payload.recordingId === null || (typeof payload.recordingId === 'string' && payload.recordingId.length <= 64))
+        && (payload.startedBy === undefined || payload.startedBy === null || (typeof payload.startedBy === 'string' && payload.startedBy.length <= 64))
+        && (payload.startedByName === undefined || payload.startedByName === null || (typeof payload.startedByName === 'string' && payload.startedByName.length <= 128))
+        && (payload.startedAt === undefined || payload.startedAt === null || (typeof payload.startedAt === 'string' && payload.startedAt.length <= 64));
     case 'rejoin':
       return keys.length === 0;
     case 'offer':
@@ -48,4 +65,4 @@ const isValidCallSignalPayload = (signalType, payload) => {
   }
 };
 
-module.exports = { createIceServers, isValidCallSignalPayload };
+module.exports = { createIceServers, isValidCallSignalPayload, canManageCallRecording };

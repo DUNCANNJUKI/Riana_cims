@@ -513,13 +513,13 @@ export const InstallationsModule = ({ user }: InstallationsModuleProps) => {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="cims-page-header">
         <div>
-          <h1 className="text-3xl font-bold text-primary">Installations Management</h1>
-          {['InventoryOfficer','SuperAdmin','Admin','Teamlead'].includes(user.role) && <Button variant="outline" onClick={()=>setRequirementsOpen(true)}>Equipment Serial Requirements</Button>}
-          <p className="text-muted-foreground">Track and manage client installations and equipment</p>
+          <h1 className="cims-page-title">Installations Management</h1>
+          <p className="cims-page-subtitle">Track and manage client installations and equipment</p>
+
         </div>
-        {canManageInstallations && <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
+        <div className="flex flex-wrap items-center gap-2">{['InventoryOfficer','SuperAdmin','Admin','Teamlead'].includes(user.role) && <Button variant="outline" onClick={()=>setRequirementsOpen(true)}>Equipment Serial Requirements</Button>}{canManageInstallations && <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
           <DialogTrigger asChild>
             <Button className="gradient-primary">
               <Plus className="h-4 w-4 mr-2" />
@@ -640,16 +640,16 @@ export const InstallationsModule = ({ user }: InstallationsModuleProps) => {
             {isAddDialogOpen && <InstallationSerialPicker user={user} installation={newInstallation} subsidiaryId={clients.find((c)=>c.id===newInstallation.client_id)?.subsidiary_id || ''} equipmentConfiguration={subsidiaries.find((s)=>s.id===clients.find((c)=>c.id===newInstallation.client_id)?.subsidiary_id)?.equipment_configuration} value={serialSelection} onChange={setSerialSelection}/>}
             {saveError && <Alert variant="destructive"><AlertDescription>{saveError}</AlertDescription></Alert>}
             <div className="flex justify-end gap-2 mt-4">
-              <Button variant="outline" onClick={() => setIsAddDialogOpen(false)} disabled={loading} className="transition-all hover:scale-105 active:scale-95">
+              <Button variant="outline" onClick={() => setIsAddDialogOpen(false)} disabled={loading}>
                 Cancel
               </Button>
-              <Button onClick={handleAddInstallation} className="gradient-primary transition-all hover:scale-105 active:scale-95" disabled={loading}>
+              <Button onClick={handleAddInstallation} className="gradient-primary" disabled={loading}>
                 {loading ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
                 {newInstallation.id ? 'Save Changes' : 'Add Installation'}
               </Button>
             </div>
           </DialogContent>
-        </Dialog>}
+        </Dialog>}</div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">

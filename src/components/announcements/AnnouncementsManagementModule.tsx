@@ -8,6 +8,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Progress } from "@/components/ui/progress";
+import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Dialog,
@@ -64,6 +65,8 @@ interface Announcement {
   subsidiary_id: string | null;
   created_by_user_id: string;
   is_active: boolean;
+  is_expired?: boolean;
+  is_read?: boolean;
   expires_at: string | null;
   created_at: string;
   updated_at: string;
@@ -83,14 +86,30 @@ interface AnnouncementsManagementModuleProps {
   user: User;
 }
 
+const formatLocalDateTimeInput = (isoValue: string | null | undefined) => {
+  if (!isoValue) return "";
+  const parsed = new Date(isoValue);
+  if (Number.isNaN(parsed.getTime())) return "";
+  return format(parsed, "yyyy-MM-dd'T'HH:mm");
+};
+
+const isAnnouncementExpired = (announcement: Pick<Announcement, 'expires_at' | 'is_expired'>) => {
+  if (typeof announcement.is_expired === 'boolean') return announcement.is_expired;
+  if (!announcement.expires_at) return false;
+  return new Date(announcement.expires_at).getTime() <= Date.now();
+};
+
 export const AnnouncementsManagementModule = ({ user }: AnnouncementsManagementModuleProps) => {
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
+  const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive' | 'expired'>('all');
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [subsidiaries, setSubsidiaries] = useState<{ id: string; subsidiary_name: string }[]>([]);
   const [selectedAnnouncement, setSelectedAnnouncement] = useState<Announcement | null>(null);
   const [totalUsers, setTotalUsers] = useState(0);
   const [readDetails, setReadDetails] = useState<any[]>([]);
+  const [unreadUsers, setUnreadUsers] = useState<any[]>([]);
+  const [reachTab, setReachTab] = useState<'read' | 'unread'>('read');
   const [showReadDetails, setShowReadDetails] = useState(false);
   
   // Form state
@@ -110,6 +129,11 @@ export const AnnouncementsManagementModule = ({ user }: AnnouncementsManagementM
     loadSubsidiaries();
     loadTotalUsers();
 
+    const handleUpdated = () => {
+      void loadAnnouncements(false);
+    };
+    window.addEventListener('riana-announcements-updated', handleUpdated);
+
     const intervalId = setInterval(() => {
       if (document.visibilityState === 'visible' && !isDialogOpenRef.current) {
         void loadAnnouncements(false);
@@ -117,6 +141,7 @@ export const AnnouncementsManagementModule = ({ user }: AnnouncementsManagementM
     }, OPERATIONAL_REFRESH_INTERVAL_MS);
 
     return () => {
+      window.removeEventListener('riana-announcements-updated', handleUpdated);
       clearInterval(intervalId);
     };
   }, []);
@@ -124,6 +149,10 @@ export const AnnouncementsManagementModule = ({ user }: AnnouncementsManagementM
   useEffect(() => {
     isDialogOpenRef.current = isDialogOpen;
   }, [isDialogOpen]);
+
+  const notifyAnnouncementsUpdated = () => {
+    window.dispatchEvent(new CustomEvent('riana-announcements-updated'));
+  };
 
   const loadTotalUsers = async () => {
     try {
@@ -147,13 +176,15 @@ export const AnnouncementsManagementModule = ({ user }: AnnouncementsManagementM
   const loadAnnouncements = async (showLoading = true) => {
     if (showLoading) setIsLoading(true);
     try {
-      let url = '/announcements';
-      if (user.role === 'Teamlead') {
-        url += `?created_by_user_id=${user.id}`;
-      }
-
-      const data = await apiClient.get(url);
-      setAnnouncements(Array.isArray(data) ? data : []);
+      const data = await apiClient.get('/announcements');
+      const normalized = (Array.isArray(data) ? data : []).map((item: any) => ({
+        ...item,
+        is_active: Boolean(item.is_active),
+        is_expired: isAnnouncementExpired(item),
+        read_count: Number(item.read_count || 0),
+        total_target: Number(item.total_target ?? item.total_target_users ?? 0),
+      }));
+      setAnnouncements(normalized);
     } catch (error) {
       console.error('Error loading announcements:', error);
     } finally {
@@ -161,13 +192,26 @@ export const AnnouncementsManagementModule = ({ user }: AnnouncementsManagementM
     }
   };
 
-  const loadReadDetails = async (announcementId: string) => {
+  const loadReadDetails = async (announcement: Announcement) => {
     try {
-      const data = await apiClient.get(`/announcement_reads/${announcementId}`);
-      setReadDetails(Array.isArray(data) ? data : []);
+      setSelectedAnnouncement(announcement);
+      setReachTab('read');
+      const data = await apiClient.get(`/announcement_reads/${announcement.id}?include_reach=true`);
+      if (Array.isArray(data)) {
+        setReadDetails(data);
+        setUnreadUsers([]);
+      } else {
+        setReadDetails(Array.isArray(data?.reads) ? data.reads : []);
+        setUnreadUsers(Array.isArray(data?.unread_users) ? data.unread_users : []);
+      }
       setShowReadDetails(true);
     } catch (error) {
       console.error('Error loading read details:', error);
+      toast({
+        title: "Error",
+        description: "Failed to load announcement reach details",
+        variant: "destructive",
+      });
     }
   };
 
@@ -214,12 +258,13 @@ export const AnnouncementsManagementModule = ({ user }: AnnouncementsManagementM
       }
 
       resetForm();
-      loadAnnouncements();
-    } catch (error) {
+      await loadAnnouncements();
+      notifyAnnouncementsUpdated();
+    } catch (error: any) {
       console.error('Error saving announcement:', error);
       toast({
         title: "Error",
-        description: "Failed to save announcement",
+        description: error?.message || "Failed to save announcement",
         variant: "destructive",
       });
     }
@@ -239,28 +284,41 @@ export const AnnouncementsManagementModule = ({ user }: AnnouncementsManagementM
   const handleEdit = (announcement: Announcement) => {
     setTitle(announcement.title);
     setContent(announcement.content);
-    setPriority(announcement.priority);
-    setTargetAudience(announcement.target_audience);
+    setPriority(announcement.priority || 'normal');
+    setTargetAudience(announcement.target_audience || 'all');
     setSelectedSubsidiary(announcement.subsidiary_id || 'all');
-    setExpiresAt(announcement.expires_at ? announcement.expires_at.slice(0, 16) : '');
+    setExpiresAt(formatLocalDateTimeInput(announcement.expires_at));
     setEditingId(announcement.id);
     setIsDialogOpen(true);
   };
 
   const handleToggleActive = async (announcement: Announcement) => {
+    const nextActive = !Boolean(announcement.is_active);
     try {
       await apiClient.patch(`/announcements/${announcement.id}`, {
-        is_active: !announcement.is_active
+        is_active: nextActive,
       });
+
+      setAnnouncements((current) =>
+        current.map((item) =>
+          item.id === announcement.id ? { ...item, is_active: nextActive } : item
+        )
+      );
 
       toast({
-        title: announcement.is_active ? "Announcement Deactivated" : "Announcement Activated",
-        description: `The announcement has been ${announcement.is_active ? 'deactivated' : 'activated'}`,
+        title: nextActive ? "Announcement Activated" : "Announcement Deactivated",
+        description: `"${announcement.title}" is now ${nextActive ? 'active and visible to the target audience' : 'toggled off and hidden from the active feed'}.`,
       });
 
-      loadAnnouncements();
-    } catch (error) {
+      await loadAnnouncements(false);
+      notifyAnnouncementsUpdated();
+    } catch (error: any) {
       console.error('Error toggling announcement:', error);
+      toast({
+        title: "Error",
+        description: error?.message || "Failed to toggle announcement status",
+        variant: "destructive",
+      });
     }
   };
 
@@ -273,7 +331,8 @@ export const AnnouncementsManagementModule = ({ user }: AnnouncementsManagementM
         description: "The announcement has been permanently deleted",
       });
 
-      loadAnnouncements();
+      await loadAnnouncements();
+      notifyAnnouncementsUpdated();
     } catch (error) {
       console.error('Error deleting announcement:', error);
       toast({
@@ -300,28 +359,45 @@ export const AnnouncementsManagementModule = ({ user }: AnnouncementsManagementM
       case 'admins': return 'Admins Only';
       case 'teamleads': return 'Team Leads';
       case 'technicians': return 'Technicians';
-      default: return audience;
+      case 'sales': return 'Sales';
+      case 'subsidiary': return 'Subsidiary';
+      default: return audience || 'Everyone';
     }
   };
 
   const getEngagementRate = (readCount: number, totalTarget: number) => {
-    if (totalTarget === 0) return 0;
-    return Math.round((readCount / totalTarget) * 100);
+    if (totalTarget <= 0) return 0;
+    return Math.min(100, Math.round((readCount / totalTarget) * 100));
   };
 
   // Analytics summary
-  const activeAnnouncements = announcements.filter(a => a.is_active).length;
+  const activeAnnouncementsCount = announcements.filter(a => a.is_active && !isAnnouncementExpired(a)).length;
+  const inactiveAnnouncementsCount = announcements.filter(a => !a.is_active).length;
+  const expiredAnnouncementsCount = announcements.filter(a => isAnnouncementExpired(a)).length;
   const totalReads = announcements.reduce((sum, a) => sum + (a.read_count || 0), 0);
   const avgEngagement = announcements.length > 0
-    ? Math.round(announcements.reduce((sum, a) => sum + getEngagementRate(a.read_count || 0, a.total_target || 1), 0) / announcements.length)
+    ? Math.round(announcements.reduce((sum, a) => sum + getEngagementRate(a.read_count || 0, a.total_target || totalUsers || 1), 0) / announcements.length)
     : 0;
+
+  const filteredAnnouncements = announcements.filter((announcement) => {
+    const expired = isAnnouncementExpired(announcement);
+    if (statusFilter === 'active') return announcement.is_active && !expired;
+    if (statusFilter === 'inactive') return !announcement.is_active;
+    if (statusFilter === 'expired') return expired;
+    return true;
+  });
+
+  const selectedReachTarget = selectedAnnouncement
+    ? (selectedAnnouncement.total_target || (readDetails.length + unreadUsers.length) || totalUsers || 1)
+    : 1;
+  const selectedReachRate = getEngagementRate(readDetails.length, selectedReachTarget);
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+      <div className="cims-page-header">
         <div>
-          <h1 className="text-2xl sm:text-3xl font-bold text-primary">Announcements Management</h1>
-          <p className="text-muted-foreground text-sm sm:text-base">Track and manage all your announcements with detailed analytics</p>
+          <h1 className="cims-page-title">Announcements Management</h1>
+          <p className="cims-page-subtitle">Track reach, toggle events on or off, and manage all announcements</p>
         </div>
         
         <Dialog open={isDialogOpen} onOpenChange={(open) => { if (!open) resetForm(); setIsDialogOpen(open); }}>
@@ -338,7 +414,7 @@ export const AnnouncementsManagementModule = ({ user }: AnnouncementsManagementM
                 {editingId ? 'Edit Announcement' : 'Post New Announcement'}
               </DialogTitle>
               <DialogDescription>
-                {editingId ? 'Update your announcement details' : 'Share an update with your team'}
+                {editingId ? 'Update your announcement details' : 'Share an update or event with your team'}
               </DialogDescription>
             </DialogHeader>
             
@@ -391,6 +467,7 @@ export const AnnouncementsManagementModule = ({ user }: AnnouncementsManagementM
                       <SelectItem value="admins">Admins Only</SelectItem>
                       <SelectItem value="teamleads">Team Leads</SelectItem>
                       <SelectItem value="technicians">Technicians</SelectItem>
+                      <SelectItem value="sales">Sales</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -454,8 +531,8 @@ export const AnnouncementsManagementModule = ({ user }: AnnouncementsManagementM
           <CardContent className="pt-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-muted-foreground">Active Announcements</p>
-                <p className="text-2xl font-bold text-green-600">{activeAnnouncements}</p>
+                <p className="text-sm text-muted-foreground">Active Events / Posts</p>
+                <p className="text-2xl font-bold text-green-600">{activeAnnouncementsCount}</p>
               </div>
               <CheckCircle2 className="h-8 w-8 text-green-600 opacity-50" />
             </div>
@@ -466,7 +543,7 @@ export const AnnouncementsManagementModule = ({ user }: AnnouncementsManagementM
           <CardContent className="pt-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-muted-foreground">Total Views</p>
+                <p className="text-sm text-muted-foreground">Total Reach (Reads)</p>
                 <p className="text-2xl font-bold text-blue-600">{totalReads}</p>
               </div>
               <Eye className="h-8 w-8 text-blue-600 opacity-50" />
@@ -478,7 +555,7 @@ export const AnnouncementsManagementModule = ({ user }: AnnouncementsManagementM
           <CardContent className="pt-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-muted-foreground">Avg Engagement</p>
+                <p className="text-sm text-muted-foreground">Avg Reach Rate</p>
                 <p className="text-2xl font-bold text-purple-600">{avgEngagement}%</p>
               </div>
               <TrendingUp className="h-8 w-8 text-purple-600 opacity-50" />
@@ -489,14 +566,24 @@ export const AnnouncementsManagementModule = ({ user }: AnnouncementsManagementM
 
       {/* Announcements Table */}
       <Card className="shadow-riana">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <BarChart3 className="h-5 w-5" />
-            All Announcements
-          </CardTitle>
-          <CardDescription>
-            View and manage all your announcements with read analytics
-          </CardDescription>
+        <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <CardTitle className="flex items-center gap-2">
+              <BarChart3 className="h-5 w-5" />
+              All Announcements & Events
+            </CardTitle>
+            <CardDescription>
+              Inspect audience reach, view who read each announcement, and toggle events on or off
+            </CardDescription>
+          </div>
+          <Tabs value={statusFilter} onValueChange={(v) => setStatusFilter(v as typeof statusFilter)} className="w-full sm:w-auto">
+            <TabsList className="grid w-full grid-cols-4 sm:w-auto">
+              <TabsTrigger value="all" className="text-xs">All ({announcements.length})</TabsTrigger>
+              <TabsTrigger value="active" className="text-xs">Active ({activeAnnouncementsCount})</TabsTrigger>
+              <TabsTrigger value="inactive" className="text-xs">Off ({inactiveAnnouncementsCount})</TabsTrigger>
+              <TabsTrigger value="expired" className="text-xs">Expired ({expiredAnnouncementsCount})</TabsTrigger>
+            </TabsList>
+          </Tabs>
         </CardHeader>
         <CardContent>
           {isLoading ? (
@@ -504,11 +591,11 @@ export const AnnouncementsManagementModule = ({ user }: AnnouncementsManagementM
               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto"></div>
               <p className="text-sm text-muted-foreground mt-2">Loading announcements...</p>
             </div>
-          ) : announcements.length === 0 ? (
+          ) : filteredAnnouncements.length === 0 ? (
             <div className="text-center py-8 border-2 border-dashed rounded-lg">
               <Megaphone className="h-12 w-12 text-muted-foreground mx-auto mb-3" />
-              <p className="text-muted-foreground">No announcements yet</p>
-              <p className="text-sm text-muted-foreground mt-1">Click "New Announcement" to create your first announcement</p>
+              <p className="text-muted-foreground">No announcements match this filter</p>
+              <p className="text-sm text-muted-foreground mt-1">Click "New Announcement" to create an announcement or switch tabs</p>
             </div>
           ) : (
             <ScrollArea className="max-h-[600px]">
@@ -518,21 +605,30 @@ export const AnnouncementsManagementModule = ({ user }: AnnouncementsManagementM
                     <TableHead>Title</TableHead>
                     <TableHead>Priority</TableHead>
                     <TableHead>Audience</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Engagement</TableHead>
+                    <TableHead>Status & Toggle</TableHead>
+                    <TableHead>Reach & Reads</TableHead>
                     <TableHead>Created</TableHead>
                     <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {announcements.map((announcement) => {
-                    const engagement = getEngagementRate(announcement.read_count || 0, announcement.total_target || 1);
+                  {filteredAnnouncements.map((announcement) => {
+                    const targetCount = announcement.total_target || totalUsers || 1;
+                    const readCount = announcement.read_count || 0;
+                    const engagement = getEngagementRate(readCount, targetCount);
+                    const expired = isAnnouncementExpired(announcement);
                     return (
-                      <TableRow key={announcement.id}>
+                      <TableRow key={announcement.id} className={!announcement.is_active ? "opacity-75" : undefined}>
                         <TableCell>
-                          <div className="max-w-[200px]">
+                          <div className="max-w-[240px]">
                             <p className="font-medium truncate">{announcement.title}</p>
-                            <p className="text-xs text-muted-foreground truncate">{announcement.content.substring(0, 50)}...</p>
+                            <p className="text-xs text-muted-foreground truncate">{announcement.content}</p>
+                            {announcement.expires_at && (
+                              <p className="text-[11px] text-muted-foreground mt-0.5 flex items-center gap-1">
+                                <Clock className="h-3 w-3" />
+                                Expires {format(new Date(announcement.expires_at), 'MMM d, yyyy HH:mm')}
+                              </p>
+                            )}
                           </div>
                         </TableCell>
                         <TableCell>
@@ -551,11 +647,20 @@ export const AnnouncementsManagementModule = ({ user }: AnnouncementsManagementM
                           </div>
                         </TableCell>
                         <TableCell>
-                          {announcement.is_active ? (
-                            <Badge className="bg-green-600 text-white">Active</Badge>
-                          ) : (
-                            <Badge variant="secondary">Inactive</Badge>
-                          )}
+                          <div className="flex items-center gap-2.5">
+                            <Switch
+                              checked={Boolean(announcement.is_active)}
+                              onCheckedChange={() => handleToggleActive(announcement)}
+                              aria-label={announcement.is_active ? `Toggle off ${announcement.title}` : `Toggle on ${announcement.title}`}
+                            />
+                            {!announcement.is_active ? (
+                              <Badge variant="secondary">Toggled Off</Badge>
+                            ) : expired ? (
+                              <Badge variant="outline" className="border-warning/40 bg-warning/10 text-warning">Expired</Badge>
+                            ) : (
+                              <Badge className="bg-green-600 text-white">Active</Badge>
+                            )}
+                          </div>
                         </TableCell>
                         <TableCell>
                           <div className="space-y-1">
@@ -566,11 +671,11 @@ export const AnnouncementsManagementModule = ({ user }: AnnouncementsManagementM
                             <Button
                               variant="ghost"
                               size="sm"
-                              className="h-6 text-xs"
-                              onClick={() => loadReadDetails(announcement.id)}
+                              className="h-7 px-2 text-xs font-medium text-primary hover:bg-primary/10"
+                              onClick={() => loadReadDetails(announcement)}
                             >
-                              <Eye className="h-3 w-3 mr-1" />
-                              {announcement.read_count} / {announcement.total_target} reads
+                              <Eye className="h-3.5 w-3.5 mr-1" />
+                              {readCount} / {targetCount} reached
                             </Button>
                           </div>
                         </TableCell>
@@ -587,7 +692,19 @@ export const AnnouncementsManagementModule = ({ user }: AnnouncementsManagementM
                             <Button
                               variant="ghost"
                               size="icon"
+                              onClick={() => loadReadDetails(announcement)}
+                              title="View reach & read details"
+                              aria-label="View reach & read details"
+                              className="h-8 w-8 text-primary"
+                            >
+                              <Eye className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
                               onClick={() => handleEdit(announcement)}
+                              title="Edit announcement"
+                              aria-label="Edit announcement"
                               className="h-8 w-8"
                             >
                               <Edit className="h-4 w-4" />
@@ -596,18 +713,22 @@ export const AnnouncementsManagementModule = ({ user }: AnnouncementsManagementM
                               variant="ghost"
                               size="icon"
                               onClick={() => handleToggleActive(announcement)}
+                              title={announcement.is_active ? "Toggle off announcement" : "Toggle on announcement"}
+                              aria-label={announcement.is_active ? "Toggle off announcement" : "Toggle on announcement"}
                               className="h-8 w-8"
                             >
                               {announcement.is_active ? (
                                 <ToggleRight className="h-4 w-4 text-green-600" />
                               ) : (
-                                <ToggleLeft className="h-4 w-4" />
+                                <ToggleLeft className="h-4 w-4 text-muted-foreground" />
                               )}
                             </Button>
                             <Button
                               variant="ghost"
                               size="icon"
                               onClick={() => handleDelete(announcement.id)}
+                              title="Delete announcement"
+                              aria-label="Delete announcement"
                               className="h-8 w-8 text-destructive hover:text-destructive"
                             >
                               <Trash2 className="h-4 w-4" />
@@ -624,44 +745,87 @@ export const AnnouncementsManagementModule = ({ user }: AnnouncementsManagementM
         </CardContent>
       </Card>
 
-      {/* Read Details Dialog */}
+      {/* Reach & Read Details Dialog */}
       <Dialog open={showReadDetails} onOpenChange={setShowReadDetails}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="max-w-lg">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              <Eye className="h-5 w-5" />
-              Read Details
+              <Eye className="h-5 w-5 text-primary" />
+              Announcement Reach & Read Details
             </DialogTitle>
             <DialogDescription>
-              Users who have read this announcement
+              {selectedAnnouncement ? selectedAnnouncement.title : "Audience reach and read activity"}
             </DialogDescription>
           </DialogHeader>
-          <ScrollArea className="max-h-[400px]">
-            {readDetails.length === 0 ? (
-              <div className="text-center py-8">
-                <p className="text-muted-foreground">No one has read this announcement yet</p>
-              </div>
-            ) : (
-              <div className="space-y-2">
-                {readDetails.map((read: any) => (
-                  <div key={read.id} className="flex items-center justify-between p-3 border rounded-lg">
-                    <div>
-                      <p className="font-medium text-sm">
-                        {read.user?.first_name} {read.user?.last_name}
-                      </p>
-                      <p className="text-xs text-muted-foreground">{read.user?.email}</p>
-                    </div>
-                    <div className="text-right">
-                      <Badge variant="outline" className="text-xs">{read.user?.role}</Badge>
-                      <p className="text-xs text-muted-foreground mt-1">
-                        {format(new Date(read.read_at), 'MMM d, HH:mm')}
-                      </p>
-                    </div>
+
+          <div className="rounded-xl border bg-muted/30 p-3 space-y-2">
+            <div className="flex items-center justify-between text-xs font-medium">
+              <span>Audience Reach ({readDetails.length} of {selectedReachTarget} users)</span>
+              <span className="font-bold text-primary">{selectedReachRate}%</span>
+            </div>
+            <Progress value={selectedReachRate} className="h-2" />
+          </div>
+
+          <Tabs value={reachTab} onValueChange={(v) => setReachTab(v as 'read' | 'unread')}>
+            <TabsList className="grid w-full grid-cols-2">
+              <TabsTrigger value="read">Read ({readDetails.length})</TabsTrigger>
+              <TabsTrigger value="unread">Not Read Yet ({unreadUsers.length})</TabsTrigger>
+            </TabsList>
+            <TabsContent value="read" className="mt-3">
+              <ScrollArea className="max-h-[320px]">
+                {readDetails.length === 0 ? (
+                  <div className="text-center py-8">
+                    <p className="text-sm text-muted-foreground">No one has read this announcement yet</p>
                   </div>
-                ))}
-              </div>
-            )}
-          </ScrollArea>
+                ) : (
+                  <div className="space-y-2">
+                    {readDetails.map((read: any) => (
+                      <div key={read.id} className="flex items-center justify-between p-3 border rounded-lg">
+                        <div>
+                          <p className="font-medium text-sm">
+                            {[read.user?.first_name, read.user?.last_name].filter(Boolean).join(' ') || read.user?.email || 'User'}
+                          </p>
+                          <p className="text-xs text-muted-foreground">{read.user?.email}</p>
+                        </div>
+                        <div className="text-right">
+                          <Badge variant="outline" className="text-xs">{read.user?.role}</Badge>
+                          <p className="text-xs text-muted-foreground mt-1">
+                            {format(new Date(read.read_at), 'MMM d, HH:mm')}
+                          </p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </ScrollArea>
+            </TabsContent>
+            <TabsContent value="unread" className="mt-3">
+              <ScrollArea className="max-h-[320px]">
+                {unreadUsers.length === 0 ? (
+                  <div className="text-center py-8">
+                    <p className="text-sm text-muted-foreground">All target users have read this announcement</p>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {unreadUsers.map((unreadUser: any) => (
+                      <div key={unreadUser.id} className="flex items-center justify-between p-3 border rounded-lg">
+                        <div>
+                          <p className="font-medium text-sm">
+                            {[unreadUser.first_name, unreadUser.last_name].filter(Boolean).join(' ') || unreadUser.email}
+                          </p>
+                          <p className="text-xs text-muted-foreground">{unreadUser.email}</p>
+                        </div>
+                        <div className="text-right">
+                          <Badge variant="outline" className="text-xs">{unreadUser.role}</Badge>
+                          <p className="text-xs text-muted-foreground mt-1">Pending</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </ScrollArea>
+            </TabsContent>
+          </Tabs>
         </DialogContent>
       </Dialog>
     </div>

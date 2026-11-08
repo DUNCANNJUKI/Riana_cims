@@ -244,7 +244,7 @@ export const FeedbackLinkGenerator = ({ client, installation, onClose }: Feedbac
                     readOnly 
                     className="font-mono text-sm"
                   />
-                  <Button onClick={copyToClipboard} variant="outline" size="icon">
+                  <Button onClick={copyToClipboard} variant="outline" size="icon" title="Copy feedback link" aria-label="Copy feedback link">
                     <Copy className="h-4 w-4" />
                   </Button>
                 </div>
@@ -263,14 +263,14 @@ export const FeedbackLinkGenerator = ({ client, installation, onClose }: Feedbac
 
 
               <div className="flex gap-2">
-                <Button onClick={sendFeedbackToClient} variant="outline" className="flex-1 transition-all hover:scale-[1.02] active:scale-95">
+                <Button onClick={sendFeedbackToClient} variant="outline" className="flex-1">
                   <Mail className="h-4 w-4 mr-2" />
                   Send to Client
                 </Button>
                 <Button 
                   onClick={() => window.open(generatedLink, '_blank')} 
                   variant="outline"
-                  className="flex-1 transition-all hover:scale-[1.02] active:scale-95"
+                  className="flex-1"
                 >
                   <ExternalLink className="h-4 w-4 mr-2" />
                   Preview Form
@@ -287,7 +287,7 @@ export const FeedbackLinkGenerator = ({ client, installation, onClose }: Feedbac
           <Button 
             onClick={generateFeedbackLink} 
             disabled={isGenerating}
-            className="w-full gradient-primary transition-all hover:scale-[1.02] active:scale-95"
+            className="w-full gradient-primary"
           >
             {isGenerating ? 'Generating...' : 'Generate Feedback Link'}
           </Button>
@@ -301,7 +301,7 @@ export const FeedbackLinkGenerator = ({ client, installation, onClose }: Feedbac
                   readOnly 
                   className="font-mono text-sm"
                 />
-                <Button onClick={copyToClipboard} variant="outline" size="icon">
+                <Button onClick={copyToClipboard} variant="outline" size="icon" title="Copy feedback link" aria-label="Copy feedback link">
                   <Copy className="h-4 w-4" />
                 </Button>
               </div>
@@ -320,14 +320,14 @@ export const FeedbackLinkGenerator = ({ client, installation, onClose }: Feedbac
 
 
             <div className="flex gap-2">
-              <Button onClick={sendFeedbackToClient} variant="outline" className="flex-1 transition-all hover:scale-[1.02] active:scale-95">
+              <Button onClick={sendFeedbackToClient} variant="outline" className="flex-1">
                 <Mail className="h-4 w-4 mr-2" />
                 Send to Client
               </Button>
               <Button 
                 onClick={() => window.open(generatedLink, '_blank')} 
                 variant="outline"
-                className="flex-1 transition-all hover:scale-[1.02] active:scale-95"
+                className="flex-1"
               >
                 <ExternalLink className="h-4 w-4 mr-2" />
                 Preview Form

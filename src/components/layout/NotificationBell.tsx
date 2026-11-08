@@ -54,16 +54,25 @@ export const NotificationBell = ({ user, onNavigate, triggerClassName }: Notific
   const isInitialLoadRef = useRef<boolean>(true);
   const previousIdsRef = useRef<Set<string>>(new Set());
   const assignmentModule = can(user, 'assignments.view') ? 'assignments' : 'technician-dashboard';
+  const announcementDestination = can(user, 'announcements.manage') ? 'announcements-management' : 'dashboard';
 
   useEffect(() => {
     loadPendingItems();
+
+    const handleAnnouncementsUpdated = () => {
+      void loadPendingItems(false);
+    };
+    window.addEventListener('riana-announcements-updated', handleAnnouncementsUpdated);
     
     // Keep background refresh gentle; explicit user actions still update immediately.
     const interval = setInterval(() => {
       if (document.visibilityState === 'visible') loadPendingItems(false);
     }, OPERATIONAL_REFRESH_INTERVAL_MS);
     
-    return () => clearInterval(interval);
+    return () => {
+      window.removeEventListener('riana-announcements-updated', handleAnnouncementsUpdated);
+      clearInterval(interval);
+    };
   }, [user.id]);
 
   const loadPendingItems = async (showLoading = true) => {
@@ -73,11 +82,10 @@ export const NotificationBell = ({ user, onNavigate, triggerClassName }: Notific
       const [assignments, installations, announcements, persistentSummary] = await Promise.all([
         user.role==='InventoryOfficer' ? Promise.resolve([]) : apiClient.get('/client_assignments'),
         user.role==='InventoryOfficer' ? Promise.resolve([]) : apiClient.get('/installations'),
-        apiClient.get(`/announcements?user_id=${encodeURIComponent(user.id)}`),
+        apiClient.get(`/announcements?scope=active&user_id=${encodeURIComponent(user.id)}`),
         apiClient.get('/notifications/summary').catch(() => ({ notifications: [], unread_count: 0 })),
       ]);
       const persistentNotifications = persistentSummary.notifications || [];
-      setUnreadCount(Number(persistentSummary.unread_count || 0));
 
       (persistentNotifications || []).forEach((notification: any) => {
         const isAssignment = String(notification.title || '').toLowerCase().includes('assignment');
@@ -113,7 +121,11 @@ export const NotificationBell = ({ user, onNavigate, triggerClassName }: Notific
         ['pending', 'in_progress'].includes(i.status)
       );
 
-      const unreadAnnouncements = (announcements || []).filter((announcement: any) => !announcement.is_read);
+      const unreadAnnouncements = (announcements || []).filter(
+        (announcement: any) => !announcement.is_read && announcement.is_active !== false && !announcement.is_expired
+      );
+
+      setUnreadCount(Number(persistentSummary.unread_count || 0) + unreadAnnouncements.length);
 
       const pendingAssignments = userAssignments.length;
       const pendingInstallations = userInstallations.length;
@@ -180,7 +192,7 @@ export const NotificationBell = ({ user, onNavigate, triggerClassName }: Notific
           message: announcement.content.substring(0, 100) + (announcement.content.length > 100 ? '...' : ''),
           timestamp: new Date(announcement.created_at),
           read: false,
-          link: 'dashboard',
+          link: announcementDestination,
           priority: announcement.priority
         });
       });
@@ -216,8 +228,10 @@ export const NotificationBell = ({ user, onNavigate, triggerClassName }: Notific
 
   const markAsRead = (id: string) => {
     const notification = notifications.find(item => item.id === id);
-    if (notification?.persistentId && !notification.read) {
-      void apiClient.patch(`/notifications/${notification.persistentId}/read`, {});
+    if (notification && !notification.read) {
+      if (notification.persistentId) {
+        void apiClient.patch(`/notifications/${notification.persistentId}/read`, {});
+      }
       setUnreadCount((count) => Math.max(0, count - 1));
     }
     setNotifications(prev => 
@@ -227,7 +241,18 @@ export const NotificationBell = ({ user, onNavigate, triggerClassName }: Notific
 
   const markAllAsRead = () => {
     void apiClient.post('/notifications/read-all', {});
+    const unreadAnnouncementNotifications = notifications.filter((n) => n.type === 'announcement' && !n.read);
+    if (unreadAnnouncementNotifications.length > 0) {
+      Promise.all(
+        unreadAnnouncementNotifications.map((n) =>
+          apiClient.post(`/announcements/${n.id.replace('announcement-', '')}/read`, {}).catch(() => undefined)
+        )
+      ).then(() => {
+        window.dispatchEvent(new CustomEvent('riana-announcements-updated'));
+      });
+    }
     setUnreadCount(0);
+    setPendingCounts((prev) => ({ ...prev, pendingAnnouncements: 0 }));
     setNotifications(prev => prev.map(n => ({ ...n, read: true })));
   };
 
@@ -238,7 +263,9 @@ export const NotificationBell = ({ user, onNavigate, triggerClassName }: Notific
   const handleNotificationClick = (notification: Notification) => {
     markAsRead(notification.id);
     if (notification.type === 'announcement') {
-      void apiClient.post(`/announcements/${notification.id.replace('announcement-', '')}/read`, {});
+      void apiClient.post(`/announcements/${notification.id.replace('announcement-', '')}/read`, {}).then(() => {
+        window.dispatchEvent(new CustomEvent('riana-announcements-updated'));
+      });
     }
     if (notification.actionUrl) {
       try {
@@ -302,14 +329,14 @@ export const NotificationBell = ({ user, onNavigate, triggerClassName }: Notific
       <PopoverTrigger asChild>
         <Button 
           variant="ghost" 
-          size="icon" 
+          size="icon" title="Notifications" aria-label="Open notifications"
           className={cn(
             "relative h-10 w-10 rounded-full border border-transparent text-foreground transition-all hover:border-primary/20 hover:bg-primary/10 hover:text-primary dark:text-foreground",
             unreadCount > 0 && "bg-primary/10 text-primary animate-pulse-glow",
             triggerClassName,
           )}
         >
-          <Bell className="h-4 w-4 sm:h-5 sm:w-5" />
+          <Bell className="h-4 w-4" />
           {unreadCount > 0 && (
             <Badge 
               className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full border-2 border-background bg-destructive px-1 text-[10px] font-bold text-destructive-foreground shadow-sm"
@@ -336,7 +363,7 @@ export const NotificationBell = ({ user, onNavigate, triggerClassName }: Notific
 
         {/* Pending Counters Summary - Responsive Grid */}
         {categoryCount > 0 && (
-          <div className="grid grid-cols-3 gap-2 border-b border-primary/10 bg-muted/35 p-3 text-center">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 border-b border-primary/10 bg-muted/35 p-3 text-center">
             {pendingCounts.pendingAssignments > 0 && (
               <div 
                 className="cursor-pointer rounded-xl border border-transparent p-2 transition-all hover:border-primary/15 hover:bg-background hover:shadow-sm"
@@ -362,6 +389,15 @@ export const NotificationBell = ({ user, onNavigate, triggerClassName }: Notific
               >
                 <div className="text-base sm:text-lg font-bold text-success">{pendingCounts.pendingHandovers}</div>
                 <div className="text-[10px] sm:text-xs text-muted-foreground">Handovers</div>
+              </div>
+            )}
+            {pendingCounts.pendingAnnouncements > 0 && (
+              <div 
+                className="cursor-pointer rounded-xl border border-transparent p-2 transition-all hover:border-primary/15 hover:bg-background hover:shadow-sm"
+                onClick={() => { onNavigate?.(announcementDestination); setIsOpen(false); }}
+              >
+                <div className="text-base sm:text-lg font-bold text-primary">{pendingCounts.pendingAnnouncements}</div>
+                <div className="text-[10px] sm:text-xs text-muted-foreground">Announcements</div>
               </div>
             )}
           </div>
@@ -394,7 +430,7 @@ export const NotificationBell = ({ user, onNavigate, triggerClassName }: Notific
                         <Button
                           variant="ghost"
                           size="icon"
-                          className="h-7 w-7 shrink-0 rounded-full text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                          className="h-7 w-7 shrink-0 rounded-full text-muted-foreground hover:bg-destructive/10 hover:text-destructive" title="Dismiss notification" aria-label="Dismiss notification"
                           onClick={(e) => {
                             e.stopPropagation();
                             clearNotification(notification.id);

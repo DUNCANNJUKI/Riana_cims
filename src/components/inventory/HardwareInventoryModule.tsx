@@ -1084,8 +1084,8 @@ export function HardwareInventoryModule({ user }: { user: User }) {
     );
   return (
     <div className="space-y-5 min-w-0">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h1 data-tour="inventory-header" className="text-2xl font-semibold">
+      <div className="cims-page-header">
+        <h1 data-tour="inventory-header" className="cims-page-title">
           Hardware & Inventory
         </h1>
         <div className="flex flex-wrap gap-2">
@@ -1147,7 +1147,7 @@ export function HardwareInventoryModule({ user }: { user: User }) {
           )}
           <div
             data-tour="inventory-overview"
-            className="grid grid-cols-2 gap-px border bg-border sm:grid-cols-3 lg:grid-cols-5"
+            className="grid grid-cols-2 gap-px overflow-hidden rounded-xl border bg-border shadow-sm sm:grid-cols-3 lg:grid-cols-5"
           >
             {[
               ["Total Registered Assets", metrics.data?.total || 0],
@@ -1459,7 +1459,7 @@ export function HardwareInventoryModule({ user }: { user: User }) {
                   <div className="space-y-1.5">
                     <Label htmlFor="hw-search">Serial, Model or Asset ID</Label>
                     <div className="relative">
-                      <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                       <Input
                         id="hw-search"
                         data-tour="inventory-search"

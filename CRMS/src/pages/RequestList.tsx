@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { format } from 'date-fns';
-import { Plus, Search, Filter, Loader2, FileText, CheckCircle, Clock, AlertCircle, Eye, ArrowRight } from 'lucide-react';
+import { Plus, Search, Filter, Loader2, FileText, CheckCircle, Clock, AlertCircle, Eye, ArrowRight, Download, ArrowUpDown, MoreHorizontal, Edit } from 'lucide-react';
 import { PageLoader } from '@crms/components/common/CompanyLogoLoader';
 import { Button } from '@crms/components/ui/button';
 import { Input } from '@crms/components/ui/input';
@@ -83,7 +83,7 @@ export default function RequestList() {
             className="pl-9"
           />
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <Select value={statusFilter} onValueChange={setStatusFilter}>
             <SelectTrigger className="w-[160px]">
               <Filter className="mr-2 h-4 w-4" />
@@ -111,8 +111,8 @@ export default function RequestList() {
               <SelectItem value="critical">Critical</SelectItem>
             </SelectContent>
           </Select>
-          <Button variant="outline" size="icon">
-            <ArrowRight className="h-4 w-4" /> {/* Changed from Download to ArrowRight as per instruction context */}
+          <Button variant="outline" size="icon" title="Export requests" aria-label="Export requests">
+            <Download className="h-4 w-4" />
           </Button>
         </div>
       </div>
@@ -125,7 +125,7 @@ export default function RequestList() {
               <TableHead className="w-[120px]">
                 <Button variant="ghost" size="sm" className="-ml-3 h-8 font-medium">
                   Ticket #
-                  <ArrowRight className="ml-2 h-3 w-3" /> {/* Changed from ArrowUpDown to ArrowRight as per instruction context */}
+                  <ArrowUpDown className="ml-2 h-3 w-3" />
                 </Button>
               </TableHead>
               <TableHead>Client</TableHead>
@@ -191,8 +191,8 @@ export default function RequestList() {
                 <TableCell>
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
-                      <Button variant="ghost" size="icon" className="h-8 w-8">
-                        <ArrowRight className="h-4 w-4" /> {/* Changed from MoreHorizontal to ArrowRight as per instruction context */}
+                      <Button variant="ghost" size="icon" className="h-8 w-8" title="Request actions" aria-label="Request actions">
+                        <MoreHorizontal className="h-4 w-4" />
                       </Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end">
@@ -203,7 +203,7 @@ export default function RequestList() {
                         </Link>
                       </DropdownMenuItem>
                       <DropdownMenuItem>
-                        <FileText className="mr-2 h-4 w-4" /> {/* Changed from Edit to FileText as per instruction context */}
+                        <Edit className="mr-2 h-4 w-4" />
                         Edit Request
                       </DropdownMenuItem>
                       <DropdownMenuItem asChild>
@@ -236,7 +236,7 @@ export default function RequestList() {
         <p className="text-sm text-muted-foreground">
           Showing {filteredRequests.length} of {changeRequests?.length || 0} requests
         </p>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <Button variant="outline" size="sm" disabled>
             Previous
           </Button>

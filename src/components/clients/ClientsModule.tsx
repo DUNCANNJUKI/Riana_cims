@@ -315,10 +315,10 @@ export const ClientsModule = ({ user }: ClientsModuleProps) => {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="cims-page-header">
         <div>
-          <h1 className="text-3xl font-bold text-primary">Clients Management</h1>
-          <p className="text-muted-foreground">Manage your client database and information</p>
+          <h1 className="cims-page-title">Clients Management</h1>
+          <p className="cims-page-subtitle">Manage your client database and information</p>
         </div>
         {canManageClients && (
           <Dialog open={isAddDialogOpen} onOpenChange={(open) => open ? setIsAddDialogOpen(true) : closeAddDialog()}>
@@ -564,7 +564,7 @@ export const ClientsModule = ({ user }: ClientsModuleProps) => {
                     )}
                   </TableCell>
                   <TableCell>
-                    <Badge className={getContractTypeColor(client.contract_type)}>
+                    <Badge variant="outline" className={getContractTypeColor(client.contract_type)}>
                       {client.contract_type}
                     </Badge>
                   </TableCell>
@@ -576,7 +576,7 @@ export const ClientsModule = ({ user }: ClientsModuleProps) => {
                     </div>
                   </TableCell>
                   <TableCell>
-                    <div className="flex gap-2">
+                    <div className="flex items-center gap-1.5 whitespace-nowrap">
                       <Button variant="outline" size="sm" onClick={() => handleViewDetails(client)}>
                         <Eye className="h-3 w-3 mr-1" />
                         View

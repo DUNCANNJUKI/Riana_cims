@@ -155,9 +155,9 @@ export const FeedbackSettingsPanel = () => {
 
   const getTypeBadge = (type: string) => {
     const colors: Record<string, string> = {
-      rating: 'bg-yellow-100 text-yellow-800 border-yellow-200',
-      nps: 'bg-blue-100 text-blue-800 border-blue-200',
-      text: 'bg-gray-100 text-gray-700 border-gray-200',
+      rating: 'status-waiting',
+      nps: 'status-progress',
+      text: 'bg-muted text-muted-foreground border-border',
     };
     const labels: Record<string, string> = { rating: '1–5 Stars', nps: '0–10 NPS', text: 'Text Answer' };
     return (
@@ -172,7 +172,7 @@ export const FeedbackSettingsPanel = () => {
 
   return (
     <Card>
-      <CardHeader className="flex flex-row items-center justify-between">
+      <CardHeader className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
           <CardTitle className="flex items-center gap-2">
             <MessageSquare className="h-5 w-5 text-primary" />
@@ -219,7 +219,7 @@ export const FeedbackSettingsPanel = () => {
                         <Button
                           variant="ghost" size="icon"
                           className="h-5 w-5"
-                          onClick={() => handleMoveOrder(q, 'up')}
+                          onClick={() => handleMoveOrder(q, 'up')} title="Move question up" aria-label="Move question up"
                           disabled={idx === 0}
                         >
                           <ChevronUp className="h-3 w-3" />
@@ -227,7 +227,7 @@ export const FeedbackSettingsPanel = () => {
                         <Button
                           variant="ghost" size="icon"
                           className="h-5 w-5"
-                          onClick={() => handleMoveOrder(q, 'down')}
+                          onClick={() => handleMoveOrder(q, 'down')} title="Move question down" aria-label="Move question down"
                           disabled={idx === sortedQuestions.length - 1}
                         >
                           <ChevronDown className="h-3 w-3" />
@@ -249,13 +249,13 @@ export const FeedbackSettingsPanel = () => {
                     </TableCell>
                     <TableCell>
                       <div className="flex gap-1">
-                        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEditDialog(q)}>
+                        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEditDialog(q)} title="Edit question" aria-label="Edit question">
                           <Edit className="h-3 w-3" />
                         </Button>
                         <Button
                           variant="ghost" size="icon"
                           className="h-7 w-7 text-destructive hover:text-destructive"
-                          onClick={() => handleDelete(q.id)}
+                          onClick={() => handleDelete(q.id)} title="Deactivate question" aria-label="Deactivate question"
                         >
                           <Trash2 className="h-3 w-3" />
                         </Button>

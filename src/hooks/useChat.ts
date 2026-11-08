@@ -29,6 +29,13 @@ export interface ChatMessage {
   call_participant_count?: number;
   call_participants?: Array<{ user_id: string; status: string; hand_raised?: boolean; hand_raised_at?: string | null; audio_enabled?: boolean | null; video_enabled?: boolean | null; screen_sharing?: boolean; first_name?: string; last_name?: string; email?: string }>;
   spotlight_user_id?: string | null;
+  recording_active?: boolean;
+  recording_id?: string | null;
+  recording_started_by?: string | null;
+  recording_started_by_name?: string | null;
+  recording_started_at?: string | null;
+  recordings_count?: number;
+  latest_recording_id?: string | null;
   is_read: boolean;
   read_at: string | null;
   is_edited?: boolean;
@@ -48,6 +55,30 @@ export interface ChatMessage {
   receiver_avatar_url?: string | null;
 }
 
+export interface CallRecordingItem {
+  id: string;
+  call_id: string;
+  call_message_id?: string;
+  call_title: string;
+  meeting_title?: string;
+  call_type: 'audio' | 'video';
+  initiated_by: string;
+  initiated_by_name: string;
+  initiator_name?: string;
+  host_user_id?: string;
+  stopped_by?: string | null;
+  started_at: string;
+  ended_at?: string | null;
+  duration_seconds: number;
+  status: 'recording' | 'processing' | 'saved' | 'completed' | 'failed' | 'deleted';
+  file_name?: string | null;
+  mime_type?: string | null;
+  file_size?: number;
+  created_at: string;
+  participants?: Array<{ user_id: string; name: string }>;
+  can_delete?: boolean;
+}
+
 export interface ChatAttachmentInput {
   fileName: string;
   base64Data: string;
@@ -59,11 +90,32 @@ export interface ChatUser extends User {
   last_seen_at?: string | null;
 }
 
+export type CallSignalType =
+  | 'offer'
+  | 'answer'
+  | 'ice-candidate'
+  | 'reaction'
+  | 'hand-state'
+  | 'media-state'
+  | 'spotlight'
+  | 'recording-state'
+  | 'rejoin';
+
+export type CallSignalPayload =
+  | RTCSessionDescriptionInit
+  | RTCIceCandidateInit
+  | { emoji: string }
+  | { raised: boolean; targetUserId?: string }
+  | { audioEnabled: boolean; videoEnabled: boolean; screenSharing: boolean }
+  | { userId: string | null }
+  | { active: boolean; recordingId?: string | null; startedBy?: string | null; startedByName?: string | null; startedAt?: string | null }
+  | Record<string, never>;
+
 export interface CallSignalEvent {
   callId: string;
   senderId: string;
-  signalType: 'offer' | 'answer' | 'ice-candidate' | 'reaction' | 'hand-state' | 'media-state' | 'spotlight' | 'rejoin';
-  payload: RTCSessionDescriptionInit | RTCIceCandidateInit | { emoji: string } | { raised: boolean; targetUserId?: string } | { audioEnabled: boolean; videoEnabled: boolean; screenSharing: boolean } | { userId: string | null } | Record<string, never>;
+  signalType: CallSignalType;
+  payload: CallSignalPayload;
   receivedAt: number;
   signalId?: string;
 }
@@ -71,6 +123,11 @@ export interface CallSignalEvent {
 export const getChatAttachmentUrl = (filePath?: string | null, download = false) => {
   if (!filePath) return '';
   return `${API_URL}/chat/attachments/${encodeURIComponent(filePath)}${download ? '?download=1' : ''}`;
+};
+
+export const getCallRecordingMediaUrl = (recordingId?: string | null, download = false) => {
+  if (!recordingId) return '';
+  return `${API_URL}/chat/recordings/${encodeURIComponent(recordingId)}/media${download ? '?download=1' : ''}`;
 };
 
 export const useChat = (currentUser: User | null) => {
@@ -88,6 +145,8 @@ export const useChat = (currentUser: User | null) => {
   const [missedCalls, setMissedCalls] = useState<ChatMessage[]>([]);
   const [dismissingMissedCallIds, setDismissingMissedCallIds] = useState<Set<string>>(() => new Set());
   const [callSignals, setCallSignals] = useState<CallSignalEvent[]>([]);
+  const [callRecordings, setCallRecordings] = useState<CallRecordingItem[]>([]);
+  const [isLoadingRecordings, setIsLoadingRecordings] = useState(false);
   const [onlineUserCount, setOnlineUserCount] = useState(0);
   const streamAbortRef = useRef<AbortController | null>(null);
   const reconnectTimerRef = useRef<number | null>(null);
@@ -95,7 +154,6 @@ export const useChat = (currentUser: User | null) => {
   const notifiedMissedCallIdsRef = useRef<Set<string>>(new Set());
   const dismissedMissedCallIdsRef = useRef<Set<string>>(new Set());
   const missedCallEventVersionRef = useRef(0);
-
 
   const loadUsers = useCallback(async () => {
     try {
@@ -137,6 +195,108 @@ export const useChat = (currentUser: User | null) => {
       if (existing >= 0) return prev.map(item => item.id === message.id ? { ...item, ...message } : item);
       return [...prev, message];
     });
+  }, []);
+
+  const loadCallRecordings = useCallback(async (callId?: string) => {
+    try {
+      setIsLoadingRecordings(true);
+      const query = callId ? `?callId=${encodeURIComponent(callId)}` : '';
+      const data = await apiClient.get(`/chat/recordings${query}`);
+      const list = Array.isArray(data) ? (data as CallRecordingItem[]) : [];
+      setCallRecordings(list);
+      return list;
+    } catch (error) {
+      console.warn('[Chat] Unable to load meeting recordings:', error);
+      return [];
+    } finally {
+      setIsLoadingRecordings(false);
+    }
+  }, []);
+
+  const startCallRecording = useCallback(async (callId: string) => {
+    const response = await apiClient.post(`/chat/calls/${encodeURIComponent(callId)}/recordings/start`, {}) as {
+      id: string;
+      call_id: string;
+      initiated_by: string;
+      initiated_by_name: string;
+      started_at: string;
+      status: string;
+    };
+    setActiveCall(current => current && current.id === callId ? {
+      ...current,
+      recording_active: true,
+      recording_id: response.id,
+      recording_started_by: response.initiated_by,
+      recording_started_by_name: response.initiated_by_name,
+      recording_started_at: response.started_at,
+    } : current);
+    return response;
+  }, []);
+
+  const stopCallRecording = useCallback(async (
+    callId: string,
+    recordingId: string,
+    blob: Blob,
+    mimeType: string,
+    durationSeconds: number,
+  ) => {
+    const token = getAuthToken();
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/octet-stream',
+      'X-Recording-Mime-Type': mimeType || 'video/webm',
+      'X-Recording-Duration': String(Math.max(1, Math.round(durationSeconds))),
+    };
+    if (token) {
+      headers.Authorization = `Bearer ${token}`;
+    }
+    const response = await fetch(
+      `${API_URL}/chat/calls/${encodeURIComponent(callId)}/recordings/${encodeURIComponent(recordingId)}/stop?durationSeconds=${encodeURIComponent(String(Math.max(1, Math.round(durationSeconds))))}`,
+      {
+        method: 'POST',
+        headers,
+        credentials: 'include',
+        body: blob,
+      },
+    );
+    if (!response.ok) {
+      let message = 'Unable to save meeting recording.';
+      try {
+        const errJson = await response.json();
+        if (errJson?.error) message = errJson.error;
+      } catch {
+        // Ignore JSON parse error
+      }
+      throw new Error(message);
+    }
+    const saved = await response.json() as CallRecordingItem;
+    setActiveCall(current => current && current.id === callId ? {
+      ...current,
+      recording_active: false,
+      recording_id: null,
+      recordings_count: (current.recordings_count || 0) + 1,
+      latest_recording_id: saved.id,
+    } : current);
+    void loadCallRecordings();
+    return saved;
+  }, [loadCallRecordings]);
+
+  const failCallRecording = useCallback(async (callId: string, recordingId: string) => {
+    try {
+      await apiClient.post(`/chat/calls/${encodeURIComponent(callId)}/recordings/${encodeURIComponent(recordingId)}/fail`, {});
+    } catch {
+      // Ignore cleanup errors
+    } finally {
+      setActiveCall(current => current && current.id === callId ? {
+        ...current,
+        recording_active: false,
+        recording_id: null,
+      } : current);
+    }
+  }, []);
+
+  const deleteCallRecording = useCallback(async (recordingId: string) => {
+    await apiClient.delete(`/chat/recordings/${encodeURIComponent(recordingId)}`);
+    setCallRecordings(current => current.filter(item => item.id !== recordingId));
   }, []);
 
   const mergeMissedCalls = useCallback((calls: ChatMessage[]) => {
@@ -242,7 +402,6 @@ export const useChat = (currentUser: User | null) => {
     }
   };
 
-
   const editMessage = async (messageId: string, content: string) => {
     const updated = await apiClient.patch(`/chat/messages/${messageId}/edit`, { content }) as ChatMessage;
     appendOrReplaceMessage(updated);
@@ -270,6 +429,7 @@ export const useChat = (currentUser: User | null) => {
     appendOrReplaceMessage(updated);
     return updated;
   };
+
   const setTyping = useCallback(async (receiverId: string, isTyping: boolean) => {
     try {
       await apiClient.post('/chat/typing', { receiver_id: receiverId, is_typing: isTyping });
@@ -313,8 +473,8 @@ export const useChat = (currentUser: User | null) => {
   const sendCallSignal = useCallback(async (
     callId: string,
     receiverId: string,
-    signalType: 'offer' | 'answer' | 'ice-candidate' | 'reaction' | 'hand-state' | 'media-state' | 'spotlight' | 'rejoin',
-    payload: RTCSessionDescriptionInit | RTCIceCandidateInit | { emoji: string } | { raised: boolean; targetUserId?: string } | { audioEnabled: boolean; videoEnabled: boolean; screenSharing: boolean } | { userId: string | null } | Record<string, never>,
+    signalType: CallSignalType,
+    payload: CallSignalPayload,
   ) => {
     await apiClient.post('/chat/call-signal', {
       call_id: callId,
@@ -341,6 +501,7 @@ export const useChat = (currentUser: User | null) => {
     loadUsers();
     loadMissedCalls();
     void loadActiveCall();
+    void loadCallRecordings();
     let disposed = false;
 
     const handleStreamMessage = (rawData: string) => {
@@ -382,6 +543,22 @@ export const useChat = (currentUser: User | null) => {
             ? null
             : isPendingInvite ? current => current?.id === call.id ? current : null : call);
           if (call.call_status === 'missed' && call.receiver_id === currentUserId) mergeMissedCalls([call]);
+        } else if (data.type === 'call_recording_state') {
+          const isRecordingActive = Boolean(data.active);
+          setActiveCall(current => {
+            if (!current || current.id !== data.callId) return current;
+            return {
+              ...current,
+              recording_active: isRecordingActive,
+              recording_id: isRecordingActive ? (data.recordingId || current.recording_id || null) : null,
+              recording_started_by: isRecordingActive ? (data.startedBy || current.recording_started_by || null) : null,
+              recording_started_by_name: isRecordingActive ? (data.startedByName || current.recording_started_by_name || null) : null,
+              recording_started_at: isRecordingActive ? (data.startedAt || current.recording_started_at || new Date().toISOString()) : null,
+            };
+          });
+          if (!isRecordingActive && data.status === 'saved') {
+            void loadCallRecordings();
+          }
         } else if (data.type === 'call_device_resolved') {
           if (data.winningDeviceId !== getCommunicationDeviceId()) {
             setIncomingCall(current => current?.id === data.callId ? null : current);
@@ -442,6 +619,7 @@ export const useChat = (currentUser: User | null) => {
         void loadUsers();
         void loadMissedCalls();
         void loadActiveCall();
+        void loadCallRecordings();
         if (activeChatUserIdRef.current) void loadMessages(activeChatUserIdRef.current);
         const reader = response.body.getReader();
         const decoder = new TextDecoder();
@@ -477,7 +655,7 @@ export const useChat = (currentUser: User | null) => {
       if (reconnectTimerRef.current) window.clearTimeout(reconnectTimerRef.current);
       streamAbortRef.current?.abort();
     };
-  }, [appendOrReplaceMessage, currentUserId, loadActiveCall, loadMessages, loadMissedCalls, loadUsers, mergeMissedCalls]);
+  }, [appendOrReplaceMessage, currentUserId, loadActiveCall, loadCallRecordings, loadMessages, loadMissedCalls, loadUsers, mergeMissedCalls]);
 
   return {
     messages,
@@ -503,6 +681,13 @@ export const useChat = (currentUser: User | null) => {
     incomingCall,
     activeCall,
     callSignals,
+    callRecordings,
+    isLoadingRecordings,
+    loadCallRecordings,
+    startCallRecording,
+    stopCallRecording,
+    failCallRecording,
+    deleteCallRecording,
     startCall,
     updateCallStatus,
     inviteCallParticipants,

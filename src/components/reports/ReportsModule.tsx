@@ -276,10 +276,10 @@ export const ReportsModule = ({ user }: ReportsModuleProps) => {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="cims-page-header">
         <div>
-          <h1 className="text-3xl font-bold text-primary">Reports</h1>
-          <p className="text-muted-foreground">Generate and download system reports in PDF or Excel format</p>
+          <h1 className="cims-page-title">Reports</h1>
+          <p className="cims-page-subtitle">Generate and download system reports in PDF or Excel format</p>
         </div>
       </div>
 

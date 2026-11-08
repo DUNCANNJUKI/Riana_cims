@@ -29,6 +29,19 @@ const verifyProductionOutput = () => {
 };
 
 const run = async () => {
+  const wasmSrcDir = path.join(root, 'node_modules', '@mediapipe', 'tasks-vision', 'wasm');
+  const wasmDestDir = path.join(root, 'public', 'mediapipe', 'wasm');
+  if (fs.existsSync(wasmSrcDir)) {
+    fs.mkdirSync(wasmDestDir, { recursive: true });
+    for (const fileName of ['vision_wasm_internal.js', 'vision_wasm_internal.wasm']) {
+      const srcFile = path.join(wasmSrcDir, fileName);
+      const destFile = path.join(wasmDestDir, fileName);
+      if (fs.existsSync(srcFile) && !fs.existsSync(destFile)) {
+        fs.copyFileSync(srcFile, destFile);
+      }
+    }
+  }
+
   // Set these before importing Vite/React so ignored local environment files
   // cannot accidentally produce a development bundle for deployment.
   process.env.NODE_ENV = 'production';

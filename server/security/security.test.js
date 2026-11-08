@@ -10,6 +10,7 @@ const {
   resolveJwtSecret,
   resolveStoredFile,
   safeUpload,
+  securityHeaders,
 } = require('./apiSecurity');
 const { hashPassword, isPasswordHash, verifyPassword } = require('./passwords');
 
@@ -23,6 +24,16 @@ const response = () => ({
 
 const evaluateOrigin = (options, origin) => new Promise((resolve) => {
   options.origin(origin, (error, allowed) => resolve({ error, allowed }));
+});
+
+test('security policy permits WebAssembly while keeping JavaScript eval and external scripts blocked', () => {
+  const res = response();
+  securityHeaders({ path: '/index.html' }, res, () => undefined);
+  const policy = res.headers['Content-Security-Policy'];
+  assert.match(policy, /script-src 'self' 'wasm-unsafe-eval'/);
+  assert.doesNotMatch(policy, /(?:^|\s)'unsafe-eval'(?:\s|;)/);
+  assert.doesNotMatch(policy, /script-src[^;]*https?:/);
+  assert.match(policy, /connect-src 'self'/);
 });
 
 test('production rejects absent and published JWT secrets', () => {

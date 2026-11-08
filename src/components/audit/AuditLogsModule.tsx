@@ -1,4 +1,4 @@
-﻿import { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { format } from "date-fns";
 import { Download, RefreshCcw, Search } from "lucide-react";
 import { apiClient, API_URL, getAuthToken } from "@/integrations/apiClient";
@@ -112,10 +112,10 @@ export const AuditLogsModule = ({ user }: { user: User }) => {
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+      <div className="cims-page-header">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Audit Logs</h1>
-          <p className="text-sm text-muted-foreground">System-wide security, data, and administrative activity.</p>
+          <h1 className="cims-page-title">Audit Logs</h1>
+          <p className="cims-page-subtitle">System-wide security, data, and administrative activity.</p>
         </div>
         <div className="flex gap-2">
           <Button variant="outline" onClick={() => void loadLogs()} disabled={loading}><RefreshCcw className="mr-2 h-4 w-4" />Refresh</Button>
@@ -123,7 +123,7 @@ export const AuditLogsModule = ({ user }: { user: User }) => {
         </div>
       </div>
       <div className="grid gap-2 md:grid-cols-4">
-        <div className="relative md:col-span-2"><Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" /><Input className="pl-9" placeholder="Search action, module, entity, or details" value={search} onChange={(event) => setSearch(event.target.value)} onKeyDown={(event) => event.key === "Enter" && void loadLogs()} /></div>
+        <div className="relative md:col-span-2"><Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" /><Input className="pl-9" placeholder="Search action, module, entity, or details" value={search} onChange={(event) => setSearch(event.target.value)} onKeyDown={(event) => event.key === "Enter" && void loadLogs()} /></div>
         <Input placeholder="Module" value={module} onChange={(event) => setModule(event.target.value)} />
         <div className="flex gap-2"><Input placeholder="Status" value={status} onChange={(event) => setStatus(event.target.value)} /><Input placeholder="Severity" value={severity} onChange={(event) => setSeverity(event.target.value)} /></div>
       </div>
@@ -153,10 +153,10 @@ export const MyActivityModule = () => {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-end justify-between gap-3">
+      <div className="cims-page-header">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">My Activity</h1>
-          <p className="text-sm text-muted-foreground">Your own account usage and security activity.</p>
+          <h1 className="cims-page-title">My Activity</h1>
+          <p className="cims-page-subtitle">Your own account usage and security activity.</p>
         </div>
         <Button variant="outline" onClick={() => void loadLogs()} disabled={loading}><RefreshCcw className="mr-2 h-4 w-4" />Refresh</Button>
       </div>

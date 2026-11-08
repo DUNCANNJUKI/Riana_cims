@@ -87,7 +87,7 @@ const InstallApp = () => {
           <img 
             src="/rianacims-uploads/5fe53914-47f9-4dab-ac6a-15b2a4002f36.png" 
             alt="RIANA Group" 
-            className="h-12 w-auto"
+            className="h-12 w-auto" onError={(e) => { if (!e.currentTarget.src.endsWith('/Riana_mark_transparent.png')) e.currentTarget.src = '/Riana_mark_transparent.png'; }}
           />
           <div>
             <h1 className="text-2xl font-bold">Install RIANA CIMS</h1>

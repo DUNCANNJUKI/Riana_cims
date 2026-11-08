@@ -304,7 +304,7 @@ export const AssignmentModule = ({ user }: AssignmentModuleProps) => {
         return (
           <Badge className="status-waiting border-none text-sm font-semibold">
             <div className="flex items-center gap-1">
-              <div className="w-2 h-2 rounded-full bg-yellow-700"></div>
+              <div className="w-2 h-2 rounded-full bg-current"></div>
               Assigned
             </div>
           </Badge>
@@ -313,7 +313,7 @@ export const AssignmentModule = ({ user }: AssignmentModuleProps) => {
         return (
           <Badge className="status-progress border-none text-sm font-semibold">
             <div className="flex items-center gap-1">
-              <div className="w-2 h-2 rounded-full bg-white"></div>
+              <div className="w-2 h-2 rounded-full bg-current"></div>
               In Progress
             </div>
           </Badge>
@@ -322,7 +322,7 @@ export const AssignmentModule = ({ user }: AssignmentModuleProps) => {
         return (
           <Badge className="status-complete border-none text-sm font-semibold">
             <div className="flex items-center gap-1">
-              <div className="w-2 h-2 rounded-full bg-white"></div>
+              <div className="w-2 h-2 rounded-full bg-current"></div>
               Completed
             </div>
           </Badge>
@@ -354,10 +354,10 @@ export const AssignmentModule = ({ user }: AssignmentModuleProps) => {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="cims-page-header">
         <div>
-          <h1 className="text-3xl font-bold text-primary">Assign</h1>
-          <p className="text-muted-foreground">Assign hardware and software technicians to client installations</p>
+          <h1 className="cims-page-title">Assigned Technicians</h1>
+          <p className="cims-page-subtitle">Assign hardware and software technicians to client installations</p>
         </div>
         {canManageAssignments && <Dialog open={isAssignDialogOpen} onOpenChange={setIsAssignDialogOpen}>
           <DialogTrigger asChild>
@@ -434,7 +434,7 @@ export const AssignmentModule = ({ user }: AssignmentModuleProps) => {
                 </div>
               </div>
               
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="hardware-tech">Hardware Technician</Label>
                    <Select 
@@ -475,7 +475,7 @@ export const AssignmentModule = ({ user }: AssignmentModuleProps) => {
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="start-date">Installation Start Date *</Label>
                   <PlanningDateInput

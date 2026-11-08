@@ -262,10 +262,10 @@ export const HandoverUploadModule = ({ user }: HandoverUploadModuleProps) => {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="cims-page-header">
         <div>
-          <h1 className="text-3xl font-bold text-primary">Handover Documents</h1>
-          <p className="text-muted-foreground">Upload signed E-Handover forms after installation completion</p>
+          <h1 className="cims-page-title">Handover Documents</h1>
+          <p className="cims-page-subtitle">Upload signed E-Handover forms after installation completion</p>
         </div>
         <Dialog open={isUploadDialogOpen} onOpenChange={setIsUploadDialogOpen}>
           <DialogTrigger asChild>

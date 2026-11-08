@@ -275,10 +275,10 @@ export const CompanySettingsModule = ({ user }: CompanySettingsModuleProps) => {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="cims-page-header">
         <div>
-          <h1 className="text-3xl font-bold text-primary">Company Settings</h1>
-          <p className="text-muted-foreground">Configure company branding, system settings, and integrations</p>
+          <h1 className="cims-page-title">Company Settings</h1>
+          <p className="cims-page-subtitle">Configure company branding, system settings, and integrations</p>
         </div>
         <Badge variant="outline" className="text-lg px-4 py-2">
           <Building2 className="h-4 w-4 mr-2" />

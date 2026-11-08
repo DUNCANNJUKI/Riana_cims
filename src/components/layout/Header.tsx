@@ -279,7 +279,7 @@ export const Header = ({ user, className, setActiveModule, onOpenMobileMenu, onP
               size="icon"
               onClick={onOpenMobileMenu}
               className="h-10 w-10 shrink-0 text-white hover:bg-white/10 hover:text-white focus-visible:ring-white lg:hidden"
-              aria-label="Open navigation menu"
+              title="Open navigation menu" aria-label="Open navigation menu"
               data-tour="system-mobile-menu"
             >
               <Menu className="h-5 w-5" />
@@ -303,12 +303,12 @@ export const Header = ({ user, className, setActiveModule, onOpenMobileMenu, onP
           </div>
 
           {/* Action Buttons - Responsive */}
-          <div className="ml-auto flex shrink-0 items-center gap-0.5 sm:gap-2 xl:gap-4">
+          <div className="ml-auto flex shrink-0 items-center gap-1 sm:gap-1.5 xl:gap-2.5">
             {/* Notification Bell - Always visible */}
             <div data-tour="system-notifications"><NotificationBell
               user={user}
               onNavigate={setActiveModule}
-              triggerClassName="h-9 w-9 sm:h-10 sm:w-10 text-white hover:bg-white/10 hover:text-white focus-visible:ring-white dark:text-white"
+              triggerClassName="h-9 w-9 rounded-lg text-white hover:bg-white/10 hover:text-white focus-visible:ring-white dark:text-white"
             /></div>
 
             {/* Chat Button */}
@@ -316,12 +316,12 @@ export const Header = ({ user, className, setActiveModule, onOpenMobileMenu, onP
               variant="ghost"
               size="icon"
               onClick={() => isChatOpen ? minimizeChat() : setIsChatOpen(true)}
-              className="relative h-9 w-9 text-white transition-colors duration-200 hover:bg-white/10 focus-visible:ring-white sm:h-10 sm:w-10"
+              className="relative h-9 w-9 rounded-lg text-white transition-colors duration-200 hover:bg-white/10 focus-visible:ring-white"
               title="Open Chat"
               aria-label="Open messages"
               data-tour="system-messages"
             >
-              <MessageSquare className="h-5 w-5" />
+              <MessageSquare className="h-4 w-4" />
               {messageBadgeCount > 0 && (
                 <Badge className="absolute -top-1 -right-1 flex h-4 min-w-4 items-center justify-center rounded-full border border-white bg-red-500 px-1 text-[10px] animate-pulse">
                   {messageBadgeCount > 9 ? "9+" : messageBadgeCount}
@@ -335,13 +335,13 @@ export const Header = ({ user, className, setActiveModule, onOpenMobileMenu, onP
               size="icon"
               onClick={toggleDarkMode}
               data-tour="system-theme"
-              className="h-9 w-9 text-white transition-colors duration-200 hover:bg-white/10 focus-visible:ring-white sm:h-10 sm:w-10"
-              title={isDarkMode ? "Switch to light mode" : "Switch to dark mode"}
+              className="h-9 w-9 rounded-lg text-white transition-colors duration-200 hover:bg-white/10 focus-visible:ring-white"
+              title={isDarkMode ? "Switch to light mode" : "Switch to dark mode"} aria-label={isDarkMode ? "Switch to light mode" : "Switch to dark mode"}
             >
               {isDarkMode ? (
-                <Sun className="h-5 w-5 transition-transform duration-300 rotate-0" />
+                <Sun className="h-4 w-4 transition-transform duration-300 rotate-0" />
               ) : (
-                <Moon className="h-5 w-5 transition-transform duration-300 rotate-0" />
+                <Moon className="h-4 w-4 transition-transform duration-300 rotate-0" />
               )}
             </Button>
             
@@ -354,7 +354,7 @@ export const Header = ({ user, className, setActiveModule, onOpenMobileMenu, onP
             {/* User Menu Dropdown */}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button data-tour="system-profile" aria-label="Open profile menu" variant="ghost" className="relative h-9 w-9 overflow-hidden rounded-full border-2 border-white/35 p-0 text-white shadow-[0_3px_10px_rgba(0,0,0,0.16)] transition-colors hover:bg-white/10 focus-visible:ring-white sm:h-10 sm:w-10">
+                <Button data-tour="system-profile" title="Open profile menu" aria-label="Open profile menu" variant="ghost" className="relative h-9 w-9 overflow-hidden rounded-full border-2 border-white/35 p-0 text-white shadow-[0_3px_10px_rgba(0,0,0,0.16)] transition-colors hover:bg-white/10 focus-visible:ring-white sm:h-10 sm:w-10">
                   <Avatar className="h-full w-full">
                     <AvatarImage src={avatarSrc} alt={getUserDisplayName()} />
                     <AvatarFallback className="bg-gradient-to-br from-primary-foreground to-white text-sm font-bold text-primary sm:text-lg">
@@ -406,7 +406,7 @@ export const Header = ({ user, className, setActiveModule, onOpenMobileMenu, onP
 
       {!isChatOpen && incomingCall && (
         <div className="fixed inset-x-3 bottom-4 z-40 animate-in slide-in-from-bottom-4 sm:left-auto sm:right-4 sm:w-[min(92vw,420px)]">
-          <div className="overflow-hidden rounded-2xl border border-white/20 bg-background/95 text-foreground shadow-2xl backdrop-blur-xl">
+          <div className="overflow-hidden rounded-2xl border border-[hsl(var(--comm-border-strong))] bg-background/95 text-foreground shadow-2xl backdrop-blur-xl dark:border-white/20">
             <div className="flex items-center gap-3 border-b border-primary/10 bg-primary/10 px-4 py-3">
               <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-primary text-white shadow-riana">
                 {incomingCall.call_type === "video" ? <Video className="h-5 w-5" /> : <Phone className="h-5 w-5" />}
@@ -415,7 +415,7 @@ export const Header = ({ user, className, setActiveModule, onOpenMobileMenu, onP
                 <p className="truncate text-sm font-bold">Incoming {incomingCall.call_type === "video" ? "video" : "phone"} call</p>
                 <p className="truncate text-xs text-muted-foreground">{getChatDisplayName(incomingCall.sender_first_name, incomingCall.sender_last_name)} is calling</p>
               </div>
-              <Button variant="ghost" size="icon" className="h-8 w-8 rounded-full" onClick={() => chat.clearCallState()} aria-label="Hide call notification">
+              <Button variant="ghost" size="icon" className="h-8 w-8 rounded-full" onClick={() => chat.clearCallState()} title="Hide call notification" aria-label="Hide call notification">
                 <X className="h-4 w-4" />
               </Button>
             </div>
@@ -445,7 +445,7 @@ export const Header = ({ user, className, setActiveModule, onOpenMobileMenu, onP
               <Button variant="ghost" size="icon" className="h-8 w-8 rounded-full" disabled={chat.dismissingMissedCallIds.has(missedCall.id)} onClick={async () => {
                 const dismissed = await chat.dismissMissedCall(missedCall.id);
                 if (!dismissed) toast({ title: "Missed call not dismissed", description: "The dismissal could not be saved. Check your connection and try again.", variant: "destructive" });
-              }} aria-label="Dismiss missed call">
+              }} title="Dismiss missed call" aria-label="Dismiss missed call">
                 <X className="h-4 w-4" />
               </Button>
             </div>
@@ -470,21 +470,32 @@ export const Header = ({ user, className, setActiveModule, onOpenMobileMenu, onP
               <p className="truncate text-sm font-bold">Active {activeCall.call_type === "video" ? "video" : "phone"} call</p>
               <p className="text-xs tabular-nums text-muted-foreground">{callDuration}</p>
             </div>
-            <Button size="icon" variant="outline" className="rounded-full" onClick={() => dispatchCallControl("microphone")} aria-label="Toggle microphone"><Mic className="h-4 w-4" /></Button>
-            {activeCall.call_type === "video" && <Button size="icon" variant="outline" className="rounded-full" onClick={() => dispatchCallControl("camera")} aria-label="Toggle camera"><Video className="h-4 w-4" /></Button>}
+            <Button size="icon" variant="outline" className="rounded-full" onClick={() => dispatchCallControl("microphone")} title="Toggle microphone" aria-label="Toggle microphone"><Mic className="h-4 w-4" /></Button>
+            {activeCall.call_type === "video" && <Button size="icon" variant="outline" className="rounded-full" onClick={() => dispatchCallControl("camera")} title="Toggle camera" aria-label="Toggle camera"><Video className="h-4 w-4" /></Button>}
             <Button size="sm" variant="outline" className="rounded-full" onClick={() => setIsChatOpen(true)}>Return to call</Button>
-            <Button size="icon" variant="destructive" className="rounded-full" onClick={() => dispatchCallControl("hangup")} aria-label="End call"><PhoneOff className="h-4 w-4" /></Button>
+            <Button size="icon" variant="destructive" className="rounded-full" onClick={() => dispatchCallControl("hangup")} title="End call" aria-label="End call"><PhoneOff className="h-4 w-4" /></Button>
           </div>
         </div>
       )}
 
       {(isChatOpen || activeCall) && (
         <div
-          className={cn(isChatOpen ? "fixed inset-x-2 bottom-[calc(4.25rem+env(safe-area-inset-bottom))] top-[calc(4rem+env(safe-area-inset-top))] z-40 bg-black/25 p-0 backdrop-blur-[2px] animate-in fade-in sm:inset-0 sm:z-50 sm:flex sm:items-end sm:justify-end sm:bg-black/35 sm:p-3 md:p-4" : "pointer-events-none fixed -left-[10000px] top-0 h-px w-px overflow-hidden opacity-0", isChatOpen && isChatFullscreen && "inset-0 z-[100] bg-background p-0 sm:p-0 md:p-0")}
+          className={cn(
+            isChatOpen
+              ? "fixed inset-x-0 bottom-0 top-[calc(3.75rem+env(safe-area-inset-top))] z-40 bg-black/30 p-0 backdrop-blur-[2px] animate-in fade-in sm:inset-0 sm:z-50 sm:flex sm:items-end sm:justify-end sm:bg-black/40 sm:p-2.5 md:p-4"
+              : "pointer-events-none fixed -left-[10000px] top-0 h-px w-px overflow-hidden opacity-0",
+            isChatOpen && isChatFullscreen && "inset-0 top-0 z-[100] bg-background p-0 sm:p-0 md:p-0",
+          )}
           onMouseDown={minimizeChat}
         >
           <div
-            className={cn("h-full w-full animate-in slide-in-from-bottom-5 sm:h-[min(760px,calc(100dvh-96px))] md:w-[min(94vw,1120px)]", isChatFullscreen && "h-dvh sm:h-dvh md:w-screen")}
+            className={cn(
+              "h-full w-full animate-in slide-in-from-bottom-5",
+              activeCall
+                ? "sm:h-[min(860px,calc(100dvh-32px))] md:w-[min(96vw,1380px)] xl:w-[min(96vw,1560px)]"
+                : "sm:h-[min(760px,calc(100dvh-88px))] md:w-[min(94vw,1160px)]",
+              isChatFullscreen && "h-dvh sm:h-dvh md:w-screen xl:w-screen",
+            )}
             onMouseDown={(event) => event.stopPropagation()}
           >
             <ChatModule currentUser={user} chat={chat} onClose={closeChat} onMinimize={minimizeChat} onToggleFullscreen={() => setIsChatFullscreen(value => !value)} isFullscreen={isChatFullscreen} />

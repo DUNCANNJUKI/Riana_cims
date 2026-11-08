@@ -234,25 +234,46 @@ All colors MUST be HSL.
     background: linear-gradient(90deg, #0f6c75 0%, #157f87 52%, #138896 100%);
     box-shadow: 0 2px 10px rgb(3 45 51 / 0.18);
   }
+
+  .gradient-text {
+    background: linear-gradient(135deg, hsl(var(--primary-dark)), hsl(var(--primary)));
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+
+  .dark .gradient-text {
+    background: linear-gradient(135deg, hsl(var(--primary-light)), hsl(var(--primary)));
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
   
   .shadow-riana {
-    box-shadow: 0 4px 20px -4px hsl(var(--primary) / 0.3);
+    box-shadow: 0 1px 2px hsl(var(--foreground) / 0.04), 0 8px 24px -18px hsl(var(--foreground) / 0.18);
+  }
+
+  .shadow-elegant {
+    box-shadow: 0 1px 2px hsl(var(--foreground) / 0.04), 0 6px 20px -16px hsl(var(--foreground) / 0.16);
   }
 
   /* Status Color Codes */
   .status-waiting {
-    background: hsl(45, 93%, 47%) !important;
-    color: hsl(45, 93%, 16%) !important;
+    background: hsl(var(--status-waiting-bg)) !important;
+    color: hsl(var(--status-waiting)) !important;
+    border-color: hsl(var(--status-waiting) / 0.28) !important;
   }
   
   .status-progress {
-    background: hsl(200, 90%, 34%) !important;
-    color: hsl(0, 0%, 100%) !important;
+    background: hsl(var(--status-in-progress-bg)) !important;
+    color: hsl(var(--status-in-progress)) !important;
+    border-color: hsl(var(--status-in-progress) / 0.28) !important;
   }
   
   .status-complete {
-    background: hsl(142, 70%, 29%) !important;
-    color: hsl(0, 0%, 100%) !important;
+    background: hsl(var(--status-completed-bg)) !important;
+    color: hsl(var(--status-completed)) !important;
+    border-color: hsl(var(--status-completed) / 0.28) !important;
   }
 
   .crms-native .status-badge {
@@ -414,23 +435,27 @@ All colors MUST be HSL.
 
   /* Contract type color coding */
   .contract-amc {
-    background: hsl(142, 70%, 29%) !important;
-    color: white !important;
+    background: hsl(var(--status-completed-bg)) !important;
+    color: hsl(var(--status-completed)) !important;
+    border-color: hsl(var(--status-completed) / 0.28) !important;
   }
 
   .contract-warranty {
-    background: hsl(195, 90%, 48%) !important;
-    color: hsl(200, 100%, 12%) !important;
+    background: hsl(var(--status-in-progress-bg)) !important;
+    color: hsl(var(--status-in-progress)) !important;
+    border-color: hsl(var(--status-in-progress) / 0.28) !important;
   }
 
   .contract-lease {
-    background: hsl(262, 72%, 48%) !important;
-    color: white !important;
+    background: hsl(var(--status-waiting-bg)) !important;
+    color: hsl(var(--status-waiting)) !important;
+    border-color: hsl(var(--status-waiting) / 0.28) !important;
   }
 
   .contract-poc {
-    background: hsl(45, 93%, 47%) !important;
-    color: hsl(45, 93%, 16%) !important;
+    background: hsl(var(--status-pending-bg)) !important;
+    color: hsl(var(--status-pending)) !important;
+    border-color: hsl(var(--status-pending) / 0.28) !important;
   }
 
   .call-control-button {
@@ -471,12 +496,12 @@ All colors MUST be HSL.
 
   /* Button click effect */
   .btn-click-effect {
-    @apply transition-all duration-150 active:scale-95 hover:scale-105;
+    @apply transition-all duration-150 active:scale-[0.98];
   }
 
   /* Card hover effect */
   .card-hover {
-    @apply transition-all duration-300 hover:shadow-lg hover:-translate-y-1;
+    @apply transition-all duration-200 hover:border-primary/25 hover:shadow-md hover:-translate-y-0.5;
   }
 
   /* Professional Chat Styles */
@@ -706,6 +731,8 @@ All colors MUST be HSL.
   align-items: flex-start;
   justify-content: space-between;
   gap: 0.75rem 1rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid hsl(var(--border) / 0.75);
 }
 
 .cims-page-title {
@@ -713,6 +740,14 @@ All colors MUST be HSL.
   line-height: 1.2;
   font-weight: 700;
   letter-spacing: -0.025em;
+  color: hsl(var(--foreground));
+}
+
+.cims-page-subtitle {
+  margin-top: 0.25rem;
+  font-size: 0.875rem;
+  line-height: 1.4;
+  color: hsl(var(--muted-foreground));
 }
 
 .cims-section-title {

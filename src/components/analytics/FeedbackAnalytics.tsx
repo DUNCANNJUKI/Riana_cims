@@ -113,7 +113,7 @@ export const FeedbackAnalytics = ({ user, refreshTrigger }: FeedbackAnalyticsPro
         </div>
         <button 
           onClick={() => loadFeedbackAnalytics()}
-          className="px-4 py-2 border rounded hover:bg-muted transition-colors flex items-center gap-2"
+          className="px-4 py-2 border rounded-lg hover:bg-muted transition-colors flex items-center gap-2 text-sm font-medium"
         >
           <TrendingUp className="h-4 w-4" />
           Retry Loading

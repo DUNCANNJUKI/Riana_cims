@@ -82,7 +82,7 @@ export const ResetPassword = () => {
             <img 
               src="/rianacims-uploads/5fe53914-47f9-4dab-ac6a-15b2a4002f36.png" 
               alt="RIANA Group" 
-              className="h-16 w-auto"
+              className="h-16 w-auto" onError={(e) => { if (!e.currentTarget.src.endsWith('/Riana_mark_color_trimmed.png')) e.currentTarget.src = '/Riana_mark_color_trimmed.png'; }}
             />
           </div>
           <div>
@@ -99,7 +99,7 @@ export const ResetPassword = () => {
                 New Password
               </Label>
               <div className="relative">
-                <Lock className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                 <Input
                   id="password"
                   type={showPassword ? "text" : "password"}
@@ -114,7 +114,7 @@ export const ResetPassword = () => {
                   variant="ghost"
                   size="sm"
                   className="absolute right-1 top-1 h-10 w-10 p-0"
-                  onClick={() => setShowPassword(!showPassword)}
+                  onClick={() => setShowPassword(!showPassword)} title={showPassword ? "Hide password" : "Show password"} aria-label={showPassword ? "Hide password" : "Show password"}
                 >
                   {showPassword ? (
                     <EyeOff className="h-4 w-4" />
@@ -130,7 +130,7 @@ export const ResetPassword = () => {
                 Confirm New Password
               </Label>
               <div className="relative">
-                <Lock className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                 <Input
                   id="confirmPassword"
                   type={showConfirmPassword ? "text" : "password"}
@@ -145,7 +145,7 @@ export const ResetPassword = () => {
                   variant="ghost"
                   size="sm"
                   className="absolute right-1 top-1 h-10 w-10 p-0"
-                  onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                  onClick={() => setShowConfirmPassword(!showConfirmPassword)} title={showConfirmPassword ? "Hide confirm password" : "Show confirm password"} aria-label={showConfirmPassword ? "Hide confirm password" : "Show confirm password"}
                 >
                   {showConfirmPassword ? (
                     <EyeOff className="h-4 w-4" />
@@ -168,7 +168,7 @@ export const ResetPassword = () => {
           <div className="mt-6 text-center space-y-2">
             <div className="h-px bg-border"></div>
             <p className="text-xs text-muted-foreground">
-              © 2024 RIANA Group. All rights reserved.
+              © {new Date().getFullYear()} RIANA Group. All rights reserved.
             </p>
           </div>
         </CardContent>

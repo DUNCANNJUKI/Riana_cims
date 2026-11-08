@@ -72,11 +72,11 @@ interface Assignment {
 }
 
 const statusConfig = {
-  pending: { label: 'Pending', color: 'bg-yellow-100 text-yellow-800 border-yellow-300', icon: Clock },
-  assigned: { label: 'Assigned', color: 'bg-blue-100 text-blue-800 border-blue-300', icon: UserIcon },
-  in_progress: { label: 'In Progress', color: 'bg-purple-100 text-purple-800 border-purple-300', icon: Wrench },
-  completed: { label: 'Completed', color: 'bg-green-100 text-green-800 border-green-300', icon: CheckCircle2 },
-  waiting: { label: 'Waiting', color: 'bg-orange-100 text-orange-800 border-orange-300', icon: AlertCircle },
+  pending: { label: 'Pending', color: 'status-waiting', icon: Clock },
+  assigned: { label: 'Assigned', color: 'status-progress', icon: UserIcon },
+  in_progress: { label: 'In Progress', color: 'status-progress', icon: Wrench },
+  completed: { label: 'Completed', color: 'status-complete', icon: CheckCircle2 },
+  waiting: { label: 'Waiting', color: 'status-waiting', icon: AlertCircle },
 };
 
 import { useDatabase } from "@/hooks/useDatabase";
@@ -277,18 +277,18 @@ export const TechnicianMobileDashboard = ({ user }: TechnicianMobileDashboardPro
         </div>
         <div className="flex items-center gap-2">
           {isOnline ? (
-            <Badge variant="outline" className="bg-green-50 text-green-700 border-green-300">
+            <Badge variant="outline" className="status-complete">
               <Wifi className="h-3 w-3 mr-1" /> Online
             </Badge>
           ) : (
-            <Badge variant="outline" className="bg-orange-50 text-orange-700 border-orange-300">
+            <Badge variant="outline" className="status-waiting">
               <WifiOff className="h-3 w-3 mr-1" /> Offline
             </Badge>
           )}
           <Button
             variant="outline"
             size="icon"
-            onClick={handleRefresh}
+            onClick={handleRefresh} title="Refresh assignments" aria-label="Refresh assignments"
             disabled={isRefreshing}
           >
             <RefreshCw className={`h-4 w-4 ${isRefreshing ? 'animate-spin' : ''}`} />
@@ -298,21 +298,21 @@ export const TechnicianMobileDashboard = ({ user }: TechnicianMobileDashboardPro
 
       {/* Quick Stats */}
       <div className="grid grid-cols-4 gap-2">
-        <Card className="p-3 text-center bg-gradient-to-br from-blue-50 to-blue-100 border-blue-200">
-          <p className="text-2xl font-bold text-blue-700">{stats.today}</p>
-          <p className="text-[10px] text-blue-600">Today</p>
+        <Card className="p-3 text-center bg-primary/10 border-primary/20">
+          <p className="text-2xl font-bold text-primary">{stats.today}</p>
+          <p className="text-[10px] text-muted-foreground">Today</p>
         </Card>
-        <Card className="p-3 text-center bg-gradient-to-br from-purple-50 to-purple-100 border-purple-200">
-          <p className="text-2xl font-bold text-purple-700">{stats.inProgress}</p>
-          <p className="text-[10px] text-purple-600">In Progress</p>
+        <Card className="p-3 text-center bg-primary/5 border-primary/15">
+          <p className="text-2xl font-bold text-primary">{stats.inProgress}</p>
+          <p className="text-[10px] text-muted-foreground">In Progress</p>
         </Card>
-        <Card className="p-3 text-center bg-gradient-to-br from-green-50 to-green-100 border-green-200">
-          <p className="text-2xl font-bold text-green-700">{stats.completed}</p>
-          <p className="text-[10px] text-green-600">Completed</p>
+        <Card className="p-3 text-center bg-success/10 border-success/20">
+          <p className="text-2xl font-bold text-success">{stats.completed}</p>
+          <p className="text-[10px] text-muted-foreground">Completed</p>
         </Card>
-        <Card className="p-3 text-center bg-gradient-to-br from-gray-50 to-gray-100 border-gray-200">
-          <p className="text-2xl font-bold text-gray-700">{stats.total}</p>
-          <p className="text-[10px] text-gray-600">Total</p>
+        <Card className="p-3 text-center bg-muted/40 border-border">
+          <p className="text-2xl font-bold text-foreground">{stats.total}</p>
+          <p className="text-[10px] text-muted-foreground">Total</p>
         </Card>
       </div>
 

@@ -98,7 +98,7 @@ export const UsersModule = ({ user }: UsersModuleProps) => {
       <div className="flex items-center justify-center h-64">
         <div className="text-center">
           <Shield className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-          <p className="text-muted-foreground">Access denied. Admin or SuperAdmin privileges required.</p>
+          <p className="cims-page-subtitle">Access denied. Admin or SuperAdmin privileges required.</p>
         </div>
       </div>
     );
@@ -286,7 +286,7 @@ export const UsersModule = ({ user }: UsersModuleProps) => {
   };
 
   const getStatusColor = (isActive: boolean) => {
-    return isActive ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800';
+    return isActive ? 'status-complete' : 'bg-destructive/15 text-destructive border-destructive/30';
   };
 
   const roleStats = {
@@ -300,10 +300,10 @@ export const UsersModule = ({ user }: UsersModuleProps) => {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="cims-page-header">
         <div>
-          <h1 className="text-3xl font-bold text-primary">Users Management</h1>
-          <p className="text-muted-foreground">
+          <h1 className="cims-page-title">Users Management</h1>
+          <p className="cims-page-subtitle">
             Manage RIANA CIMS users and access controls. SuperAdmin is platform-wide authority across CIMS and Developers/CRMS.
           </p>
         </div>
@@ -458,7 +458,7 @@ export const UsersModule = ({ user }: UsersModuleProps) => {
         <Card className="shadow-riana">
           <CardContent className="p-4">
             <div className="flex items-center gap-2">
-              <Users className="h-8 w-8 text-secondary" />
+              <Users className="h-8 w-8 text-primary" />
               <div>
                 <p className="text-sm text-muted-foreground">Users</p>
                 <p className="text-2xl font-bold">{roleStats.user}</p>
@@ -551,7 +551,7 @@ export const UsersModule = ({ user }: UsersModuleProps) => {
                     </div>
                   </TableCell>
                   <TableCell>
-                    <div className="flex gap-2">
+                    <div className="flex items-center gap-1.5 whitespace-nowrap">
                       {canManageUsers && canManageTarget(u) && (
                         <>
                           <Button 
@@ -603,7 +603,7 @@ export const UsersModule = ({ user }: UsersModuleProps) => {
           {filteredUsers.length === 0 && (
             <div className="text-center py-8">
               <Users className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-              <p className="text-muted-foreground">No users found</p>
+              <p className="cims-page-subtitle">No users found</p>
             </div>
           )}
           

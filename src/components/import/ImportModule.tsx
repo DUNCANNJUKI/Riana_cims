@@ -365,10 +365,10 @@ export const ImportModule = ({ user }: ImportModuleProps) => {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="cims-page-header">
         <div>
-          <h1 className="text-3xl font-bold text-primary">Data Import/Export</h1>
-          <p className="text-muted-foreground">Import and export client and installation data</p>
+          <h1 className="cims-page-title">Data Import/Export</h1>
+          <p className="cims-page-subtitle">Import and export client and installation data</p>
         </div>
       </div>
 
@@ -391,7 +391,7 @@ export const ImportModule = ({ user }: ImportModuleProps) => {
                 id="import_type"
                 value={importType}
                 onChange={(e) => setImportType(e.target.value as 'clients' | 'installations')}
-                className="w-full p-2 border rounded-md bg-background"
+                className="flex h-10 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm shadow-sm transition-colors hover:border-primary/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 disabled={isUploading}
               >
                 <option value="">Select import type</option>

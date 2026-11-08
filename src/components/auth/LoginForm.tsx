@@ -299,7 +299,7 @@ export const LoginForm = () => {
             <div className="space-y-2">
               <Label htmlFor="resetEmail">Email Address *</Label>
               <div className="relative">
-                <Mail className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+                <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                 <Input
                   id="resetEmail"
                   type="email"
@@ -314,7 +314,7 @@ export const LoginForm = () => {
             <div className="space-y-2">
               <Label htmlFor="resetPhone">Phone Number (Optional)</Label>
               <div className="relative">
-                <Phone className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+                <Phone className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                 <Input
                   id="resetPhone"
                   type="tel"

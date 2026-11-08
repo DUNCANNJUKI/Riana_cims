@@ -315,12 +315,12 @@ export const EHandoverUpload = ({ user, client, installation, onUploadComplete }
           <div className="space-y-3">
             <h4 className="font-medium">Uploaded Documents</h4>
             {uploadedFiles.map((upload) => (
-              <div key={upload.id} className="flex items-center justify-between p-3 border rounded-lg">
+              <div key={upload.id} className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 border rounded-lg">
                 <div className="flex items-center gap-3">
                   <FileText className="h-8 w-8 text-primary" />
                   <div>
                     <p className="font-medium">{upload.file_name}</p>
-                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                    <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
                       <span>{formatFileSize(upload.file_size)}</span>
                       <span aria-hidden="true">|</span>
                       <span>{new Date(upload.upload_date).toLocaleDateString()}</span>
@@ -346,14 +346,14 @@ export const EHandoverUpload = ({ user, client, installation, onUploadComplete }
                   <Button
                     variant="outline"
                     size="sm"
-                    onClick={() => previewFile(upload)}
+                    onClick={() => previewFile(upload)} title="Preview document" aria-label="Preview document"
                   >
                     <Eye className="h-4 w-4" />
                   </Button>
                   <Button
                     variant="outline"
                     size="sm"
-                    onClick={() => downloadFile(upload)}
+                    onClick={() => downloadFile(upload)} title="Download document" aria-label="Download document"
                   >
                     <Download className="h-4 w-4" />
                   </Button>

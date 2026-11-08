@@ -54,7 +54,7 @@ const { isSensitiveTechnicalRequest } = require('./services/chatbotPolicy');
 const { getAssistantResponse } = require('./services/chatbotKnowledge');
 const { createDatabaseBackup, listBackups, pruneBackups, getLastRun } = require('./services/databaseBackup');
 const { createPushDeliveryService, readVapidConfiguration } = require('./services/webPushDelivery');
-const { createIceServers, isValidCallSignalPayload } = require('./services/communicationCalls');
+const { createIceServers, isValidCallSignalPayload, canManageCallRecording } = require('./services/communicationCalls');
 const {
   activeCredentialRows,
   authenticationOptions,
@@ -1322,6 +1322,7 @@ const initDb = async () => {
       ['created_by_user_id', 'VARCHAR(36) NULL'],
       ['updated_at', 'TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP'],
     ]);
+    await pool.query("ALTER TABLE announcements MODIFY COLUMN priority ENUM('low', 'normal', 'high', 'urgent') DEFAULT 'normal'").catch(() => {});
 
     // Announcement Reads
     await pool.query(`CREATE TABLE IF NOT EXISTS announcement_reads (
@@ -4187,41 +4188,100 @@ app.post('/api/feedback', async (req, res) => {
 });
 
 // ANNOUNCEMENTS
+const normalizeMysqlDateTime = (value) => {
+  if (!value) return null;
+  if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(?::\d{2})?$/.test(value.trim())) {
+    const normalized = value.trim().replace('T', ' ');
+    return normalized.length === 16 ? `${normalized}:00` : normalized;
+  }
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return parsed;
+};
+
 app.get('/api/announcements', authMiddleware, async (req, res) => {
   try {
-    const { created_by_user_id, user_id } = req.query;
+    const canManageAnnouncements = hasCapability(req.user, 'announcements.manage');
+    const scope = String(req.query.scope || '').toLowerCase();
+    const isActiveFilter = req.query.is_active;
+    const createdByFilter = req.query.created_by_user_id;
+
     let query = `
       SELECT a.*, 
              u.first_name as creator_first_name, u.last_name as creator_last_name, u.email as creator_email,
              s.subsidiary_name,
-             (SELECT COUNT(*) FROM announcement_reads ar WHERE ar.announcement_id = a.id) AS read_count,
-             CASE a.target_audience
-               WHEN 'admins' THEN (SELECT COUNT(*) FROM user_profiles WHERE is_active = TRUE AND role = 'Admin')
-               WHEN 'teamleads' THEN (SELECT COUNT(*) FROM user_profiles WHERE is_active = TRUE AND role = 'Teamlead')
-               WHEN 'technicians' THEN (SELECT COUNT(*) FROM user_profiles WHERE is_active = TRUE AND role = 'User')
-               WHEN 'sales' THEN (SELECT COUNT(*) FROM user_profiles WHERE is_active = TRUE AND role = 'Sales')
-               ELSE (SELECT COUNT(*) FROM user_profiles WHERE is_active = TRUE)
-             END AS total_target,
-             EXISTS(SELECT 1 FROM announcement_reads ur WHERE ur.announcement_id = a.id AND ur.user_id = ?) AS is_read
+             (SELECT COUNT(*) FROM announcement_reads ar WHERE ${sqlUuidEquals('ar.announcement_id', 'a.id')}) AS read_count,
+             (
+               SELECT COUNT(*) FROM user_profiles up
+               WHERE up.is_active = TRUE
+                 AND (a.subsidiary_id IS NULL OR ${sqlUuidEquals('up.subsidiary_id', 'a.subsidiary_id')})
+                 AND (
+                   a.target_audience IS NULL
+                   OR a.target_audience = 'all'
+                   OR a.target_audience = 'subsidiary'
+                   OR (a.target_audience = 'admins' AND up.role IN ('SuperAdmin', 'Admin', 'Management'))
+                   OR (a.target_audience = 'teamleads' AND up.role = 'Teamlead')
+                   OR (a.target_audience = 'technicians' AND up.role = 'User')
+                   OR (a.target_audience = 'sales' AND up.role = 'Sales')
+                   OR up.role = a.target_audience
+                 )
+             ) AS total_target,
+             EXISTS(SELECT 1 FROM announcement_reads ur WHERE ${sqlUuidEquals('ur.announcement_id', 'a.id')} AND ${sqlUuidParamEquals('ur.user_id')}) AS is_read
       FROM announcements a
-      LEFT JOIN user_profiles u ON a.created_by_user_id = u.id
-      LEFT JOIN subsidiaries s ON a.subsidiary_id = s.id
+      LEFT JOIN user_profiles u ON ${sqlUuidEquals('a.created_by_user_id', 'u.id')}
+      LEFT JOIN subsidiaries s ON ${sqlUuidEquals('a.subsidiary_id', 's.id')}
+      WHERE 1=1
     `;
-    const params = [user_id || req.user.id];
-    if (created_by_user_id) {
-      query += ' WHERE a.created_by_user_id = ?';
-      params.push(created_by_user_id);
+    const params = [req.user.id];
+
+    if (scope === 'active' || !canManageAnnouncements) {
+      query += ' AND a.is_active = TRUE AND (a.expires_at IS NULL OR a.expires_at > NOW())';
+      if (!canManageAnnouncements) {
+        query += ` AND (
+          a.target_audience IS NULL
+          OR a.target_audience = 'all'
+          OR a.target_audience = 'subsidiary'
+          OR (a.target_audience = 'admins' AND ? IN ('SuperAdmin', 'Admin', 'Management'))
+          OR (a.target_audience = 'teamleads' AND ? = 'Teamlead')
+          OR (a.target_audience = 'technicians' AND ? = 'User')
+          OR (a.target_audience = 'sales' AND ? = 'Sales')
+          OR a.target_audience = ?
+        )`;
+        params.push(req.user.role, req.user.role, req.user.role, req.user.role, req.user.role);
+        if (req.user.subsidiary_id) {
+          query += ` AND (a.subsidiary_id IS NULL OR ${sqlUuidParamEquals('a.subsidiary_id')})`;
+          params.push(req.user.subsidiary_id);
+        }
+      }
     } else {
-      query += ' WHERE a.is_active = TRUE AND (a.expires_at IS NULL OR a.expires_at > NOW())';
+      if (isActiveFilter === 'true' || isActiveFilter === 'false') {
+        query += ' AND a.is_active = ?';
+        params.push(isActiveFilter === 'true');
+      }
+      if (createdByFilter && req.user.role === 'Teamlead') {
+        query += ` AND ${sqlUuidParamEquals('a.created_by_user_id')}`;
+        params.push(String(createdByFilter));
+      }
     }
+
     query += ' ORDER BY a.created_at DESC';
     const [rows] = await pool.query(query, params);
-    res.json(rows.map((announcement) => ({
-      ...announcement,
-      is_read: Boolean(announcement.is_read),
-      creator: { first_name: announcement.creator_first_name, last_name: announcement.creator_last_name, email: announcement.creator_email },
-      subsidiary: announcement.subsidiary_name ? { subsidiary_name: announcement.subsidiary_name } : null,
-    })));
+    res.json(rows.map((announcement) => {
+      const readCount = Number(announcement.read_count || 0);
+      const totalTarget = Number(announcement.total_target || 0);
+      const isExpired = Boolean(announcement.expires_at && new Date(announcement.expires_at).getTime() <= Date.now());
+      return {
+        ...announcement,
+        is_active: Boolean(announcement.is_active),
+        is_expired: isExpired,
+        is_read: Boolean(announcement.is_read),
+        read_count: readCount,
+        total_target: totalTarget,
+        total_target_users: totalTarget,
+        creator: { first_name: announcement.creator_first_name, last_name: announcement.creator_last_name, email: announcement.creator_email },
+        subsidiary: announcement.subsidiary_name ? { subsidiary_name: announcement.subsidiary_name } : null,
+      };
+    }));
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
@@ -4229,9 +4289,12 @@ app.post('/api/announcements', authMiddleware, requireCapability('announcements.
   try {
     const { title, content, priority, target_audience, subsidiary_id, expires_at } = req.body;
     const id = uuidv4();
+    const safePriority = ['low', 'normal', 'high', 'urgent'].includes(priority) ? priority : 'normal';
+    const safeSubsidiaryId = !subsidiary_id || subsidiary_id === 'all' ? null : subsidiary_id;
+    const safeAudience = target_audience || (safeSubsidiaryId ? 'subsidiary' : 'all');
     await pool.query(
       'INSERT INTO announcements (id, title, content, priority, target_audience, subsidiary_id, created_by_user_id, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-      [id, title, content, priority, target_audience || 'all', subsidiary_id, req.user.id, expires_at || null]
+      [id, title, content, safePriority, safeAudience, safeSubsidiaryId, req.user.id, normalizeMysqlDateTime(expires_at)]
     );
     res.status(201).json({ id });
   } catch (err) { res.status(500).json({ error: err.message }); }
@@ -4249,44 +4312,112 @@ app.post('/api/announcements/:id/read', authMiddleware, async (req, res) => {
 
 app.put('/api/announcements/:id', authMiddleware, requireCapability('announcements.manage'), async (req, res) => {
   try {
-    const { title, content, priority, target_audience, subsidiary_id, expires_at } = req.body;
-    await pool.query(
-      'UPDATE announcements SET title = ?, content = ?, priority = ?, target_audience = ?, subsidiary_id = ?, expires_at = ? WHERE id = ?',
-      [title, content, priority, target_audience, subsidiary_id, expires_at || null, req.params.id]
-    );
+    const { title, content, priority, target_audience, subsidiary_id, expires_at, is_active } = req.body;
+    const safePriority = ['low', 'normal', 'high', 'urgent'].includes(priority) ? priority : 'normal';
+    const safeSubsidiaryId = !subsidiary_id || subsidiary_id === 'all' ? null : subsidiary_id;
+    const safeAudience = target_audience || (safeSubsidiaryId ? 'subsidiary' : 'all');
+    if (typeof is_active === 'boolean') {
+      await pool.query(
+        'UPDATE announcements SET title = ?, content = ?, priority = ?, target_audience = ?, subsidiary_id = ?, expires_at = ?, is_active = ? WHERE id = ?',
+        [title, content, safePriority, safeAudience, safeSubsidiaryId, normalizeMysqlDateTime(expires_at), is_active, req.params.id]
+      );
+    } else {
+      await pool.query(
+        'UPDATE announcements SET title = ?, content = ?, priority = ?, target_audience = ?, subsidiary_id = ?, expires_at = ? WHERE id = ?',
+        [title, content, safePriority, safeAudience, safeSubsidiaryId, normalizeMysqlDateTime(expires_at), req.params.id]
+      );
+    }
     res.json({ success: true });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.patch('/api/announcements/:id', requireCapability('announcements.manage'), async (req, res) => {
+app.patch('/api/announcements/:id', authMiddleware, requireCapability('announcements.manage'), async (req, res) => {
   try {
-    const { is_active } = req.body;
-    await pool.query('UPDATE announcements SET is_active = ? WHERE id = ?', [is_active, req.params.id]);
-    res.json({ success: true });
+    const rawActive = req.body?.is_active;
+    if (typeof rawActive !== 'boolean' && rawActive !== 0 && rawActive !== 1) {
+      return res.status(400).json({ error: 'is_active must be a boolean.' });
+    }
+    const nextActive = Boolean(rawActive);
+    await pool.query('UPDATE announcements SET is_active = ? WHERE id = ?', [nextActive, req.params.id]);
+    res.json({ success: true, is_active: nextActive });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.delete('/api/announcements/:id', requireCapability('announcements.manage'), async (req, res) => {
+app.delete('/api/announcements/:id', authMiddleware, requireCapability('announcements.manage'), async (req, res) => {
   try {
     await pool.query('DELETE FROM announcements WHERE id = ?', [req.params.id]);
     res.json({ success: true });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.get('/api/announcement_reads/:id', async (req, res) => {
+app.get('/api/announcement_reads/:id', authMiddleware, requireCapability('announcements.manage'), async (req, res) => {
   try {
     const [rows] = await pool.query(
       `SELECT r.*, u.first_name, u.last_name, u.email, u.role
        FROM announcement_reads r
-       JOIN user_profiles u ON r.user_id = u.id
-       WHERE r.announcement_id = ?
+       JOIN user_profiles u ON ${sqlUuidEquals('r.user_id', 'u.id')}
+       WHERE ${sqlUuidParamEquals('r.announcement_id')}
        ORDER BY r.read_at DESC`,
       [req.params.id]
     );
-    res.json(rows.map(row => ({
+    const reads = rows.map(row => ({
       ...row,
       user: { first_name: row.first_name, last_name: row.last_name, email: row.email, role: row.role }
-    })));
+    }));
+
+    if (req.query.include_reach === 'true') {
+      const [[announcement]] = await pool.query(
+        `SELECT id, target_audience, subsidiary_id FROM announcements WHERE ${sqlUuidParamEquals('id')} LIMIT 1`,
+        [req.params.id]
+      );
+      let unreadUsers = [];
+      if (announcement) {
+        const [targetRows] = await pool.query(
+          `SELECT up.id, up.first_name, up.last_name, up.email, up.role
+           FROM user_profiles up
+           WHERE up.is_active = TRUE
+             AND (? IS NULL OR ${sqlUuidParamEquals('up.subsidiary_id')})
+             AND (
+               ? IS NULL
+               OR ? = 'all'
+               OR ? = 'subsidiary'
+               OR (? = 'admins' AND up.role IN ('SuperAdmin', 'Admin', 'Management'))
+               OR (? = 'teamleads' AND up.role = 'Teamlead')
+               OR (? = 'technicians' AND up.role = 'User')
+               OR (? = 'sales' AND up.role = 'Sales')
+               OR up.role = ?
+             )
+             AND NOT EXISTS (
+               SELECT 1 FROM announcement_reads ar
+               WHERE ${sqlUuidParamEquals('ar.announcement_id')}
+                 AND ${sqlUuidEquals('ar.user_id', 'up.id')}
+             )
+           ORDER BY up.first_name ASC, up.last_name ASC`,
+          [
+            announcement.subsidiary_id,
+            announcement.subsidiary_id,
+            announcement.target_audience,
+            announcement.target_audience,
+            announcement.target_audience,
+            announcement.target_audience,
+            announcement.target_audience,
+            announcement.target_audience,
+            announcement.target_audience,
+            announcement.target_audience,
+            req.params.id,
+          ]
+        );
+        unreadUsers = targetRows;
+      }
+      return res.json({
+        reads,
+        unread_users: unreadUsers,
+        read_count: reads.length,
+        total_target: reads.length + unreadUsers.length,
+      });
+    }
+
+    res.json(reads);
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
@@ -5495,11 +5626,37 @@ const attachCallParticipants = async (messages) => {
   }
   let meetingStates = [];
   try {
-    [meetingStates] = await pool.query(`SELECT call_id,spotlight_user_id FROM call_meeting_state WHERE call_id IN (${placeholders})`, callIds);
+    try {
+      [meetingStates] = await pool.query(
+        `SELECT cms.call_id,cms.spotlight_user_id,cms.recording_active,cms.recording_id,cms.recording_started_by,cms.recording_started_at,
+                u.first_name AS recording_first_name,u.last_name AS recording_last_name
+         FROM call_meeting_state cms
+         LEFT JOIN user_profiles u ON ${sqlUuidEquals('u.id', 'cms.recording_started_by')}
+         WHERE cms.call_id IN (${placeholders})`,
+        callIds,
+      );
+    } catch (innerError) {
+      if (innerError?.code !== 'ER_BAD_FIELD_ERROR') throw innerError;
+      [meetingStates] = await pool.query(`SELECT call_id,spotlight_user_id FROM call_meeting_state WHERE call_id IN (${placeholders})`, callIds);
+    }
   } catch (error) {
-    if (error?.code !== 'ER_NO_SUCH_TABLE') throw error;
+    if (error?.code !== 'ER_NO_SUCH_TABLE') console.warn('Unable to load call meeting state:', error?.message || error);
   }
   const spotlightByCall = new Map(meetingStates.map(row => [row.call_id, row.spotlight_user_id]));
+  const recordingStateByCall = new Map(meetingStates.map(row => [row.call_id, row]));
+  let savedRecordings = [];
+  try {
+    [savedRecordings] = await pool.query(
+      `SELECT call_id, COUNT(*) AS recordings_count, MAX(id) AS latest_recording_id
+       FROM call_recordings
+       WHERE call_id IN (${placeholders}) AND status = 'saved'
+       GROUP BY call_id`,
+      callIds,
+    );
+  } catch (recErr) {
+    if (recErr?.code !== 'ER_NO_SUCH_TABLE') console.warn('Unable to load call recording counts:', recErr?.message || recErr);
+  }
+  const savedRecordingsByCall = new Map(savedRecordings.map(row => [row.call_id, row]));
   return messages.map(message => {
     if (message.message_kind !== 'call') return message;
     const participants = byCall.get(message.id) || [];
@@ -5510,6 +5667,16 @@ const attachCallParticipants = async (messages) => {
       call_participant_ids: participantIds,
       call_participant_count: participantIds.length,
       spotlight_user_id: spotlightByCall.get(message.id) || null,
+      recording_active: Boolean(recordingStateByCall.get(message.id)?.recording_active),
+      recording_id: recordingStateByCall.get(message.id)?.recording_id || null,
+      recording_started_by: recordingStateByCall.get(message.id)?.recording_started_by || null,
+      recording_started_by_name: [
+        recordingStateByCall.get(message.id)?.recording_first_name,
+        recordingStateByCall.get(message.id)?.recording_last_name,
+      ].filter(Boolean).join(' ') || null,
+      recording_started_at: recordingStateByCall.get(message.id)?.recording_started_at || null,
+      recordings_count: Number(savedRecordingsByCall.get(message.id)?.recordings_count || 0),
+      latest_recording_id: savedRecordingsByCall.get(message.id)?.latest_recording_id || null,
     };
   });
 };
@@ -6442,7 +6609,7 @@ app.patch('/api/chat/calls/:callId', authMiddleware, async (req, res) => {
         if (!['ER_NO_SUCH_TABLE', 'ER_BAD_FIELD_ERROR'].includes(error?.code)) throw error;
       });
       await connection.query('UPDATE call_meeting_state SET spotlight_user_id=NULL,updated_by=? WHERE call_id=? AND spotlight_user_id=?', [req.user.id, callId, req.user.id]).catch((error) => {
-        if (error?.code !== 'ER_NO_SUCH_TABLE') throw error;
+        if (error?.code !== 'ER_NO_SUCH_TABLE') console.warn('Unable to load call meeting state:', error?.message || error);
       });
     }
     const isOrganizer = String(call.sender_id) === String(req.user.id);
@@ -6458,8 +6625,11 @@ app.patch('/api/chat/calls/:callId', authMiddleware, async (req, res) => {
         await connection.query('UPDATE call_participants SET hand_raised=FALSE,hand_raised_at=NULL,screen_sharing=FALSE WHERE call_id=?', [callId]).catch((error) => {
           if (!['ER_NO_SUCH_TABLE', 'ER_BAD_FIELD_ERROR'].includes(error?.code)) throw error;
         });
+        await connection.query('UPDATE call_meeting_state SET spotlight_user_id=NULL,recording_active=FALSE,recording_id=NULL,updated_by=? WHERE call_id=?', [req.user.id, callId]).catch((error) => {
+          if (!['ER_NO_SUCH_TABLE', 'ER_BAD_FIELD_ERROR'].includes(error?.code)) throw error;
+        });
         await connection.query('UPDATE call_meeting_state SET spotlight_user_id=NULL,updated_by=? WHERE call_id=?', [req.user.id, callId]).catch((error) => {
-          if (error?.code !== 'ER_NO_SUCH_TABLE') throw error;
+          if (error?.code !== 'ER_NO_SUCH_TABLE') console.warn('Unable to load call meeting state:', error?.message || error);
         });
       }
     }
@@ -6644,7 +6814,7 @@ app.post('/api/chat/call-signal', authMiddleware, async (req, res) => {
     const signalType = String(req.body?.signal_type || '').trim();
     const payload = req.body?.payload;
     const deviceId = normalizeDeviceId(req.body?.device_id);
-    const allowedSignalTypes = ['offer', 'answer', 'ice-candidate', 'reaction', 'hand-state', 'media-state', 'spotlight', 'rejoin'];
+    const allowedSignalTypes = ['offer', 'answer', 'ice-candidate', 'reaction', 'hand-state', 'media-state', 'spotlight', 'recording-state', 'rejoin'];
     const validEngagementPayload = isValidCallSignalPayload(signalType, payload);
     if (!callId || !receiverId || !deviceId || !allowedSignalTypes.includes(signalType) || !validEngagementPayload) {
       return res.status(400).json({ error: 'Invalid call signal.' });
@@ -6725,6 +6895,564 @@ app.post('/api/chat/call-signal', authMiddleware, async (req, res) => {
     res.json({ success: true, signalId });
   } catch (err) {
     if (!communicationSchemaUnavailable(err, res)) res.status(500).json({ error: 'Unable to send call signal.' });
+  }
+});
+
+const callRecordingsDir = path.join(uploadsDir, 'call-recordings');
+if (!fs.existsSync(callRecordingsDir)) {
+  fs.mkdirSync(callRecordingsDir, { recursive: true, mode: 0o750 });
+}
+
+let callRecordingsSchemaPromise = null;
+const ensureCallRecordingsSchema = async () => {
+  if (!callRecordingsSchemaPromise) {
+    callRecordingsSchemaPromise = (async () => {
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS call_recordings (
+          id VARCHAR(36) PRIMARY KEY,
+          call_id VARCHAR(36) NOT NULL,
+          initiated_by VARCHAR(36) NOT NULL,
+          stopped_by VARCHAR(36) NULL,
+          started_at DATETIME NOT NULL,
+          ended_at DATETIME NULL,
+          duration_seconds INT NOT NULL DEFAULT 0,
+          status ENUM('recording', 'processing', 'saved', 'failed', 'deleted') NOT NULL DEFAULT 'recording',
+          file_name VARCHAR(255) NULL,
+          file_path VARCHAR(512) NULL,
+          mime_type VARCHAR(120) NULL,
+          file_size BIGINT NULL,
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+          INDEX idx_call_recordings_call_id (call_id),
+          INDEX idx_call_recordings_initiated_by (initiated_by),
+          INDEX idx_call_recordings_status_created (status, created_at)
+        )
+      `);
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS call_meeting_state (
+          call_id VARCHAR(36) PRIMARY KEY,
+          spotlight_user_id VARCHAR(36) NULL,
+          updated_by VARCHAR(36) NULL,
+          updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+        )
+      `);
+      await ensureTableColumns('call_meeting_state', [
+        ['recording_active', 'BOOLEAN NOT NULL DEFAULT FALSE'],
+        ['recording_id', 'VARCHAR(36) NULL'],
+        ['recording_started_by', 'VARCHAR(36) NULL'],
+        ['recording_started_at', 'DATETIME NULL'],
+      ]);
+      await pool.query('ALTER TABLE call_recordings CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci').catch(() => {});
+      await pool.query('ALTER TABLE call_meeting_state CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci').catch(() => {});
+    })().catch((err) => {
+      callRecordingsSchemaPromise = null;
+      throw err;
+    });
+  }
+  return callRecordingsSchemaPromise;
+};
+void ensureCallRecordingsSchema().catch(() => {});
+
+app.post('/api/chat/calls/:callId/recordings/start', authMiddleware, async (req, res) => {
+  const connection = await pool.getConnection();
+  try {
+    await ensureCallRecordingsSchema();
+    const callId = String(req.params.callId || '').trim();
+    if (!callId) return res.status(400).json({ error: 'Call identifier is required.' });
+
+    await connection.beginTransaction();
+    const [callRows] = await connection.query(
+      "SELECT * FROM messages WHERE id = ? AND message_kind = 'call' FOR UPDATE",
+      [callId],
+    );
+    const call = callRows[0];
+    if (!call || !['ringing', 'accepted'].includes(String(call.call_status))) {
+      await connection.rollback();
+      return res.status(409).json({ error: 'Recording can only be started in an active meeting.', code: 'CALL_NOT_ACTIVE' });
+    }
+
+    const [membershipRows] = await connection.query(
+      'SELECT status FROM call_participants WHERE call_id = ? AND user_id = ? LIMIT 1',
+      [callId, req.user.id],
+    );
+    const isJoinedParticipant = membershipRows[0]?.status === 'accepted'
+      || String(call.sender_id) === String(req.user.id)
+      || String(call.receiver_id) === String(req.user.id);
+    if (!isJoinedParticipant || !canManageCallRecording(req.user, call.sender_id)) {
+      await connection.rollback();
+      await logDenied(pool, req, {
+        action: 'call_recording_start_denied',
+        category: 'chat',
+        module: 'Chat',
+        entity_type: 'call',
+        entity_id: callId,
+        description: 'Unauthorized attempt to start meeting recording.',
+      });
+      return res.status(403).json({ error: 'Only the meeting host or authorized roles can start recording.' });
+    }
+
+    const [activeRecRows] = await connection.query(
+      'SELECT recording_active, recording_id FROM call_meeting_state WHERE call_id = ? FOR UPDATE',
+      [callId],
+    );
+    if (activeRecRows[0]?.recording_active && activeRecRows[0]?.recording_id) {
+      await connection.rollback();
+      return res.status(409).json({
+        error: 'A recording is already in progress for this meeting.',
+        code: 'RECORDING_ALREADY_ACTIVE',
+        recording_id: activeRecRows[0].recording_id,
+      });
+    }
+
+    const recordingId = uuidv4();
+    const startedAt = new Date();
+    await connection.query(
+      `INSERT INTO call_recordings (id, call_id, initiated_by, started_at, status)
+       VALUES (?, ?, ?, ?, 'recording')`,
+      [recordingId, callId, req.user.id, startedAt],
+    );
+    await connection.query(
+      `INSERT INTO call_meeting_state (call_id, recording_active, recording_id, recording_started_by, recording_started_at, updated_by)
+       VALUES (?, TRUE, ?, ?, ?, ?)
+       ON DUPLICATE KEY UPDATE
+         recording_active = TRUE,
+         recording_id = VALUES(recording_id),
+         recording_started_by = VALUES(recording_started_by),
+         recording_started_at = VALUES(recording_started_at),
+         updated_by = VALUES(updated_by)`,
+      [callId, recordingId, req.user.id, startedAt, req.user.id],
+    );
+
+    const startedByName = [req.user.first_name, req.user.last_name].filter(Boolean).join(' ') || req.user.email || 'Meeting Host';
+    await logSuccess(connection, req, {
+      action: 'call_recording_started',
+      category: 'chat',
+      module: 'Chat',
+      entity_type: 'call_recording',
+      entity_id: recordingId,
+      description: 'Meeting recording started.',
+      metadata: { call_id: callId, started_by: req.user.id, started_by_name: startedByName },
+    });
+    await connection.commit();
+
+    await publishCallUpdate(callId);
+    await notifyCallParticipants(callId, {
+      type: 'call_recording_state',
+      callId,
+      recordingId,
+      active: true,
+      status: 'recording',
+      startedBy: String(req.user.id),
+      startedByName,
+      startedAt: startedAt.toISOString(),
+    });
+
+    res.json({
+      id: recordingId,
+      call_id: callId,
+      initiated_by: String(req.user.id),
+      initiated_by_name: startedByName,
+      started_at: startedAt.toISOString(),
+      status: 'recording',
+    });
+  } catch (error) {
+    await connection.rollback().catch(() => undefined);
+    console.error('Failed to start call recording:', error?.message || error);
+    res.status(500).json({ error: 'Unable to start meeting recording.' });
+  } finally {
+    connection.release();
+  }
+});
+
+app.post(
+  '/api/chat/calls/:callId/recordings/:recordingId/stop',
+  authMiddleware,
+  express.raw({ type: ['video/*', 'application/octet-stream'], limit: '250mb' }),
+  async (req, res) => {
+    const connection = await pool.getConnection();
+    try {
+      await ensureCallRecordingsSchema();
+      const callId = String(req.params.callId || '').trim();
+      const recordingId = String(req.params.recordingId || '').trim();
+      if (!callId || !recordingId) return res.status(400).json({ error: 'Call and recording identifiers are required.' });
+
+      await connection.beginTransaction();
+      const [recRows] = await connection.query(
+        `SELECT cr.*, m.sender_id AS call_sender_id, m.content AS call_title
+         FROM call_recordings cr
+         INNER JOIN messages m ON ${sqlUuidEquals('m.id', 'cr.call_id')}
+         WHERE cr.id = ? AND cr.call_id = ?
+         FOR UPDATE`,
+        [recordingId, callId],
+      );
+      const recording = recRows[0];
+      if (!recording) {
+        await connection.rollback();
+        return res.status(404).json({ error: 'Recording session not found.' });
+      }
+      if (!canManageCallRecording(req.user, recording.call_sender_id, recording.initiated_by)) {
+        await connection.rollback();
+        await logDenied(pool, req, {
+          action: 'call_recording_stop_denied',
+          category: 'chat',
+          module: 'Chat',
+          entity_type: 'call_recording',
+          entity_id: recordingId,
+          description: 'Unauthorized attempt to stop meeting recording.',
+        });
+        return res.status(403).json({ error: 'You are not authorized to stop this recording.' });
+      }
+
+      let mediaBuffer = null;
+      let rawMimeType = String(req.headers['x-recording-mime-type'] || req.query?.mimeType || 'video/webm').trim();
+      let durationSeconds = Number(req.headers['x-recording-duration'] || req.query?.durationSeconds || 0);
+
+      if (Buffer.isBuffer(req.body) && req.body.length > 0) {
+        mediaBuffer = req.body;
+      } else if (req.body && typeof req.body === 'object' && typeof req.body.base64Data === 'string') {
+        mediaBuffer = Buffer.from(req.body.base64Data, 'base64');
+        if (req.body.mimeType) rawMimeType = String(req.body.mimeType).trim();
+        if (req.body.durationSeconds != null) durationSeconds = Number(req.body.durationSeconds);
+      }
+
+      if (!mediaBuffer || mediaBuffer.length === 0) {
+        await connection.query(
+          "UPDATE call_recordings SET status = 'failed', stopped_by = ?, ended_at = NOW() WHERE id = ?",
+          [req.user.id, recordingId],
+        );
+        await connection.query(
+          'UPDATE call_meeting_state SET recording_active = FALSE, recording_id = NULL, updated_by = ? WHERE call_id = ?',
+          [req.user.id, callId],
+        );
+        await connection.commit();
+        await publishCallUpdate(callId);
+        return res.status(400).json({ error: 'No recorded media data was received.' });
+      }
+
+      const normalizedMime = rawMimeType.toLowerCase().includes('mp4') ? 'video/mp4' : 'video/webm';
+      const extension = normalizedMime === 'video/mp4' ? '.mp4' : '.webm';
+      const storedFileName = `meeting-${callId.slice(0, 8)}-${recordingId}${extension}`;
+      const displayFileName = `RIANA-Meeting-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}${extension}`;
+      const diskPath = resolveStoredFile(callRecordingsDir, storedFileName);
+      await fsp.writeFile(diskPath, mediaBuffer, { mode: 0o640 });
+
+      const endedAt = new Date();
+      const computedDuration = Number.isFinite(durationSeconds) && durationSeconds > 0
+        ? Math.round(durationSeconds)
+        : Math.max(1, Math.round((endedAt.getTime() - new Date(recording.started_at).getTime()) / 1000));
+
+      await connection.query(
+        `UPDATE call_recordings
+         SET stopped_by = ?, ended_at = ?, duration_seconds = ?, status = 'saved',
+             file_name = ?, file_path = ?, mime_type = ?, file_size = ?
+         WHERE id = ?`,
+        [
+          req.user.id,
+          endedAt,
+          computedDuration,
+          displayFileName,
+          storedFileName,
+          normalizedMime,
+          mediaBuffer.length,
+          recordingId,
+        ],
+      );
+
+      await connection.query(
+        'UPDATE call_meeting_state SET recording_active = FALSE, recording_id = NULL, updated_by = ? WHERE call_id = ?',
+        [req.user.id, callId],
+      );
+
+      const stoppedByName = [req.user.first_name, req.user.last_name].filter(Boolean).join(' ') || req.user.email || 'Meeting Host';
+      await logSuccess(connection, req, {
+        action: 'call_recording_saved',
+        category: 'chat',
+        module: 'Chat',
+        entity_type: 'call_recording',
+        entity_id: recordingId,
+        description: 'Meeting recording stopped and saved.',
+        metadata: {
+          call_id: callId,
+          duration_seconds: computedDuration,
+          file_size: mediaBuffer.length,
+          mime_type: normalizedMime,
+        },
+      });
+      await connection.commit();
+
+      await publishCallUpdate(callId);
+      await notifyCallParticipants(callId, {
+        type: 'call_recording_state',
+        callId,
+        recordingId,
+        active: false,
+        status: 'saved',
+        stoppedBy: String(req.user.id),
+        stoppedByName,
+        durationSeconds: computedDuration,
+      });
+
+      res.json({
+        id: recordingId,
+        call_id: callId,
+        status: 'saved',
+        duration_seconds: computedDuration,
+        file_name: displayFileName,
+        file_size: mediaBuffer.length,
+        mime_type: normalizedMime,
+        ended_at: endedAt.toISOString(),
+      });
+    } catch (error) {
+      await connection.rollback().catch(() => undefined);
+      console.error('Failed to finalize call recording:', error?.message || error);
+      res.status(500).json({ error: 'Unable to save meeting recording.' });
+    } finally {
+      connection.release();
+    }
+  },
+);
+
+app.post('/api/chat/calls/:callId/recordings/:recordingId/fail', authMiddleware, async (req, res) => {
+  try {
+    await ensureCallRecordingsSchema();
+    const callId = String(req.params.callId || '').trim();
+    const recordingId = String(req.params.recordingId || '').trim();
+    const [recRows] = await pool.query(
+      `SELECT cr.*, m.sender_id AS call_sender_id
+       FROM call_recordings cr
+       INNER JOIN messages m ON ${sqlUuidEquals('m.id', 'cr.call_id')}
+       WHERE cr.id = ? AND cr.call_id = ? LIMIT 1`,
+      [recordingId, callId],
+    );
+    const recording = recRows[0];
+    if (!recording) return res.status(404).json({ error: 'Recording session not found.' });
+    if (!canManageCallRecording(req.user, recording.call_sender_id, recording.initiated_by)) {
+      return res.status(403).json({ error: 'Unauthorized.' });
+    }
+    await pool.query(
+      "UPDATE call_recordings SET status = 'failed', stopped_by = ?, ended_at = COALESCE(ended_at, NOW()) WHERE id = ?",
+      [req.user.id, recordingId],
+    );
+    await pool.query(
+      'UPDATE call_meeting_state SET recording_active = FALSE, recording_id = NULL, updated_by = ? WHERE call_id = ?',
+      [req.user.id, callId],
+    );
+    await publishCallUpdate(callId);
+    await notifyCallParticipants(callId, {
+      type: 'call_recording_state',
+      callId,
+      recordingId,
+      active: false,
+      status: 'failed',
+    });
+    res.json({ success: true, status: 'failed' });
+  } catch (error) {
+    res.status(500).json({ error: 'Unable to update recording state.' });
+  }
+});
+
+app.get('/api/chat/recordings', authMiddleware, async (req, res) => {
+  try {
+    await ensureCallRecordingsSchema();
+    const callIdFilter = String(req.query?.callId || '').trim();
+    const isAdmin = isAdminOrSuperAdmin(req);
+    const params = [];
+    let whereSql = "WHERE cr.status IN ('saved', 'recording', 'processing', 'failed')";
+
+    if (callIdFilter) {
+      whereSql += ' AND cr.call_id = ?';
+      params.push(callIdFilter);
+    }
+
+    if (!isAdmin) {
+      whereSql += ` AND (
+        ${sqlUuidParamEquals('cr.initiated_by')}
+        OR ${sqlUuidParamEquals('m.sender_id')}
+        OR ${sqlUuidParamEquals('m.receiver_id')}
+        OR EXISTS (SELECT 1 FROM call_participants cp WHERE ${sqlUuidEquals('cp.call_id', 'cr.call_id')} AND ${sqlUuidParamEquals('cp.user_id')})
+      )`;
+      params.push(req.user.id, req.user.id, req.user.id, req.user.id);
+    }
+
+    const [rows] = await pool.query(
+      `SELECT cr.id, cr.call_id, cr.initiated_by, cr.stopped_by, cr.started_at, cr.ended_at,
+              cr.duration_seconds, cr.status, cr.file_name, cr.mime_type, cr.file_size, cr.created_at,
+              m.content AS call_title, m.call_type, m.sender_id AS call_sender_id,
+              u.first_name AS initiator_first_name, u.last_name AS initiator_last_name, u.email AS initiator_email
+       FROM call_recordings cr
+       INNER JOIN messages m ON ${sqlUuidEquals('m.id', 'cr.call_id')}
+       LEFT JOIN user_profiles u ON ${sqlUuidEquals('u.id', 'cr.initiated_by')}
+       ${whereSql}
+       ORDER BY cr.created_at DESC
+       LIMIT 100`,
+      params,
+    );
+
+    const callIds = Array.from(new Set(rows.map(r => r.call_id).filter(Boolean)));
+    const participantsByCall = new Map();
+    if (callIds.length) {
+      const placeholders = callIds.map(() => '?').join(',');
+      const [partRows] = await pool.query(
+        `SELECT cp.call_id, cp.user_id, u.first_name, u.last_name
+         FROM call_participants cp
+         INNER JOIN user_profiles u ON ${sqlUuidEquals('u.id', 'cp.user_id')}
+         WHERE cp.call_id IN (${placeholders})`,
+        callIds,
+      );
+      for (const p of partRows) {
+        const list = participantsByCall.get(p.call_id) || [];
+        list.push({
+          user_id: p.user_id,
+          name: [p.first_name, p.last_name].filter(Boolean).join(' ') || 'Participant',
+        });
+        participantsByCall.set(p.call_id, list);
+      }
+    }
+
+    const formatted = rows.map(row => ({
+      id: row.id,
+      call_id: row.call_id,
+      call_message_id: row.call_id,
+      call_title: row.call_title || (row.call_type === 'video' ? 'Video meeting' : 'Audio meeting'),
+      meeting_title: row.call_title || (row.call_type === 'video' ? 'Video meeting' : 'Audio meeting'),
+      call_type: row.call_type || 'video',
+      initiated_by: row.initiated_by,
+      initiated_by_name: [row.initiator_first_name, row.initiator_last_name].filter(Boolean).join(' ') || row.initiator_email || 'Host',
+      initiator_name: [row.initiator_first_name, row.initiator_last_name].filter(Boolean).join(' ') || row.initiator_email || 'Host',
+      host_user_id: row.call_sender_id,
+      stopped_by: row.stopped_by,
+      started_at: row.started_at,
+      ended_at: row.ended_at,
+      duration_seconds: Number(row.duration_seconds || 0),
+      status: row.status,
+      file_name: row.file_name,
+      mime_type: row.mime_type || 'video/webm',
+      file_size: Number(row.file_size || 0),
+      created_at: row.created_at,
+      participants: participantsByCall.get(row.call_id) || [],
+      can_delete: canManageCallRecording(req.user, row.call_sender_id, row.initiated_by),
+    }));
+
+    res.json(formatted);
+  } catch (error) {
+    console.error('Unable to load call recordings:', error?.message || error);
+    res.status(500).json({ error: 'Unable to load meeting recordings.' });
+  }
+});
+
+app.get('/api/chat/recordings/:recordingId/media', authMiddleware, async (req, res) => {
+  try {
+    await ensureCallRecordingsSchema();
+    const recordingId = String(req.params.recordingId || '').trim();
+    const [rows] = await pool.query(
+      `SELECT cr.*, m.sender_id AS call_sender_id, m.receiver_id AS call_receiver_id
+       FROM call_recordings cr
+       INNER JOIN messages m ON ${sqlUuidEquals('m.id', 'cr.call_id')}
+       WHERE cr.id = ? AND cr.status = 'saved'
+       LIMIT 1`,
+      [recordingId],
+    );
+    const recording = rows[0];
+    if (!recording || !recording.file_path) {
+      return res.status(404).json({ error: 'Recording not found.' });
+    }
+
+    if (!isAdminOrSuperAdmin(req)) {
+      const [partRows] = await pool.query(
+        'SELECT 1 FROM call_participants WHERE call_id = ? AND user_id = ? LIMIT 1',
+        [recording.call_id, req.user.id],
+      );
+      const isParticipant = String(recording.initiated_by) === String(req.user.id)
+        || String(recording.call_sender_id) === String(req.user.id)
+        || String(recording.call_receiver_id) === String(req.user.id)
+        || partRows.length > 0;
+      if (!isParticipant) {
+        return res.status(403).json({ error: 'You do not have permission to access this recording.' });
+      }
+    }
+
+    const diskPath = resolveStoredFile(callRecordingsDir, recording.file_path);
+    if (!diskPath || !fs.existsSync(diskPath)) {
+      return res.status(404).json({ error: 'Recording media file is missing.' });
+    }
+
+    if (req.query?.download === '1') {
+      await logSuccess(pool, req, {
+        action: 'call_recording_downloaded',
+        category: 'data',
+        module: 'Chat',
+        entity_type: 'call_recording',
+        entity_id: recording.id,
+        description: 'Meeting recording downloaded.',
+        metadata: { call_id: recording.call_id },
+      }).catch(() => {});
+    }
+
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('Content-Type', recording.mime_type || 'video/webm');
+    const disposition = req.query?.download === '1' ? 'attachment' : 'inline';
+    const safeName = String(recording.file_name || recording.file_path).replace(/["\r\n]/g, '');
+    res.setHeader('Content-Disposition', `${disposition}; filename="${safeName}"`);
+    res.sendFile(diskPath);
+  } catch (error) {
+    console.error('Unable to stream call recording:', error?.message || error);
+    res.status(500).json({ error: 'Unable to load meeting recording media.' });
+  }
+});
+
+app.delete('/api/chat/recordings/:recordingId', authMiddleware, async (req, res) => {
+  try {
+    await ensureCallRecordingsSchema();
+    const recordingId = String(req.params.recordingId || '').trim();
+    const [rows] = await pool.query(
+      `SELECT cr.*, m.sender_id AS call_sender_id
+       FROM call_recordings cr
+       INNER JOIN messages m ON ${sqlUuidEquals('m.id', 'cr.call_id')}
+       WHERE cr.id = ? AND cr.status <> 'deleted'
+       LIMIT 1`,
+      [recordingId],
+    );
+    const recording = rows[0];
+    if (!recording) {
+      return res.status(404).json({ error: 'Recording not found.' });
+    }
+    if (!canManageCallRecording(req.user, recording.call_sender_id, recording.initiated_by)) {
+      await logDenied(pool, req, {
+        action: 'call_recording_delete_denied',
+        category: 'chat',
+        module: 'Chat',
+        entity_type: 'call_recording',
+        entity_id: recordingId,
+        description: 'Unauthorized attempt to delete meeting recording.',
+      });
+      return res.status(403).json({ error: 'You are not authorized to delete this recording.' });
+    }
+
+    if (recording.file_path) {
+      const diskPath = resolveStoredFile(callRecordingsDir, recording.file_path);
+      if (diskPath && fs.existsSync(diskPath)) {
+        await fsp.unlink(diskPath).catch(() => {});
+      }
+    }
+
+    await pool.query(
+      "UPDATE call_recordings SET status = 'deleted', file_path = NULL WHERE id = ?",
+      [recordingId],
+    );
+    await logSuccess(pool, req, {
+      action: 'call_recording_deleted',
+      category: 'chat',
+      module: 'Chat',
+      entity_type: 'call_recording',
+      entity_id: recordingId,
+      description: 'Meeting recording deleted.',
+      metadata: { call_id: recording.call_id },
+    });
+    await publishCallUpdate(recording.call_id);
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Unable to delete call recording:', error?.message || error);
+    res.status(500).json({ error: 'Unable to delete meeting recording.' });
   }
 });
 

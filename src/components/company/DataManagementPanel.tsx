@@ -245,7 +245,7 @@ export const DataManagementPanel = ({ user }: DataManagementPanelProps) => {
               <div className="space-y-2">
                 <Label htmlFor="backup-day">Select Day</Label>
                 <Select value={backupDay} onValueChange={setBackupDay}>
-                  <SelectTrigger id="backup-day text-sm">
+                  <SelectTrigger id="backup-day" className="text-sm">
                     <SelectValue placeholder="Select Day" />
                   </SelectTrigger>
                   <SelectContent>
@@ -293,7 +293,7 @@ export const DataManagementPanel = ({ user }: DataManagementPanelProps) => {
             </div>
           </div>
 
-          <Button onClick={createBackup} disabled={isBackingUp} className="w-full bg-blue-600 hover:bg-blue-700 text-white">
+          <Button onClick={createBackup} disabled={isBackingUp} className="w-full gradient-primary">
             {isBackingUp ? <RefreshCw className="h-4 w-4 mr-2 animate-spin" /> : <Save className="h-4 w-4 mr-2" />}
             {isBackingUp ? "Creating Backup..." : "Create New Backup"}
           </Button>

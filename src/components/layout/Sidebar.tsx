@@ -3,7 +3,7 @@ import { User } from "@/types";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
-import { Building2, Package, Users, Upload, FileText, BarChart3, HelpCircle, Home, History, TrendingUp, DollarSign, CalendarDays, Wrench, Megaphone, ChevronRight, Globe, Code2, PanelLeftClose, PanelLeftOpen } from "lucide-react";
+import { Building2, Package, Users, UserCheck, HardDrive, Settings, ShieldCheck, Upload, FileText, BarChart3, HelpCircle, Home, History, TrendingUp, DollarSign, CalendarDays, Wrench, Megaphone, ChevronRight, Globe, Code2, PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useDatabase } from "@/hooks/useDatabase";
@@ -63,19 +63,19 @@ export const Sidebar = ({ user, activeModule, setActiveModule, isMobileOpen, onM
     { key: 'dashboard', label: 'Dashboard', icon: Home, roles: ['SuperAdmin', 'Admin', 'Management', 'Finance', 'Teamlead', 'Developer', 'Sales', 'User'], category: 'main' },
     { key: 'technician-dashboard', label: 'My Tasks', icon: Wrench, roles: ['User'], mobileOnly: true, category: 'main' },
     { key: 'clients', label: 'Clients', icon: Building2, roles: [], capability: 'clients.view' as Capability, category: 'management' },
-    { key: 'assignments', label: 'Assigned Technicians', icon: Users, roles: [], capability: 'assignments.view' as Capability, category: 'management' },
+    { key: 'assignments', label: 'Assigned Technicians', icon: UserCheck, roles: [], capability: 'assignments.view' as Capability, category: 'management' },
     { key: 'calendar', label: 'Workload Calendar', icon: CalendarDays, roles: ['SuperAdmin', 'Admin', 'Management', 'Teamlead', 'User'], category: 'management' },
-    { key: 'installations', label: 'Installations', icon: Package, roles: [], capability: 'installations.view' as Capability, category: 'operations' },
+    { key: 'installations', label: 'Installations', icon: HardDrive, roles: [], capability: 'installations.view' as Capability, category: 'operations' },
     { key: 'inventory', label: 'Hardware & Inventory', icon: Package, roles: [], capability: 'inventory.view' as Capability, category: 'operations' },
     { key: 'progress', label: 'Installation Progress', icon: TrendingUp, roles: [], capability: 'progress.view' as Capability, category: 'operations' },
     { key: 'users', label: 'Users', icon: Users, roles: [], capability: 'users.manage' as Capability, category: 'admin' },
     { key: 'finances', label: 'Finances', icon: DollarSign, roles: [], capability: 'finances.view' as Capability, category: 'admin' },
     { key: 'announcements-management', label: 'Announcements', icon: Megaphone, roles: [], capability: 'announcements.manage' as Capability, category: 'admin' },
-    { key: 'company', label: 'Company Settings', icon: History, roles: [], capability: 'company.manage' as Capability, category: 'admin' },
+    { key: 'company', label: 'Company Settings', icon: Settings, roles: [], capability: 'company.manage' as Capability, category: 'admin' },
     { key: 'import', label: 'Import Data', icon: Upload, roles: [], capability: 'import.manage' as Capability, category: 'data' },
     { key: 'reports', label: 'Reports', icon: FileText, roles: [], capability: 'reports.view' as Capability, category: 'data' },
     { key: 'analytics', label: 'Analytics', icon: BarChart3, roles: [], capability: 'analytics.view' as Capability, category: 'data' },
-    { key: 'audit-logs', label: 'Audit Logs', icon: History, roles: ['SuperAdmin'], category: 'admin' },
+    { key: 'audit-logs', label: 'Audit Logs', icon: ShieldCheck, roles: ['SuperAdmin'], category: 'admin' },
     { key: 'my-activity', label: 'My Activity', icon: History, roles: ['SuperAdmin', 'Admin', 'Management', 'Finance', 'Teamlead', 'Developer', 'Sales', 'User'], category: 'support' },
     { key: 'optimus', label: 'RIANA OPTIMUS', icon: Globe, roles: ['SuperAdmin', 'Admin', 'Management', 'Teamlead', 'User'], category: 'external' },
     { key: 'developers', label: 'Developers', icon: Code2, roles: ['SuperAdmin', 'Admin', 'Management', 'Teamlead', 'Developer', 'Sales'], category: 'developers' },
@@ -151,8 +151,8 @@ export const Sidebar = ({ user, activeModule, setActiveModule, isMobileOpen, onM
   const SidebarContent = ({ collapsed = false }: { collapsed?: boolean }) => (
     <div className="flex h-full min-h-0 flex-col">
       {collapsed !== undefined && <div className={cn("hidden border-b border-border p-2 lg:flex", collapsed ? "justify-center" : "justify-end")}>
-        <Button type="button" variant="ghost" size="icon" onClick={toggleCollapsed} aria-label={collapsed ? "Expand navigation" : "Collapse navigation"} title={collapsed ? "Expand navigation" : "Collapse navigation"}>
-          {collapsed ? <PanelLeftOpen /> : <PanelLeftClose />}
+        <Button type="button" variant="ghost" size="icon" className="h-8 w-8 rounded-lg" onClick={toggleCollapsed} aria-label={collapsed ? "Expand navigation" : "Collapse navigation"} title={collapsed ? "Expand navigation" : "Collapse navigation"}>
+          {collapsed ? <PanelLeftOpen className="h-4 w-4" /> : <PanelLeftClose className="h-4 w-4" />}
         </Button>
       </div>}
       <ScrollArea className="min-h-0 flex-1 px-2">
@@ -175,23 +175,23 @@ export const Sidebar = ({ user, activeModule, setActiveModule, isMobileOpen, onM
                         data-tour-nav={item.key}
                         variant="ghost"
                         className={cn(
-                          "group relative h-10 w-full px-3 text-left font-medium transition-colors duration-150",
+                          "group relative h-9 w-full rounded-lg px-2.5 text-left text-[13px] font-medium transition-colors duration-150",
                           collapsed ? "justify-center" : "justify-start",
                           isActive 
                             ? "bg-primary/12 text-primary shadow-none hover:bg-primary/16 hover:text-primary"
                             : "text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
                         )}
                         onClick={() => handleModuleClick(item.key)}
-                        title={collapsed ? item.label : undefined}
+                        title={collapsed ? item.label : undefined} aria-label={item.label}
                       >
                         <div className={cn(
                           "absolute left-0 top-1/2 -translate-y-1/2 w-1 h-6 rounded-r-full transition-all duration-200",
                           isActive ? "bg-primary" : "bg-transparent group-hover:bg-primary/30"
                         )} />
-                        <item.icon className={cn("shrink-0", !collapsed && "mr-3")} />
+                        <item.icon className={cn("h-4 w-4 shrink-0", !collapsed && "mr-2.5")} />
                         <span className={cn("truncate font-medium", collapsed && "sr-only")}>{item.label}</span>
                         <ChevronRight className={cn(
-                          "ml-auto h-4 w-4 opacity-0 -translate-x-2 transition-all duration-200",
+                          "ml-auto h-3.5 w-3.5 opacity-0 -translate-x-2 transition-all duration-200",
                           collapsed && "hidden",
                           isActive ? "opacity-100 translate-x-0" : "group-hover:opacity-50 group-hover:translate-x-0"
                         )} />

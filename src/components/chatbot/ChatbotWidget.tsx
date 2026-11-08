@@ -69,10 +69,10 @@ export const ChatbotWidget = ({ user, currentModule = '' }: ChatbotWidgetProps) 
               <span className="min-w-0"><span className="block truncate">RIANA Assistant</span><span className="block text-[10px] font-normal text-primary-foreground/75">User guidance only</span></span>
             </CardTitle>
             <div className="flex shrink-0 gap-1">
-              <Button type="button" variant="ghost" size="icon" className="h-8 w-8 text-primary-foreground hover:bg-primary-foreground/15 hover:text-primary-foreground" onClick={() => setIsMinimized((value) => !value)} aria-label={isMinimized ? 'Expand assistant' : 'Minimize assistant'}>
+              <Button type="button" variant="ghost" size="icon" className="h-8 w-8 text-primary-foreground hover:bg-primary-foreground/15 hover:text-primary-foreground" onClick={() => setIsMinimized((value) => !value)} title={isMinimized ? 'Expand assistant' : 'Minimize assistant'} aria-label={isMinimized ? 'Expand assistant' : 'Minimize assistant'}>
                 {isMinimized ? <Maximize2 className="h-4 w-4" /> : <Minimize2 className="h-4 w-4" />}
               </Button>
-              <Button type="button" variant="ghost" size="icon" className="h-8 w-8 text-primary-foreground hover:bg-primary-foreground/15 hover:text-primary-foreground" onClick={() => setIsOpen(false)} aria-label="Close assistant"><X className="h-4 w-4" /></Button>
+              <Button type="button" variant="ghost" size="icon" className="h-8 w-8 text-primary-foreground hover:bg-primary-foreground/15 hover:text-primary-foreground" onClick={() => setIsOpen(false)} title="Close assistant" aria-label="Close assistant"><X className="h-4 w-4" /></Button>
             </div>
           </div>
         </CardHeader>
@@ -97,9 +97,9 @@ export const ChatbotWidget = ({ user, currentModule = '' }: ChatbotWidgetProps) 
                       <p className="whitespace-pre-wrap">{message.text}</p>
                       <p className={`mt-1 text-[9px] ${message.sender === 'user' ? 'text-primary-foreground/70' : 'text-muted-foreground'}`}>{message.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>
                       {message.sender === 'assistant' ? <div className="mt-1.5 flex items-center gap-0.5 border-t border-border/60 pt-1">
-                        <Button type="button" variant="ghost" size="icon" className="h-6 w-6" onClick={() => void copyAnswer(message.id, message.text)} aria-label="Copy answer">{copiedId === message.id ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}</Button>
-                        <Button type="button" variant="ghost" size="icon" className="h-6 w-6" onClick={() => setRated((current) => ({ ...current, [message.id]: 'up' }))} aria-label="Mark answer helpful" aria-pressed={rated[message.id] === 'up'}><ThumbsUp className={`h-3 w-3 ${rated[message.id] === 'up' ? 'fill-current text-primary' : ''}`} /></Button>
-                        <Button type="button" variant="ghost" size="icon" className="h-6 w-6" onClick={() => setRated((current) => ({ ...current, [message.id]: 'down' }))} aria-label="Mark answer not helpful" aria-pressed={rated[message.id] === 'down'}><ThumbsDown className={`h-3 w-3 ${rated[message.id] === 'down' ? 'fill-current text-destructive' : ''}`} /></Button>
+                        <Button type="button" variant="ghost" size="icon" className="h-6 w-6" onClick={() => void copyAnswer(message.id, message.text)} title="Copy answer" aria-label="Copy answer">{copiedId === message.id ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}</Button>
+                        <Button type="button" variant="ghost" size="icon" className="h-6 w-6" onClick={() => setRated((current) => ({ ...current, [message.id]: 'up' }))} title="Mark answer helpful" aria-label="Mark answer helpful" aria-pressed={rated[message.id] === 'up'}><ThumbsUp className={`h-3 w-3 ${rated[message.id] === 'up' ? 'fill-current text-primary' : ''}`} /></Button>
+                        <Button type="button" variant="ghost" size="icon" className="h-6 w-6" onClick={() => setRated((current) => ({ ...current, [message.id]: 'down' }))} title="Mark answer not helpful" aria-label="Mark answer not helpful" aria-pressed={rated[message.id] === 'down'}><ThumbsDown className={`h-3 w-3 ${rated[message.id] === 'down' ? 'fill-current text-destructive' : ''}`} /></Button>
                       </div> : null}
                     </div>
                     {message.sender === 'user' ? <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground"><UserIcon className="h-3 w-3" /></span> : null}
@@ -112,7 +112,7 @@ export const ChatbotWidget = ({ user, currentModule = '' }: ChatbotWidgetProps) 
             <form onSubmit={submit} className="border-t p-3">
               <div className="flex gap-2">
                 <Input value={input} onChange={(event) => setInput(event.target.value)} placeholder="Ask RIANA Assistant" maxLength={1000} disabled={isSending} className="h-9 text-xs" aria-label="Assistant question" />
-                <Button type="submit" size="icon" className="h-9 w-9" disabled={!input.trim() || isSending} aria-label="Send question">{isSending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}</Button>
+                <Button type="submit" size="icon" className="h-9 w-9" disabled={!input.trim() || isSending} title="Send question" aria-label="Send question">{isSending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}</Button>
               </div>
             </form>
           </CardContent>

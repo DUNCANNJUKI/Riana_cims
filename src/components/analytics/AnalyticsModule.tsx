@@ -201,10 +201,10 @@ export const AnalyticsModule = ({ user }: AnalyticsModuleProps) => {
 
   return (
     <div className="space-y-4 sm:space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+      <div className="cims-page-header">
         <div>
-          <h1 className="text-2xl sm:text-3xl font-bold text-primary">Analytics</h1>
-          <p className="text-sm sm:text-base text-muted-foreground">Business intelligence and performance metrics</p>
+          <h1 className="cims-page-title">Analytics</h1>
+          <p className="cims-page-subtitle">Business intelligence and performance metrics</p>
         </div>
         <div className="flex gap-2">
           <Button 
@@ -429,20 +429,20 @@ export const AnalyticsModule = ({ user }: AnalyticsModuleProps) => {
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
             <Card className="shadow-riana bg-gradient-to-br from-green-500/10 to-green-500/5 border-green-500/20">
               <CardHeader className="pb-2">
-                <CardTitle className="text-sm sm:text-lg text-green-700">Total Installations Done</CardTitle>
+                <CardTitle className="text-sm sm:text-lg text-success">Total Installations Done</CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="text-2xl sm:text-3xl font-bold text-green-600">{performanceMetrics.totalInstallations}</div>
+                <div className="text-2xl sm:text-3xl font-bold text-success">{performanceMetrics.totalInstallations}</div>
                 <p className="text-[10px] sm:text-sm text-muted-foreground">Completed installations</p>
               </CardContent>
             </Card>
 
             <Card className="shadow-riana bg-gradient-to-br from-blue-500/10 to-blue-500/5 border-blue-500/20">
               <CardHeader className="pb-2">
-                <CardTitle className="text-sm sm:text-lg text-blue-700">Avg. Installation Time</CardTitle>
+                <CardTitle className="text-sm sm:text-lg text-primary">Avg. Installation Time</CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="text-2xl sm:text-3xl font-bold text-blue-600">
+                <div className="text-2xl sm:text-3xl font-bold text-primary">
                   {performanceMetrics.avgInstallationTime > 0 
                     ? `${performanceMetrics.avgInstallationTime.toFixed(1)} days` 
                     : 'N/A'}

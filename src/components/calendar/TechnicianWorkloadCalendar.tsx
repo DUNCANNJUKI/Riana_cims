@@ -237,7 +237,7 @@ export const TechnicianWorkloadCalendar = ({ user }: TechnicianWorkloadCalendarP
                 <Button
                   variant="outline"
                   size="icon"
-                  onClick={() => setCurrentDate(subMonths(currentDate, 1))}
+                  onClick={() => setCurrentDate(subMonths(currentDate, 1))} title="Previous month" aria-label="Previous month"
                   className="h-8 w-8 sm:h-9 sm:w-9 btn-click-effect"
                 >
                   <ChevronLeft className="h-4 w-4" />
@@ -248,7 +248,7 @@ export const TechnicianWorkloadCalendar = ({ user }: TechnicianWorkloadCalendarP
                 <Button
                   variant="outline"
                   size="icon"
-                  onClick={() => setCurrentDate(addMonths(currentDate, 1))}
+                  onClick={() => setCurrentDate(addMonths(currentDate, 1))} title="Next month" aria-label="Next month"
                   className="h-8 w-8 sm:h-9 sm:w-9 btn-click-effect"
                 >
                   <ChevronRight className="h-4 w-4" />
@@ -306,7 +306,7 @@ export const TechnicianWorkloadCalendar = ({ user }: TechnicianWorkloadCalendarP
                         key={day.toISOString()}
                         onClick={() => setSelectedDay(day)}
                         className={cn(
-                          "aspect-square p-1 rounded-lg border transition-all duration-200 hover:scale-105 relative overflow-hidden",
+                          "aspect-square p-1 rounded-lg border transition-all duration-200 hover:border-primary/40 hover:shadow-sm relative overflow-hidden",
                           isToday(day) && "ring-2 ring-primary ring-offset-1",
                           isSelected && "bg-primary/10 border-primary",
                           !isSameMonth(day, currentDate) && "opacity-50",

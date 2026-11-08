@@ -93,6 +93,7 @@ export default defineConfig(({ mode }) => ({
         importScripts: ['push-handlers.js'],
         maximumFileSizeToCacheInBytes: 10 * 1024 * 1024, // 10 MB limit
         globPatterns: ['**/*.{js,css,html,ico,png,svg,jpg,jpeg,webp}'],
+        globIgnores: ['call-backgrounds/**/*'],
         cleanupOutdatedCaches: true,
         clientsClaim: true,
         skipWaiting: true,
@@ -110,6 +111,15 @@ export default defineConfig(({ mode }) => ({
               cacheName: 'riana-images-v1',
               expiration: { maxEntries: 80, maxAgeSeconds: 60 * 60 * 24 * 30 },
               cacheableResponse: { statuses: [0, 200] },
+            },
+          },
+          {
+            urlPattern: ({ url }) => url.pathname.includes('/mediapipe/wasm/') || url.pathname.endsWith('.tflite'),
+            handler: 'CacheFirst',
+            options: {
+              cacheName: 'riana-call-background-model-v1',
+              expiration: { maxEntries: 4, maxAgeSeconds: 60 * 60 * 24 * 90 },
+              cacheableResponse: { statuses: [200] },
             },
           },
         ],
