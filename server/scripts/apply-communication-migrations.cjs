@@ -115,7 +115,7 @@ async function run() {
   const missingHistory = migrationIds.filter((migrationId) => !verifiedHistory.has(migrationId));
   if (missingHistory.length) throw new Error(`Communication migration history is incomplete: ${missingHistory.join(', ')}.`);
 
-  const requiredTables = ['call_device_sessions', 'call_meeting_state', 'message_reactions', 'message_recipient_status'];
+  const requiredTables = ['call_device_sessions', 'call_meeting_state', 'call_recordings', 'message_reactions', 'message_recipient_status'];
   const [tableRowsAfter] = await pool.query(
     `SELECT TABLE_NAME FROM information_schema.TABLES
      WHERE TABLE_SCHEMA=DATABASE() AND TABLE_TYPE='BASE TABLE'

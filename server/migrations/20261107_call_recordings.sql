@@ -19,3 +19,8 @@ CREATE TABLE IF NOT EXISTS call_recordings (
   INDEX idx_call_recordings_initiated_by (initiated_by),
   INDEX idx_call_recordings_status_created (status, created_at)
 );
+
+INSERT INTO migration_history (migration_id, description)
+VALUES ('20261107_call_recordings', 'Enterprise meeting recording metadata and storage tracking')
+ON DUPLICATE KEY UPDATE description = VALUES(description);
+

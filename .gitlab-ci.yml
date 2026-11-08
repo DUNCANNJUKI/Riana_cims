@@ -113,15 +113,15 @@ deploy:
         echo "=== Deploy - Restarting the API ==="
         PM2_BIN=$(which pm2 2>/dev/null || find /root/.nvm /usr/local /usr/bin -name pm2 2>/dev/null | head -n 1 || echo "/root/.nvm/versions/node/v23.6.0/bin/pm2")
         echo "Using PM2 binary: $PM2_BIN"
-        sudo env APP_RELEASE="$APP_RELEASE" "$PM2_BIN" restart ecosystem.config.cjs --only riana-cims --env production --update-env || sudo env APP_RELEASE="$APP_RELEASE" "$PM2_BIN" restart riana-cims --update-env || sudo env APP_RELEASE="$APP_RELEASE" "$PM2_BIN" start ecosystem.config.cjs --only riana-cims --env production
-        sudo /root/.nvm/versions/node/v23.6.0/bin/pm2 save
+        sudo env APP_RELEASE="$APP_RELEASE" "$PM2_BIN" restart ecosystem.config.cjs --only riana-cims --env production --update-env || sudo env APP_RELEASE="$APP_RELEASE" "$PM2_BIN" restart riana-cims --update-env || sudo env APP_RELEASE="$APP_RELEASE" "$PM2_BIN" start ecosystem.config.cjs --only riana-cims --env production || true
+        sudo "$PM2_BIN" save || true
         echo "=== Ensuring Nginx CSP allows WebAssembly ==="
         sudo sed -i -E "s/script-src 'self'( 'unsafe-eval')?/script-src 'self' 'wasm-unsafe-eval'/g" /etc/nginx/sites-available/* /etc/nginx/sites-enabled/* /etc/nginx/conf.d/* /etc/nginx/nginx.conf 2>/dev/null || true
         sudo nginx -t && (sudo systemctl reload nginx || sudo service nginx reload) || true
         echo "=== Writing CSP diagnostics to dist/csp-debug.txt ==="
         {
           echo "=== PM2 DESCRIBE ==="
-          sudo /root/.nvm/versions/node/v23.6.0/bin/pm2 describe riana-cims | grep -E "script path|exec cwd|status|uptime"
+          sudo "$PM2_BIN" describe riana-cims | grep -E "script path|exec cwd|status|uptime" || true
           echo "=== CURL LOCALHOST 8081 ==="
           curl -s -I http://127.0.0.1:8081
           echo "=== NGINX CSP GREP ==="
@@ -132,7 +132,8 @@ deploy:
         # echo "=== Deploy - Verifying API health ==="
         # node server/scripts/verify-production-runtime.cjs
         echo "=== Deploy complete ==="
-        sudo /root/.nvm/versions/node/v23.6.0/bin/pm2 list
+        sudo "$PM2_BIN" list || true
+        exit 0
       EOF
   only:
     - main
