@@ -966,7 +966,11 @@ export const ChatModule = ({ currentUser, chat, onClose, onMinimize, onToggleFul
       preparedProcessor?.stop();
       callVideoBackgroundRef.current = previousBackground;
       setCallVideoBackground(previousBackground);
-      setCallError(error instanceof Error ? error.message : "Unable to apply the selected background effect.");
+      const rawMessage = error instanceof Error ? error.message : "Unable to apply the selected background effect.";
+      const displayMessage = rawMessage.includes("WebAssembly") || rawMessage.includes("Content Security policy")
+        ? "Virtual background requires WebAssembly execution. Please verify your browser security settings or refresh."
+        : rawMessage;
+      setCallError(displayMessage);
     } finally {
       if (requestId === videoBackgroundRequestRef.current) setIsChangingCallBackground(false);
     }
