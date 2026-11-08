@@ -205,24 +205,56 @@ const buildNotificationHtml = (notification) => {
   const contentLabel = labelForNotification(notification);
   const branding = emailBranding(notification);
   const logo = branding.logoSource
-    ? `<img src="${escapeHtml(branding.logoSource)}" width="118" alt="${escapeHtml(branding.companyName)} logo" style="display:block;width:118px;max-width:118px;height:auto;max-height:70px;margin:0 auto 14px;object-fit:contain;border:0;outline:none;text-decoration:none">`
+    ? `<img src="${escapeHtml(branding.logoSource)}" width="118" alt="${escapeHtml(branding.companyName)} logo" style="display:block;width:118px;max-width:118px;height:auto;max-height:70px;margin:0 auto 16px;object-fit:contain;border:0;outline:none;text-decoration:none">`
     : '';
   const greetingName = String(notification.recipientName || '').trim();
+
+  let cleanDescription = String(notification.requestDescription || '').trim();
+  if (notification.clientName && cleanDescription) {
+    const prefix = `the ${String(notification.clientName).trim().toLowerCase()} `;
+    if (cleanDescription.toLowerCase().startsWith(prefix)) {
+      cleanDescription = cleanDescription.slice(prefix.length).trim();
+      cleanDescription = cleanDescription.charAt(0).toUpperCase() + cleanDescription.slice(1);
+    }
+  }
+
   const rows = [
-    ['Ticket', notification.ticketNumber], ['Client', notification.clientName],
-    [contentLabel, notification.requestDescription], ['Approved by', notification.approverName],
-    ['Developer', notification.developerName], ['Comment', notification.comment],
-    ['Username', notification.username], ['Temporary password', notification.password],
-    ['Login URL', notification.loginUrl], ['Account setup', notification.setupUrl],
+    ['Ticket', notification.ticketNumber],
+    ['Client', notification.clientName],
+    ['Status', notification.status],
+    [contentLabel, cleanDescription],
+    ['Approved by', notification.approverName],
+    ['Developer', notification.developerName],
+    ['Comment', notification.comment],
+    ['Username', notification.username],
+    ['Temporary password', notification.password],
+    ['Login URL', notification.loginUrl],
+    ['Account setup', notification.setupUrl],
   ].filter(([, value]) => String(value ?? '').trim());
-  return `<!doctype html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head><body style="margin:0;background:#f3f6f9;font-family:${branding.fontFamily},Arial,sans-serif;color:#172033">
-    <div style="max-width:640px;margin:32px auto;background:#fff;border-radius:10px;overflow:hidden;border:1px solid #dce3ec">
-      <div style="padding:26px 28px;background:${branding.primaryColor};color:#fff;text-align:center">${logo}<strong style="display:block;font-size:13px;letter-spacing:.4px;text-transform:uppercase">${escapeHtml(branding.companyName)}</strong></div>
-      <div style="padding:28px"><h2 style="margin:0 0 18px;color:#172033;font-size:24px;line-height:1.25">${escapeHtml(title)}</h2>
-        <p>Hello${greetingName ? ` ${escapeHtml(greetingName)}` : ''},</p>
-        ${rows.map(([label, value]) => `<p><strong>${escapeHtml(label)}:</strong> ${escapeHtml(value)}</p>`).join('')}
-        ${notification.actionUrl ? `<p style="margin-top:28px"><a href="${escapeHtml(notification.actionUrl)}" style="display:inline-block;background:${branding.primaryColor};color:#fff;padding:13px 20px;border-radius:7px;text-decoration:none;font-weight:700">Open ${escapeHtml(branding.companyName)}</a></p>` : ''}
-      </div><div style="padding:16px 28px;border-top:1px solid #e2e8f0;text-align:center;color:#78879a;font-size:11px;line-height:1.5"><strong>${escapeHtml(branding.companyName)}</strong><br>Powered by Riana Automations</div></div></body></html>`;
+
+  return `<!doctype html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+  <body style="margin:0;padding:0;background:#f3f6f9;font-family:${branding.fontFamily},Arial,sans-serif;color:#172033">
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#f3f6f9"><tr><td align="center" style="padding:24px 12px">
+      <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:640px;background:#fff;border:1px solid #e2e8f0;border-radius:10px;overflow:hidden">
+        <tr><td align="center" style="padding:28px 24px;background:${branding.primaryColor};background-image:linear-gradient(135deg,${branding.primaryColor},${branding.secondaryColor});color:#fff;text-align:center">
+          ${logo}<strong style="display:block;font-size:14px;letter-spacing:.5px;text-transform:uppercase">${escapeHtml(branding.companyName)}</strong>
+        </td></tr>
+        <tr><td style="padding:28px 24px">
+          <h2 style="margin:0 0 18px;color:#172033;font-size:22px;font-weight:800;line-height:1.3">${escapeHtml(title)}</h2>
+          <p>Hello${greetingName ? ` ${escapeHtml(greetingName)}` : ''},</p>
+          <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin:18px 0;background:#f8fafc;border:1px solid #dce3ec;border-radius:8px;overflow:hidden">
+            ${rows.map(([label, value], idx) => `
+              <tr><td style="padding:12px 16px;border-bottom:${idx === rows.length - 1 ? 'none' : '1px solid #e2e8f0'};font-size:14px;line-height:1.55;color:#172033">
+                <strong>${escapeHtml(label)}:</strong> ${escapeHtml(value)}
+              </td></tr>
+            `).join('')}
+          </table>
+          ${notification.actionUrl ? `<div style="padding-top:16px;text-align:center"><a href="${escapeHtml(notification.actionUrl)}" style="display:inline-block;padding:13px 28px;border-radius:7px;background:${branding.primaryColor};color:#fff;font-size:14px;font-weight:800;text-decoration:none;box-shadow:0 2px 4px rgba(0,0,0,0.1)">Open ${escapeHtml(branding.companyName)}</a></div>` : ''}
+        </td></tr>
+        <tr><td style="padding:16px 24px;border-top:1px solid #e2e8f0;text-align:center;color:#78879a;font-size:11px"><strong>${escapeHtml(branding.companyName)}</strong><br>Powered by Riana Automations</td></tr>
+      </table>
+    </td></tr></table>
+  </body></html>`;
 };
 const detailRow = (icon, label, value, options = {}) => {
   const safeValue = escapeHtml(value);
@@ -299,12 +331,21 @@ const validatedMailboxList = (value, fieldName) => {
 const plainTextFor = (notification, subject) => {
   const greetingName = String(notification.recipientName || '').trim();
   const contentLabel = labelForNotification(notification);
+  let cleanDescription = String(notification.requestDescription || '').trim();
+  if (notification.clientName && cleanDescription) {
+    const prefix = `the ${String(notification.clientName).trim().toLowerCase()} `;
+    if (cleanDescription.toLowerCase().startsWith(prefix)) {
+      cleanDescription = cleanDescription.slice(prefix.length).trim();
+      cleanDescription = cleanDescription.charAt(0).toUpperCase() + cleanDescription.slice(1);
+    }
+  }
   return [
     subject,
     `Hello${greetingName ? ` ${greetingName}` : ''},`,
     notification.ticketNumber && `Ticket: ${notification.ticketNumber}`,
     notification.clientName && `Client: ${notification.clientName}`,
-    notification.requestDescription && `${contentLabel}: ${notification.requestDescription}`,
+    notification.status && `Status: ${notification.status}`,
+    cleanDescription && `${contentLabel}: ${cleanDescription}`,
     notification.username && `Username: ${notification.username}`,
     notification.loginUrl && `Login URL: ${notification.loginUrl}`,
     notification.setupUrl && `Account setup: ${notification.setupUrl}`,

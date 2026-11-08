@@ -424,9 +424,14 @@ export const NotificationBell = ({ user, onNavigate, triggerClassName }: Notific
                     </div>
                     <div className="min-w-0 flex-1">
                       <div className="flex items-start justify-between gap-2">
-                        <p className={cn("truncate text-sm font-semibold", !notification.read ? "text-foreground" : "text-muted-foreground")}>
-                          {notification.title}
-                        </p>
+                        <div className="flex min-w-0 items-center gap-1.5">
+                          <p className={cn("truncate text-sm font-semibold", !notification.read ? "text-foreground" : "text-muted-foreground")}>
+                            {notification.title}
+                          </p>
+                          {!notification.read && (
+                            <span className="h-2 w-2 shrink-0 rounded-full bg-primary ring-2 ring-primary/20" />
+                          )}
+                        </div>
                         <Button
                           variant="ghost"
                           size="icon"
@@ -436,20 +441,17 @@ export const NotificationBell = ({ user, onNavigate, triggerClassName }: Notific
                             clearNotification(notification.id);
                           }}
                         >
-                          <X className="h-3 w-3" />
+                          <X className="h-3.5 w-3.5" />
                         </Button>
                       </div>
-                      <p className="mt-0.5 line-clamp-2 text-xs leading-relaxed text-muted-foreground">
+                      <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-muted-foreground">
                         {notification.message}
                       </p>
-                      <p className="mt-2 flex items-center gap-1 text-[11px] font-medium text-muted-foreground/75">
+                      <p className="mt-2 flex items-center gap-1.5 text-[11px] font-medium text-muted-foreground/75">
                         <Clock className="h-3 w-3" />
                         {formatTimestamp(notification.timestamp)}
                       </p>
                     </div>
-                    {!notification.read && (
-                      <div className="mt-2 h-2 w-2 shrink-0 rounded-full bg-primary shadow-[0_0_0_4px_hsl(var(--primary)/0.12)]" />
-                    )}
                   </div>
                 </div>
               ))}
