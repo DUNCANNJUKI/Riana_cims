@@ -135,12 +135,15 @@ const createInvitation = async (pool, {
   if (!clients.length) throw Object.assign(new Error('Selected client was not found.'), { status: 404 });
   const client = clients[0];
 
+  const sanitizedBranchId = (branchId && branchId !== 'all') ? branchId : null;
+  const sanitizedDeptId = (departmentId && departmentId !== 'all') ? departmentId : null;
+
   // Validate Branch if provided
   let branchName = client.branch || 'Main Branch';
-  if (branchId) {
+  if (sanitizedBranchId) {
     const [branches] = await pool.query(
       'SELECT id, branch_name FROM client_branches WHERE id = ? AND client_id = ? AND deleted_at IS NULL LIMIT 1',
-      [branchId, clientId],
+      [sanitizedBranchId, clientId],
     );
     if (!branches.length) throw Object.assign(new Error('Selected branch does not belong to this client.'), { status: 400 });
     branchName = branches[0].branch_name;
@@ -148,10 +151,10 @@ const createInvitation = async (pool, {
 
   // Validate Department if provided
   let departmentName = null;
-  if (departmentId) {
+  if (sanitizedDeptId) {
     const [departments] = await pool.query(
       'SELECT id, department_name, branch_id FROM client_departments WHERE id = ? AND client_id = ? AND deleted_at IS NULL LIMIT 1',
-      [departmentId, clientId],
+      [sanitizedDeptId, clientId],
     );
     if (!departments.length) throw Object.assign(new Error('Selected department does not belong to this client.'), { status: 400 });
     if (branchId && departments[0].branch_id && departments[0].branch_id !== branchId) {
@@ -161,7 +164,7 @@ const createInvitation = async (pool, {
   }
 
   // Account manager assignment validation
-  const isPrivileged = ['SuperAdmin', 'Admin', 'Management', 'Sales'].includes(user.role);
+  const isPrivileged = ['SuperAdmin', 'Admin', 'Management', 'Sales'].includes(user?.role);
   if (!isPrivileged) {
     const [assignments] = await pool.query(
       `SELECT id FROM client_assignments
@@ -237,7 +240,13 @@ const sendInvitation = async (pool, invitationId, req) => {
     throw Object.assign(new Error(`Cannot send an invitation that has already been ${invitation.status}.`), { status: 400 });
   }
 
-  const publicUrl = `${canonicalAppUrl(req).replace(/\/+$/, '')}/change-request/submit/${encodeURIComponent(invitation.invitation_token)}`;
+  const actualReq = req?.req || req;
+  let publicUrl = `${process.env.CIMS_LOGIN_URL ? process.env.CIMS_LOGIN_URL.replace(/\/+$/, '') : 'http://localhost:8081'}/change-request/submit/${encodeURIComponent(invitation.invitation_token)}`;
+  try {
+    if (actualReq && typeof actualReq.get === 'function') {
+      publicUrl = `${canonicalAppUrl(actualReq).replace(/\/+$/, '')}/change-request/submit/${encodeURIComponent(invitation.invitation_token)}`;
+    }
+  } catch (_urlErr) {}
   const amName = `${invitation.am_first_name || ''} ${invitation.am_last_name || ''}`.trim() || 'Your Riana Account Manager';
 
   // 1. Send SMS
@@ -245,7 +254,7 @@ const sendInvitation = async (pool, invitationId, req) => {
   try {
     const smsText = `RIANA CIMS: Hello ${invitation.client_representative_name}, you are invited to submit a Change Request for ${invitation.client_name} (${invitation.branch_name}). Open here: ${publicUrl}`;
     const smsResult = await sendSms({
-      to: invitation.client_representative_phone,
+      phoneNumber: invitation.client_representative_phone,
       message: smsText,
     });
     smsStatus = 'sent';
@@ -636,7 +645,7 @@ const submitClientChangeRequest = async (pool, { token, data, attachments = [], 
     try {
       const smsText = `RIANA CIMS: Hello ${invitation.client_representative_name}, your Change Request has been received. Reference: ${ticketNumber}. Our team has begun internal assessment.`;
       await sendSms({
-        to: invitation.client_representative_phone,
+        phoneNumber: invitation.client_representative_phone,
         message: smsText,
       });
       await recordDeliveryLog(pool, {
@@ -828,7 +837,7 @@ const sendCompletionReport = async (pool, reportId, req) => {
   let smsStatus = 'failed';
   try {
     const smsMessage = `RIANA CIMS: Hello ${clientName}, the completion report for Change Request ${report.ticket_number} is ready for your review and acceptance. Please review here: ${reviewUrl}`;
-    await sendSms({ to: clientPhone, message: smsMessage });
+    await sendSms({ phoneNumber: clientPhone, message: smsMessage });
     smsStatus = 'sent';
     await recordDeliveryLog(pool, {
       eventType: 'completion_report',
@@ -1120,7 +1129,7 @@ const requestClientOtp = async (pool, token, channel = 'sms', req) => {
     });
   } else {
     await sendSms({
-      to: target,
+      phoneNumber: target,
       message: `RIANA CIMS: Your verification code for Change Request ${report.ticket_number} completion acceptance is ${otp}. Valid for 10 minutes.`,
     });
   }

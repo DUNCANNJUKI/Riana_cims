@@ -5,6 +5,7 @@ import {
 import { Button } from '@crms/components/ui/button';
 import { Input } from '@crms/components/ui/input';
 import { Label } from '@crms/components/ui/label';
+import { Badge } from '@crms/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@crms/components/ui/select';
 import { useClients, useClientScope } from '@crms/hooks/useSupabaseData';
 import { useToast } from '@crms/hooks/use-toast';
@@ -39,6 +40,11 @@ export const ClientRequestInitiationDialog: React.FC<ClientRequestInitiationDial
   const [createdResult, setCreatedResult] = useState<{
     invitation: any;
     submissionUrl: string;
+    sent?: {
+      smsStatus?: string;
+      emailStatus?: string;
+      success?: boolean;
+    } | null;
   } | null>(null);
   const [copied, setCopied] = useState(false);
 
@@ -50,20 +56,25 @@ export const ClientRequestInitiationDialog: React.FC<ClientRequestInitiationDial
 
     const client = clients.find((c: any) => c.id === clientId);
     if (client) {
-      if (client.contact_person_name) setRepName(client.contact_person_name);
-      if (client.contact_person_phone || client.contact_phone) setRepPhone(client.contact_person_phone || client.contact_phone);
-      if (client.contact_person_email || client.contact_email) setRepEmail(client.contact_person_email || client.contact_email);
+      const contactPerson = client.contact_person_name || client.contact_person || '';
+      const contactPhone = client.contact_person_phone || client.contact_phone || '';
+      const contactEmail = client.contact_person_email || client.contact_email || '';
+      if (contactPerson) setRepName(contactPerson);
+      if (contactPhone) setRepPhone(contactPhone);
+      if (contactEmail) setRepEmail(contactEmail);
     }
   };
 
   const handleBranchChange = (branchId: string) => {
     setSelectedBranchId(branchId);
     setSelectedDepartmentId('');
-    const branch = scope?.branches?.find((b: any) => b.id === branchId);
-    if (branch && branch.contact_person_name) {
-      setRepName(branch.contact_person_name);
-      if (branch.contact_phone) setRepPhone(branch.contact_phone);
-      if (branch.contact_email) setRepEmail(branch.contact_email);
+    if (branchId && branchId !== 'all') {
+      const branch = scope?.branches?.find((b: any) => b.id === branchId);
+      if (branch && branch.contact_person_name) {
+        setRepName(branch.contact_person_name);
+        if (branch.contact_phone) setRepPhone(branch.contact_phone);
+        if (branch.contact_email) setRepEmail(branch.contact_email);
+      }
     }
   };
 
@@ -97,8 +108,8 @@ export const ClientRequestInitiationDialog: React.FC<ClientRequestInitiationDial
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           client_id: selectedClientId,
-          branch_id: selectedBranchId || null,
-          department_id: selectedDepartmentId || null,
+          branch_id: (selectedBranchId && selectedBranchId !== 'all') ? selectedBranchId : null,
+          department_id: (selectedDepartmentId && selectedDepartmentId !== 'all') ? selectedDepartmentId : null,
           client_representative_name: repName.trim(),
           client_representative_phone: repPhone.trim(),
           client_representative_email: repEmail.trim(),
@@ -112,13 +123,27 @@ export const ClientRequestInitiationDialog: React.FC<ClientRequestInitiationDial
       setCreatedResult({
         invitation: data.invitation,
         submissionUrl: data.submission_url,
+        sent: data.sent,
       });
+
+      let toastDesc = 'Invitation generated.';
+      if (sendImmediately) {
+        if (data.sent?.smsStatus === 'sent' && data.sent?.emailStatus === 'sent') {
+          toastDesc = `SMS sent to ${repPhone} and Email sent to ${repEmail}.`;
+        } else if (data.sent?.smsStatus === 'sent') {
+          toastDesc = `SMS sent to ${repPhone}. Email status: ${data.sent?.emailStatus || 'pending'}`;
+        } else if (data.sent?.emailStatus === 'sent') {
+          toastDesc = `Email sent to ${repEmail}. SMS status: ${data.sent?.smsStatus || 'pending'}`;
+        } else {
+          toastDesc = `Submission link created. Delivery status: SMS (${data.sent?.smsStatus || 'pending'}), Email (${data.sent?.emailStatus || 'pending'}).`;
+        }
+      } else {
+        toastDesc = 'Draft invitation saved. You can send it whenever ready.';
+      }
 
       toast({
         title: sendImmediately ? 'Invitation Dispatched' : 'Draft Invitation Created',
-        description: sendImmediately
-          ? `SMS and email sent to ${repName} (${repPhone}).`
-          : 'Draft invitation saved. You can send it whenever ready.',
+        description: toastDesc,
       });
 
       if (onSuccess) onSuccess();
@@ -157,7 +182,7 @@ export const ClientRequestInitiationDialog: React.FC<ClientRequestInitiationDial
   };
 
   const filteredDepartments = scope?.departments?.filter(
-    (d: any) => !selectedBranchId || d.branch_id === selectedBranchId
+    (d: any) => !selectedBranchId || selectedBranchId === 'all' || d.branch_id === selectedBranchId
   ) || [];
 
   return (
@@ -183,6 +208,16 @@ export const ClientRequestInitiationDialog: React.FC<ClientRequestInitiationDial
               <p className="text-xs text-slate-600 dark:text-slate-400 mt-1">
                 Reference: <strong className="font-mono text-teal-700">{createdResult.invitation.request_reference}</strong>
               </p>
+              {createdResult.sent && (
+                <div className="flex items-center justify-center gap-2 mt-3 text-xs">
+                  <Badge variant={createdResult.sent.smsStatus === 'sent' ? 'default' : 'secondary'} className={createdResult.sent.smsStatus === 'sent' ? 'bg-emerald-600 text-white' : ''}>
+                    SMS: {createdResult.sent.smsStatus || 'draft'}
+                  </Badge>
+                  <Badge variant={createdResult.sent.emailStatus === 'sent' ? 'default' : 'secondary'} className={createdResult.sent.emailStatus === 'sent' ? 'bg-emerald-600 text-white' : ''}>
+                    Email: {createdResult.sent.emailStatus || 'draft'}
+                  </Badge>
+                </div>
+              )}
             </div>
 
             <div className="space-y-2">
@@ -220,11 +255,16 @@ export const ClientRequestInitiationDialog: React.FC<ClientRequestInitiationDial
                   <SelectValue placeholder={loadingClients ? 'Loading clients...' : 'Choose registered client'} />
                 </SelectTrigger>
                 <SelectContent className="max-h-60">
-                  {clients.map((c: any) => (
-                    <SelectItem key={c.id} value={c.id}>
-                      {c.client_name} {c.branch ? `(${c.branch})` : ''}
-                    </SelectItem>
-                  ))}
+                  {clients.map((c: any) => {
+                    const clientName = (c.client_name || c.name || '').trim();
+                    const branchName = c.branch ? ` (${c.branch})` : '';
+                    const label = clientName ? `${clientName}${branchName}` : (c.branch || 'Unknown Client');
+                    return (
+                      <SelectItem key={c.id} value={c.id}>
+                        {label}
+                      </SelectItem>
+                    );
+                  })}
                 </SelectContent>
               </Select>
             </div>

@@ -414,7 +414,8 @@ module.exports = function createCrmsRouter({ pool, jwtSecret }) {
 
   router.delete('/user_roles/:id', denyCrmsUserManagement);
 
-  const clientSelect = `SELECT c.id,c.client_name AS name,c.branch,LOWER(c.contract_type) AS contract_type,
+  const clientSelect = `SELECT c.id, c.client_name, c.client_name AS name, c.branch, LOWER(c.contract_type) AS contract_type,
+ c.contact_person_name, c.contact_person_name AS contact_person, c.contact_person_phone, c.contact_person_email,
     c.contact_person_name AS contact_person,c.contact_email,c.contact_phone,c.subsidiary_id,
     s.subsidiary_name,c.created_at,c.updated_at FROM clients c
     LEFT JOIN subsidiaries s ON s.id = c.subsidiary_id`;
@@ -836,6 +837,220 @@ module.exports = function createCrmsRouter({ pool, jwtSecret }) {
     } catch (error) { res.status(500).json({ error:error.message }); }
   });
 
+
+
+  // -------------------------------------------------------------
+  // CLIENT CHANGE REQUEST INVITATIONS & PORTAL
+  // -------------------------------------------------------------
+
+  router.get('/invitations', async (req, res) => {
+    try {
+      const isPrivileged = ['SuperAdmin', 'Admin', 'Management', 'Sales'].includes(req.user.role);
+      const params = isPrivileged ? [] : [req.user.id];
+      const where = isPrivileged ? '' : 'WHERE i.account_manager_id = ?';
+      const [rows] = await pool.query(
+        `SELECT i.*, c.client_name, COALESCE(cb.branch_name, c.branch) AS branch_name, cd.department_name,
+                u.first_name AS am_first_name, u.last_name AS am_last_name, u.email AS am_email
+         FROM crms_change_request_invitations i
+         JOIN clients c ON c.id = i.client_id
+         LEFT JOIN client_branches cb ON cb.id = i.branch_id
+         LEFT JOIN client_departments cd ON cd.id = i.department_id
+         JOIN user_profiles u ON u.id = i.account_manager_id
+         ${where}
+         ORDER BY i.created_at DESC`,
+        params,
+      );
+      res.json(rows);
+    } catch (error) {
+      console.error('CRMS /invitations error:', error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  router.post('/invitations', async (req, res) => {
+    try {
+      const inv = await createInvitation(pool, {
+        clientId: req.body.client_id,
+        branchId: req.body.branch_id,
+        departmentId: req.body.department_id,
+        accountManagerId: req.user.id,
+        clientRepresentativeName: req.body.client_representative_name,
+        clientRepresentativePhone: req.body.client_representative_phone,
+        clientRepresentativeEmail: req.body.client_representative_email,
+        expiresInDays: req.body.expires_in_days || 7,
+        user: req.user,
+      });
+
+      let sentResult = null;
+      if (req.body.send_immediately) {
+        try {
+          sentResult = await sendInvitation(pool, inv.id, req);
+        } catch (sendErr) {
+          console.error('Send invitation dispatch error:', sendErr);
+          sentResult = { success: false, error: sendErr.message };
+        }
+      }
+
+      let subUrl = `http://localhost:8081/change-request/submit/${inv.invitation_token}`;
+      try {
+        subUrl = `${canonicalAppUrl(req).replace(/\/+$/, '')}/change-request/submit/${inv.invitation_token}`;
+      } catch (_uErr) {}
+
+      res.status(201).json({
+        invitation: inv,
+        submission_url: sentResult?.publicUrl || subUrl,
+        sent: sentResult,
+      });
+    } catch (error) {
+      console.error('CRMS POST /invitations error:', error);
+      res.status(400).json({ error: error.message });
+    }
+  });
+
+  router.post('/invitations/:id/send', async (req, res) => {
+    try {
+      const result = await sendInvitation(pool, req.params.id, req);
+      res.json(result);
+    } catch (error) {
+      console.error('CRMS POST /invitations/:id/send error:', error);
+      res.status(400).json({ error: error.message });
+    }
+  });
+
+  router.post('/invitations/:id/cancel', async (req, res) => {
+    try {
+      const result = await cancelInvitation(pool, req.params.id, req.user.id);
+      res.json(result);
+    } catch (error) {
+      console.error('CRMS POST /invitations/:id/cancel error:', error);
+      res.status(400).json({ error: error.message });
+    }
+  });
+
+  router.get('/completion_reports', async (req, res) => {
+    try {
+      const requestId = req.query.change_request_id;
+      if (!requestId) return res.status(400).json({ error: 'change_request_id query parameter is required.' });
+      const [rows] = await pool.query(
+        `SELECT r.*, u.first_name AS am_first_name, u.last_name AS am_last_name
+         FROM crms_completion_reports r
+         JOIN user_profiles u ON u.id = r.account_manager_id
+         WHERE r.change_request_id = ?
+         ORDER BY r.version_number DESC`,
+        [requestId],
+      );
+      res.json(rows);
+    } catch (error) {
+      console.error('CRMS GET /completion_reports error:', error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  router.post('/completion_reports', async (req, res) => {
+    try {
+      const report = await createOrUpdateCompletionReport(pool, {
+        changeRequestId: req.body.change_request_id,
+        accountManagerId: req.user.id,
+        summaryOfChange: req.body.summary_of_change,
+        implementedSolution: req.body.implemented_solution,
+        deliverables: req.body.deliverables,
+        issuesResolved: req.body.issues_resolved,
+        testingPerformed: req.body.testing_performed,
+        implementationDate: req.body.implementation_date,
+        deploymentDate: req.body.deployment_date,
+        knownLimitations: req.body.known_limitations,
+        clientRecommendations: req.body.client_recommendations,
+        additionalComments: req.body.additional_comments,
+        attachments: req.body.attachments,
+        sendToClient: Boolean(req.body.send_to_client),
+        req,
+      });
+      res.status(201).json(report);
+    } catch (error) {
+      console.error('CRMS POST /completion_reports error:', error);
+      res.status(400).json({ error: error.message });
+    }
+  });
+
+  router.post('/completion_reports/:id/send', async (req, res) => {
+    try {
+      const result = await sendCompletionReport(pool, req.params.id, req);
+      res.json(result);
+    } catch (error) {
+      console.error('CRMS POST /completion_reports/:id/send error:', error);
+      res.status(400).json({ error: error.message });
+    }
+  });
+
+  router.post('/change_requests/:id/close', async (req, res) => {
+    try {
+      const result = await closeChangeRequest(pool, {
+        changeRequestId: req.params.id,
+        accountManagerId: req.user.id,
+        closureNotes: req.body.closure_notes,
+      });
+      res.json(result);
+    } catch (error) {
+      console.error('CRMS POST /change_requests/:id/close error:', error);
+      res.status(400).json({ error: error.message });
+    }
+  });
+
+  router.get('/account-manager/stats', async (req, res) => {
+    try {
+      const isPrivileged = ['SuperAdmin', 'Admin', 'Management', 'Sales'].includes(req.user.role);
+      const params = isPrivileged ? [] : [req.user.id];
+      const where = isPrivileged ? '' : 'WHERE account_manager_id = ?';
+      const [invCounts] = await pool.query(
+        `SELECT
+           COUNT(*) AS total_invitations,
+           SUM(status = 'draft') AS draft_invitations,
+           SUM(status = 'sent' OR status = 'delivered' OR status = 'opened') AS pending_client_submission,
+           SUM(status = 'submitted') AS submitted_invitations
+         FROM crms_change_request_invitations
+         ${where}`,
+        params,
+      );
+      const reqWhere = isPrivileged ? '' : 'WHERE cr.account_manager_id = ?';
+      const [reqCounts] = await pool.query(
+        `SELECT
+           COUNT(*) AS total_requests,
+           SUM(cr.status IN ('pending_approval', 'sales_review', 'senior_dev_review')) AS under_review,
+           SUM(cr.status = 'approved') AS approved,
+           SUM(cr.status = 'assigned') AS assigned,
+           SUM(cr.status = 'in_progress') AS in_progress,
+           SUM(cr.status = 'ready_for_completion_report') AS ready_for_completion,
+           SUM(cr.status = 'awaiting_client_acceptance') AS awaiting_acceptance,
+           SUM(cr.status = 'client_requested_corrections') AS corrections_requested,
+           SUM(cr.status = 'client_disputed') AS disputed,
+           SUM(cr.status = 'client_accepted') AS client_accepted,
+           SUM(cr.status = 'closed_client_accepted' OR cr.status = 'closed') AS closed
+         FROM crms_change_requests cr
+         ${reqWhere}`,
+        params,
+      );
+      res.json({
+        stats: {
+          total_invitations: Number(invCounts[0]?.total_invitations || 0),
+          draft_invitations: Number(invCounts[0]?.draft_invitations || 0),
+          pending_client_submission: Number(invCounts[0]?.pending_client_submission || 0),
+          submitted_invitations: Number(invCounts[0]?.submitted_invitations || 0),
+          total_requests: Number(reqCounts[0]?.total_requests || 0),
+          under_review: Number(reqCounts[0]?.under_review || 0),
+          in_progress: Number(reqCounts[0]?.in_progress || 0),
+          ready_for_completion: Number(reqCounts[0]?.ready_for_completion || 0),
+          awaiting_acceptance: Number(reqCounts[0]?.awaiting_acceptance || 0),
+          corrections_requested: Number(reqCounts[0]?.corrections_requested || 0),
+          disputed: Number(reqCounts[0]?.disputed || 0),
+          client_accepted: Number(reqCounts[0]?.client_accepted || 0),
+          closed: Number(reqCounts[0]?.closed || 0),
+        },
+      });
+    } catch (error) {
+      console.error('CRMS GET /account-manager/stats error:', error);
+      res.status(500).json({ error: error.message });
+    }
+  });
 
   return router;
 };
