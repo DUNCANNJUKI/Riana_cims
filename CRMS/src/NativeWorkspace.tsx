@@ -9,6 +9,7 @@ import {
   LayoutDashboard,
   Clock3,
   PlusCircle,
+  Building2,
 } from "lucide-react";
 import { cn } from "@crms/lib/utils";
 import { installAuthenticatedFetch } from "@crms/lib/authenticatedFetch";
@@ -24,6 +25,7 @@ const preloadAuditLog = () => import("@crms/pages/AuditLog");
 const preloadAssignments = () => import("@crms/pages/Assignments");
 const preloadPending = () => import("@crms/pages/Pending");
 const preloadNotFound = () => import("@crms/pages/NotFound");
+const preloadClientRequests = () => import("@crms/pages/ClientRequests");
 
 const Dashboard = lazy(preloadDashboard);
 const RequestList = lazy(preloadRequestList);
@@ -35,6 +37,7 @@ const AuditLog = lazy(preloadAuditLog);
 const Assignments = lazy(preloadAssignments);
 const Pending = lazy(preloadPending);
 const NotFound = lazy(preloadNotFound);
+const ClientRequests = lazy(preloadClientRequests);
 
 const routePreloaders = [
   preloadRequestList,
@@ -46,11 +49,12 @@ const routePreloaders = [
   preloadAssignments,
   preloadPending,
   preloadNotFound,
+  preloadClientRequests,
 ] as const;
 
 installAuthenticatedFetch();
 
-type CimsRole = "SuperAdmin" | "Admin" | "Management" | "Teamlead" | "Developer" | "Sales";
+type CimsRole = "SuperAdmin" | "Admin" | "Management" | "Teamlead" | "Developer" | "Sales" | "User";
 
 interface NativeDevelopersWorkspaceProps {
   userId: string;
@@ -58,9 +62,10 @@ interface NativeDevelopersWorkspaceProps {
 }
 
 const navigation = [
-  { label: "Overview", to: "/developers", icon: LayoutDashboard, roles: ["SuperAdmin", "Admin", "Management", "Teamlead", "Developer", "Sales"] },
+  { label: "Overview", to: "/developers", icon: LayoutDashboard, roles: ["SuperAdmin", "Admin", "Management", "Teamlead", "Developer", "Sales", "User"] },
+  { label: "Client Requests", to: "/developers/client-requests", icon: Building2, roles: ["SuperAdmin", "Admin", "Management", "Teamlead", "Developer", "Sales", "User"] },
   { label: "Pending", to: "/developers/pending", icon: Clock3, roles: ["SuperAdmin", "Admin", "Management", "Teamlead", "Developer", "Sales"] },
-  { label: "Requests", to: "/developers/requests", icon: FileText, roles: ["SuperAdmin", "Admin", "Management", "Teamlead", "Developer", "Sales"] },
+  { label: "Requests", to: "/developers/requests", icon: FileText, roles: ["SuperAdmin", "Admin", "Management", "Teamlead", "Developer", "Sales", "User"] },
   { label: "New Request", to: "/developers/requests/new", icon: PlusCircle, roles: ["SuperAdmin", "Admin", "Management", "Teamlead", "Sales"] },
   { label: "Approvals", to: "/developers/approvals", icon: ClipboardCheck, roles: ["SuperAdmin", "Admin", "Management", "Sales"] },
   { label: "Assignments", to: "/developers/assignments", icon: FolderKanban, roles: ["SuperAdmin", "Admin", "Management", "Teamlead", "Developer"] },
@@ -114,6 +119,7 @@ export function NativeDevelopersWorkspace({ userId, role }: NativeDevelopersWork
         <Suspense fallback={<div className="flex min-h-[360px] items-center justify-center text-sm text-muted-foreground">Loading Developers workspace...</div>}>
         <Routes>
           <Route path="/developers" element={<Dashboard />} />
+          <Route path="/developers/client-requests" element={<ClientRequests />} />
           <Route path="/developers/pending" element={<Pending />} />
           <Route path="/developers/requests" element={<RequestList />} />
           <Route path="/developers/requests/new" element={role === "SuperAdmin" || role === "Admin" || role === "Management" || role === "Teamlead" || role === "Sales" ? <NewRequest /> : <Navigate to="/developers/requests" replace />} />

@@ -9,6 +9,7 @@ const fs = require('fs');
 const fsp = require('fs/promises');
 const jwt = require('jsonwebtoken');
 const createCrmsRouter = require('./routes/crms');
+const createClientChangeRequestPortalRouter = require('./routes/clientChangeRequestPortal');
 const createFilesRouter = require('./routes/files');
 const createHardwareRouter = require('./routes/hardware');
 const { createHardwareInventory } = require('./services/hardwareInventory');
@@ -316,7 +317,7 @@ const ensureCompanyMaintenanceColumns = async () => {
 };
 const SYSTEM_ROLES = new Set(['SuperAdmin', 'Admin', 'Management', 'Finance', 'Developer', 'Teamlead', 'Sales', 'User', 'InventoryOfficer']);
 const PRIVILEGED_ROLES = new Set(['SuperAdmin', 'Admin', 'Management']);
-const CRMS_ACCESS_ROLES = new Set(['SuperAdmin', 'Admin', 'Management', 'Teamlead', 'Developer', 'Sales']);
+const CRMS_ACCESS_ROLES = new Set(['SuperAdmin', 'Admin', 'Management', 'Teamlead', 'Developer', 'Sales', 'User']);
 const isSuperAdmin = (req) => req.user?.role === 'SuperAdmin';
 const isAdminOrSuperAdmin = (req) => ['SuperAdmin', 'Admin', 'Management'].includes(req.user?.role);
 const userCanManageTargetRole = (req, targetRole) => isSuperAdmin(req) || !PRIVILEGED_ROLES.has(targetRole);
@@ -686,6 +687,7 @@ app.use('/uploads', authMiddleware, authorizeStoredFile,(req,res,next)=>{
   res.sendFile(req.storedFile.resolved,(error)=>{if(error)next(error);});
 });
 app.use('/api/crms', createCrmsRouter({ pool, jwtSecret: JWT_SECRET }));
+app.use('/api/public/change-requests', createClientChangeRequestPortalRouter({ pool, uploadsDir }));
 app.use('/api/files', createFilesRouter({ pool, config: privateFileConfig }));
 
 // File Upload & Handover Metadata
@@ -1402,6 +1404,202 @@ const initDb = async () => {
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (technician_id) REFERENCES user_profiles(id) ON DELETE CASCADE
     )`);
+
+
+    // Ensure installation budgets columns and technician tables
+    try {
+      await ensureTableColumns('installation_budgets', [
+        ['revision_number', 'INT DEFAULT 1'],
+        ['budget_model', "VARCHAR(20) DEFAULT 'technician'"],
+        ['is_current', 'BOOLEAN DEFAULT TRUE'],
+        ['branch_id', 'VARCHAR(36) NULL'],
+        ['client_id', 'VARCHAR(36) NULL'],
+      ]);
+      await pool.query(`CREATE TABLE IF NOT EXISTS installation_budget_technician_expenses (
+        id VARCHAR(36) PRIMARY KEY,
+        budget_id VARCHAR(36) NOT NULL,
+        technician_id VARCHAR(36) NOT NULL,
+        accommodation_cost DECIMAL(12,2) DEFAULT 0,
+        transport_cost DECIMAL(12,2) DEFAULT 0,
+        meals_cost DECIMAL(12,2) DEFAULT 0,
+        other_expenses DECIMAL(12,2) DEFAULT 0,
+        technician_total DECIMAL(12,2) DEFAULT 0,
+        expense_notes TEXT,
+        technician_name_snapshot VARCHAR(255),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        INDEX idx_technician_expenses_budget (budget_id)
+      )`);
+      await pool.query(`CREATE TABLE IF NOT EXISTS installation_budget_audit (
+        id VARCHAR(36) PRIMARY KEY,
+        budget_id VARCHAR(36) NOT NULL,
+        installation_id VARCHAR(36) NOT NULL,
+        action VARCHAR(50) NOT NULL,
+        actor_id VARCHAR(36),
+        revision_number INT DEFAULT 1,
+        total_budget DECIMAL(12,2) DEFAULT 0,
+        change_summary JSON,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )`);
+    } catch (budgetInitErr) {
+      console.warn('Installation budget init warning:', budgetInitErr.message);
+    }
+
+    // Ensure installation feedback rating nullability
+    try {
+      await pool.query(`ALTER TABLE installation_feedback
+        MODIFY installation_quality_rating INT NULL DEFAULT NULL,
+        MODIFY installation_timeliness_rating INT NULL DEFAULT NULL,
+        MODIFY installation_communication_rating INT NULL DEFAULT NULL,
+        MODIFY technician_knowledge_rating INT NULL DEFAULT NULL,
+        MODIFY technician_professionalism_rating INT NULL DEFAULT NULL,
+        MODIFY technician_helpfulness_rating INT NULL DEFAULT NULL`);
+    } catch (_fbErr) {}
+
+    // Ensure CRMS client change request portal tables and columns
+    try {
+      await pool.query(`CREATE TABLE IF NOT EXISTS crms_change_request_invitations (
+        id VARCHAR(36) PRIMARY KEY,
+        invitation_token VARCHAR(128) NOT NULL UNIQUE,
+        client_id VARCHAR(36) NOT NULL,
+        branch_id VARCHAR(36) NULL,
+        department_id VARCHAR(36) NULL,
+        account_manager_id VARCHAR(36) NOT NULL,
+        client_representative_name VARCHAR(255) NOT NULL,
+        client_representative_phone VARCHAR(50) NOT NULL,
+        client_representative_email VARCHAR(255) NOT NULL,
+        request_reference VARCHAR(50) NOT NULL,
+        status ENUM('draft', 'sent', 'delivered', 'opened', 'submitted', 'expired', 'cancelled') NOT NULL DEFAULT 'draft',
+        expires_at DATETIME NOT NULL,
+        opened_at DATETIME NULL,
+        submitted_at DATETIME NULL,
+        cancelled_at DATETIME NULL,
+        change_request_id VARCHAR(36) NULL,
+        delivery_sms_status VARCHAR(50) DEFAULT NULL,
+        delivery_email_status VARCHAR(50) DEFAULT NULL,
+        last_notification_sent_at DATETIME NULL,
+        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        INDEX idx_invitation_scope (client_id, branch_id, department_id),
+        INDEX idx_invitation_manager (account_manager_id, status),
+        INDEX idx_invitation_token (invitation_token)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`);
+
+      await ensureTableColumns('crms_change_requests', [
+        ['is_client_request', 'BOOLEAN NOT NULL DEFAULT FALSE'],
+        ['invitation_id', 'VARCHAR(36) NULL'],
+        ['account_manager_id', 'VARCHAR(36) NULL'],
+        ['client_representative_name', 'VARCHAR(255) NULL'],
+        ['client_representative_phone', 'VARCHAR(50) NULL'],
+        ['client_representative_email', 'VARCHAR(255) NULL'],
+        ['request_title', 'VARCHAR(255) NULL'],
+        ['request_category', 'VARCHAR(50) NULL'],
+        ['current_behaviour', 'TEXT NULL'],
+        ['expected_behaviour', 'TEXT NULL'],
+        ['business_problem', 'TEXT NULL'],
+        ['business_justification', 'TEXT NULL'],
+        ['impact_on_operations', 'TEXT NULL'],
+        ['preferred_timeline', 'VARCHAR(100) NULL'],
+        ['additional_comments', 'TEXT NULL'],
+        ['client_declaration_confirmed', 'BOOLEAN DEFAULT FALSE'],
+        ['client_submission_timestamp', 'DATETIME NULL'],
+        ['client_submission_data', 'JSON NULL'],
+        ['client_attachments', 'JSON NULL'],
+        ['acceptance_status', 'VARCHAR(50) NULL']
+      ]);
+
+      await pool.query(`CREATE TABLE IF NOT EXISTS crms_completion_reports (
+        id VARCHAR(36) PRIMARY KEY,
+        change_request_id VARCHAR(36) NOT NULL,
+        version_number INT UNSIGNED NOT NULL DEFAULT 1,
+        account_manager_id VARCHAR(36) NOT NULL,
+        summary_of_change TEXT NOT NULL,
+        implemented_solution TEXT NOT NULL,
+        deliverables TEXT NULL,
+        issues_resolved TEXT NULL,
+        testing_performed TEXT NULL,
+        implementation_date DATE NULL,
+        deployment_date DATE NULL,
+        outstanding_items TEXT NULL,
+        known_limitations TEXT NULL,
+        client_recommendations TEXT NULL,
+        additional_comments TEXT NULL,
+        attachments JSON NULL,
+        status ENUM('draft', 'sent', 'superseded', 'accepted', 'rejected', 'disputed') NOT NULL DEFAULT 'draft',
+        acceptance_token VARCHAR(128) NULL UNIQUE,
+        token_expires_at DATETIME NULL,
+        sent_at DATETIME NULL,
+        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        INDEX idx_report_request (change_request_id, version_number),
+        INDEX idx_report_token (acceptance_token),
+        INDEX idx_report_manager (account_manager_id)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`);
+
+      await pool.query(`CREATE TABLE IF NOT EXISTS crms_client_acceptances (
+        id VARCHAR(36) PRIMARY KEY,
+        change_request_id VARCHAR(36) NOT NULL,
+        completion_report_id VARCHAR(36) NOT NULL,
+        client_representative_name VARCHAR(255) NOT NULL,
+        client_representative_designation VARCHAR(255) NOT NULL,
+        client_representative_phone VARCHAR(50) NOT NULL,
+        client_representative_email VARCHAR(255) NOT NULL,
+        sign_off_method ENUM('otp', 'signature') NOT NULL,
+        signature_image_path VARCHAR(500) NULL,
+        otp_verified_at DATETIME NULL,
+        declaration_text TEXT NOT NULL,
+        declaration_confirmed BOOLEAN NOT NULL DEFAULT TRUE,
+        client_ip VARCHAR(45) NULL,
+        client_user_agent VARCHAR(500) NULL,
+        accepted_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        INDEX idx_acceptance_request (change_request_id),
+        INDEX idx_acceptance_report (completion_report_id)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`);
+
+      await pool.query(`CREATE TABLE IF NOT EXISTS crms_client_action_responses (
+        id VARCHAR(36) PRIMARY KEY,
+        change_request_id VARCHAR(36) NOT NULL,
+        completion_report_id VARCHAR(36) NOT NULL,
+        action_type ENUM('correction_requested', 'disputed') NOT NULL,
+        client_representative_name VARCHAR(255) NOT NULL,
+        client_representative_phone VARCHAR(50) NOT NULL,
+        client_representative_email VARCHAR(255) NOT NULL,
+        response_text TEXT NOT NULL,
+        attachments JSON NULL,
+        client_ip VARCHAR(45) NULL,
+        client_user_agent VARCHAR(500) NULL,
+        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        INDEX idx_action_request (change_request_id),
+        INDEX idx_action_report (completion_report_id)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`);
+
+      await pool.query(`CREATE TABLE IF NOT EXISTS crms_client_otp_verifications (
+        id VARCHAR(36) PRIMARY KEY,
+        change_request_id VARCHAR(36) NOT NULL,
+        completion_report_id VARCHAR(36) NOT NULL,
+        otp_hash VARCHAR(255) NOT NULL,
+        recipient_phone VARCHAR(50) NOT NULL,
+        recipient_email VARCHAR(255) NOT NULL,
+        attempts INT NOT NULL DEFAULT 0,
+        expires_at DATETIME NOT NULL,
+        verified_at DATETIME NULL,
+        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        INDEX idx_otp_report (completion_report_id),
+        INDEX idx_otp_expires (expires_at)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`);
+
+      await pool.query(`CREATE TABLE IF NOT EXISTS crms_request_closures (
+        id VARCHAR(36) PRIMARY KEY,
+        change_request_id VARCHAR(36) NOT NULL UNIQUE,
+        account_manager_id VARCHAR(36) NOT NULL,
+        acceptance_id VARCHAR(36) NOT NULL,
+        closure_notes TEXT NULL,
+        closed_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        INDEX idx_closure_manager (account_manager_id)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`);
+    } catch (crmsInitErr) {
+      console.warn('CRMS portal init warning:', crmsInitErr.message);
+    }
 
     // Installation Budgets
     await pool.query(`CREATE TABLE IF NOT EXISTS installation_budgets (
@@ -4547,21 +4745,37 @@ app.get('/api/budgets', requireCapability('finances.view'), async (req, res) => 
     const params = [];
     const scope = isSuperAdmin(req) ? '' : ' WHERE c.subsidiary_id=?';
     if (!isSuperAdmin(req)) params.push(req.user.subsidiary_id);
-    const [rows] = await pool.query(`SELECT b.*,c.client_name,COALESCE(cb.branch_name,b.branch,c.branch) branch_name
-      FROM installation_budgets b JOIN installations i ON ${sqlUuidEquals('b.installation_id', 'i.id')}
-      JOIN clients c ON ${sqlUuidEquals('i.client_id', 'c.id')}
-      LEFT JOIN client_branches cb ON ${sqlUuidEquals('i.branch_id', 'cb.id')}${scope}
-      ORDER BY b.created_at DESC,b.revision_number DESC`, params);
+    let rows = [];
+    try {
+      [rows] = await pool.query(`SELECT b.*,c.client_name,COALESCE(cb.branch_name,b.branch,c.branch) branch_name
+        FROM installation_budgets b JOIN installations i ON ${sqlUuidEquals('b.installation_id', 'i.id')}
+        JOIN clients c ON ${sqlUuidEquals('i.client_id', 'c.id')}
+        LEFT JOIN client_branches cb ON ${sqlUuidEquals('i.branch_id', 'cb.id')}${scope}
+        ORDER BY b.created_at DESC, b.revision_number DESC`, params);
+    } catch (_orderErr) {
+      [rows] = await pool.query(`SELECT b.*,c.client_name,COALESCE(cb.branch_name,b.branch,c.branch) branch_name
+        FROM installation_budgets b JOIN installations i ON ${sqlUuidEquals('b.installation_id', 'i.id')}
+        JOIN clients c ON ${sqlUuidEquals('i.client_id', 'c.id')}
+        LEFT JOIN client_branches cb ON ${sqlUuidEquals('i.branch_id', 'cb.id')}${scope}
+        ORDER BY b.created_at DESC`, params);
+    }
     const technicianBudgetIds = rows.filter(row => row.budget_model === 'technician').map(row => row.id);
     let expenses = [];
     if (technicianBudgetIds.length) {
-      const placeholders = technicianBudgetIds.map(() => '?').join(',');
-      [expenses] = await pool.query(`SELECT * FROM installation_budget_technician_expenses WHERE budget_id IN (${placeholders}) ORDER BY technician_name_snapshot`, technicianBudgetIds);
+      try {
+        const placeholders = technicianBudgetIds.map(() => '?').join(',');
+        [expenses] = await pool.query(`SELECT * FROM installation_budget_technician_expenses WHERE budget_id IN (${placeholders}) ORDER BY technician_name_snapshot`, technicianBudgetIds);
+      } catch (_expErr) {
+        expenses = [];
+      }
     }
     const grouped = new Map();
     expenses.forEach(expense => grouped.set(expense.budget_id, [...(grouped.get(expense.budget_id) || []), expense]));
     res.json(rows.map(row => ({ ...row, technician_expenses: grouped.get(row.id) || [] })));
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) {
+    console.error('Error loading budgets:', err);
+    res.status(500).json({ error: err.message || 'Unable to load finances' });
+  }
 });
 
 app.post('/api/budgets', requireCapability('finances.manage'), async (req, res) => {

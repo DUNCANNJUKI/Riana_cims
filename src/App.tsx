@@ -10,6 +10,9 @@ import { ResetPassword } from "./pages/ResetPassword";
 import InstallApp from "./pages/InstallApp";
 import { MaintenancePage } from "@/components/maintenance/MaintenancePage";
 import { PublicAssetHistory } from "@/pages/PublicAssetHistory";
+import { ClientChangeRequestForm } from "./pages/ClientChangeRequestForm";
+import { ClientCompletionReview } from "./pages/ClientCompletionReview";
+import { ClientRequestTracking } from "./pages/ClientRequestTracking";
 
 import { GlobalErrorBoundary } from "@/components/common/GlobalErrorBoundary";
 
@@ -24,12 +27,17 @@ const App = () => (
       <BrowserRouter>
         <Routes>
           <Route path="/asset/:assetId" element={<PublicAssetHistory />} />
-          <Route path="/*" element={<Index />} />
           <Route path="/install" element={<InstallApp />} />
           <Route path="/feedback/:clientSlug/:token" element={<FeedbackForm />} />
           <Route path="/feedback/:token" element={<FeedbackForm />} />
+          <Route path="/change-request/submit/:token" element={<ClientChangeRequestForm />} />
+          <Route path="/client-request/:token" element={<ClientChangeRequestForm />} />
+          <Route path="/change-request/review/:token" element={<ClientCompletionReview />} />
+          <Route path="/change-request/accept/:token" element={<ClientCompletionReview />} />
+          <Route path="/change-request/track/:token" element={<ClientRequestTracking />} />
           <Route path="/reset-password" element={<ResetPassword />} />
           <Route path="/maintenance" element={<MaintenancePage />} />
+          <Route path="/*" element={<Index />} />
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
           <Route path="*" element={<NotFound />} />
         </Routes>

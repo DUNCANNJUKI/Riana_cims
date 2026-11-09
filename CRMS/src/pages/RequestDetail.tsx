@@ -39,6 +39,9 @@ import { getCimsUser } from '@crms/lib/cimsSession';
 import { Label } from '@crms/components/ui/label';
 import { useChangeRequest, useProfiles, useUpdateChangeRequest, useCreateAuditLog, useAuditLogs, useClientScope } from '@crms/hooks/useSupabaseData';
 import { generateChangeRequestPDF, generateCompletionReportPDF, downloadPDF } from '@crms/lib/pdfGenerator';
+import { PrepareCompletionReportDialog } from '@crms/components/PrepareCompletionReportDialog';
+import { CloseChangeRequestDialog } from '@crms/components/CloseChangeRequestDialog';
+import { FileCheck2, ShieldCheck, AlertCircle, ExternalLink } from 'lucide-react';
 import { useCurrentUserRole } from '@crms/hooks/useCurrentUserRole';
 import { useLocation } from 'react-router-dom';
 
@@ -91,6 +94,8 @@ export default function RequestDetail() {
 
   const [selectedDeveloperId, setSelectedDeveloperId] = useState('');
   const [approvalComment, setApprovalComment] = useState('');
+  const [reportDialogOpen, setReportDialogOpen] = useState(false);
+  const [closeDialogOpen, setCloseDialogOpen] = useState(false);
   const [isChargeable, setIsChargeable] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
 
@@ -684,12 +689,137 @@ export default function RequestDetail() {
               Mark Complete
             </Button>
           )}
+          {(request.status === 'ready_for_completion_report' || request.status === 'completed' || request.status === 'awaiting_client_acceptance') && (
+            <Button size="sm" onClick={() => setReportDialogOpen(true)} className="bg-teal-700 hover:bg-teal-800 text-white">
+              <FileCheck2 className="mr-2 h-4 w-4" />
+              Prepare Completion Report
+            </Button>
+          )}
+          {request.status === 'client_accepted' && (
+            <Button size="sm" onClick={() => setCloseDialogOpen(true)} className="bg-emerald-700 hover:bg-emerald-800 text-white">
+              <CheckCircle className="mr-2 h-4 w-4" />
+              Verify & Close Request
+            </Button>
+          )}
         </div>
       </div>
 
       <div className="grid gap-6 lg:grid-cols-3">
         {/* Main Content */}
         <div className="lg:col-span-2 space-y-6">
+          {/* Client Request Status Banners */}
+          {request.status === 'ready_for_completion_report' && (
+            <div className="bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-900 rounded-lg p-4 flex items-center justify-between">
+              <div>
+                <p className="font-semibold text-blue-900 dark:text-blue-200 text-sm">Ready for Client Completion Report</p>
+                <p className="text-xs text-blue-700 dark:text-blue-400 mt-0.5">Development and internal verification are complete. Account Manager can now prepare and dispatch the formal report.</p>
+              </div>
+              <Button size="sm" onClick={() => setReportDialogOpen(true)} className="bg-blue-700 hover:bg-blue-800 text-white">
+                Prepare Report
+              </Button>
+            </div>
+          )}
+          {request.status === 'awaiting_client_acceptance' && (
+            <div className="bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900 rounded-lg p-4">
+              <p className="font-semibold text-amber-900 dark:text-amber-200 text-sm flex items-center gap-1.5">
+                <Clock className="w-4 h-4 text-amber-600" /> Formal Completion Report Awaiting Client Acceptance
+              </p>
+              <p className="text-xs text-amber-700 dark:text-amber-400 mt-1">Review link dispatched to client representative via SMS and Email. Client can accept via OTP or authenticated signature.</p>
+            </div>
+          )}
+          {request.status === 'client_accepted' && (
+            <div className="bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-900 rounded-lg p-4 flex items-center justify-between">
+              <div>
+                <p className="font-semibold text-emerald-900 dark:text-emerald-200 text-sm flex items-center gap-1.5">
+                  <CheckCircle className="w-4 h-4 text-emerald-600" /> Client Formally Accepted Delivered Changes
+                </p>
+                <p className="text-xs text-emerald-700 dark:text-emerald-400 mt-0.5">Ready for Account Manager verification and formal request closure.</p>
+              </div>
+              <Button size="sm" onClick={() => setCloseDialogOpen(true)} className="bg-emerald-700 hover:bg-emerald-800 text-white">
+                Verify & Close
+              </Button>
+            </div>
+          )}
+          {request.status === 'closed_client_accepted' && (
+            <div className="bg-teal-50 dark:bg-teal-950/40 border border-teal-200 dark:border-teal-900 rounded-lg p-4">
+              <p className="font-semibold text-teal-900 dark:text-teal-200 text-sm flex items-center gap-1.5">
+                <ShieldCheck className="w-4 h-4 text-teal-600" /> Officially Closed with Verified Client Acceptance
+              </p>
+              <p className="text-xs text-teal-700 dark:text-teal-400 mt-0.5">All deliverables and sign-off criteria satisfied and verified.</p>
+            </div>
+          )}
+          {request.status === 'client_requested_corrections' && (
+            <div className="bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-900 rounded-lg p-4">
+              <p className="font-semibold text-red-900 dark:text-red-200 text-sm flex items-center gap-1.5">
+                <AlertCircle className="w-4 h-4 text-red-600" /> Client Requested Further Action / Corrections
+              </p>
+              <p className="text-xs text-red-700 dark:text-red-400 mt-1">Please review client notes in timeline or activity log and coordinate with engineering team.</p>
+            </div>
+          )}
+
+          {/* Client-Submitted Requirements (Official Record - Immutable) */}
+          {(request.is_client_request || request.client_representative_name) && (
+            <Card className="border-teal-200 dark:border-teal-900">
+              <CardHeader className="pb-3 bg-teal-50/40 dark:bg-teal-950/20">
+                <CardTitle className="text-sm font-bold text-teal-800 dark:text-teal-300 uppercase tracking-wide flex items-center gap-2">
+                  <Building2 className="w-4 h-4 text-teal-600" />
+                  Client-Submitted Scope & Specifications (Immutable Official Record)
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="pt-4 space-y-4 text-sm">
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 p-3 bg-slate-50 dark:bg-slate-800/40 rounded border border-slate-200 dark:border-slate-700 text-xs">
+                  <div>
+                    <span className="text-slate-500 font-semibold block">Client Representative:</span>
+                    <span className="font-semibold text-slate-800 dark:text-slate-200">{request.client_representative_name || 'N/A'}</span>
+                  </div>
+                  <div>
+                    <span className="text-slate-500 font-semibold block">Contact Phone:</span>
+                    <span className="font-semibold text-slate-800 dark:text-slate-200">{request.client_representative_phone || 'N/A'}</span>
+                  </div>
+                  <div>
+                    <span className="text-slate-500 font-semibold block">Contact Email:</span>
+                    <span className="font-semibold text-slate-800 dark:text-slate-200 truncate block">{request.client_representative_email || 'N/A'}</span>
+                  </div>
+                </div>
+
+                {request.expected_behaviour && (
+                  <div>
+                    <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Expected Outcome / Desired Behaviour</p>
+                    <p className="text-slate-700 dark:text-slate-300 mt-1 whitespace-pre-wrap bg-slate-50 dark:bg-slate-800/40 p-3 rounded">{request.expected_behaviour}</p>
+                  </div>
+                )}
+
+                {request.business_problem && (
+                  <div>
+                    <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Business Problem Being Solved</p>
+                    <p className="text-slate-700 dark:text-slate-300 mt-1 whitespace-pre-wrap bg-slate-50 dark:bg-slate-800/40 p-3 rounded">{request.business_problem}</p>
+                  </div>
+                )}
+
+                {request.business_justification && (
+                  <div>
+                    <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Business Justification & Benefits</p>
+                    <p className="text-slate-700 dark:text-slate-300 mt-1 whitespace-pre-wrap bg-slate-50 dark:bg-slate-800/40 p-3 rounded">{request.business_justification}</p>
+                  </div>
+                )}
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                  {request.impact_on_operations && (
+                    <div className="p-2.5 bg-slate-50 dark:bg-slate-800/40 rounded border border-slate-200 dark:border-slate-700">
+                      <span className="text-slate-500 font-semibold block">Operational Impact:</span>
+                      <span className="font-semibold uppercase">{request.impact_on_operations}</span>
+                    </div>
+                  )}
+                  {request.preferred_timeline && (
+                    <div className="p-2.5 bg-slate-50 dark:bg-slate-800/40 rounded border border-slate-200 dark:border-slate-700">
+                      <span className="text-slate-500 font-semibold block">Client Timeline Preference:</span>
+                      <span className="font-semibold capitalize">{request.preferred_timeline.replace(/_/g, ' ')}</span>
+                    </div>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          )}
           {/* Description */}
           <Card>
             <CardHeader>

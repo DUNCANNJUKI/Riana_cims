@@ -35,7 +35,7 @@ export const Sidebar = ({ user, activeModule, setActiveModule, isMobileOpen, onM
   const avatarSrc = resolveAvatarUrl(user.avatar_url);
   const developerModuleRole = user.module_roles?.crms;
   const effectiveDeveloperRole = user.role === 'SuperAdmin' ? 'SuperAdmin' : developerModuleRole || user.role;
-  const canAccessDevelopers = ['SuperAdmin', 'Admin', 'Management', 'Teamlead', 'Developer', 'Sales'].includes(effectiveDeveloperRole);
+  const canAccessDevelopers = ['SuperAdmin', 'Admin', 'Management', 'Teamlead', 'Developer', 'Sales', 'User'].includes(effectiveDeveloperRole);
 
   useEffect(() => {
     const loadSettings = async () => {
@@ -78,7 +78,7 @@ export const Sidebar = ({ user, activeModule, setActiveModule, isMobileOpen, onM
     { key: 'audit-logs', label: 'Audit Logs', icon: ShieldCheck, roles: ['SuperAdmin'], category: 'admin' },
     { key: 'my-activity', label: 'My Activity', icon: History, roles: ['SuperAdmin', 'Admin', 'Management', 'Finance', 'Teamlead', 'Developer', 'Sales', 'User'], category: 'support' },
     { key: 'optimus', label: 'RIANA OPTIMUS', icon: Globe, roles: ['SuperAdmin', 'Admin', 'Management', 'Teamlead', 'User'], category: 'external' },
-    { key: 'developers', label: 'Developers', icon: Code2, roles: ['SuperAdmin', 'Admin', 'Management', 'Teamlead', 'Developer', 'Sales'], category: 'developers' },
+    { key: 'developers', label: 'Developers', icon: Code2, roles: ['SuperAdmin', 'Admin', 'Management', 'Teamlead', 'Developer', 'Sales', 'User'], category: 'developers' },
     { key: 'help', label: 'Help & Support', icon: HelpCircle, roles: ['SuperAdmin', 'Admin', 'Management', 'Finance', 'Teamlead', 'Developer', 'Sales', 'User'], category: 'support' },
   ];
 
@@ -132,9 +132,10 @@ export const Sidebar = ({ user, activeModule, setActiveModule, isMobileOpen, onM
   };
 
   const developerSubItems = [
-    { label: 'Overview', path: '/developers', roles: ['SuperAdmin', 'Admin', 'Management', 'Teamlead', 'Developer', 'Sales'] },
+    { label: 'Overview', path: '/developers', roles: ['SuperAdmin', 'Admin', 'Management', 'Teamlead', 'Developer', 'Sales', 'User'] },
+    { label: 'Client Requests', path: '/developers/client-requests', roles: ['SuperAdmin', 'Admin', 'Management', 'Teamlead', 'Developer', 'Sales', 'User'] },
     { label: 'Pending', path: '/developers/pending', roles: ['SuperAdmin', 'Admin', 'Management', 'Teamlead', 'Developer', 'Sales'] },
-    { label: 'Requests', path: '/developers/requests', roles: ['SuperAdmin', 'Admin', 'Management', 'Teamlead', 'Developer', 'Sales'] },
+    { label: 'Requests', path: '/developers/requests', roles: ['SuperAdmin', 'Admin', 'Management', 'Teamlead', 'Developer', 'Sales', 'User'] },
     { label: 'New Request', path: '/developers/requests/new', roles: ['SuperAdmin', 'Admin', 'Management', 'Teamlead', 'Sales'] },
     { label: 'Approvals', path: '/developers/approvals', roles: ['SuperAdmin', 'Admin', 'Management', 'Sales'] },
     { label: 'Assignments', path: '/developers/assignments', roles: ['SuperAdmin', 'Admin', 'Management', 'Teamlead', 'Developer'] },

@@ -9,11 +9,19 @@ const { canonicalAppUrl } = require('../security/apiSecurity');
 const { createSingleActiveSession, validateAuthenticatedSession } = require('../security/sessionStore');
 const { normalizeNotificationType } = require('../services/notificationTypes');
 const { deliveryForCrmsEvent, resolveCompletionRecipientId } = require('./crmsNotificationPolicy');
+const {
+  createInvitation,
+  sendInvitation,
+  cancelInvitation,
+  createOrUpdateCompletionReport,
+  sendCompletionReport,
+  closeChangeRequest,
+} = require('../services/clientChangeRequests');
 
 const CRMS_SESSION_MAX_AGE_MS = 12 * 60 * 60 * 1000;
-const ALLOWED_ROLES = new Set(['SuperAdmin', 'Admin', 'Management', 'Teamlead', 'Developer', 'Sales']);
-const roleToCrms = (role) => ({ SuperAdmin: 'admin', Admin: 'admin', Management: 'admin', Teamlead: 'senior_developer', Developer: 'developer', Sales: 'sales' })[role];
-const roleFromCrms = (role) => ({ admin: 'Admin', senior_developer: 'Teamlead', developer: 'Developer', sales: 'Sales' })[role];
+const ALLOWED_ROLES = new Set(['SuperAdmin', 'Admin', 'Management', 'Teamlead', 'Developer', 'Sales', 'User']);
+const roleToCrms = (role) => ({ SuperAdmin: 'admin', Admin: 'admin', Management: 'admin', Teamlead: 'senior_developer', Developer: 'developer', Sales: 'sales', User: 'account_manager' })[role] || 'account_manager';
+const roleFromCrms = (role) => ({ admin: 'Admin', senior_developer: 'Teamlead', developer: 'Developer', sales: 'Sales', account_manager: 'User' })[role] || 'User';
 const fullName = (user) => `${user.first_name || ''} ${user.last_name || ''}`.trim() || user.email;
 const profileShape = (user) => ({
   id: user.id,
@@ -51,12 +59,16 @@ const REQUEST_UPDATE_FIELDS = {
   Sales: new Set(['status','approval_comment','is_chargeable','sales_remarks']),
   Teamlead: new Set(['priority','status','estimated_completion_date','senior_developer_id','assigned_developer_id','commencement_date','completion_date']),
   Developer: new Set(['status','commencement_date','completion_date']),
+  User: new Set(['status','priority']),
+  User: new Set(['status','priority']),
 };
 
 const REQUEST_STATUSES = {
   Sales: new Set(['pending_approval', 'approved', 'rejected', 'waiting_clarification']),
   Teamlead: new Set(['approved', 'assigned', 'in_progress', 'waiting_clarification', 'completed']),
-  Developer: new Set(['in_progress', 'waiting_clarification', 'completed']),
+  Developer: new Set(['in_progress', 'waiting_clarification', 'completed', 'ready_for_completion_report']),
+  Teamlead: new Set(['approved', 'assigned', 'in_progress', 'waiting_clarification', 'completed', 'ready_for_completion_report', 'client_requested_corrections', 'client_disputed']),
+  User: new Set(['ready_for_completion_report', 'awaiting_client_acceptance', 'closed_client_accepted']),
 };
 const storedRequestStatus = (status) => status === 'waiting_clarification' ? 'waiting' : status;
 
@@ -520,6 +532,8 @@ module.exports = function createCrmsRouter({ pool, jwtSecret }) {
     IF(c.id IS NULL,NULL,JSON_OBJECT('id',c.id,'name',c.client_name,'branch',${branchNameExpression},'contact_person',c.contact_person_name,'contact_email',c.contact_email,'contact_phone',c.contact_phone,'contract_type',LOWER(c.contract_type),'subsidiary_id',c.subsidiary_id,'subsidiary_name',s.subsidiary_name)) client,
     IF(ad.id IS NULL,NULL,JSON_OBJECT('id',ad.id,'name',CONCAT_WS(' ',ad.first_name,ad.last_name))) assigned_developer,
     IF(sd.id IS NULL,NULL,JSON_OBJECT('id',sd.id,'name',CONCAT_WS(' ',sd.first_name,sd.last_name))) senior_developer,
+    IF(am.id IS NULL,NULL,JSON_OBJECT('id',am.id,'name',CONCAT_WS(' ',am.first_name,am.last_name),'email',am.email,'phone',am.phone_number)) account_manager,
+    IF(am.id IS NULL,NULL,JSON_OBJECT('id',am.id,'name',CONCAT_WS(' ',am.first_name,am.last_name),'email',am.email,'phone',am.phone_number)) account_manager,
     ${branchScope},
     ${departmentScope}
     FROM crms_change_requests cr
@@ -528,13 +542,20 @@ module.exports = function createCrmsRouter({ pool, jwtSecret }) {
     ${branchJoin}
     ${departmentJoin}
     LEFT JOIN user_profiles ad ON ad.id COLLATE utf8mb4_general_ci=cr.assigned_developer_id
-    LEFT JOIN user_profiles sd ON sd.id COLLATE utf8mb4_general_ci=cr.senior_developer_id`;
+    LEFT JOIN user_profiles sd ON sd.id COLLATE utf8mb4_general_ci=cr.senior_developer_id
+    LEFT JOIN user_profiles am ON am.id COLLATE utf8mb4_general_ci=cr.account_manager_id`;
   };
   const formatRequest = (row) => ({
     ...row,
     client: typeof row.client === 'string' ? JSON.parse(row.client) : row.client,
     assigned_developer: typeof row.assigned_developer === 'string' ? JSON.parse(row.assigned_developer) : row.assigned_developer,
     senior_developer: typeof row.senior_developer === 'string' ? JSON.parse(row.senior_developer) : row.senior_developer,
+    account_manager: typeof row.account_manager === 'string' ? JSON.parse(row.account_manager) : row.account_manager,
+    client_submission_data: typeof row.client_submission_data === 'string' ? JSON.parse(row.client_submission_data) : row.client_submission_data,
+    client_attachments: typeof row.client_attachments === 'string' ? JSON.parse(row.client_attachments) : row.client_attachments || [],
+    account_manager: typeof row.account_manager === 'string' ? JSON.parse(row.account_manager) : row.account_manager,
+    client_submission_data: typeof row.client_submission_data === 'string' ? JSON.parse(row.client_submission_data) : row.client_submission_data,
+    client_attachments: typeof row.client_attachments === 'string' ? JSON.parse(row.client_attachments) : row.client_attachments || [],
     branch_scope: typeof row.branch_scope === 'string' ? JSON.parse(row.branch_scope) : row.branch_scope,
     department_scope: typeof row.department_scope === 'string' ? JSON.parse(row.department_scope) : row.department_scope,
     modules_affected: typeof row.modules_affected === 'string' ? JSON.parse(row.modules_affected) : row.modules_affected,
@@ -814,6 +835,7 @@ module.exports = function createCrmsRouter({ pool, jwtSecret }) {
       });
     } catch (error) { res.status(500).json({ error:error.message }); }
   });
+
 
   return router;
 };

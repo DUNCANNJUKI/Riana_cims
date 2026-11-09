@@ -170,8 +170,8 @@ const Index = () => {
       case 'announcements-management':
         return <AnnouncementsManagementModule user={user} />;
       case 'developers':
-        if (developerWorkspaceRole === 'SuperAdmin' || developerWorkspaceRole === 'Admin' || developerWorkspaceRole === 'Management' || developerWorkspaceRole === 'Teamlead' || developerWorkspaceRole === 'Developer' || developerWorkspaceRole === 'Sales') {
-          return <DevelopersWorkspace userId={user.id} role={developerWorkspaceRole} />;
+        if (developerWorkspaceRole === 'SuperAdmin' || developerWorkspaceRole === 'Admin' || developerWorkspaceRole === 'Management' || developerWorkspaceRole === 'Teamlead' || developerWorkspaceRole === 'Developer' || developerWorkspaceRole === 'Sales' || developerWorkspaceRole === 'User') {
+          return <DevelopersWorkspace userId={user.id} role={developerWorkspaceRole as any} />;
         }
         return <Dashboard user={user} onNavigate={setActiveModule} />;
       case 'help':

@@ -68,7 +68,7 @@ export const FeedbackForm = () => {
           });
           setDynamicResponses(initial);
         }
-      } catch (error) {
+      } catch (error: any) {
         console.error("Error fetching feedback questions:", error);
       }
     };
@@ -151,7 +151,7 @@ export const FeedbackForm = () => {
       console.error('Error submitting feedback:', error);
       toast({
         title: "Error",
-        description: "Failed to submit feedback. Please try again.",
+        description: error?.message || "Failed to submit feedback. Please try again.",
         variant: "destructive",
       });
     } finally {

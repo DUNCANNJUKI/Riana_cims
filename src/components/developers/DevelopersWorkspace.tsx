@@ -3,7 +3,7 @@ import { Navigate, useLocation } from "react-router-dom";
 
 interface DevelopersWorkspaceProps {
   userId: string;
-  role: "SuperAdmin" | "Admin" | "Management" | "Teamlead" | "Developer" | "Sales";
+  role: "SuperAdmin" | "Admin" | "Management" | "Teamlead" | "Developer" | "Sales" | "User";
 }
 
 export const DevelopersWorkspace = ({ userId, role }: DevelopersWorkspaceProps) => {

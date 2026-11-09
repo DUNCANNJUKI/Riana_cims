@@ -74,8 +74,47 @@ export const generatePDFReport = async (
     doc.setTextColor(...COLORS.text);
     doc.text('No data available for this report', margin, yPosition + 10);
   } else {
+    const getReportColumnStyles = (type: string) => {
+      switch (type) {
+        case 'e-handover':
+          return {
+            0: { cellWidth: 26 }, // Client
+            1: { cellWidth: 20 }, // Branch
+            2: { cellWidth: 20 }, // Department
+            3: { cellWidth: 18 }, // Upload Date
+            4: { cellWidth: 32, overflow: 'ellipsize' as const }, // File Name
+            5: { cellWidth: 14, halign: 'center' as const }, // Signed
+            6: { cellWidth: 18, halign: 'center' as const }, // Status
+            7: { cellWidth: 'auto' as const, minCellWidth: 34 } // Notes
+          };
+        case 'clients-summary':
+          return {
+            0: { cellWidth: 30 },
+            1: { cellWidth: 26 },
+            2: { cellWidth: 22 },
+            3: { cellWidth: 34, overflow: 'ellipsize' as const },
+            4: { cellWidth: 20 },
+            5: { cellWidth: 25 },
+            6: { cellWidth: 20, halign: 'center' as const }
+          };
+        case 'installations-overview':
+          return {
+            0: { cellWidth: 46 },
+            1: { cellWidth: 18, halign: 'center' as const },
+            2: { cellWidth: 18, halign: 'center' as const },
+            3: { cellWidth: 18, halign: 'center' as const },
+            4: { cellWidth: 18, halign: 'center' as const },
+            5: { cellWidth: 26, halign: 'center' as const },
+            6: { cellWidth: 26, halign: 'center' as const }
+          };
+        default:
+          return undefined;
+      }
+    };
+
     // Generate table based on report type
     autoTable(doc, {
+      columnStyles: getReportColumnStyles(reportType),
       startY: yPosition,
       head: [getTableHeaders(reportType)],
       body: formatTableData(reportType, reportData),
