@@ -225,10 +225,10 @@ const sendInvitation = async (pool, invitationId, req) => {
     `SELECT i.*, c.client_name, COALESCE(cb.branch_name, c.branch) AS branch_name, cd.department_name,
             u.first_name AS am_first_name, u.last_name AS am_last_name, u.email AS am_email
      FROM crms_change_request_invitations i
-     JOIN clients c ON c.id = i.client_id
-     LEFT JOIN client_branches cb ON cb.id = i.branch_id
-     LEFT JOIN client_departments cd ON cd.id = i.department_id
-     JOIN user_profiles u ON u.id = i.account_manager_id
+     JOIN clients c ON c.id COLLATE utf8mb4_unicode_ci = i.client_id COLLATE utf8mb4_unicode_ci
+     LEFT JOIN client_branches cb ON cb.id COLLATE utf8mb4_unicode_ci = i.branch_id COLLATE utf8mb4_unicode_ci
+     LEFT JOIN client_departments cd ON cd.id COLLATE utf8mb4_unicode_ci = i.department_id COLLATE utf8mb4_unicode_ci
+     JOIN user_profiles u ON u.id COLLATE utf8mb4_unicode_ci = i.account_manager_id COLLATE utf8mb4_unicode_ci
      WHERE i.id = ? LIMIT 1`,
     [invitationId],
   );
@@ -379,10 +379,10 @@ const getInvitationForClient = async (pool, token) => {
             u.first_name AS am_first_name, u.last_name AS am_last_name, u.email AS am_email, u.phone_number AS am_phone,
             (i.expires_at <= NOW()) AS is_expired
      FROM crms_change_request_invitations i
-     JOIN clients c ON c.id = i.client_id
-     LEFT JOIN client_branches cb ON cb.id = i.branch_id
-     LEFT JOIN client_departments cd ON cd.id = i.department_id
-     JOIN user_profiles u ON u.id = i.account_manager_id
+     JOIN clients c ON c.id COLLATE utf8mb4_unicode_ci = i.client_id COLLATE utf8mb4_unicode_ci
+     LEFT JOIN client_branches cb ON cb.id COLLATE utf8mb4_unicode_ci = i.branch_id COLLATE utf8mb4_unicode_ci
+     LEFT JOIN client_departments cd ON cd.id COLLATE utf8mb4_unicode_ci = i.department_id COLLATE utf8mb4_unicode_ci
+     JOIN user_profiles u ON u.id COLLATE utf8mb4_unicode_ci = i.account_manager_id COLLATE utf8mb4_unicode_ci
      WHERE i.invitation_token = ? LIMIT 1`,
     [token],
   );
@@ -450,9 +450,9 @@ const submitClientChangeRequest = async (pool, { token, data, attachments = [], 
     const [invitations] = await connection.query(
       `SELECT i.*, c.client_name, COALESCE(cb.branch_name, c.branch) AS branch_name, cd.department_name
        FROM crms_change_request_invitations i
-       JOIN clients c ON c.id = i.client_id
-       LEFT JOIN client_branches cb ON cb.id = i.branch_id
-       LEFT JOIN client_departments cd ON cd.id = i.department_id
+       JOIN clients c ON c.id COLLATE utf8mb4_unicode_ci = i.client_id COLLATE utf8mb4_unicode_ci
+       LEFT JOIN client_branches cb ON cb.id COLLATE utf8mb4_unicode_ci = i.branch_id COLLATE utf8mb4_unicode_ci
+       LEFT JOIN client_departments cd ON cd.id COLLATE utf8mb4_unicode_ci = i.department_id COLLATE utf8mb4_unicode_ci
        WHERE i.invitation_token = ? LIMIT 1 FOR UPDATE`,
       [token],
     );
@@ -484,8 +484,8 @@ const submitClientChangeRequest = async (pool, { token, data, attachments = [], 
     // Resolve default senior developer
     const [seniorDevs] = await connection.query(
       `SELECT u.id FROM user_profiles u
-       LEFT JOIN user_module_roles umr ON umr.user_id = u.id AND umr.module_id = 'crms'
-       LEFT JOIN roles r ON r.id = umr.role_id
+       LEFT JOIN user_module_roles umr ON umr.user_id COLLATE utf8mb4_unicode_ci = u.id COLLATE utf8mb4_unicode_ci AND umr.module_id = 'crms'
+       LEFT JOIN roles r ON r.id COLLATE utf8mb4_unicode_ci = umr.role_id COLLATE utf8mb4_unicode_ci
        WHERE u.is_active = TRUE AND (COALESCE(r.code, u.role) = 'Teamlead' OR u.role = 'SuperAdmin')
        ORDER BY (u.role = 'SuperAdmin') DESC, u.created_at ASC LIMIT 1`,
     );
@@ -591,8 +591,8 @@ const submitClientChangeRequest = async (pool, { token, data, attachments = [], 
     try {
       const [leads] = await pool.query(
         `SELECT u.id FROM user_profiles u
-         LEFT JOIN user_module_roles umr ON umr.user_id = u.id AND umr.module_id = 'crms'
-         LEFT JOIN roles r ON r.id = umr.role_id
+         LEFT JOIN user_module_roles umr ON umr.user_id COLLATE utf8mb4_unicode_ci = u.id COLLATE utf8mb4_unicode_ci AND umr.module_id = 'crms'
+         LEFT JOIN roles r ON r.id COLLATE utf8mb4_unicode_ci = umr.role_id COLLATE utf8mb4_unicode_ci
          WHERE u.is_active = TRUE AND (COALESCE(r.code, u.role) IN ('Teamlead', 'SuperAdmin', 'Sales'))`,
       );
       const leadIds = leads.map(l => l.id);
@@ -815,10 +815,10 @@ const sendCompletionReport = async (pool, reportId, req) => {
             c.client_name, COALESCE(cb.branch_name, c.branch) AS branch_name,
             u.first_name AS am_first_name, u.last_name AS am_last_name
      FROM crms_completion_reports r
-     JOIN crms_change_requests cr ON cr.id = r.change_request_id
-     JOIN clients c ON c.id = cr.client_id
-     LEFT JOIN client_branches cb ON cb.id = cr.branch_id
-     JOIN user_profiles u ON u.id = r.account_manager_id
+     JOIN crms_change_requests cr ON cr.id COLLATE utf8mb4_unicode_ci = r.change_request_id COLLATE utf8mb4_unicode_ci
+     JOIN clients c ON c.id COLLATE utf8mb4_unicode_ci = cr.client_id COLLATE utf8mb4_unicode_ci
+     LEFT JOIN client_branches cb ON cb.id COLLATE utf8mb4_unicode_ci = cr.branch_id COLLATE utf8mb4_unicode_ci
+     JOIN user_profiles u ON u.id COLLATE utf8mb4_unicode_ci = r.account_manager_id COLLATE utf8mb4_unicode_ci
      WHERE r.id = ? LIMIT 1`,
     [reportId],
   );
@@ -933,11 +933,11 @@ const getCompletionReportForClient = async (pool, token) => {
             u.first_name AS am_first_name, u.last_name AS am_last_name, u.email AS am_email, u.phone_number AS am_phone,
             (r.token_expires_at <= NOW()) AS is_expired
      FROM crms_completion_reports r
-     JOIN crms_change_requests cr ON cr.id = r.change_request_id
-     JOIN clients c ON c.id = cr.client_id
-     LEFT JOIN client_branches cb ON cb.id = cr.branch_id
-     LEFT JOIN client_departments cd ON cd.id = cr.department_id
-     JOIN user_profiles u ON u.id = r.account_manager_id
+     JOIN crms_change_requests cr ON cr.id COLLATE utf8mb4_unicode_ci = r.change_request_id COLLATE utf8mb4_unicode_ci
+     JOIN clients c ON c.id COLLATE utf8mb4_unicode_ci = cr.client_id COLLATE utf8mb4_unicode_ci
+     LEFT JOIN client_branches cb ON cb.id COLLATE utf8mb4_unicode_ci = cr.branch_id COLLATE utf8mb4_unicode_ci
+     LEFT JOIN client_departments cd ON cd.id COLLATE utf8mb4_unicode_ci = cr.department_id COLLATE utf8mb4_unicode_ci
+     JOIN user_profiles u ON u.id COLLATE utf8mb4_unicode_ci = r.account_manager_id COLLATE utf8mb4_unicode_ci
      WHERE r.acceptance_token = ? LIMIT 1`,
     [token],
   );
@@ -1004,8 +1004,8 @@ const handleClientAction = async (pool, { token, actionType, explanation, req })
             cr.client_representative_name, cr.client_representative_phone, cr.client_representative_email,
             c.client_name
      FROM crms_completion_reports r
-     JOIN crms_change_requests cr ON cr.id = r.change_request_id
-     JOIN clients c ON c.id = cr.client_id
+     JOIN crms_change_requests cr ON cr.id COLLATE utf8mb4_unicode_ci = r.change_request_id COLLATE utf8mb4_unicode_ci
+     JOIN clients c ON c.id COLLATE utf8mb4_unicode_ci = cr.client_id COLLATE utf8mb4_unicode_ci
      WHERE r.acceptance_token = ? LIMIT 1`,
     [token],
   );
@@ -1084,7 +1084,7 @@ const requestClientOtp = async (pool, token, channel = 'sms', req) => {
     `SELECT r.*, cr.ticket_number, cr.client_representative_name,
             cr.client_representative_phone, cr.client_representative_email
      FROM crms_completion_reports r
-     JOIN crms_change_requests cr ON cr.id = r.change_request_id
+     JOIN crms_change_requests cr ON cr.id COLLATE utf8mb4_unicode_ci = r.change_request_id COLLATE utf8mb4_unicode_ci
      WHERE r.acceptance_token = ? LIMIT 1`,
     [token],
   );
@@ -1147,8 +1147,8 @@ const verifyOtpAndAccept = async (pool, { token, code, representativeName, desig
     `SELECT r.*, cr.ticket_number, cr.account_manager_id, cr.client_representative_name,
             cr.client_representative_phone, cr.client_representative_email, c.client_name
      FROM crms_completion_reports r
-     JOIN crms_change_requests cr ON cr.id = r.change_request_id
-     JOIN clients c ON c.id = cr.client_id
+     JOIN crms_change_requests cr ON cr.id COLLATE utf8mb4_unicode_ci = r.change_request_id COLLATE utf8mb4_unicode_ci
+     JOIN clients c ON c.id COLLATE utf8mb4_unicode_ci = cr.client_id COLLATE utf8mb4_unicode_ci
      WHERE r.acceptance_token = ? LIMIT 1`,
     [token],
   );
@@ -1247,8 +1247,8 @@ const verifySignatureAndAccept = async (pool, { token, signaturePath, representa
     `SELECT r.*, cr.ticket_number, cr.account_manager_id, cr.client_representative_name,
             cr.client_representative_phone, cr.client_representative_email, c.client_name
      FROM crms_completion_reports r
-     JOIN crms_change_requests cr ON cr.id = r.change_request_id
-     JOIN clients c ON c.id = cr.client_id
+     JOIN crms_change_requests cr ON cr.id COLLATE utf8mb4_unicode_ci = r.change_request_id COLLATE utf8mb4_unicode_ci
+     JOIN clients c ON c.id COLLATE utf8mb4_unicode_ci = cr.client_id COLLATE utf8mb4_unicode_ci
      WHERE r.acceptance_token = ? LIMIT 1`,
     [token],
   );
@@ -1332,7 +1332,7 @@ const verifySignatureAndAccept = async (pool, { token, signaturePath, representa
 const closeChangeRequest = async (pool, { changeRequestId, accountManagerId, closureNotes, user }) => {
   const [requests] = await pool.query(
     `SELECT cr.*, c.client_name FROM crms_change_requests cr
-     JOIN clients c ON c.id = cr.client_id
+     JOIN clients c ON c.id COLLATE utf8mb4_unicode_ci = cr.client_id COLLATE utf8mb4_unicode_ci
      WHERE cr.id = ? LIMIT 1`,
     [changeRequestId],
   );

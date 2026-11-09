@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useClients, useClientScope } from '@crms/hooks/useSupabaseData';
 import { useToast } from '@crms/hooks/use-toast';
 import { apiRequest } from '@crms/lib/apiRequest';
-import { Building2, User, Phone, Mail, Send, Save, Copy, Check, CheckCircle2, RefreshCw } from 'lucide-react';
+import { Building2, User, Phone, Mail, Send, Save, Copy, Check, CheckCircle2, RefreshCw, AlertCircle } from 'lucide-react';
 
 interface ClientRequestInitiationDialogProps {
   open: boolean;
@@ -36,6 +36,9 @@ export const ClientRequestInitiationDialog: React.FC<ClientRequestInitiationDial
   const [repPhone, setRepPhone] = useState('');
   const [repEmail, setRepEmail] = useState('');
 
+  const [formError, setFormError] = useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<{ [key: string]: string }>({});
+
   const [submitting, setSubmitting] = useState(false);
   const [createdResult, setCreatedResult] = useState<{
     invitation: any;
@@ -53,15 +56,29 @@ export const ClientRequestInitiationDialog: React.FC<ClientRequestInitiationDial
     setSelectedClientId(clientId);
     setSelectedBranchId('');
     setSelectedDepartmentId('');
+    setFieldErrors((prev) => {
+      const next = { ...prev };
+      delete next.client;
+      return next;
+    });
 
     const client = clients.find((c: any) => c.id === clientId);
     if (client) {
       const contactPerson = client.contact_person_name || client.contact_person || '';
       const contactPhone = client.contact_person_phone || client.contact_phone || '';
       const contactEmail = client.contact_person_email || client.contact_email || '';
-      if (contactPerson) setRepName(contactPerson);
-      if (contactPhone) setRepPhone(contactPhone);
-      if (contactEmail) setRepEmail(contactEmail);
+      if (contactPerson) {
+        setRepName(contactPerson);
+        setFieldErrors((prev) => { const next = { ...prev }; delete next.repName; return next; });
+      }
+      if (contactPhone) {
+        setRepPhone(contactPhone);
+        setFieldErrors((prev) => { const next = { ...prev }; delete next.repPhone; return next; });
+      }
+      if (contactEmail) {
+        setRepEmail(contactEmail);
+        setFieldErrors((prev) => { const next = { ...prev }; delete next.repEmail; return next; });
+      }
     }
   };
 
@@ -79,22 +96,29 @@ export const ClientRequestInitiationDialog: React.FC<ClientRequestInitiationDial
   };
 
   const validate = () => {
+    const errors: { [key: string]: string } = {};
     if (!selectedClientId) {
-      toast({ title: 'Validation Error', description: 'Please select a client.', variant: 'destructive' });
-      return false;
+      errors.client = 'Please select a registered client.';
     }
     if (!repName.trim()) {
-      toast({ title: 'Validation Error', description: 'Client representative name is required.', variant: 'destructive' });
-      return false;
+      errors.repName = 'Client representative name is required.';
     }
     if (!repPhone.trim()) {
-      toast({ title: 'Validation Error', description: 'Client representative phone number is required.', variant: 'destructive' });
+      errors.repPhone = 'Client representative phone number is required.';
+    }
+    if (!repEmail.trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(repEmail.trim())) {
+      errors.repEmail = 'A valid client representative email address is required.';
+    }
+
+    setFieldErrors(errors);
+    if (Object.keys(errors).length > 0) {
+      const firstError = Object.values(errors)[0];
+      setFormError(firstError);
+      toast({ title: 'Validation Error', description: firstError, variant: 'destructive' });
       return false;
     }
-    if (!repEmail.trim() || !repEmail.includes('@')) {
-      toast({ title: 'Validation Error', description: 'A valid client representative email is required.', variant: 'destructive' });
-      return false;
-    }
+
+    setFormError(null);
     return true;
   };
 
@@ -103,6 +127,7 @@ export const ClientRequestInitiationDialog: React.FC<ClientRequestInitiationDial
 
     try {
       setSubmitting(true);
+      setFormError(null);
       const res = await apiRequest('/api/crms/invitations', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -148,6 +173,7 @@ export const ClientRequestInitiationDialog: React.FC<ClientRequestInitiationDial
 
       if (onSuccess) onSuccess();
     } catch (err: any) {
+      setFormError(err.message || 'Failed to dispatch change request invitation.');
       toast({
         title: 'Operation Failed',
         description: err.message,
@@ -173,6 +199,8 @@ export const ClientRequestInitiationDialog: React.FC<ClientRequestInitiationDial
     setRepName('');
     setRepPhone('');
     setRepEmail('');
+    setFormError(null);
+    setFieldErrors({});
     setCreatedResult(null);
   };
 
@@ -197,6 +225,13 @@ export const ClientRequestInitiationDialog: React.FC<ClientRequestInitiationDial
             Initiate an official change request on behalf of your assigned client. A secure, single-use link will be generated for the designated client representative.
           </DialogDescription>
         </DialogHeader>
+
+        {formError && (
+          <div className="p-3 my-1 bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-900 rounded-lg text-red-700 dark:text-red-300 text-xs flex items-start gap-2">
+            <AlertCircle className="w-4 h-4 text-red-600 flex-shrink-0 mt-0.5" />
+            <span className="font-medium">{formError}</span>
+          </div>
+        )}
 
         {createdResult ? (
           <div className="space-y-4 py-3">
@@ -251,7 +286,7 @@ export const ClientRequestInitiationDialog: React.FC<ClientRequestInitiationDial
                 Select Client <span className="text-red-500">*</span>
               </Label>
               <Select value={selectedClientId} onValueChange={handleClientChange} disabled={loadingClients}>
-                <SelectTrigger id="clientSelect">
+                <SelectTrigger id="clientSelect" className={fieldErrors.client ? 'border-red-500 ring-1 ring-red-500' : ''}>
                   <SelectValue placeholder={loadingClients ? 'Loading clients...' : 'Choose registered client'} />
                 </SelectTrigger>
                 <SelectContent className="max-h-60">
@@ -267,6 +302,9 @@ export const ClientRequestInitiationDialog: React.FC<ClientRequestInitiationDial
                   })}
                 </SelectContent>
               </Select>
+              {fieldErrors.client && (
+                <p className="text-[11px] text-red-500 font-medium">{fieldErrors.client}</p>
+              )}
             </div>
 
             {/* Branch and Department */}
@@ -328,9 +366,18 @@ export const ClientRequestInitiationDialog: React.FC<ClientRequestInitiationDial
                   id="repName"
                   placeholder="e.g. John Doe"
                   value={repName}
-                  onChange={(e) => setRepName(e.target.value)}
+                  onChange={(e) => {
+                    setRepName(e.target.value);
+                    if (fieldErrors.repName) {
+                      setFieldErrors((prev) => { const next = { ...prev }; delete next.repName; return next; });
+                    }
+                  }}
+                  className={fieldErrors.repName ? 'border-red-500 ring-1 ring-red-500' : ''}
                   required
                 />
+                {fieldErrors.repName && (
+                  <p className="text-[11px] text-red-500 font-medium">{fieldErrors.repName}</p>
+                )}
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -342,9 +389,18 @@ export const ClientRequestInitiationDialog: React.FC<ClientRequestInitiationDial
                     id="repPhone"
                     placeholder="e.g. +254 712 345678"
                     value={repPhone}
-                    onChange={(e) => setRepPhone(e.target.value)}
+                    onChange={(e) => {
+                      setRepPhone(e.target.value);
+                      if (fieldErrors.repPhone) {
+                        setFieldErrors((prev) => { const next = { ...prev }; delete next.repPhone; return next; });
+                      }
+                    }}
+                    className={fieldErrors.repPhone ? 'border-red-500 ring-1 ring-red-500' : ''}
                     required
                   />
+                  {fieldErrors.repPhone && (
+                    <p className="text-[11px] text-red-500 font-medium">{fieldErrors.repPhone}</p>
+                  )}
                 </div>
 
                 <div className="space-y-1.5">
@@ -356,9 +412,18 @@ export const ClientRequestInitiationDialog: React.FC<ClientRequestInitiationDial
                     type="email"
                     placeholder="e.g. representative@client.com"
                     value={repEmail}
-                    onChange={(e) => setRepEmail(e.target.value)}
+                    onChange={(e) => {
+                      setRepEmail(e.target.value);
+                      if (fieldErrors.repEmail) {
+                        setFieldErrors((prev) => { const next = { ...prev }; delete next.repEmail; return next; });
+                      }
+                    }}
+                    className={fieldErrors.repEmail ? 'border-red-500 ring-1 ring-red-500' : ''}
                     required
                   />
+                  {fieldErrors.repEmail && (
+                    <p className="text-[11px] text-red-500 font-medium">{fieldErrors.repEmail}</p>
+                  )}
                 </div>
               </div>
             </div>
@@ -371,7 +436,17 @@ export const ClientRequestInitiationDialog: React.FC<ClientRequestInitiationDial
                 onClick={() => handleSubmit(false)}
                 className="w-full sm:w-auto"
               >
-                <Save className="w-4 h-4 mr-2" /> Save as Draft
+                {submitting ? (
+                  <>
+                    <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
+                    Saving Draft...
+                  </>
+                ) : (
+                  <>
+                    <Save className="w-4 h-4 mr-2" />
+                    Save as Draft
+                  </>
+                )}
               </Button>
               <Button
                 type="button"
@@ -380,11 +455,16 @@ export const ClientRequestInitiationDialog: React.FC<ClientRequestInitiationDial
                 className="w-full sm:w-auto bg-teal-700 hover:bg-teal-800 text-white"
               >
                 {submitting ? (
-                  <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
+                  <>
+                    <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
+                    Sending Invitation...
+                  </>
                 ) : (
-                  <Send className="w-4 h-4 mr-2" />
+                  <>
+                    <Send className="w-4 h-4 mr-2" />
+                    Send Invitation to Client
+                  </>
                 )}
-                Send Invitation to Client
               </Button>
             </DialogFooter>
           </div>

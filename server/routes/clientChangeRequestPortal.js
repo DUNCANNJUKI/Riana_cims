@@ -165,9 +165,9 @@ module.exports = function createClientChangeRequestPortalRouter({ pool, uploadsD
                 c.client_name, COALESCE(cb.branch_name, c.branch) AS branch_name,
                 i.invitation_token
          FROM crms_change_requests cr
-         JOIN clients c ON c.id = cr.client_id
-         LEFT JOIN client_branches cb ON cb.id = cr.branch_id
-         LEFT JOIN crms_change_request_invitations i ON i.id = cr.invitation_id
+         JOIN clients c ON c.id COLLATE utf8mb4_unicode_ci = cr.client_id COLLATE utf8mb4_unicode_ci
+         LEFT JOIN client_branches cb ON cb.id COLLATE utf8mb4_unicode_ci = cr.branch_id COLLATE utf8mb4_unicode_ci
+         LEFT JOIN crms_change_request_invitations i ON i.id COLLATE utf8mb4_unicode_ci = cr.invitation_id COLLATE utf8mb4_unicode_ci
          WHERE i.invitation_token = ? OR cr.ticket_number = ? LIMIT 1`,
         [req.params.token, req.params.token],
       );

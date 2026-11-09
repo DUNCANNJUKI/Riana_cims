@@ -14,6 +14,7 @@ import {
 import { cn } from "@crms/lib/utils";
 import { installAuthenticatedFetch } from "@crms/lib/authenticatedFetch";
 import { useRealtimeSubscription } from "@crms/hooks/useRealtimeSubscription";
+import { Toaster } from "@crms/components/ui/toaster";
 
 const preloadDashboard = () => import("@crms/pages/Dashboard");
 const preloadRequestList = () => import("@crms/pages/RequestList");
@@ -135,6 +136,7 @@ export function NativeDevelopersWorkspace({ userId, role }: NativeDevelopersWork
         </Routes>
         </Suspense>
       </div>
+      <Toaster />
     </section>
   );
 }

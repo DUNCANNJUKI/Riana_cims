@@ -852,10 +852,10 @@ module.exports = function createCrmsRouter({ pool, jwtSecret }) {
         `SELECT i.*, c.client_name, COALESCE(cb.branch_name, c.branch) AS branch_name, cd.department_name,
                 u.first_name AS am_first_name, u.last_name AS am_last_name, u.email AS am_email
          FROM crms_change_request_invitations i
-         JOIN clients c ON c.id = i.client_id
-         LEFT JOIN client_branches cb ON cb.id = i.branch_id
-         LEFT JOIN client_departments cd ON cd.id = i.department_id
-         JOIN user_profiles u ON u.id = i.account_manager_id
+         JOIN clients c ON c.id COLLATE utf8mb4_unicode_ci = i.client_id COLLATE utf8mb4_unicode_ci
+         LEFT JOIN client_branches cb ON cb.id COLLATE utf8mb4_unicode_ci = i.branch_id COLLATE utf8mb4_unicode_ci
+         LEFT JOIN client_departments cd ON cd.id COLLATE utf8mb4_unicode_ci = i.department_id COLLATE utf8mb4_unicode_ci
+         JOIN user_profiles u ON u.id COLLATE utf8mb4_unicode_ci = i.account_manager_id COLLATE utf8mb4_unicode_ci
          ${where}
          ORDER BY i.created_at DESC`,
         params,
@@ -934,7 +934,7 @@ module.exports = function createCrmsRouter({ pool, jwtSecret }) {
       const [rows] = await pool.query(
         `SELECT r.*, u.first_name AS am_first_name, u.last_name AS am_last_name
          FROM crms_completion_reports r
-         JOIN user_profiles u ON u.id = r.account_manager_id
+         JOIN user_profiles u ON u.id COLLATE utf8mb4_unicode_ci = r.account_manager_id COLLATE utf8mb4_unicode_ci
          WHERE r.change_request_id = ?
          ORDER BY r.version_number DESC`,
         [requestId],
