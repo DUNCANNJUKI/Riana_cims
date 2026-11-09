@@ -101,38 +101,63 @@ deploy:
     - |
       ssh -tt -p 1625 $CX_SERVER_USER@$CX_SERVER_HOST << 'EOF'
         cd /var/www/riana-cims/cms
+
+        echo "=== Locating Node, NPM, and PM2 runtimes ==="
+        export PATH="/root/.nvm/versions/node/v23.6.0/bin:$HOME/.nvm/versions/node/v23.6.0/bin:/usr/local/bin:/usr/bin:/bin:$PATH"
+        NODE_BIN=$(which node 2>/dev/null || sudo find /root/.nvm /home /usr -name node -type f -executable 2>/dev/null | head -n 1 || which node)
+        if [ -n "$NODE_BIN" ]; then
+          NODE_DIR=$(dirname "$NODE_BIN")
+          export PATH="$NODE_DIR:$PATH"
+          echo "Discovered Node at: $NODE_BIN ($NODE_DIR)"
+          sudo ln -sf "$NODE_BIN" /usr/local/bin/node 2>/dev/null || true
+          [ -f "$NODE_DIR/npm" ] && sudo ln -sf "$NODE_DIR/npm" /usr/local/bin/npm 2>/dev/null || true
+          [ -f "$NODE_DIR/pm2" ] && sudo ln -sf "$NODE_DIR/pm2" /usr/local/bin/pm2 2>/dev/null || true
+        fi
+        PM2_BIN=$(which pm2 2>/dev/null || echo "/usr/local/bin/pm2")
+        echo "Using Node: $(which node 2>/dev/null || echo "$NODE_BIN")"
+        echo "Using PM2: $PM2_BIN"
+
         echo "=== Deploy - Installing API production dependencies ==="
         npm --prefix server ci --omit=dev
+
         echo "=== Deploy - Creating and verifying a database backup ==="
         mkdir -p server/backups
         chmod 700 server/backups
         node server/scripts/verify-backup.cjs
         find server/backups -maxdepth 1 -type f -name '*.sql' -exec chmod 600 {} +
+
         echo "=== Deploy - Applying missing communication migrations ==="
         COMMUNICATION_MIGRATION_BACKUP_VERIFIED=true node server/scripts/apply-communication-migrations.cjs
+
         echo "=== Deploy - Restarting the API ==="
-        PM2_BIN=$(which pm2 2>/dev/null || find /root/.nvm /usr/local /usr/bin -name pm2 2>/dev/null | head -n 1 || echo "/root/.nvm/versions/node/v23.6.0/bin/pm2")
-        echo "Using PM2 binary: $PM2_BIN"
-        sudo env APP_RELEASE="$APP_RELEASE" "$PM2_BIN" restart ecosystem.config.cjs --only riana-cims --env production --update-env || sudo env APP_RELEASE="$APP_RELEASE" "$PM2_BIN" restart riana-cims --update-env || sudo env APP_RELEASE="$APP_RELEASE" "$PM2_BIN" start ecosystem.config.cjs --only riana-cims --env production || true
-        sudo "$PM2_BIN" save || true
+        APP_RELEASE="\${CI_COMMIT_SHORT_SHA:-production}"
+        sudo env "PATH=$PATH" APP_RELEASE="$APP_RELEASE" "$PM2_BIN" restart ecosystem.config.cjs --only riana-cims --env production --update-env || \
+        sudo env "PATH=$PATH" APP_RELEASE="$APP_RELEASE" "$PM2_BIN" restart riana-cims --update-env || \
+        sudo env "PATH=$PATH" APP_RELEASE="$APP_RELEASE" "$PM2_BIN" start ecosystem.config.cjs --only riana-cims --env production || \
+        "$PM2_BIN" restart ecosystem.config.cjs --only riana-cims --env production --update-env || true
+        sudo env "PATH=$PATH" "$PM2_BIN" save 2>/dev/null || "$PM2_BIN" save || true
+
         echo "=== Ensuring Nginx CSP allows WebAssembly ==="
-        sudo sed -i -E "s/script-src 'self'( 'unsafe-eval')?/script-src 'self' 'wasm-unsafe-eval'/g" /etc/nginx/sites-available/* /etc/nginx/sites-enabled/* /etc/nginx/conf.d/* /etc/nginx/nginx.conf 2>/dev/null || true
+        sudo find /etc/nginx -type f \( -name "*.conf" -o -name "*cims*" -o -name "*default*" -o -name "nginx.conf" \) -exec sed -i -E "s/script-src 'self'( 'unsafe-eval')?/script-src 'self' 'wasm-unsafe-eval'/g" {} + 2>/dev/null || true
         sudo nginx -t && (sudo systemctl reload nginx || sudo service nginx reload) || true
+
+        echo "=== Verifying host localhost:8081 CSP and API health ==="
+        curl -s -I http://127.0.0.1:8081/api/health || true
+
         echo "=== Writing CSP diagnostics to dist/csp-debug.txt ==="
         {
           echo "=== PM2 DESCRIBE ==="
-          sudo "$PM2_BIN" describe riana-cims | grep -E "script path|exec cwd|status|uptime" || true
+          sudo env "PATH=$PATH" "$PM2_BIN" describe riana-cims 2>/dev/null | grep -E "script path|exec cwd|status|uptime" || true
           echo "=== CURL LOCALHOST 8081 ==="
-          curl -s -I http://127.0.0.1:8081
+          curl -s -I http://127.0.0.1:8081 || true
           echo "=== NGINX CSP GREP ==="
-          grep -rn "Content-Security-Policy" /etc/nginx/ || true
+          grep -rn "Content-Security-Policy" /etc/nginx/ 2>/dev/null || true
           echo "=== FILE apiSecurity.js LINE ==="
           grep -n "Content-Security-Policy" /var/www/riana-cims/cms/server/security/apiSecurity.js || true
-        } > /var/www/riana-cims/cms/dist/csp-debug.txt 2>&1 || true
-        # echo "=== Deploy - Verifying API health ==="
-        # node server/scripts/verify-production-runtime.cjs
+        } | sudo tee /var/www/riana-cims/cms/dist/csp-debug.txt >/dev/null 2>&1 || true
+
         echo "=== Deploy complete ==="
-        sudo "$PM2_BIN" list || true
+        sudo env "PATH=$PATH" "$PM2_BIN" list 2>/dev/null || "$PM2_BIN" list || true
         exit 0
       EOF
   only:

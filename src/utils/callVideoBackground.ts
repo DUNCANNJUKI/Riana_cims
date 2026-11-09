@@ -33,17 +33,40 @@ const drawCover = (
   context.drawImage(source, sx, sy, cropWidth, cropHeight, 0, 0, width, height);
 };
 
+export const drawExactOriented = (
+  context: CanvasRenderingContext2D,
+  source: CanvasImageSource,
+  canvasWidth: number,
+  canvasHeight: number,
+  rotation: number = 0,
+  mirror: boolean = false,
+) => {
+  context.save();
+  if (mirror) {
+    context.translate(canvasWidth, 0);
+    context.scale(-1, 1);
+  }
+  const normalizedRotation = ((rotation % 360) + 360) % 360;
+  if (normalizedRotation !== 0) {
+    context.translate(canvasWidth / 2, canvasHeight / 2);
+    context.rotate((normalizedRotation * Math.PI) / 180);
+    const isSideways = normalizedRotation === 90 || normalizedRotation === 270;
+    const drawW = isSideways ? canvasHeight : canvasWidth;
+    const drawH = isSideways ? canvasWidth : canvasHeight;
+    context.drawImage(source, -drawW / 2, -drawH / 2, drawW, drawH);
+  } else {
+    context.drawImage(source, 0, 0, canvasWidth, canvasHeight);
+  }
+  context.restore();
+};
+
 const drawExactMirrored = (
   context: CanvasRenderingContext2D,
   source: CanvasImageSource,
   width: number,
   height: number,
 ) => {
-  context.save();
-  context.translate(width, 0);
-  context.scale(-1, 1);
-  context.drawImage(source, 0, 0, width, height);
-  context.restore();
+  drawExactOriented(context, source, width, height, 0, true);
 };
 
 const waitForVideo = async (video: HTMLVideoElement) => {
@@ -271,7 +294,83 @@ export function isWebAssemblySupported(): boolean {
   return false;
 }
 
-export async function createCallVideoBackground(track: MediaStreamTrack, effect: CallVideoBackground): Promise<BackgroundPipeline> {
+export async function createRotatedVideoTrack(
+  track: MediaStreamTrack,
+  rotation: number = 0,
+  mirror: boolean = true,
+): Promise<BackgroundPipeline> {
+  const normalizedRotation = ((rotation % 360) + 360) % 360;
+  if (normalizedRotation === 0 && !mirror) {
+    return { track, stop: () => undefined };
+  }
+
+  const video = document.createElement("video");
+  video.muted = true;
+  video.playsInline = true;
+  video.srcObject = new MediaStream([track]);
+  try {
+    await video.play();
+    await waitForVideo(video);
+  } catch (error) {
+    video.srcObject = null;
+    throw error;
+  }
+
+  const rawWidth = video.videoWidth || track.getSettings().width || 1280;
+  const rawHeight = video.videoHeight || track.getSettings().height || 720;
+  const isSideways = normalizedRotation === 90 || normalizedRotation === 270;
+  const width = isSideways ? rawHeight : rawWidth;
+  const height = isSideways ? rawWidth : rawHeight;
+
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const context = canvas.getContext("2d", { alpha: false });
+  if (!context || typeof canvas.captureStream !== "function") {
+    video.srcObject = null;
+    throw new Error("This browser does not support canvas camera rotation.");
+  }
+  context.imageSmoothingEnabled = true;
+  context.imageSmoothingQuality = "high";
+
+  let stopped = false;
+  let frameId = 0;
+  let previousFrameAt = 0;
+  let lastVideoTime = -1;
+
+  drawExactOriented(context, video, width, height, normalizedRotation, mirror);
+  const captured = canvas.captureStream(30);
+  const outputTrack = captured.getVideoTracks()[0];
+
+  const renderFrame = (now: number) => {
+    if (stopped) return;
+    frameId = requestAnimationFrame(renderFrame);
+    if (now - previousFrameAt < 28 || video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA || video.currentTime === lastVideoTime) return;
+    previousFrameAt = now;
+    lastVideoTime = video.currentTime;
+    drawExactOriented(context, video, width, height, normalizedRotation, mirror);
+  };
+  frameId = requestAnimationFrame(renderFrame);
+
+  return {
+    track: outputTrack,
+    stop: () => {
+      if (stopped) return;
+      stopped = true;
+      cancelAnimationFrame(frameId);
+      captured.getTracks().forEach(t => t.stop());
+      video.pause();
+      video.srcObject = null;
+    },
+  };
+}
+
+export async function createCallVideoBackground(
+  track: MediaStreamTrack,
+  effect: CallVideoBackground,
+  rotation: number = 0,
+  mirror: boolean = true,
+): Promise<BackgroundPipeline> {
   if (!isWebAssemblySupported()) {
     throw new Error("Virtual background requires WebAssembly execution, which is restricted in this browser session. Please refresh the page.");
   }
@@ -316,8 +415,12 @@ export async function createCallVideoBackground(track: MediaStreamTrack, effect:
   }
 
   // Preserve the camera's exact native aspect ratio so the participant is never zoomed, stretched, or cropped.
-  const sourceWidth = video.videoWidth || track.getSettings().width || 960;
-  const sourceHeight = video.videoHeight || track.getSettings().height || 540;
+  const normalizedRotation = ((rotation % 360) + 360) % 360;
+  const isSideways = normalizedRotation === 90 || normalizedRotation === 270;
+  const rawSourceWidth = video.videoWidth || track.getSettings().width || 960;
+  const rawSourceHeight = video.videoHeight || track.getSettings().height || 540;
+  const sourceWidth = isSideways ? rawSourceHeight : rawSourceWidth;
+  const sourceHeight = isSideways ? rawSourceWidth : rawSourceHeight;
   const resolutionScale = Math.min(1, 960 / Math.max(sourceWidth, sourceHeight));
   const width = Math.max(1, Math.round(sourceWidth * resolutionScale));
   const height = Math.max(1, Math.round(sourceHeight * resolutionScale));
@@ -366,7 +469,7 @@ export async function createCallVideoBackground(track: MediaStreamTrack, effect:
   }
 
   const prevAlphaBufferRef: { current: Float32Array | null } = { current: null };
-  drawExactMirrored(context, video, width, height);
+  drawExactOriented(context, video, width, height, normalizedRotation, mirror);
   const captured = canvas.captureStream(30);
   const outputTrack = captured.getVideoTracks()[0];
   let frameId = 0;
@@ -391,16 +494,16 @@ export async function createCallVideoBackground(track: MediaStreamTrack, effect:
           } else {
             context.save();
             context.filter = "blur(18px)";
-            drawExactMirrored(context, video, width, height);
+            drawExactOriented(context, video, width, height, normalizedRotation, mirror);
             context.restore();
           }
 
           // Layer 2A: Extract pure interior person pixels onto coreCanvas (exact 1:1 camera framing, zero crop)
           coreContext.globalCompositeOperation = "source-over";
           coreContext.clearRect(0, 0, width, height);
-          drawExactMirrored(coreContext, video, width, height);
+          drawExactOriented(coreContext, video, width, height, normalizedRotation, mirror);
           coreContext.globalCompositeOperation = "destination-in";
-          drawExactMirrored(coreContext, coreMaskCanvas, width, height);
+          drawExactOriented(coreContext, coreMaskCanvas, width, height, normalizedRotation, mirror);
           coreContext.globalCompositeOperation = "source-over";
 
           // Layer 2B: Radially smooth 1.5px color extension from pure core followed by sharp core
@@ -415,7 +518,7 @@ export async function createCallVideoBackground(track: MediaStreamTrack, effect:
 
           foregroundContext.globalCompositeOperation = "destination-in";
           foregroundContext.filter = "blur(0.65px)";
-          drawExactMirrored(foregroundContext, fullMaskCanvas, width, height);
+          drawExactOriented(foregroundContext, fullMaskCanvas, width, height, normalizedRotation, mirror);
           foregroundContext.filter = "none";
           foregroundContext.globalCompositeOperation = "source-over";
 

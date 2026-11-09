@@ -8,14 +8,14 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { X, Send, Check, CheckCheck, Search, Users, UserPlus, MessageSquare, Phone, Video, VideoOff, Paperclip, Download, Image as ImageIcon, FileText, Reply, PhoneOff, Mic, MicOff, MonitorUp, MoreVertical, MoreHorizontal, RotateCw, Copy, SmilePlus, Edit3, Trash2, BellOff, ScreenShare, ScreenShareOff, LayoutGrid, PanelTop, Settings2, Maximize2, Minimize2, Minus, Hand, Pin, PinOff, PictureInPicture2, ChevronLeft, ChevronRight, CircleDot, Square, Film, Play, Upload, ShieldAlert, PanelLeftClose, PanelLeftOpen } from "lucide-react";
+import { X, Send, Check, CheckCheck, Search, Users, UserPlus, MessageSquare, Phone, Video, VideoOff, Paperclip, Download, Image as ImageIcon, FileText, Reply, PhoneOff, Mic, MicOff, MonitorUp, MoreVertical, MoreHorizontal, RotateCw, FlipHorizontal, Copy, SmilePlus, Edit3, Trash2, BellOff, ScreenShare, ScreenShareOff, LayoutGrid, PanelTop, Settings2, Maximize2, Minimize2, Minus, Hand, Pin, PinOff, PictureInPicture2, ChevronLeft, ChevronRight, CircleDot, Square, Film, Play, Upload, ShieldAlert, PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
 import { resolveAvatarUrl } from "@/utils/avatar";
 import { isHostedPlaceholderMessage, stripHostedPlaceholderLines } from "@/utils/chatMessageVisibility";
 import { useToast } from "@/hooks/use-toast";
 import { playCallHangupSound, playCallPickupSound, playCallRingSound } from "@/utils/notificationSound";
-import { CALL_VIDEO_BACKGROUND_OPTIONS, createCallVideoBackground, type CallVideoBackground } from "@/utils/callVideoBackground";
+import { CALL_VIDEO_BACKGROUND_OPTIONS, createCallVideoBackground, createRotatedVideoTrack, type CallVideoBackground } from "@/utils/callVideoBackground";
 import { startCallRecordingSession, type CallRecordingSession } from "@/utils/callRecordingComposer";
 
 const formatRecordingDuration = (seconds?: number | null) => {
@@ -189,6 +189,28 @@ export const ChatModule = ({ currentUser, chat, onClose, onMinimize, onToggleFul
   const [isCameraEnabled, setIsCameraEnabled] = useState(true);
   const [hasLiveLocalVideo, setHasLiveLocalVideo] = useState(false);
   const [isScreenSharing, setIsScreenSharing] = useState(false);
+  const [cameraRotation, setCameraRotation] = useState<0 | 90 | 180 | 270>(() => {
+    try {
+      const saved = Number(localStorage.getItem("riana_cims_camera_rotation"));
+      return saved === 90 || saved === 180 || saved === 270 ? (saved as 0 | 90 | 180 | 270) : 0;
+    } catch {
+      return 0;
+    }
+  });
+  const cameraRotationRef = useRef<0 | 90 | 180 | 270>(cameraRotation);
+  cameraRotationRef.current = cameraRotation;
+
+  const [cameraFacingMode, setCameraFacingMode] = useState<"user" | "environment">(() => {
+    try {
+      const saved = localStorage.getItem("riana_cims_camera_facing");
+      return saved === "environment" ? "environment" : "user";
+    } catch {
+      return "user";
+    }
+  });
+  const cameraFacingModeRef = useRef<"user" | "environment">(cameraFacingMode);
+  cameraFacingModeRef.current = cameraFacingMode;
+
   const [callVideoBackground, setCallVideoBackground] = useState<CallVideoBackground | "none">("none");
   const [isChangingCallBackground, setIsChangingCallBackground] = useState(false);
   const [activeSpeakerId, setActiveSpeakerId] = useState<string | null>(null);
@@ -784,21 +806,25 @@ export const ChatModule = ({ currentUser, chat, onClose, onMinimize, onToggleFul
   };
 
   const createOutgoingVideoTrack = async (sourceTrack: MediaStreamTrack) => {
-    if (callVideoBackgroundRef.current === "none") return { track: sourceTrack, stop: () => undefined };
-    return createCallVideoBackground(sourceTrack, callVideoBackgroundRef.current);
+    const rotation = cameraRotationRef.current;
+    if (callVideoBackgroundRef.current === "none") {
+      if (rotation === 0) return { track: sourceTrack, stop: () => undefined };
+      return createRotatedVideoTrack(sourceTrack, rotation, true);
+    }
+    return createCallVideoBackground(sourceTrack, callVideoBackgroundRef.current, rotation, true);
   };
 
   const openMedia = async (withVideo: boolean) => {
     if (!navigator.mediaDevices?.getUserMedia) throw new Error("This browser does not support secure audio/video calling.");
     const stream = await navigator.mediaDevices.getUserMedia({
       audio: { deviceId: audioInputDeviceId ? { exact: audioInputDeviceId } : undefined, echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: { ideal: 1 } },
-      video: withVideo ? { ...(videoInputDeviceId ? { deviceId: { exact: videoInputDeviceId } } : { facingMode: { ideal: "user" } }), width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 24, max: 30 } } : false,
+      video: withVideo ? { ...(videoInputDeviceId ? { deviceId: { exact: videoInputDeviceId } } : { facingMode: { ideal: cameraFacingModeRef.current } }), width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 24, max: 30 } } : false,
     });
     const audioTrack = stream.getAudioTracks()[0];
     const sourceVideoTrack = stream.getVideoTracks()[0];
     sourceCameraTrackRef.current = sourceVideoTrack || null;
     let outgoingVideoTrack = sourceVideoTrack;
-    if (sourceVideoTrack && callVideoBackgroundRef.current !== "none") {
+    if (sourceVideoTrack) {
       try {
         const processor = await createOutgoingVideoTrack(sourceVideoTrack);
         outgoingVideoTrack = processor.track;
@@ -838,12 +864,34 @@ export const ChatModule = ({ currentUser, chat, onClose, onMinimize, onToggleFul
     return outgoingStream;
   };
 
-  const replaceLocalDeviceTrack = async (kind: "audio" | "video", deviceId: string) => {
+  const replaceLocalDeviceTrack = async (kind: "audio" | "video", deviceId: string, preferredFacing?: "user" | "environment") => {
     if (!activeCall || !navigator.mediaDevices?.getUserMedia) return;
     const requestId = videoBackgroundRequestRef.current;
-    const stream = await navigator.mediaDevices.getUserMedia(kind === "audio"
-      ? { audio: { deviceId: deviceId ? { exact: deviceId } : undefined, echoCancellation: true, noiseSuppression: true, autoGainControl: true }, video: false }
-      : { audio: false, video: { ...(deviceId ? { deviceId: { exact: deviceId } } : { facingMode: { ideal: "user" } }), width: { ideal: 1280 }, height: { ideal: 720 } } });
+    const targetFacing = preferredFacing || cameraFacingModeRef.current;
+    let stream: MediaStream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia(kind === "audio"
+        ? { audio: { deviceId: deviceId ? { exact: deviceId } : undefined, echoCancellation: true, noiseSuppression: true, autoGainControl: true }, video: false }
+        : {
+            audio: false,
+            video: deviceId
+              ? { deviceId: { ideal: deviceId }, width: { ideal: 1280 }, height: { ideal: 720 } }
+              : { facingMode: { ideal: targetFacing }, width: { ideal: 1280 }, height: { ideal: 720 } },
+          });
+    } catch {
+      if (kind === "video") {
+        try {
+          stream = await navigator.mediaDevices.getUserMedia({
+            audio: false,
+            video: { facingMode: targetFacing },
+          });
+        } catch {
+          stream = await navigator.mediaDevices.getUserMedia({ audio: false, video: true });
+        }
+      } else {
+        stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+      }
+    }
     const sourceReplacement = kind === "audio" ? stream.getAudioTracks()[0] : stream.getVideoTracks()[0];
     if (!sourceReplacement) throw new Error(`The selected ${kind === "audio" ? "microphone" : "camera"} is unavailable.`);
     if (requestId !== videoBackgroundRequestRef.current) { sourceReplacement.stop(); return; }
@@ -918,12 +966,74 @@ export const ChatModule = ({ currentUser, chat, onClose, onMinimize, onToggleFul
   };
 
   const switchCamera = async () => {
+    if (!activeCall || isChangingCallBackground) return;
     const cameras = mediaDevices.filter(device => device.kind === "videoinput");
-    if (cameras.length < 2) return;
-    const currentId = sourceCameraTrackRef.current?.getSettings().deviceId || videoInputDeviceId;
-    const currentIndex = cameras.findIndex(device => device.deviceId === currentId);
-    const next = cameras[(currentIndex + 1 + cameras.length) % cameras.length];
-    if (next) await changeInputDevice("video", next.deviceId);
+    const nextFacing = cameraFacingModeRef.current === "user" ? "environment" : "user";
+    cameraFacingModeRef.current = nextFacing;
+    setCameraFacingMode(nextFacing);
+    try {
+      localStorage.setItem("riana_cims_camera_facing", nextFacing);
+    } catch {
+      // Ignore
+    }
+
+    if (cameras.length >= 2) {
+      const currentId = sourceCameraTrackRef.current?.getSettings().deviceId || videoInputDeviceId;
+      const currentIndex = cameras.findIndex(device => device.deviceId === currentId);
+      const nextDevice = cameras[(currentIndex + 1 + cameras.length) % cameras.length];
+      if (nextDevice) {
+        await changeInputDevice("video", nextDevice.deviceId);
+        return;
+      }
+    }
+
+    setIsChangingCallBackground(true);
+    try {
+      await replaceLocalDeviceTrack("video", "", nextFacing);
+    } catch (error) {
+      setCallError(error instanceof Error ? error.message : "Unable to switch camera.");
+    } finally {
+      setIsChangingCallBackground(false);
+    }
+  };
+
+  const rotateCamera = async () => {
+    const nextRotation = ((cameraRotationRef.current + 90) % 360) as 0 | 90 | 180 | 270;
+    cameraRotationRef.current = nextRotation;
+    setCameraRotation(nextRotation);
+    try {
+      localStorage.setItem("riana_cims_camera_rotation", String(nextRotation));
+    } catch {
+      // Ignore
+    }
+
+    const sourceTrack = sourceCameraTrackRef.current;
+    if (!sourceTrack || !activeCall) return;
+
+    setIsChangingCallBackground(true);
+    let preparedProcessor: { track: MediaStreamTrack; stop: () => void } | null = null;
+    try {
+      preparedProcessor = await createOutgoingVideoTrack(sourceTrack);
+      const previousTrack = localStreamRef.current?.getVideoTracks()[0];
+      await Promise.all(Array.from(peerRefs.current.values()).map(async connection => {
+        const sender = connection.getSenders().find(item => item.track?.kind === "video");
+        if (sender) await sender.replaceTrack(preparedProcessor!.track);
+      }));
+      if (!localStreamRef.current) localStreamRef.current = new MediaStream();
+      if (previousTrack) localStreamRef.current.removeTrack(previousTrack);
+      localStreamRef.current.addTrack(preparedProcessor.track);
+      if (previousTrack && previousTrack !== sourceTrack) previousTrack.stop();
+      videoBackgroundStopRef.current();
+      videoBackgroundStopRef.current = preparedProcessor.stop;
+      preparedProcessor = null;
+      setLocalStream(new MediaStream(localStreamRef.current.getTracks()));
+      setCallError(null);
+    } catch (error) {
+      preparedProcessor?.stop();
+      setCallError(error instanceof Error ? error.message : "Unable to rotate camera orientation.");
+    } finally {
+      setIsChangingCallBackground(false);
+    }
   };
 
   const changeCallVideoBackground = async (background: CallVideoBackground | "none") => {
@@ -942,8 +1052,10 @@ export const ChatModule = ({ currentUser, chat, onClose, onMinimize, onToggleFul
     let preparedProcessor: { track: MediaStreamTrack; stop: () => void } | null = null;
     try {
       preparedProcessor = background === "none"
-        ? { track: sourceTrack, stop: () => undefined }
-        : await createCallVideoBackground(sourceTrack, background);
+        ? (cameraRotationRef.current === 0
+            ? { track: sourceTrack, stop: () => undefined }
+            : await createRotatedVideoTrack(sourceTrack, cameraRotationRef.current, true))
+        : await createCallVideoBackground(sourceTrack, background, cameraRotationRef.current, true);
       if (requestId !== videoBackgroundRequestRef.current || sourceTrack.readyState !== "live") {
         preparedProcessor.stop();
         return;
@@ -1941,7 +2053,40 @@ export const ChatModule = ({ currentUser, chat, onClose, onMinimize, onToggleFul
                     </div>
                   </div>
                 )}
-                {callError && <p className="mb-3 rounded-lg border border-destructive/20 bg-destructive/10 px-3 py-2 text-xs text-destructive">{callError}</p>}
+                {callError && (
+                  <div className="mb-3 flex items-center justify-between gap-2 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive shadow-sm" role="alert">
+                    <div className="flex items-center gap-2">
+                      <ShieldAlert className="h-4 w-4 shrink-0 text-destructive" />
+                      <span>{callError}</span>
+                    </div>
+                    <div className="flex shrink-0 items-center gap-1.5">
+                      {callVideoBackground !== "none" && (
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          className="h-6 border-destructive/40 bg-background/80 px-2 text-[11px] text-destructive hover:bg-destructive/10"
+                          onClick={() => {
+                            void changeCallVideoBackground("none");
+                            setCallError(null);
+                          }}
+                        >
+                          Use standard camera
+                        </Button>
+                      )}
+                      <Button
+                        type="button"
+                        size="icon"
+                        variant="ghost"
+                        className="h-6 w-6 text-destructive/80 hover:bg-destructive/20 hover:text-destructive"
+                        onClick={() => setCallError(null)}
+                        title="Dismiss notice"
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
+                  </div>
+                )}
                 {!localStream?.getTracks().some(track => track.readyState === "live") && <Button type="button" size="sm" className="mb-3 rounded-full" onClick={() => void rejoinCallMedia()}><Video className="mr-2 h-4 w-4" />Reconnect camera and microphone</Button>}
                 <div className="mb-2.5 flex min-w-0 flex-nowrap items-center gap-1.5 overflow-x-auto rounded-xl border border-[hsl(var(--comm-border))] bg-background/90 px-2 py-1.5 shadow-sm backdrop-blur-md sm:px-2.5" role="toolbar" aria-label="Call controls">
                   {/* Group 1: Audio and video */}
@@ -2036,8 +2181,17 @@ export const ChatModule = ({ currentUser, chat, onClose, onMinimize, onToggleFul
                         <DropdownMenuItem onSelect={handleMeetingChatToggle}><MessageSquare className="mr-2 h-4 w-4" />Meeting chat</DropdownMenuItem>
                         <DropdownMenuSeparator />
                         <DropdownMenuItem onSelect={() => setShowDeviceSettings(value => { const next = !value; if (next) { setIsDesktopParticipantsOpen(false); setShowInvitePanel(false); setIsDesktopChatOpen(false); setShowRecordingsPanel(false); } return next; })}><Settings2 className="mr-2 h-4 w-4" />Device & background settings</DropdownMenuItem>
-                        {activeCall.call_type === "video" && mediaDevices.filter(device => device.kind === "videoinput").length > 1 && (
-                          <DropdownMenuItem disabled={isChangingCallBackground} onSelect={() => void switchCamera()}><RotateCw className="mr-2 h-4 w-4" />Switch camera</DropdownMenuItem>
+                        {activeCall.call_type === "video" && (
+                          <>
+                            <DropdownMenuItem disabled={isChangingCallBackground} onSelect={() => void rotateCamera()}>
+                              <RotateCw className="mr-2 h-4 w-4" />
+                              Rotate camera ({cameraRotation}°)
+                            </DropdownMenuItem>
+                            <DropdownMenuItem disabled={isChangingCallBackground} onSelect={() => void switchCamera()}>
+                              <FlipHorizontal className="mr-2 h-4 w-4" />
+                              Switch camera {cameraFacingMode === "user" ? "(rear)" : "(front)"}
+                            </DropdownMenuItem>
+                          </>
                         )}
                         {activeCall.call_type === "video" && (
                           <DropdownMenuItem onSelect={() => setIsSelfViewPip(value => !value)}><PictureInPicture2 className="mr-2 h-4 w-4" />{isSelfViewPip ? "Dock self view in gallery" : "Float self view (PiP)"}</DropdownMenuItem>
@@ -2164,6 +2318,32 @@ export const ChatModule = ({ currentUser, chat, onClose, onMinimize, onToggleFul
                         <option value="">System default</option>
                         {mediaDevices.filter(device => device.kind === "videoinput").map((device, index) => <option key={device.deviceId || `video-${index}`} value={device.deviceId}>{device.label || `Camera ${index + 1}`}</option>)}
                       </select>
+                      <div className="mt-1 flex items-center gap-1.5">
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          className="flex-1 h-8 text-xs font-medium"
+                          disabled={isChangingCallBackground}
+                          onClick={() => void rotateCamera()}
+                          title="Rotate camera feed 90 degrees clockwise"
+                        >
+                          <RotateCw className="mr-1.5 h-3.5 w-3.5" />
+                          Rotate ({cameraRotation}°)
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          className="flex-1 h-8 text-xs font-medium"
+                          disabled={isChangingCallBackground}
+                          onClick={() => void switchCamera()}
+                          title="Switch camera device or toggle facing mode"
+                        >
+                          <FlipHorizontal className="mr-1.5 h-3.5 w-3.5" />
+                          Switch
+                        </Button>
+                      </div>
                     </div>}
                     {activeCall.call_type === "video" && <div className="grid min-w-0 content-start gap-1 text-xs font-semibold text-muted-foreground">
                       <label htmlFor="call-video-background">Change Background</label>
@@ -2205,17 +2385,36 @@ export const ChatModule = ({ currentUser, chat, onClose, onMinimize, onToggleFul
                     onPointerCancel={() => { pipDragRef.current = null; }}
                   >
                     {activeCall.call_type === "video" && hasLiveLocalVideo ? (
-                      <video
-                        ref={attachLocalVideoElement}
-                        autoPlay
-                        muted
-                        playsInline
-                        aria-label={isScreenSharing ? "Your shared screen preview" : "Your video preview"}
-                        className={cn(
-                          "h-full w-full rounded-lg bg-slate-950 object-contain object-center",
-                          !isScreenSharing && callVideoBackground === "none" && "-scale-x-100",
-                        )}
-                      />
+                      <>
+                        <video
+                          ref={attachLocalVideoElement}
+                          autoPlay
+                          muted
+                          playsInline
+                          aria-label={isScreenSharing ? "Your shared screen preview" : "Your video preview"}
+                          className={cn(
+                            "h-full w-full rounded-lg bg-slate-950 object-contain object-center",
+                            !isScreenSharing && callVideoBackground === "none" && cameraRotation === 0 && "-scale-x-100",
+                          )}
+                        />
+                        <div className="absolute top-2.5 right-2.5 z-20 flex items-center gap-1.5">
+                          <Button
+                            type="button"
+                            size="icon"
+                            variant="secondary"
+                            className="h-7 w-7 rounded-full border border-white/20 bg-slate-950/75 text-white shadow-md backdrop-blur-md transition-colors hover:bg-slate-900"
+                            onClick={event => {
+                              event.stopPropagation();
+                              void rotateCamera();
+                            }}
+                            disabled={isChangingCallBackground}
+                            title={`Rotate camera 90° (currently ${cameraRotation}°)`}
+                            aria-label="Rotate camera 90 degrees"
+                          >
+                            <RotateCw className="h-3.5 w-3.5" />
+                          </Button>
+                        </div>
+                      </>
                     ) : activeCall.call_type === "video" ? (
                       <div className="flex h-full w-full min-h-32 flex-col items-center justify-center gap-2.5 rounded-lg bg-slate-900/95 text-sm font-medium text-slate-300">
                         <Avatar className="h-16 w-16 border-4 border-background shadow-lg">

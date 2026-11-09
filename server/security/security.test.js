@@ -32,6 +32,8 @@ test('security policy permits WebAssembly while keeping JavaScript eval and exte
   const policy = res.headers['Content-Security-Policy'];
   assert.match(policy, /script-src 'self' 'wasm-unsafe-eval'/);
   assert.doesNotMatch(policy, /(?:^|\s)'unsafe-eval'(?:\s|;)/);
+  assert.match(policy, /worker-src 'self' blob:/);
+  assert.match(policy, /media-src 'self' blob: data:/);
 
   assert.doesNotMatch(policy, /script-src[^;]*https?:/);
   assert.match(policy, /connect-src 'self'/);
