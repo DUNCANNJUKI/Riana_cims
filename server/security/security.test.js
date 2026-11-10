@@ -77,6 +77,8 @@ test('global API policy allows only explicit public paths', async () => {
     { method: 'GET', path: '/public/company-pwa-icon/192.png' },
     { method: 'GET', path: '/public/company-pwa-icon/512.png' },
     { method: 'POST', path: '/public/installation-feedback' },
+    { method: 'GET', path: '/public/change-requests/invitation/tok123' },
+    { method: 'POST', path: '/public/change-requests/submit' },
   ]) policy(req, response(), () => {});
   policy({ method: 'GET', path: '/public/company-pwa-icon/1024.png' }, response(), () => {});
   policy({ method: 'GET', path: '/public/company-pwa-icon/192.png/extra' }, response(), () => {});

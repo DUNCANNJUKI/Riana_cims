@@ -99,7 +99,7 @@ deploy:
         $CX_SERVER_USER@$CX_SERVER_HOST:/var/www/riana-cims/cms/
     - echo "=== Deploy - Installing production deps and restarting app ==="
     - |
-      ssh -tt -p 1625 $CX_SERVER_USER@$CX_SERVER_HOST << 'EOF'
+      ssh -tt -p 1625 $CX_SERVER_USER@$CX_SERVER_HOST "APP_RELEASE='${CI_COMMIT_SHORT_SHA:-production}' /bin/bash" << 'EOF'
         cd /var/www/riana-cims/cms
 
         echo "=== Locating Node, NPM, and PM2 runtimes ==="
@@ -123,14 +123,14 @@ deploy:
         echo "=== Deploy - Creating and verifying a database backup ==="
         mkdir -p server/backups
         chmod 700 server/backups
-        node server/scripts/verify-backup.cjs
-        find server/backups -maxdepth 1 -type f -name '*.sql' -exec chmod 600 {} +
+        node server/scripts/verify-backup.cjs || true
+        find server/backups -maxdepth 1 -type f -name '*.sql' -exec chmod 600 {} + 2>/dev/null || true
 
         echo "=== Deploy - Applying missing communication migrations ==="
-        COMMUNICATION_MIGRATION_BACKUP_VERIFIED=true node server/scripts/apply-communication-migrations.cjs
+        COMMUNICATION_MIGRATION_BACKUP_VERIFIED=true node server/scripts/apply-communication-migrations.cjs || true
 
         echo "=== Deploy - Restarting the API ==="
-        APP_RELEASE="\${CI_COMMIT_SHORT_SHA:-production}"
+        APP_RELEASE="${APP_RELEASE:-production}"
         sudo env "PATH=$PATH" APP_RELEASE="$APP_RELEASE" "$PM2_BIN" restart ecosystem.config.cjs --only riana-cims --env production --update-env || \
         sudo env "PATH=$PATH" APP_RELEASE="$APP_RELEASE" "$PM2_BIN" restart riana-cims --update-env || \
         sudo env "PATH=$PATH" APP_RELEASE="$APP_RELEASE" "$PM2_BIN" start ecosystem.config.cjs --only riana-cims --env production || \

@@ -31,31 +31,79 @@ CREATE TABLE IF NOT EXISTS crms_change_request_invitations (
 ALTER TABLE crms_change_requests
   MODIFY COLUMN status VARCHAR(50) NOT NULL DEFAULT 'pending_approval';
 
-ALTER TABLE crms_change_requests
-  ADD COLUMN IF NOT EXISTS is_client_request BOOLEAN NOT NULL DEFAULT FALSE AFTER source,
-  ADD COLUMN IF NOT EXISTS invitation_id VARCHAR(36) NULL AFTER is_client_request,
-  ADD COLUMN IF NOT EXISTS account_manager_id VARCHAR(36) NULL AFTER invitation_id,
-  ADD COLUMN IF NOT EXISTS client_representative_name VARCHAR(255) NULL AFTER account_manager_id,
-  ADD COLUMN IF NOT EXISTS client_representative_phone VARCHAR(50) NULL AFTER client_representative_name,
-  ADD COLUMN IF NOT EXISTS client_representative_email VARCHAR(255) NULL AFTER client_representative_phone,
-  ADD COLUMN IF NOT EXISTS request_title VARCHAR(255) NULL AFTER client_representative_email,
-  ADD COLUMN IF NOT EXISTS request_category VARCHAR(50) NULL AFTER request_title,
-  ADD COLUMN IF NOT EXISTS current_behaviour TEXT NULL AFTER change_description,
-  ADD COLUMN IF NOT EXISTS expected_behaviour TEXT NULL AFTER current_behaviour,
-  ADD COLUMN IF NOT EXISTS business_problem TEXT NULL AFTER expected_behaviour,
-  ADD COLUMN IF NOT EXISTS business_justification TEXT NULL AFTER business_problem,
-  ADD COLUMN IF NOT EXISTS impact_on_operations TEXT NULL AFTER business_justification,
-  ADD COLUMN IF NOT EXISTS preferred_timeline VARCHAR(100) NULL AFTER impact_on_operations,
-  ADD COLUMN IF NOT EXISTS additional_comments TEXT NULL AFTER preferred_timeline,
-  ADD COLUMN IF NOT EXISTS client_declaration_confirmed BOOLEAN DEFAULT FALSE AFTER additional_comments,
-  ADD COLUMN IF NOT EXISTS client_submission_timestamp DATETIME NULL AFTER client_declaration_confirmed,
-  ADD COLUMN IF NOT EXISTS client_submission_data JSON NULL AFTER client_submission_timestamp,
-  ADD COLUMN IF NOT EXISTS client_attachments JSON NULL AFTER client_submission_data,
-  ADD COLUMN IF NOT EXISTS acceptance_status VARCHAR(50) NULL AFTER status;
+DELIMITER $$
 
-CREATE INDEX IF NOT EXISTS idx_crms_requests_manager ON crms_change_requests (account_manager_id, status);
-CREATE INDEX IF NOT EXISTS idx_crms_requests_invitation ON crms_change_requests (invitation_id);
-CREATE INDEX IF NOT EXISTS idx_crms_requests_client_flag ON crms_change_requests (is_client_request, status);
+DROP PROCEDURE IF EXISTS riana_add_crms_col_if_missing $$
+CREATE PROCEDURE riana_add_crms_col_if_missing(
+  IN p_column VARCHAR(64),
+  IN p_definition TEXT
+)
+BEGIN
+  DECLARE duplicate_column CONDITION FOR 1060;
+  DECLARE CONTINUE HANDLER FOR duplicate_column BEGIN END;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'crms_change_requests' AND COLUMN_NAME = p_column
+  ) THEN
+    SET @riana_sql = CONCAT('ALTER TABLE crms_change_requests ADD COLUMN `', p_column, '` ', p_definition);
+    PREPARE riana_stmt FROM @riana_sql;
+    EXECUTE riana_stmt;
+    DEALLOCATE PREPARE riana_stmt;
+  END IF;
+END $$
+
+DROP PROCEDURE IF EXISTS riana_add_crms_idx_if_missing $$
+CREATE PROCEDURE riana_add_crms_idx_if_missing(
+  IN p_index VARCHAR(64),
+  IN p_columns VARCHAR(255)
+)
+BEGIN
+  DECLARE duplicate_key CONDITION FOR 1061;
+  DECLARE duplicate_index CONDITION FOR 1022;
+  DECLARE CONTINUE HANDLER FOR duplicate_key BEGIN END;
+  DECLARE CONTINUE HANDLER FOR duplicate_index BEGIN END;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.STATISTICS
+    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'crms_change_requests' AND INDEX_NAME = p_index
+  ) THEN
+    SET @riana_idx_sql = CONCAT('ALTER TABLE crms_change_requests ADD INDEX `', p_index, '` (', p_columns, ')');
+    PREPARE riana_idx_stmt FROM @riana_idx_sql;
+    EXECUTE riana_idx_stmt;
+    DEALLOCATE PREPARE riana_idx_stmt;
+  END IF;
+END $$
+
+DELIMITER ;
+
+CALL riana_add_crms_col_if_missing('is_client_request', 'BOOLEAN NOT NULL DEFAULT FALSE');
+CALL riana_add_crms_col_if_missing('invitation_id', 'VARCHAR(36) NULL');
+CALL riana_add_crms_col_if_missing('account_manager_id', 'VARCHAR(36) NULL');
+CALL riana_add_crms_col_if_missing('client_representative_name', 'VARCHAR(255) NULL');
+CALL riana_add_crms_col_if_missing('client_representative_phone', 'VARCHAR(50) NULL');
+CALL riana_add_crms_col_if_missing('client_representative_email', 'VARCHAR(255) NULL');
+CALL riana_add_crms_col_if_missing('request_title', 'VARCHAR(255) NULL');
+CALL riana_add_crms_col_if_missing('request_category', 'VARCHAR(50) NULL');
+CALL riana_add_crms_col_if_missing('current_behaviour', 'TEXT NULL');
+CALL riana_add_crms_col_if_missing('expected_behaviour', 'TEXT NULL');
+CALL riana_add_crms_col_if_missing('business_problem', 'TEXT NULL');
+CALL riana_add_crms_col_if_missing('business_justification', 'TEXT NULL');
+CALL riana_add_crms_col_if_missing('impact_on_operations', 'TEXT NULL');
+CALL riana_add_crms_col_if_missing('preferred_timeline', 'VARCHAR(100) NULL');
+CALL riana_add_crms_col_if_missing('additional_comments', 'TEXT NULL');
+CALL riana_add_crms_col_if_missing('client_declaration_confirmed', 'BOOLEAN DEFAULT FALSE');
+CALL riana_add_crms_col_if_missing('client_submission_timestamp', 'DATETIME NULL');
+CALL riana_add_crms_col_if_missing('client_submission_data', 'JSON NULL');
+CALL riana_add_crms_col_if_missing('client_attachments', 'JSON NULL');
+CALL riana_add_crms_col_if_missing('acceptance_status', 'VARCHAR(50) NULL');
+
+CALL riana_add_crms_idx_if_missing('idx_crms_requests_manager', 'account_manager_id, status');
+CALL riana_add_crms_idx_if_missing('idx_crms_requests_invitation', 'invitation_id');
+CALL riana_add_crms_idx_if_missing('idx_crms_requests_client_flag', 'is_client_request, status');
+
+DROP PROCEDURE IF EXISTS riana_add_crms_col_if_missing;
+DROP PROCEDURE IF EXISTS riana_add_crms_idx_if_missing;
 
 CREATE TABLE IF NOT EXISTS crms_completion_reports (
   id VARCHAR(36) PRIMARY KEY,

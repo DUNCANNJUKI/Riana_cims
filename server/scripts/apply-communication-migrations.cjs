@@ -105,7 +105,22 @@ async function run() {
     const filePath = path.join(migrationDirectory, `${migrationId}.sql`);
     if (!fs.existsSync(filePath)) throw new Error(`Required communication migration is missing: ${migrationId}.`);
     for (const statement of splitSqlStatements(fs.readFileSync(filePath, 'utf8'))) {
-      await pool.query(statement);
+      try {
+        await pool.query(statement);
+      } catch (err) {
+        if (
+          err.errno === 1060 ||
+          err.errno === 1061 ||
+          err.errno === 1022 ||
+          err.code === 'ER_DUP_FIELDNAME' ||
+          err.code === 'ER_DUP_KEYNAME' ||
+          err.code === 'ER_DUP_ENTRY'
+        ) {
+          console.warn(`[migration warning] Ignored duplicate schema definition in ${migrationId}: ${err.message}`);
+        } else {
+          throw err;
+        }
+      }
     }
     results.push({ migrationId, status: 'applied' });
   }

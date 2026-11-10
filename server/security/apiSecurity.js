@@ -113,6 +113,8 @@ const PUBLIC_API_RULES = [
   ['GET', /^\/public\/feedback-links\/[^/]+$/],
   ['POST', /^\/public\/installation-feedback$/],
   ['POST', /^\/public\/feedback-links\/[^/]+\/use$/],
+  ['GET', /^\/public\/change-requests\//],
+  ['POST', /^\/public\/change-requests\//],
 ];
 
 const isPublicApiRequest = (req) => PUBLIC_API_RULES.some(([method, pattern]) => method === req.method && pattern.test(req.path));
