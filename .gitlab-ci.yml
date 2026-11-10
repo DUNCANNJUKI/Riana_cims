@@ -87,7 +87,7 @@ deploy:
   script:
     - echo "=== Deploy - Preparing remote target directory permissions ==="
     - |
-      ssh -o StrictHostKeyChecking=no -p 1625 $CX_SERVER_USER@$CX_SERVER_HOST \
+      ssh -t -o StrictHostKeyChecking=no -p 1625 $CX_SERVER_USER@$CX_SERVER_HOST \
         "sudo chown -R $CX_SERVER_USER:$CX_SERVER_USER /var/www/riana-cims/cms 2>/dev/null || true" || true
     - echo "=== Deploy - Syncing files to deployment target ==="
     - |
@@ -105,7 +105,7 @@ deploy:
         $CX_SERVER_USER@$CX_SERVER_HOST:/var/www/riana-cims/cms/
     - echo "=== Deploy - Running remote deployment script ==="
     - |
-      ssh -o StrictHostKeyChecking=no -p 1625 $CX_SERVER_USER@$CX_SERVER_HOST \
+      ssh -t -o StrictHostKeyChecking=no -p 1625 $CX_SERVER_USER@$CX_SERVER_HOST \
         "bash /var/www/riana-cims/cms/server/scripts/deploy-production.sh '${CI_COMMIT_SHORT_SHA:-production}'"
     - echo "=== Deployment finished successfully ==="
   only:
