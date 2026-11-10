@@ -42,12 +42,22 @@ echo "=== Applying database migrations ==="
 COMMUNICATION_MIGRATION_BACKUP_VERIFIED=true node server/scripts/apply-communication-migrations.cjs || true
 
 # 7. Restart PM2 processes with updated environment and release
-echo "=== Restarting PM2 backend processes ==="
-sudo env "PATH=$PATH" APP_RELEASE="$APP_RELEASE" "$PM2_BIN" restart ecosystem.config.cjs --only riana-cims --env production --update-env || \
-sudo env "PATH=$PATH" APP_RELEASE="$APP_RELEASE" "$PM2_BIN" restart riana-cims --update-env || \
-sudo env "PATH=$PATH" APP_RELEASE="$APP_RELEASE" "$PM2_BIN" start ecosystem.config.cjs --only riana-cims --env production || \
-"$PM2_BIN" restart ecosystem.config.cjs --only riana-cims --env production --update-env || true
-sudo env "PATH=$PATH" "$PM2_BIN" save 2>/dev/null || "$PM2_BIN" save 2>/dev/null || true
+echo "=== Restarting backend processes ==="
+sudo fuser -k 8081/tcp 2>/dev/null || sudo kill -9 $(sudo lsof -t -i:8081 2>/dev/null) 2>/dev/null || true
+sleep 1
+
+sudo env "PATH=$PATH" APP_RELEASE="$APP_RELEASE" "$PM2_BIN" restart all --update-env 2>/dev/null || true
+sudo env "PATH=$PATH" APP_RELEASE="$APP_RELEASE" "$PM2_BIN" restart ecosystem.config.cjs --only riana-cims --env production --update-env 2>/dev/null || true
+sudo env "PATH=$PATH" APP_RELEASE="$APP_RELEASE" "$PM2_BIN" restart riana-cims --update-env 2>/dev/null || true
+sudo env "PATH=$PATH" APP_RELEASE="$APP_RELEASE" "$PM2_BIN" start ecosystem.config.cjs --only riana-cims --env production 2>/dev/null || true
+
+env "PATH=$PATH" APP_RELEASE="$APP_RELEASE" "$PM2_BIN" restart all --update-env 2>/dev/null || true
+env "PATH=$PATH" APP_RELEASE="$APP_RELEASE" "$PM2_BIN" restart riana-cims --update-env 2>/dev/null || true
+"$PM2_BIN" restart ecosystem.config.cjs --only riana-cims --env production --update-env 2>/dev/null || true
+
+sudo env "PATH=$PATH" "$PM2_BIN" save 2>/dev/null || true
+"$PM2_BIN" save 2>/dev/null || true
+sudo systemctl restart pm2-root 2>/dev/null || sudo systemctl restart pm2-$USER 2>/dev/null || sudo systemctl restart pm2 2>/dev/null || true
 
 # 8. Configure Nginx CSP for WebAssembly execution
 echo "=== Ensuring Nginx CSP allows WebAssembly execution ==="
