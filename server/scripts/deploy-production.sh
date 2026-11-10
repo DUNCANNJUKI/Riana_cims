@@ -61,8 +61,8 @@ sudo systemctl restart pm2-root 2>/dev/null || sudo systemctl restart pm2-$USER 
 
 # 8. Configure Nginx CSP for WebAssembly execution
 echo "=== Ensuring Nginx CSP allows WebAssembly execution ==="
-sudo find /etc/nginx -type f \( -name "*.conf" -o -name "*cims*" -o -name "*default*" -o -name "nginx.conf" \) -exec sed -i -E "s/script-src 'self'( 'unsafe-eval')?/script-src 'self' 'wasm-unsafe-eval'/g" {} + 2>/dev/null || true
-sudo nginx -t && (sudo systemctl reload nginx || sudo service nginx reload) 2>/dev/null || true
+sudo find /etc/nginx -type f -exec sed -i -E "s/script-src 'self'( 'unsafe-eval')?/script-src 'self' 'wasm-unsafe-eval'/g" {} + 2>/dev/null || true
+sudo nginx -t && (sudo nginx -s reload 2>/dev/null || sudo systemctl reload nginx 2>/dev/null || sudo service nginx reload 2>/dev/null) || true
 
 # 9. Verify local API health
 echo "=== Verifying API health on localhost:8081 ==="
@@ -82,6 +82,7 @@ echo "=== Writing CSP diagnostics to dist/csp-debug.txt ==="
   echo "=== FILE apiSecurity.js LINE ==="
   grep -n "Content-Security-Policy" /var/www/riana-cims/cms/server/security/apiSecurity.js || true
 } | sudo tee /var/www/riana-cims/cms/dist/csp-debug.txt >/dev/null 2>&1 || true
+sudo chmod 644 /var/www/riana-cims/cms/dist/csp-debug.txt 2>/dev/null || true
 
 # 11. Normalize file permissions on all dist and cms files
 sudo chown -R "$USER:$USER" /var/www/riana-cims/cms 2>/dev/null || true
