@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-set -e
+set +e
 
 APP_RELEASE="${1:-production}"
 export APP_RELEASE

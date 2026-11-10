@@ -45,15 +45,6 @@ include:
   - template: Security/SAST.gitlab-ci.yml
   - template: Security/Secret-Detection.gitlab-ci.yml
 
-semgrep-sast:
-  allow_failure: true
-
-nodejs-scan-sast:
-  allow_failure: true
-
-secret_detection:
-  allow_failure: true
-
 build:
   stage: build
   image: node:22
