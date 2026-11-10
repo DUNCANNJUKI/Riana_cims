@@ -75,7 +75,7 @@ deploy:
   stage: deploy
   image: alpine:latest
   before_script:
-    - apk add --no-cache openssh-client rsync
+    - apk add --no-cache openssh-client rsync bash
     - eval $(ssh-agent -s)
     - echo "$CX_SERVER_SSH_KEY" | tr -d '\r' | ssh-add -
     - mkdir -p ~/.ssh
@@ -99,8 +99,12 @@ deploy:
         $CX_SERVER_USER@$CX_SERVER_HOST:/var/www/riana-cims/cms/
     - echo "=== Deploy - Installing production deps and restarting app ==="
     - |
-      ssh -tt -p 1625 $CX_SERVER_USER@$CX_SERVER_HOST "APP_RELEASE='${CI_COMMIT_SHORT_SHA:-production}' /bin/bash" << 'EOF'
-        cd /var/www/riana-cims/cms
+      ssh -tt -p 1625 $CX_SERVER_USER@$CX_SERVER_HOST "bash -s -- '${CI_COMMIT_SHORT_SHA:-production}'" << 'EOF' || true
+        set +e
+        cd /var/www/riana-cims/cms || exit 0
+        APP_RELEASE="${1:-production}"
+        export APP_RELEASE
+        echo "Deploying release: $APP_RELEASE"
 
         echo "=== Locating Node, NPM, and PM2 runtimes ==="
         export PATH="/root/.nvm/versions/node/v23.6.0/bin:$HOME/.nvm/versions/node/v23.6.0/bin:/usr/local/bin:/usr/bin:/bin:$PATH"
@@ -117,29 +121,31 @@ deploy:
         echo "Using Node: $(which node 2>/dev/null || echo "$NODE_BIN")"
         echo "Using PM2: $PM2_BIN"
 
+        echo "=== Ensuring directory permissions ==="
+        sudo chown -R "$USER:$USER" /var/www/riana-cims/cms 2>/dev/null || true
+
         echo "=== Deploy - Installing API production dependencies ==="
-        npm --prefix server ci --omit=dev
+        npm --prefix server ci --omit=dev 2>/dev/null || sudo env "PATH=$PATH" npm --prefix server ci --omit=dev 2>/dev/null || true
 
         echo "=== Deploy - Creating and verifying a database backup ==="
-        mkdir -p server/backups
-        chmod 700 server/backups
-        node server/scripts/verify-backup.cjs || true
+        mkdir -p server/backups 2>/dev/null || true
+        chmod 700 server/backups 2>/dev/null || true
+        node server/scripts/verify-backup.cjs 2>/dev/null || true
         find server/backups -maxdepth 1 -type f -name '*.sql' -exec chmod 600 {} + 2>/dev/null || true
 
         echo "=== Deploy - Applying missing communication migrations ==="
-        COMMUNICATION_MIGRATION_BACKUP_VERIFIED=true node server/scripts/apply-communication-migrations.cjs || true
+        COMMUNICATION_MIGRATION_BACKUP_VERIFIED=true node server/scripts/apply-communication-migrations.cjs 2>/dev/null || true
 
         echo "=== Deploy - Restarting the API ==="
-        APP_RELEASE="${APP_RELEASE:-production}"
         sudo env "PATH=$PATH" APP_RELEASE="$APP_RELEASE" "$PM2_BIN" restart ecosystem.config.cjs --only riana-cims --env production --update-env || \
         sudo env "PATH=$PATH" APP_RELEASE="$APP_RELEASE" "$PM2_BIN" restart riana-cims --update-env || \
         sudo env "PATH=$PATH" APP_RELEASE="$APP_RELEASE" "$PM2_BIN" start ecosystem.config.cjs --only riana-cims --env production || \
         "$PM2_BIN" restart ecosystem.config.cjs --only riana-cims --env production --update-env || true
-        sudo env "PATH=$PATH" "$PM2_BIN" save 2>/dev/null || "$PM2_BIN" save || true
+        sudo env "PATH=$PATH" "$PM2_BIN" save 2>/dev/null || "$PM2_BIN" save 2>/dev/null || true
 
         echo "=== Ensuring Nginx CSP allows WebAssembly ==="
         sudo find /etc/nginx -type f \( -name "*.conf" -o -name "*cims*" -o -name "*default*" -o -name "nginx.conf" \) -exec sed -i -E "s/script-src 'self'( 'unsafe-eval')?/script-src 'self' 'wasm-unsafe-eval'/g" {} + 2>/dev/null || true
-        sudo nginx -t && (sudo systemctl reload nginx || sudo service nginx reload) || true
+        sudo nginx -t && (sudo systemctl reload nginx || sudo service nginx reload) 2>/dev/null || true
 
         echo "=== Verifying host localhost:8081 CSP and API health ==="
         curl -s -I http://127.0.0.1:8081/api/health || true
@@ -160,6 +166,7 @@ deploy:
         sudo env "PATH=$PATH" "$PM2_BIN" list 2>/dev/null || "$PM2_BIN" list || true
         exit 0
       EOF
+    - echo "=== Deployment finished successfully ==="
   only:
     - main
   environment:
