@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@crms/components/ui/card';
 import { Button } from '@crms/components/ui/button';
@@ -15,14 +15,17 @@ import { useToast } from '@crms/hooks/use-toast';
 import { ClientRequestInitiationDialog } from '@crms/components/ClientRequestInitiationDialog';
 import { PrepareCompletionReportDialog } from '@crms/components/PrepareCompletionReportDialog';
 import { CloseChangeRequestDialog } from '@crms/components/CloseChangeRequestDialog';
+import type { ChangeRequestWithRelations } from '@crms/hooks/useSupabaseData';
+import type { ClientInvitation } from '@crms/types/clientWorkflow';
+import { errorMessage } from '@crms/lib/utils';
 
 export const ClientRequests: React.FC = () => {
   const { toast } = useToast();
 
   const [loading, setLoading] = useState(true);
-  const [requests, setRequests] = useState<any[]>([]);
-  const [invitations, setInvitations] = useState<any[]>([]);
-  const [stats, setStats] = useState<any>(null);
+  const [requests, setRequests] = useState<ChangeRequestWithRelations[]>([]);
+  const [invitations, setInvitations] = useState<ClientInvitation[]>([]);
+  const [stats, setStats] = useState<Record<string, number> | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [activeTab, setActiveTab] = useState('all');
 
@@ -30,11 +33,11 @@ export const ClientRequests: React.FC = () => {
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [reportDialogOpen, setReportDialogOpen] = useState(false);
   const [closeDialogOpen, setCloseDialogOpen] = useState(false);
-  const [selectedRequest, setSelectedRequest] = useState<any>(null);
+  const [selectedRequest, setSelectedRequest] = useState<ChangeRequestWithRelations | null>(null);
 
   const [copiedToken, setCopiedToken] = useState<string | null>(null);
 
-  const fetchData = async () => {
+  const fetchData = useCallback(async () => {
     try {
       setLoading(true);
       const [reqRes, invRes, statsRes] = await Promise.all([
@@ -43,13 +46,15 @@ export const ClientRequests: React.FC = () => {
         apiRequest('/api/crms/account-manager/stats').catch(() => null),
       ]);
 
-      const reqData = await reqRes.json();
-      const invData = await invRes.json();
-      const statsData = statsRes ? await statsRes.json().catch(() => null) : null;
+      if (!reqRes.ok || !invRes.ok) throw new Error('Failed to load client requests and invitations. Please try again.');
+
+      const reqData = await reqRes.json() as ChangeRequestWithRelations[];
+      const invData = await invRes.json() as ClientInvitation[];
+      const statsData = statsRes?.ok ? await statsRes.json().catch(() => null) : null;
 
       if (Array.isArray(reqData)) {
         // Filter to client requests or all for account managers
-        setRequests(reqData.filter((r: any) => r.is_client_request || r.client_name));
+        setRequests(reqData.filter((r) => r.is_client_request || r.client_name));
       }
       if (Array.isArray(invData)) {
         setInvitations(invData);
@@ -57,27 +62,31 @@ export const ClientRequests: React.FC = () => {
       if (statsData) {
         setStats(statsData.stats);
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       toast({
         title: 'Error Loading Requests',
-        description: err.message,
+        description: errorMessage(err),
         variant: 'destructive',
       });
     } finally {
       setLoading(false);
     }
-  };
+  }, [toast]);
 
   useEffect(() => {
-    fetchData();
-  }, []);
+    void fetchData();
+  }, [fetchData]);
 
-  const handleCopyInvitationLink = (token: string) => {
+  const handleCopyInvitationLink = async (token: string) => {
     const fullUrl = `${window.location.origin}/change-request/submit/${token}`;
-    navigator.clipboard.writeText(fullUrl);
-    setCopiedToken(token);
-    toast({ title: 'Link Copied', description: 'Client submission URL copied to clipboard.' });
-    setTimeout(() => setCopiedToken(null), 2500);
+    try {
+      await navigator.clipboard.writeText(fullUrl);
+      setCopiedToken(token);
+      toast({ title: 'Link Copied', description: 'Client submission URL copied to clipboard.' });
+      setTimeout(() => setCopiedToken(null), 2500);
+    } catch {
+      toast({ title: 'Copy Failed', description: 'Your browser could not copy the invitation link.', variant: 'destructive' });
+    }
   };
 
   const handleSendInvitation = async (invitationId: string) => {
@@ -85,10 +94,10 @@ export const ClientRequests: React.FC = () => {
       const res = await apiRequest(`/api/crms/invitations/${invitationId}/send`, { method: 'POST' });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to send invitation.');
-      toast({ title: 'Invitation Sent', description: 'SMS and email notifications dispatched.' });
+      toast({ title: 'Invitation Updated', description: `SMS: ${data.smsStatus || 'pending'}. Email: ${data.emailStatus || 'pending'}.` });
       fetchData();
-    } catch (err: any) {
-      toast({ title: 'Send Failed', description: err.message, variant: 'destructive' });
+    } catch (err: unknown) {
+      toast({ title: 'Send Failed', description: errorMessage(err), variant: 'destructive' });
     }
   };
 
@@ -426,7 +435,7 @@ export const ClientRequests: React.FC = () => {
           onOpenChange={setReportDialogOpen}
           changeRequestId={selectedRequest.id}
           ticketNumber={selectedRequest.ticket_number}
-          requestTitle={selectedRequest.title}
+          requestTitle={selectedRequest.title || selectedRequest.ticket_number}
           onSuccess={fetchData}
         />
       )}
@@ -438,7 +447,7 @@ export const ClientRequests: React.FC = () => {
           onOpenChange={setCloseDialogOpen}
           changeRequestId={selectedRequest.id}
           ticketNumber={selectedRequest.ticket_number}
-          requestTitle={selectedRequest.title}
+          requestTitle={selectedRequest.title || selectedRequest.ticket_number}
           acceptanceRecord={selectedRequest.client_acceptance}
           onSuccess={fetchData}
         />

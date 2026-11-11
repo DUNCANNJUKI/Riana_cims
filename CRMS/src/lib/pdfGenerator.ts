@@ -11,6 +11,8 @@ import {
 import { resolveDocumentSubsidiaryName } from '../../../src/utils/brandIdentity';
 import { getCimsUser } from './cimsSession';
 
+type AutoTableDocument = jsPDF & { lastAutoTable: { finalY: number } };
+
 // Neutral fills and semantic completion colors; identity colors come from the shared brand resolver.
 const BRAND_LIGHT: [number, number, number] = [239, 248, 249];
 const GREEN_PRIMARY: [number, number, number] = [22, 138, 85];
@@ -75,7 +77,7 @@ export const generateChangeRequestPDF = async (
   });
 
   // Request Details Section
-  const currentY = (doc as any).lastAutoTable.finalY + 12;
+  const currentY = (doc as AutoTableDocument).lastAutoTable.finalY + 12;
 
   doc.setFontSize(12);
   doc.setFont('helvetica', 'bold');
@@ -103,7 +105,7 @@ export const generateChangeRequestPDF = async (
   });
 
   // Change Description Section
-  const descY = (doc as any).lastAutoTable.finalY + 12;
+  const descY = (doc as AutoTableDocument).lastAutoTable.finalY + 12;
 
   doc.setFontSize(12);
   doc.setFont('helvetica', 'bold');
@@ -163,7 +165,7 @@ export const generateChangeRequestPDF = async (
       },
     });
 
-    sigY = (doc as any).lastAutoTable.finalY + 15;
+    sigY = (doc as AutoTableDocument).lastAutoTable.finalY + 15;
   }
 
   // Check if we need a new page for signatures
@@ -286,7 +288,7 @@ export const generateCompletionReportPDF = async (
   });
 
   // Work Description Section
-  const workY = (doc as any).lastAutoTable.finalY + 12;
+  const workY = (doc as AutoTableDocument).lastAutoTable.finalY + 12;
 
   doc.setFontSize(12);
   doc.setFont('helvetica', 'bold');
@@ -349,7 +351,7 @@ export const generateCompletionReportPDF = async (
       },
     });
 
-    timelineY = (doc as any).lastAutoTable.finalY + 12;
+    timelineY = (doc as AutoTableDocument).lastAutoTable.finalY + 12;
   }
 
   // Approval Information
@@ -428,4 +430,33 @@ export const generateCompletionReportPDF = async (
 
 export const downloadPDF = (doc: jsPDF, filename: string) => {
   doc.save(filename);
+};
+
+export const generateRequestSummaryPDF = async (requests: ChangeRequestWithRelations[]): Promise<jsPDF> => {
+  const doc = new jsPDF({ orientation: 'landscape' });
+  const subsidiaryName = resolveDocumentSubsidiaryName(getCimsUser()?.subsidiary_name);
+  const brand = resolveDocumentBrand(subsidiaryName);
+  await addCimsDocumentHeader(doc, {
+    subtitle: 'CHANGE REQUEST REPORT',
+    documentTitle: `${requests.length} matching requests`,
+    subsidiaryName,
+  });
+  autoTable(doc, {
+    startY: 55,
+    head: [['Ticket', 'Client', 'Description', 'Priority', 'Status', 'Assigned To', 'Requested', 'Due Date']],
+    body: requests.map((request) => [
+      request.ticket_number, request.client?.name || 'N/A', request.change_description,
+      request.priority, request.status.replace(/_/g, ' '), request.assigned_developer?.name || 'Unassigned',
+      request.date_requested, request.estimated_completion_date,
+    ]),
+    styles: { fontSize: 8, cellPadding: 3, overflow: 'linebreak' },
+    headStyles: { fillColor: brand.primary },
+    margin: { top: DOCUMENT_LAYOUT.continuationContentTop, bottom: DOCUMENT_LAYOUT.autoTableBottomMargin },
+    columnStyles: { 2: { cellWidth: 65 } },
+  });
+  await addLetterheadToDocument(doc, '/Riana_logo.png', '/letterhead-new.jpg', {
+    subsidiaryName,
+    documentTitle: 'Change Request Report',
+  });
+  return doc;
 };

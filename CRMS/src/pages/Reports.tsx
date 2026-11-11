@@ -35,11 +35,14 @@ import { PriorityBadge } from '@crms/components/common/PriorityBadge';
 import { AnalyticsCharts } from '@crms/components/reports/AnalyticsCharts';
 import { useChangeRequests, useClients } from '@crms/hooks/useSupabaseData';
 import { Skeleton } from '@crms/components/ui/skeleton';
-import { generateChangeRequestPDF, generateCompletionReportPDF, downloadPDF } from '@crms/lib/pdfGenerator';
+import { generateChangeRequestPDF, generateCompletionReportPDF, generateRequestSummaryPDF, downloadPDF } from '@crms/lib/pdfGenerator';
 import { useToast } from '@crms/hooks/use-toast';
+import { downloadRequestsCsv } from '@crms/lib/requestListData';
+import { errorMessage } from '@crms/lib/utils';
 
 export default function Reports() {
   const { toast } = useToast();
+  const [exporting, setExporting] = useState(false);
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [clientFilter, setClientFilter] = useState('all');
@@ -73,22 +76,20 @@ export default function Reports() {
     chargeable: filteredRequests.filter((r) => r.is_chargeable).length,
   };
 
-  const toDocumentRequest = (request: typeof changeRequests[number]) => ({
-    ...request,
-    ticketNumber: request.ticket_number,
-    dateRequested: request.date_requested,
-    commencementDate: request.commencement_date,
-    completionDate: request.completion_date,
-    isChargeable: request.is_chargeable,
-    assignedDeveloper: request.assigned_developer,
-    client: {
-      ...request.client,
-      contractType: request.client?.contract_type,
-    },
-  });
+  const handleExportPDF = async () => {
+    setExporting(true);
+    try {
+      const doc = await generateRequestSummaryPDF(filteredRequests);
+      downloadPDF(doc, 'change-request-report.pdf');
+    } catch (error: unknown) {
+      toast({ title: 'Export Failed', description: errorMessage(error), variant: 'destructive' });
+    } finally {
+      setExporting(false);
+    }
+  };
 
   const handleDownloadChangeRequest = async (request: typeof changeRequests[number]) => {
-    const doc = await generateChangeRequestPDF(toDocumentRequest(request) as any);
+    const doc = await generateChangeRequestPDF(request);
     downloadPDF(doc, `${request.ticket_number}-change-request.pdf`);
     toast({
       title: 'Document Downloaded',
@@ -97,7 +98,7 @@ export default function Reports() {
   };
 
   const handleDownloadCompletionReport = async (request: typeof changeRequests[number]) => {
-    const doc = await generateCompletionReportPDF(toDocumentRequest(request) as any);
+    const doc = await generateCompletionReportPDF(request);
     downloadPDF(doc, `${request.ticket_number}-completion-report.pdf`);
     toast({
       title: 'Document Downloaded',
@@ -118,13 +119,13 @@ export default function Reports() {
           </p>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline">
+          <Button variant="outline" onClick={() => void handleExportPDF()} disabled={exporting || !filteredRequests.length}>
             <Download className="mr-2 h-4 w-4" />
             Export PDF
           </Button>
-          <Button>
+          <Button onClick={() => downloadRequestsCsv(filteredRequests, 'change-request-report.csv')} disabled={!filteredRequests.length}>
             <Download className="mr-2 h-4 w-4" />
-            Export Excel
+            Export CSV
           </Button>
         </div>
       </div>

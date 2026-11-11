@@ -374,6 +374,16 @@ export type Database = {
       | "assigned"
       | "in_progress"
       | "completed"
+      | "waiting_clarification"
+      | "sales_review"
+      | "senior_dev_review"
+      | "ready_for_completion_report"
+      | "awaiting_client_acceptance"
+      | "client_accepted"
+      | "client_requested_corrections"
+      | "client_disputed"
+      | "closed_client_accepted"
+      | "closed"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -526,6 +536,16 @@ export const Constants = {
         "assigned",
         "in_progress",
         "completed",
+        "waiting_clarification",
+        "sales_review",
+        "senior_dev_review",
+        "ready_for_completion_report",
+        "awaiting_client_acceptance",
+        "client_accepted",
+        "client_requested_corrections",
+        "client_disputed",
+        "closed_client_accepted",
+        "closed",
       ],
     },
   },

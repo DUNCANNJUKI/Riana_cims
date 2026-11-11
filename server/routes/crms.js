@@ -60,12 +60,10 @@ const REQUEST_UPDATE_FIELDS = {
   Teamlead: new Set(['priority','status','estimated_completion_date','senior_developer_id','assigned_developer_id','commencement_date','completion_date']),
   Developer: new Set(['status','commencement_date','completion_date']),
   User: new Set(['status','priority']),
-  User: new Set(['status','priority']),
 };
 
 const REQUEST_STATUSES = {
   Sales: new Set(['pending_approval', 'approved', 'rejected', 'waiting_clarification']),
-  Teamlead: new Set(['approved', 'assigned', 'in_progress', 'waiting_clarification', 'completed']),
   Developer: new Set(['in_progress', 'waiting_clarification', 'completed', 'ready_for_completion_report']),
   Teamlead: new Set(['approved', 'assigned', 'in_progress', 'waiting_clarification', 'completed', 'ready_for_completion_report', 'client_requested_corrections', 'client_disputed']),
   User: new Set(['ready_for_completion_report', 'awaiting_client_acceptance', 'closed_client_accepted']),
@@ -75,6 +73,20 @@ const storedRequestStatus = (status) => status === 'waiting_clarification' ? 'wa
 module.exports = function createCrmsRouter({ pool, jwtSecret }) {
   const router = express.Router();
   const tableColumnCache = new Map();
+  const assertPortalRecordAccess = async (tableName, recordId, user, { readOnly = false } = {}) => {
+    const tables = new Set(['crms_change_request_invitations', 'crms_change_requests', 'crms_completion_reports']);
+    if (!tables.has(tableName)) throw new Error('Invalid portal access target.');
+    if (['SuperAdmin', 'Admin', 'Management', 'Sales'].includes(user.role)) return;
+    const [rows] = await pool.query(`SELECT * FROM \`${tableName}\` WHERE id = ? LIMIT 1`, [recordId]);
+    const record = rows[0];
+    if (!record) throw Object.assign(new Error('Record not found.'), { status: 404 });
+    const isManager = String(record.account_manager_id) === String(user.id);
+    const isAssignedReader = readOnly && tableName === 'crms_change_requests'
+      && [record.senior_developer_id, record.assigned_developer_id].some(id => id && String(id) === String(user.id));
+    if (!isManager && !isAssignedReader) {
+      throw Object.assign(new Error('You do not have permission to access this client request.'), { status: 403 });
+    }
+  };
 
   const getTableColumns = async (tableName) => {
     if (tableColumnCache.has(tableName)) return tableColumnCache.get(tableName);
@@ -554,9 +566,6 @@ module.exports = function createCrmsRouter({ pool, jwtSecret }) {
     account_manager: typeof row.account_manager === 'string' ? JSON.parse(row.account_manager) : row.account_manager,
     client_submission_data: typeof row.client_submission_data === 'string' ? JSON.parse(row.client_submission_data) : row.client_submission_data,
     client_attachments: typeof row.client_attachments === 'string' ? JSON.parse(row.client_attachments) : row.client_attachments || [],
-    account_manager: typeof row.account_manager === 'string' ? JSON.parse(row.account_manager) : row.account_manager,
-    client_submission_data: typeof row.client_submission_data === 'string' ? JSON.parse(row.client_submission_data) : row.client_submission_data,
-    client_attachments: typeof row.client_attachments === 'string' ? JSON.parse(row.client_attachments) : row.client_attachments || [],
     branch_scope: typeof row.branch_scope === 'string' ? JSON.parse(row.branch_scope) : row.branch_scope,
     department_scope: typeof row.department_scope === 'string' ? JSON.parse(row.department_scope) : row.department_scope,
     modules_affected: typeof row.modules_affected === 'string' ? JSON.parse(row.modules_affected) : row.modules_affected,
@@ -909,21 +918,23 @@ module.exports = function createCrmsRouter({ pool, jwtSecret }) {
 
   router.post('/invitations/:id/send', async (req, res) => {
     try {
+      await assertPortalRecordAccess('crms_change_request_invitations', req.params.id, req.user);
       const result = await sendInvitation(pool, req.params.id, req);
       res.json(result);
     } catch (error) {
       console.error('CRMS POST /invitations/:id/send error:', error);
-      res.status(400).json({ error: error.message });
+      res.status(error.status || 400).json({ error: error.message });
     }
   });
 
   router.post('/invitations/:id/cancel', async (req, res) => {
     try {
+      await assertPortalRecordAccess('crms_change_request_invitations', req.params.id, req.user);
       const result = await cancelInvitation(pool, req.params.id, req.user.id);
       res.json(result);
     } catch (error) {
       console.error('CRMS POST /invitations/:id/cancel error:', error);
-      res.status(400).json({ error: error.message });
+      res.status(error.status || 400).json({ error: error.message });
     }
   });
 
@@ -931,6 +942,7 @@ module.exports = function createCrmsRouter({ pool, jwtSecret }) {
     try {
       const requestId = req.query.change_request_id;
       if (!requestId) return res.status(400).json({ error: 'change_request_id query parameter is required.' });
+      await assertPortalRecordAccess('crms_change_requests', requestId, req.user, { readOnly: true });
       const [rows] = await pool.query(
         `SELECT r.*, u.first_name AS am_first_name, u.last_name AS am_last_name
          FROM crms_completion_reports r
@@ -942,48 +954,42 @@ module.exports = function createCrmsRouter({ pool, jwtSecret }) {
       res.json(rows);
     } catch (error) {
       console.error('CRMS GET /completion_reports error:', error);
-      res.status(500).json({ error: error.message });
+      res.status(error.status || 500).json({ error: error.message });
     }
   });
 
   router.post('/completion_reports', async (req, res) => {
     try {
+      await assertPortalRecordAccess('crms_change_requests', req.body.change_request_id, req.user);
       const report = await createOrUpdateCompletionReport(pool, {
         changeRequestId: req.body.change_request_id,
         accountManagerId: req.user.id,
-        summaryOfChange: req.body.summary_of_change,
-        implementedSolution: req.body.implemented_solution,
-        deliverables: req.body.deliverables,
-        issuesResolved: req.body.issues_resolved,
-        testingPerformed: req.body.testing_performed,
-        implementationDate: req.body.implementation_date,
-        deploymentDate: req.body.deployment_date,
-        knownLimitations: req.body.known_limitations,
-        clientRecommendations: req.body.client_recommendations,
-        additionalComments: req.body.additional_comments,
-        attachments: req.body.attachments,
-        sendToClient: Boolean(req.body.send_to_client),
-        req,
+        data: req.body,
+        isDraft: !req.body.send_to_client,
+        user: req.user,
       });
-      res.status(201).json(report);
+      const delivery = req.body.send_to_client ? await sendCompletionReport(pool, report.id, req) : null;
+      res.status(201).json({ ...report, delivery });
     } catch (error) {
       console.error('CRMS POST /completion_reports error:', error);
-      res.status(400).json({ error: error.message });
+      res.status(error.status || 400).json({ error: error.message });
     }
   });
 
   router.post('/completion_reports/:id/send', async (req, res) => {
     try {
+      await assertPortalRecordAccess('crms_completion_reports', req.params.id, req.user);
       const result = await sendCompletionReport(pool, req.params.id, req);
       res.json(result);
     } catch (error) {
       console.error('CRMS POST /completion_reports/:id/send error:', error);
-      res.status(400).json({ error: error.message });
+      res.status(error.status || 400).json({ error: error.message });
     }
   });
 
   router.post('/change_requests/:id/close', async (req, res) => {
     try {
+      await assertPortalRecordAccess('crms_change_requests', req.params.id, req.user);
       const result = await closeChangeRequest(pool, {
         changeRequestId: req.params.id,
         accountManagerId: req.user.id,
@@ -992,7 +998,7 @@ module.exports = function createCrmsRouter({ pool, jwtSecret }) {
       res.json(result);
     } catch (error) {
       console.error('CRMS POST /change_requests/:id/close error:', error);
-      res.status(400).json({ error: error.message });
+      res.status(error.status || 400).json({ error: error.message });
     }
   });
 

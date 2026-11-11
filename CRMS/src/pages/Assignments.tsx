@@ -95,7 +95,7 @@ export default function Assignments() {
 
     try {
       const updates: Partial<Database['public']['Tables']['change_requests']['Row']> = {
-        status: newStatus as any,
+        status: newStatus,
         approval_comment: statusComment,
       };
 

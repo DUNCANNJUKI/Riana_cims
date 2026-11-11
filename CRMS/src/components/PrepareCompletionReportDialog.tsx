@@ -8,6 +8,8 @@ import { Label } from '@crms/components/ui/label';
 import { Textarea } from '@crms/components/ui/textarea';
 import { useToast } from '@crms/hooks/use-toast';
 import { apiRequest } from '@crms/lib/apiRequest';
+import type { CompletionReport } from '@crms/types/clientWorkflow';
+import { errorMessage } from '@crms/lib/utils';
 import { FileCheck2, Send, Save, RefreshCw, Upload, X } from 'lucide-react';
 
 interface PrepareCompletionReportDialogProps {
@@ -16,7 +18,7 @@ interface PrepareCompletionReportDialogProps {
   changeRequestId: string;
   ticketNumber: string;
   requestTitle: string;
-  initialReport?: any | null;
+  initialReport?: CompletionReport | null;
   onSuccess?: () => void;
 }
 
@@ -130,18 +132,18 @@ export const PrepareCompletionReportDialog: React.FC<PrepareCompletionReportDial
       if (!res.ok) throw new Error(data.error || 'Failed to save completion report.');
 
       toast({
-        title: sendToClient ? 'Completion Report Dispatched' : 'Report Draft Saved',
+        title: sendToClient ? 'Completion Report Saved' : 'Report Draft Saved',
         description: sendToClient
-          ? 'SMS and email review links sent to client representative.'
+          ? `Review link delivery: SMS ${data.delivery?.smsStatus || 'unconfirmed'}, email ${data.delivery?.emailStatus || 'unconfirmed'}.`
           : 'Completion report saved as draft.',
       });
 
       onOpenChange(false);
       if (onSuccess) onSuccess();
-    } catch (err: any) {
+    } catch (err: unknown) {
       toast({
         title: 'Error Saving Report',
-        description: err.message,
+        description: errorMessage(err),
         variant: 'destructive',
       });
     } finally {

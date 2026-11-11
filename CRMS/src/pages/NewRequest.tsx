@@ -67,8 +67,8 @@ export default function NewRequest() {
   });
 
   const { data: clientScope, isLoading: scopeLoading } = useClientScope(formData.clientId);
-  const branchOptions = clientScope?.branches || [];
-  const allDepartments = clientScope?.departments || [];
+  const branchOptions = useMemo(() => clientScope?.branches || [], [clientScope?.branches]);
+  const allDepartments = useMemo(() => clientScope?.departments || [], [clientScope?.departments]);
   const departmentOptions = useMemo(
     () => formData.branchId ? allDepartments.filter((department) => department.branch_id === formData.branchId) : allDepartments,
     [allDepartments, formData.branchId],

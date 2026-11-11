@@ -11,8 +11,8 @@ const queryClient = new QueryClient();
 
 const App = () => {
   const user = getCimsUser();
-  const role = user?.role;
-  const isAllowed = role === "SuperAdmin" || role === "Admin" || role === "Management" || role === "Teamlead" || role === "Developer" || role === "Sales";
+  const role = user?.role === "SuperAdmin" ? "SuperAdmin" : user?.module_roles?.crms || user?.role;
+  const isAllowed = role === "SuperAdmin" || role === "Admin" || role === "Management" || role === "Teamlead" || role === "Developer" || role === "Sales" || role === "User";
 
   if (!getCimsToken() || !user || !isAllowed) {
     window.location.replace("/");

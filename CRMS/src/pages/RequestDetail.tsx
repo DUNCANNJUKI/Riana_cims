@@ -44,6 +44,8 @@ import { CloseChangeRequestDialog } from '@crms/components/CloseChangeRequestDia
 import { FileCheck2, ShieldCheck, AlertCircle, ExternalLink } from 'lucide-react';
 import { useCurrentUserRole } from '@crms/hooks/useCurrentUserRole';
 import { useLocation } from 'react-router-dom';
+import type { Database } from '@crms/integrations/supabase/types';
+import { errorMessage } from '@crms/lib/utils';
 
 const defaultModules = [
   'Authentication',
@@ -102,7 +104,7 @@ export default function RequestDetail() {
   // Edit form state
   const [editForm, setEditForm] = useState({
     change_description: '',
-    priority: '',
+    priority: 'medium' as Database['public']['Enums']['priority_level'],
     branch_id: '',
     department_id: '',
     department: '',
@@ -112,7 +114,7 @@ export default function RequestDetail() {
   const [editCustomModule, setEditCustomModule] = useState('');
 
   const developers = profiles || [];
-  const auditLogs = allAuditLogs?.filter((log: any) => log.request_id === id) || [];
+  const auditLogs = allAuditLogs?.filter((log) => log.request_id === id) || [];
   const editBranchOptions = clientScope?.branches || [];
   const editDepartmentOptions = useMemo(
     () => editForm.branch_id
@@ -141,8 +143,12 @@ export default function RequestDetail() {
         // Remove param from URL
         navigate(`/developers/requests/${id}`, { replace: true });
       }
+      if (params.get('edit') === 'true' && isAdmin) {
+        setEditDialogOpen(true);
+        navigate(`/developers/requests/${id}`, { replace: true });
+      }
     }
-  }, [request, location.search, canAssignDevelopers]);
+  }, [request, location.search, canAssignDevelopers, id, isAdmin, navigate]);
 
   if (requestLoading) {
     return <PageLoader />;
@@ -242,8 +248,8 @@ export default function RequestDetail() {
       // Reset states and close dialog
       setAssignDialogOpen(false);
       setSelectedDeveloperId('');
-    } catch (err: any) {
-      toast({ title: 'Error', description: err.message, variant: 'destructive' });
+    } catch (err: unknown) {
+      toast({ title: 'Error', description: errorMessage(err), variant: 'destructive' });
     } finally {
       setActionLoading(false);
     }
@@ -265,7 +271,7 @@ export default function RequestDetail() {
     try {
       await updateRequest.mutateAsync({
         id: request.id,
-        status: newStatus as any,
+        status: newStatus,
         approval_comment: approvalComment || null,
         is_chargeable: isChargeable,
       });
@@ -273,7 +279,7 @@ export default function RequestDetail() {
       // Create audit log
       await createAuditLog.mutateAsync({
         request_id: request.id,
-        action: auditAction as any,
+        action: auditAction,
         action_label: action === 'approve' ? 'Request Approved' : action === 'reject' ? 'Request Rejected' : 'Request On Hold',
         details: approvalComment || undefined,
         previous_value: request.status,
@@ -295,8 +301,8 @@ export default function RequestDetail() {
       setApprovalDialogOpen(false);
       setApprovalComment('');
       setIsChargeable(false);
-    } catch (err: any) {
-      toast({ title: 'Error', description: err.message, variant: 'destructive' });
+    } catch (err: unknown) {
+      toast({ title: 'Error', description: errorMessage(err), variant: 'destructive' });
     } finally {
       setActionLoading(false);
     }
@@ -322,8 +328,8 @@ export default function RequestDetail() {
       });
 
       toast({ title: 'Work Started', description: 'Status updated to In Progress. Notifications sent.' });
-    } catch (err: any) {
-      toast({ title: 'Error', description: err.message, variant: 'destructive' });
+    } catch (err: unknown) {
+      toast({ title: 'Error', description: errorMessage(err), variant: 'destructive' });
     } finally {
       setActionLoading(false);
     }
@@ -349,8 +355,8 @@ export default function RequestDetail() {
       });
 
       toast({ title: 'Request Completed', description: 'Marked as completed. All parties notified.' });
-    } catch (err: any) {
-      toast({ title: 'Error', description: err.message, variant: 'destructive' });
+    } catch (err: unknown) {
+      toast({ title: 'Error', description: errorMessage(err), variant: 'destructive' });
     } finally {
       setActionLoading(false);
     }
@@ -362,7 +368,7 @@ export default function RequestDetail() {
       await updateRequest.mutateAsync({
         id: request.id,
         ...editForm,
-      } as any);
+      });
 
       await createAuditLog.mutateAsync({
         request_id: request.id,
@@ -374,8 +380,8 @@ export default function RequestDetail() {
 
       toast({ title: 'Request Updated', description: 'Changes saved successfully.' });
       setEditDialogOpen(false);
-    } catch (err: any) {
-      toast({ title: 'Error', description: err.message, variant: 'destructive' });
+    } catch (err: unknown) {
+      toast({ title: 'Error', description: errorMessage(err), variant: 'destructive' });
     } finally {
       setActionLoading(false);
     }
@@ -457,7 +463,7 @@ export default function RequestDetail() {
                   <Label>Priority</Label>
                   <Select
                     value={editForm.priority}
-                    onValueChange={(val) => setEditForm(prev => ({ ...prev, priority: val }))}
+                    onValueChange={(val) => setEditForm(prev => ({ ...prev, priority: val as Database['public']['Enums']['priority_level'] }))}
                   >
                     <SelectTrigger>
                       <SelectValue placeholder="Select priority" />

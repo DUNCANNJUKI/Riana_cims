@@ -4,13 +4,17 @@ const fs = require('node:fs');
 const { v4: uuidv4 } = require('uuid');
 const { sendEmail, sendSms, normalizePhone } = require('./notifications');
 const { sendUserNotification, sendUsersNotification } = require('./notificationDispatcher');
-const { canonicalAppUrl } = require('../security/apiSecurity');
+const { canonicalAppUrl, safeUpload } = require('../security/apiSecurity');
 
 const INVITATION_EXPIRY_DAYS = 14;
 const COMPLETION_REPORT_EXPIRY_DAYS = 30;
 const OTP_EXPIRY_MINUTES = 10;
 const OTP_RESEND_COOLDOWN_SECONDS = 60;
 const OTP_MAX_ATTEMPTS = 5;
+
+const html = (parts, ...values) => parts.reduce((result, part, index) => result + part + (
+  index < values.length ? String(values[index] ?? '').replace(/[&<>"']/g, character => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[character]) : ''
+), '');
 
 const generateSecureToken = () => crypto.randomBytes(32).toString('hex');
 
@@ -29,6 +33,43 @@ const generateOtp = () => {
   const salt = crypto.randomBytes(16).toString('hex');
   const otpHash = hashOtp(otp, salt);
   return { otp, salt, otpHash };
+};
+
+const assertReviewAvailable = (report, { mutation = false } = {}) => {
+  const expiresAt = new Date(report.token_expires_at).getTime();
+  if (!Number.isFinite(expiresAt) || expiresAt <= Date.now()) {
+    throw Object.assign(new Error('This review link has expired. Please contact your Account Manager.'), { status: 410 });
+  }
+  if (['draft', 'superseded'].includes(report.status)) {
+    throw Object.assign(new Error('This completion report is not available for client review.'), { status: 409 });
+  }
+  if (mutation && (report.status !== 'sent' || report.request_status !== 'awaiting_client_acceptance')) {
+    throw Object.assign(new Error('This completion report is no longer awaiting client acceptance.'), { status: 409 });
+  }
+};
+
+const withReviewTransaction = async (pool, token, operation) => {
+  const connection = await pool.getConnection();
+  try {
+    await connection.beginTransaction();
+    const [reports] = await connection.query(
+      `SELECT r.*, cr.ticket_number, cr.request_title, cr.account_manager_id, cr.status AS request_status,
+              cr.client_representative_name, cr.client_representative_phone, cr.client_representative_email, c.client_name
+       FROM crms_completion_reports r
+       JOIN crms_change_requests cr ON cr.id COLLATE utf8mb4_unicode_ci = r.change_request_id COLLATE utf8mb4_unicode_ci
+       JOIN clients c ON c.id COLLATE utf8mb4_unicode_ci = cr.client_id COLLATE utf8mb4_unicode_ci
+       WHERE r.acceptance_token = ? LIMIT 1 FOR UPDATE`, [token],
+    );
+    if (!reports.length) throw Object.assign(new Error('Report not found.'), { status: 404 });
+    const report = reports[0];
+    assertReviewAvailable(report, { mutation: true });
+    const result = await operation(connection, report);
+    await connection.commit();
+    return { ...result, report };
+  } catch (error) {
+    await connection.rollback().catch(() => {});
+    throw error;
+  } finally { connection.release(); }
 };
 
 const recordDeliveryLog = async (pool, {
@@ -157,7 +198,7 @@ const createInvitation = async (pool, {
       [sanitizedDeptId, clientId],
     );
     if (!departments.length) throw Object.assign(new Error('Selected department does not belong to this client.'), { status: 400 });
-    if (branchId && departments[0].branch_id && departments[0].branch_id !== branchId) {
+    if (sanitizedBranchId && departments[0].branch_id && departments[0].branch_id !== sanitizedBranchId) {
       throw Object.assign(new Error('Selected department does not belong to the selected branch.'), { status: 400 });
     }
     departmentName = departments[0].department_name;
@@ -190,8 +231,8 @@ const createInvitation = async (pool, {
       id,
       token,
       clientId,
-      branchId || null,
-      departmentId || null,
+      sanitizedBranchId,
+      sanitizedDeptId,
       accountManagerId,
       trimmedName,
       trimmedPhone,
@@ -206,9 +247,9 @@ const createInvitation = async (pool, {
     invitation_token: token,
     client_id: clientId,
     client_name: client.client_name,
-    branch_id: branchId,
+    branch_id: sanitizedBranchId,
     branch_name: branchName,
-    department_id: departmentId,
+    department_id: sanitizedDeptId,
     department_name: departmentName,
     account_manager_id: accountManagerId,
     client_representative_name: trimmedName,
@@ -292,7 +333,7 @@ const sendInvitation = async (pool, invitationId, req) => {
       actionUrl: publicUrl,
       actionText: 'Submit Change Request',
       text: `Hello ${invitation.client_representative_name},\n\nYou have been invited by ${amName} to submit a formal Change Request for ${invitation.client_name} - ${invitation.branch_name}.\n\nPlease access the secure submission form using the link below:\n${publicUrl}\n\nReference: ${invitation.request_reference}\nThis link is confidential and single-use.\n\nRIANA Technologies`,
-      html: `
+      html: html`
         <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 600px; margin: 0 auto; background-color: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden;">
           <div style="background-color: #0f766e; padding: 24px; text-align: center; color: #ffffff;">
             <h2 style="margin: 0; font-size: 20px; font-weight: 600;">RIANA CIMS – Client Change Request</h2>
@@ -443,6 +484,7 @@ const getInvitationForClient = async (pool, token) => {
 // -------------------------------------------------------------
 
 const submitClientChangeRequest = async (pool, { token, data, attachments = [], req }) => {
+  const applicationUrl = canonicalAppUrl(req).replace(/\/+$/, '');
   const connection = await pool.getConnection();
   try {
     await connection.beginTransaction();
@@ -477,7 +519,7 @@ const submitClientChangeRequest = async (pool, { token, data, attachments = [], 
     const description = String(data.description || data.change_description || '').trim();
     if (!title) throw Object.assign(new Error('Request title is required.'), { status: 400 });
     if (!description) throw Object.assign(new Error('Detailed description of the requested change is required.'), { status: 400 });
-    if (!data.declaration_confirmed) {
+    if (data.declaration_confirmed !== true) {
       throw Object.assign(new Error('You must confirm the submission declaration.'), { status: 400 });
     }
 
@@ -585,7 +627,7 @@ const submitClientChangeRequest = async (pool, { token, data, attachments = [], 
     await connection.commit();
 
     // Asynchronous notifications (post-commit)
-    const actionUrl = `${canonicalAppUrl(req).replace(/\/+$/, '')}/developers/requests/${encodeURIComponent(requestId)}`;
+    const actionUrl = `${applicationUrl}/developers/requests/${encodeURIComponent(requestId)}`;
 
     // 1. Notify Senior Developer / Teamleads
     try {
@@ -668,7 +710,7 @@ const submitClientChangeRequest = async (pool, { token, data, attachments = [], 
         clientName: invitation.client_name,
         requestDescription: `Change Request Submission Confirmation (${ticketNumber})`,
         text: `Hello ${invitation.client_representative_name},\n\nThank you for submitting your Change Request for ${invitation.client_name}.\n\nOfficial Reference: ${ticketNumber}\nSubmission Date: ${new Date().toLocaleDateString('en-GB')}\n\nYour request has been received and entered our internal technical and commercial assessment workflow. You will receive progress updates and a formal completion report once implemented.\n\nRIANA Technologies`,
-        html: `
+        html: html`
           <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 600px; margin: 0 auto; background-color: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden;">
             <div style="background-color: #0f766e; padding: 24px; text-align: center; color: #ffffff;">
               <h2 style="margin: 0; font-size: 20px; font-weight: 600;">RIANA CIMS – Request Received</h2>
@@ -725,7 +767,7 @@ const submitClientChangeRequest = async (pool, { token, data, attachments = [], 
 const createOrUpdateCompletionReport = async (pool, {
   changeRequestId,
   accountManagerId,
-  data,
+  data = {},
   isDraft = false,
   user,
 }) => {
@@ -738,6 +780,19 @@ const createOrUpdateCompletionReport = async (pool, {
 
   const summary = String(data.summary_of_change || '').trim();
   const solution = String(data.implemented_solution || '').trim();
+  const attachments = data.attachments || [];
+  if (!Array.isArray(attachments) || attachments.length > 10) {
+    throw Object.assign(new Error('Provide no more than 10 attachments.'), { status: 400 });
+  }
+  let totalAttachmentBytes = 0;
+  const validatedAttachments = attachments.map((attachment) => {
+    const { buffer } = safeUpload({ fileName: attachment?.name, base64Data: attachment?.base64, maxBytes: 5 * 1024 * 1024 });
+    totalAttachmentBytes += buffer.length;
+    if (totalAttachmentBytes > 10 * 1024 * 1024) {
+      throw Object.assign(new Error('Total attachment size cannot exceed 10 MB.'), { status: 413 });
+    }
+    return { name: path.basename(attachment.name).slice(0, 255), size: buffer.length, base64: buffer.toString('base64') };
+  });
 
   if (!isDraft) {
     if (!summary) throw Object.assign(new Error('Summary of requested change is required.'), { status: 400 });
@@ -778,7 +833,7 @@ const createOrUpdateCompletionReport = async (pool, {
       data.known_limitations || null,
       data.client_recommendations || null,
       data.additional_comments || null,
-      JSON.stringify(data.attachments || []),
+      JSON.stringify(validatedAttachments),
       isDraft ? 'draft' : 'sent',
       token,
       tokenExpiresAt,
@@ -863,7 +918,7 @@ const sendCompletionReport = async (pool, reportId, req) => {
       actionUrl: reviewUrl,
       actionText: 'Review and Accept Delivered Work',
       text: `Hello ${clientName},\n\nThe implementation for your Change Request (${report.ticket_number}: ${report.request_title}) is complete.\n\nAccount Manager: ${amName}\nClient: ${report.client_name} (${report.branch_name})\n\nPlease access the Completion Review Portal to review the delivered solution and provide formal electronic acceptance or request adjustments:\n${reviewUrl}\n\nRIANA Technologies`,
-      html: `
+      html: html`
         <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 600px; margin: 0 auto; background-color: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden;">
           <div style="background-color: #0f766e; padding: 24px; text-align: center; color: #ffffff;">
             <h2 style="margin: 0; font-size: 20px; font-weight: 600;">RIANA CIMS – Completion Report Ready</h2>
@@ -945,7 +1000,7 @@ const getCompletionReportForClient = async (pool, token) => {
   if (!rows.length) throw Object.assign(new Error('Completion report link was not found.'), { status: 404 });
   const report = rows[0];
 
-  if (report.is_expired) throw Object.assign(new Error('This review link has expired. Please contact your Account Manager.'), { status: 410 });
+  assertReviewAvailable(report);
 
   // Check if acceptance exists
   const [acceptances] = await pool.query(
@@ -999,20 +1054,9 @@ const getCompletionReportForClient = async (pool, token) => {
 // -------------------------------------------------------------
 
 const handleClientAction = async (pool, { token, actionType, explanation, req }) => {
-  const [rows] = await pool.query(
-    `SELECT r.*, cr.ticket_number, cr.request_title, cr.account_manager_id,
-            cr.client_representative_name, cr.client_representative_phone, cr.client_representative_email,
-            c.client_name
-     FROM crms_completion_reports r
-     JOIN crms_change_requests cr ON cr.id COLLATE utf8mb4_unicode_ci = r.change_request_id COLLATE utf8mb4_unicode_ci
-     JOIN clients c ON c.id COLLATE utf8mb4_unicode_ci = cr.client_id COLLATE utf8mb4_unicode_ci
-     WHERE r.acceptance_token = ? LIMIT 1`,
-    [token],
-  );
-
-  if (!rows.length) throw Object.assign(new Error('Report not found.'), { status: 404 });
-  const report = rows[0];
-
+  if (!['correction_requested', 'dispute_raised'].includes(actionType)) {
+    throw Object.assign(new Error('Valid action type is required.'), { status: 400 });
+  }
   const trimmedExplanation = String(explanation || '').trim();
   if (!trimmedExplanation) throw Object.assign(new Error('A written explanation is required.'), { status: 400 });
 
@@ -1021,8 +1065,9 @@ const handleClientAction = async (pool, { token, actionType, explanation, req })
   const newRequestStatus = isCorrection ? 'client_requested_corrections' : 'client_disputed';
   const newReportStatus = isCorrection ? 'rejected' : 'disputed';
 
+  const { report } = await withReviewTransaction(pool, token, async (connection, report) => {
   const actionId = uuidv4();
-  await pool.query(
+  await connection.query(
     `INSERT INTO crms_client_action_responses
      (id, change_request_id, completion_report_id, response_type, written_explanation, client_representative_name, client_representative_phone, client_representative_email)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -1038,8 +1083,10 @@ const handleClientAction = async (pool, { token, actionType, explanation, req })
     ],
   );
 
-  await pool.query('UPDATE crms_completion_reports SET status = ? WHERE id = ?', [newReportStatus, report.id]);
-  await pool.query('UPDATE crms_change_requests SET status = ?, acceptance_status = ? WHERE id = ?', [newRequestStatus, responseType, report.change_request_id]);
+  await connection.query('UPDATE crms_completion_reports SET status = ? WHERE id = ?', [newReportStatus, report.id]);
+  await connection.query('UPDATE crms_change_requests SET status = ?, acceptance_status = ? WHERE id = ?', [newRequestStatus, responseType, report.change_request_id]);
+  return {};
+  });
 
   await recordCrmsAudit(pool, {
     requestId: report.change_request_id,
@@ -1051,8 +1098,8 @@ const handleClientAction = async (pool, { token, actionType, explanation, req })
   });
 
   // Notify Account Manager and Senior Developers
-  const actionUrl = `${canonicalAppUrl(req).replace(/\/+$/, '')}/developers/requests/${encodeURIComponent(report.change_request_id)}`;
   try {
+    const actionUrl = `${canonicalAppUrl(req).replace(/\/+$/, '')}/developers/requests/${encodeURIComponent(report.change_request_id)}`;
     await sendUserNotification({
       pool,
       userId: report.account_manager_id,
@@ -1081,7 +1128,7 @@ const handleClientAction = async (pool, { token, actionType, explanation, req })
 
 const requestClientOtp = async (pool, token, channel = 'sms', req) => {
   const [reports] = await pool.query(
-    `SELECT r.*, cr.ticket_number, cr.client_representative_name,
+    `SELECT r.*, cr.ticket_number, cr.client_representative_name, cr.status AS request_status,
             cr.client_representative_phone, cr.client_representative_email
      FROM crms_completion_reports r
      JOIN crms_change_requests cr ON cr.id COLLATE utf8mb4_unicode_ci = r.change_request_id COLLATE utf8mb4_unicode_ci
@@ -1091,6 +1138,7 @@ const requestClientOtp = async (pool, token, channel = 'sms', req) => {
 
   if (!reports.length) throw Object.assign(new Error('Report not found.'), { status: 404 });
   const report = reports[0];
+  assertReviewAvailable(report, { mutation: true });
 
   const target = channel === 'email' ? report.client_representative_email : report.client_representative_phone;
   if (!target) throw Object.assign(new Error(`No ${channel} on file for representative.`), { status: 400 });
@@ -1143,23 +1191,12 @@ const requestClientOtp = async (pool, token, channel = 'sms', req) => {
 };
 
 const verifyOtpAndAccept = async (pool, { token, code, representativeName, designation, req }) => {
-  const [reports] = await pool.query(
-    `SELECT r.*, cr.ticket_number, cr.account_manager_id, cr.client_representative_name,
-            cr.client_representative_phone, cr.client_representative_email, c.client_name
-     FROM crms_completion_reports r
-     JOIN crms_change_requests cr ON cr.id COLLATE utf8mb4_unicode_ci = r.change_request_id COLLATE utf8mb4_unicode_ci
-     JOIN clients c ON c.id COLLATE utf8mb4_unicode_ci = cr.client_id COLLATE utf8mb4_unicode_ci
-     WHERE r.acceptance_token = ? LIMIT 1`,
-    [token],
-  );
+  const { report, acceptanceId, invalidCode } = await withReviewTransaction(pool, token, async (connection, report) => {
 
-  if (!reports.length) throw Object.assign(new Error('Report not found.'), { status: 404 });
-  const report = reports[0];
-
-  const [otps] = await pool.query(
+  const [otps] = await connection.query(
     `SELECT * FROM crms_client_otp_verifications
      WHERE completion_report_id = ? AND verified_at IS NULL AND expires_at > NOW() AND attempts < max_attempts
-     ORDER BY created_at DESC LIMIT 1`,
+     ORDER BY created_at DESC LIMIT 1 FOR UPDATE`,
     [report.id],
   );
 
@@ -1171,17 +1208,17 @@ const verifyOtpAndAccept = async (pool, { token, code, representativeName, desig
   const expectedHash = hashOtp(code, otpRecord.salt);
 
   if (expectedHash !== otpRecord.otp_hash) {
-    await pool.query('UPDATE crms_client_otp_verifications SET attempts = attempts + 1 WHERE id = ?', [otpRecord.id]);
-    throw Object.assign(new Error('Invalid verification code.'), { status: 400 });
+    await connection.query('UPDATE crms_client_otp_verifications SET attempts = attempts + 1 WHERE id = ?', [otpRecord.id]);
+    return { invalidCode: true };
   }
 
   // Mark OTP verified
-  await pool.query('UPDATE crms_client_otp_verifications SET verified_at = NOW() WHERE id = ?', [otpRecord.id]);
+  await connection.query('UPDATE crms_client_otp_verifications SET verified_at = NOW() WHERE id = ?', [otpRecord.id]);
 
   const acceptanceId = uuidv4();
   const declarationText = 'I confirm that I have reviewed the completion report for this change request and acknowledge that the described work has been delivered to our organization. I am authorized to provide this acknowledgement on behalf of the client organization.';
 
-  await pool.query(
+  await connection.query(
     `INSERT INTO crms_client_acceptances (
       id, change_request_id, completion_report_id, client_representative_name, client_representative_designation,
       client_representative_phone, client_representative_email, sign_off_method, otp_verified_at,
@@ -1201,11 +1238,14 @@ const verifyOtpAndAccept = async (pool, { token, code, representativeName, desig
     ],
   );
 
-  await pool.query("UPDATE crms_completion_reports SET status = 'accepted' WHERE id = ?", [report.id]);
-  await pool.query(
+  await connection.query("UPDATE crms_completion_reports SET status = 'accepted' WHERE id = ?", [report.id]);
+  await connection.query(
     "UPDATE crms_change_requests SET status = 'client_accepted', acceptance_status = 'accepted' WHERE id = ?",
     [report.change_request_id],
   );
+  return { acceptanceId };
+  });
+  if (invalidCode) throw Object.assign(new Error('Invalid verification code.'), { status: 400 });
 
   await recordCrmsAudit(pool, {
     requestId: report.change_request_id,
@@ -1218,8 +1258,8 @@ const verifyOtpAndAccept = async (pool, { token, code, representativeName, desig
   });
 
   // Notify Account Manager and Senior Developer
-  const actionUrl = `${canonicalAppUrl(req).replace(/\/+$/, '')}/developers/requests/${encodeURIComponent(report.change_request_id)}`;
   try {
+    const actionUrl = `${canonicalAppUrl(req).replace(/\/+$/, '')}/developers/requests/${encodeURIComponent(report.change_request_id)}`;
     await sendUserNotification({
       pool,
       userId: report.account_manager_id,
@@ -1243,27 +1283,16 @@ const verifyOtpAndAccept = async (pool, { token, code, representativeName, desig
 };
 
 const verifySignatureAndAccept = async (pool, { token, signaturePath, representativeName, designation, req }) => {
-  const [reports] = await pool.query(
-    `SELECT r.*, cr.ticket_number, cr.account_manager_id, cr.client_representative_name,
-            cr.client_representative_phone, cr.client_representative_email, c.client_name
-     FROM crms_completion_reports r
-     JOIN crms_change_requests cr ON cr.id COLLATE utf8mb4_unicode_ci = r.change_request_id COLLATE utf8mb4_unicode_ci
-     JOIN clients c ON c.id COLLATE utf8mb4_unicode_ci = cr.client_id COLLATE utf8mb4_unicode_ci
-     WHERE r.acceptance_token = ? LIMIT 1`,
-    [token],
-  );
-
-  if (!reports.length) throw Object.assign(new Error('Report not found.'), { status: 404 });
-  const report = reports[0];
+  const { report, acceptanceId } = await withReviewTransaction(pool, token, async (connection, report) => {
 
   if (!signaturePath) throw Object.assign(new Error('Signature image upload is required.'), { status: 400 });
-  if (!representativeName) throw Object.assign(new Error('Representative full name is required.'), { status: 400 });
-  if (!designation) throw Object.assign(new Error('Designation / position is required.'), { status: 400 });
+  if (!String(representativeName || '').trim()) throw Object.assign(new Error('Representative full name is required.'), { status: 400 });
+  if (!String(designation || '').trim()) throw Object.assign(new Error('Designation / position is required.'), { status: 400 });
 
   const acceptanceId = uuidv4();
   const declarationText = 'I confirm that I have reviewed the completion report for this change request and acknowledge that the described work has been delivered to our organization. I am authorized to provide this acknowledgement on behalf of the client organization.';
 
-  await pool.query(
+  await connection.query(
     `INSERT INTO crms_client_acceptances (
       id, change_request_id, completion_report_id, client_representative_name, client_representative_designation,
       client_representative_phone, client_representative_email, sign_off_method, signature_image_path,
@@ -1284,11 +1313,13 @@ const verifySignatureAndAccept = async (pool, { token, signaturePath, representa
     ],
   );
 
-  await pool.query("UPDATE crms_completion_reports SET status = 'accepted' WHERE id = ?", [report.id]);
-  await pool.query(
+  await connection.query("UPDATE crms_completion_reports SET status = 'accepted' WHERE id = ?", [report.id]);
+  await connection.query(
     "UPDATE crms_change_requests SET status = 'client_accepted', acceptance_status = 'accepted' WHERE id = ?",
     [report.change_request_id],
   );
+  return { acceptanceId };
+  });
 
   await recordCrmsAudit(pool, {
     requestId: report.change_request_id,
@@ -1301,8 +1332,8 @@ const verifySignatureAndAccept = async (pool, { token, signaturePath, representa
   });
 
   // Notify Account Manager
-  const actionUrl = `${canonicalAppUrl(req).replace(/\/+$/, '')}/developers/requests/${encodeURIComponent(report.change_request_id)}`;
   try {
+    const actionUrl = `${canonicalAppUrl(req).replace(/\/+$/, '')}/developers/requests/${encodeURIComponent(report.change_request_id)}`;
     await sendUserNotification({
       pool,
       userId: report.account_manager_id,

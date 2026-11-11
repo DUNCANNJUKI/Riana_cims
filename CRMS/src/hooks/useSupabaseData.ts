@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Database } from '@crms/integrations/supabase/types';
 import { apiRequest } from '@crms/lib/apiRequest';
+import type { ClientAcceptance, CompletionReport } from '@crms/types/clientWorkflow';
 
 const API_URL = '/api/crms';
 const DEFAULT_STALE_TIME = 60_000;
@@ -15,8 +16,13 @@ async function fetchJson<T>(url: string, message: string): Promise<T> {
   return res.json() as Promise<T>;
 }
 
-type Client = Database['public']['Tables']['clients']['Row'];
-type Profile = Database['public']['Tables']['profiles']['Row'] & {
+type Client = Database['public']['Tables']['clients']['Row'] & {
+  client_name?: string | null;
+  contact_person_name?: string | null;
+  contact_person_phone?: string | null;
+  contact_person_email?: string | null;
+};
+export type Profile = Database['public']['Tables']['profiles']['Row'] & {
   password?: string;
   status: 'active' | 'suspended';
 };
@@ -65,6 +71,21 @@ export interface RequestScopeSummary {
 }
 
 export interface ChangeRequestWithRelations extends ChangeRequest {
+  title?: string | null;
+  category?: string | null;
+  client_name?: string | null;
+  branch_name?: string | null;
+  is_client_request?: boolean;
+  client_representative_name?: string | null;
+  client_representative_phone?: string | null;
+  client_representative_email?: string | null;
+  expected_behaviour?: string | null;
+  business_problem?: string | null;
+  business_justification?: string | null;
+  impact_on_operations?: string | null;
+  preferred_timeline?: string | null;
+  client_acceptance?: ClientAcceptance | null;
+  completion_report?: CompletionReport | null;
   branch_id?: string | null;
   department_id?: string | null;
   installation_id?: string | null;
@@ -305,7 +326,7 @@ export function useCreateChangeRequest() {
 export function useUpdateChangeRequest() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async ({ id, ...updates }: { id: string } & Partial<ChangeRequest>) => {
+    mutationFn: async ({ id, ...updates }: { id: string } & Partial<ChangeRequestWithRelations>) => {
       const res = await apiRequest(`${API_URL}/change_requests/${id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },

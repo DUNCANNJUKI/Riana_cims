@@ -21,10 +21,14 @@ const resolveJwtSecret = (env = process.env) => {
   return secret || 'development-only-secret-not-for-production';
 };
 
-const parseCookies = (header = '') => Object.fromEntries(header.split(';').map((part) => {
+const parseCookies = (header = '') => Object.fromEntries(String(header).split(';').map((part) => {
   const index = part.indexOf('=');
   if (index < 0) return ['', ''];
-  return [part.slice(0, index).trim(), decodeURIComponent(part.slice(index + 1).trim())];
+  try {
+    return [part.slice(0, index).trim(), decodeURIComponent(part.slice(index + 1).trim())];
+  } catch {
+    return ['', ''];
+  }
 }).filter(([key]) => key));
 
 const extractToken = (req) => {

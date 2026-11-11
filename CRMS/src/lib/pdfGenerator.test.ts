@@ -2,6 +2,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import jsPDF from 'jspdf';
+import type { ChangeRequestWithRelations, Profile } from '@crms/hooks/useSupabaseData';
 import { generateChangeRequestPDF, generateCompletionReportPDF } from './pdfGenerator';
 import {
   addCimsDocumentHeader,
@@ -10,7 +11,13 @@ import {
   RIANA_TRANSPARENT_HEADER_LOGO,
 } from '../../../src/utils/pdfWatermark';
 
-const sampleRequest = {
+const sampleProfile: Profile = {
+  id: 'qa-developer', user_id: 'qa-developer', name: 'Assigned Developer', email: 'developer@example.test',
+  department: 'Technology', avatar_url: null, status: 'active',
+  created_at: '2026-06-18T08:00:00.000Z', updated_at: '2026-06-18T08:00:00.000Z',
+};
+
+const sampleRequest: ChangeRequestWithRelations = {
   id: 'qa-request',
   ticket_number: 'CR-2026-0042',
   department: 'Technology',
@@ -20,13 +27,16 @@ const sampleRequest = {
   completion_date: '2026-06-20T08:00:00.000Z',
   priority: 'high',
   status: 'completed',
-  source: 'client',
+  source: 'email',
   change_description: 'Improve the client dashboard, validate the notification workflow, and document the production release.',
   modules_affected: ['Dashboard', 'Notifications', 'Reports'],
-  client: { name: 'Sample Client', branch: 'Nairobi', contract_type: 'support', contact_person: 'Client Representative', contact_email: 'client@example.test', contact_phone: '+254700000000', subsidiary_name: 'MAREZI Kenya' },
-  senior_developer: { name: 'Senior Developer' },
-  assigned_developer: { name: 'Assigned Developer' },
-} as any;
+  client: { id: 'qa-client', name: 'Sample Client', branch: 'Nairobi', contract_type: 'amc', contact_person: 'Client Representative', contact_email: 'client@example.test', contact_phone: '+254700000000', subsidiary_name: 'MAREZI Kenya', created_at: '2026-06-18T08:00:00.000Z', updated_at: '2026-06-18T08:00:00.000Z' },
+  senior_developer: { ...sampleProfile, name: 'Senior Developer' },
+  assigned_developer: sampleProfile,
+  approval_comment: null, assigned_developer_id: sampleProfile.id, client_id: 'qa-client',
+  sales_remarks: null, is_chargeable: false, senior_developer_id: sampleProfile.id,
+  created_at: '2026-06-18T08:00:00.000Z', updated_at: '2026-06-18T08:00:00.000Z',
+};
 
 const fetchMock = vi.fn();
 

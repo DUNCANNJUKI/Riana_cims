@@ -11,12 +11,17 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
       - run: npm ci
       - run: npm ci --prefix CRMS
       - run: npm ci --prefix server
       - run: npm run notifications:verify
-      - run: npx tsc -p tsconfig.app.json --noEmit
-      - run: npx tsc -p CRMS/tsconfig.app.json --noEmit
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm run lint --prefix CRMS
+      - run: npm test
+      - run: npm audit --omit=dev --audit-level=high
+      - run: npm audit --prefix server --omit=dev --audit-level=high
+      - run: npm audit --prefix CRMS --omit=dev --audit-level=high
       - run: npm run build:all

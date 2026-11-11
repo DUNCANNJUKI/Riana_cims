@@ -13,8 +13,9 @@ import {
 import { cn } from '@crms/lib/utils';
 import { useAuditLogs } from '@crms/hooks/useSupabaseData';
 import { Skeleton } from '@crms/components/ui/skeleton';
+import type { LucideIcon } from 'lucide-react';
 
-const activityIcons: Record<string, any> = {
+const activityIcons: Record<string, LucideIcon> = {
   created: FileText,
   approved: CheckCircle,
   rejected: XCircle,

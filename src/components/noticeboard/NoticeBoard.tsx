@@ -169,7 +169,7 @@ export const NoticeBoard = ({ onNavigate }: NoticeBoardProps) => {
   };
 
   const handleToggleActive = async (announcement: any) => {
-    const nextActive = !Boolean(announcement.is_active);
+    const nextActive = !announcement.is_active;
     try {
       await apiClient.patch(`/announcements/${announcement.id}`, {
         is_active: nextActive,

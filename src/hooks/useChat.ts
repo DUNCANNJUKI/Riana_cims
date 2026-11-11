@@ -4,6 +4,7 @@ import { User } from '@/types';
 import { playCallHangupSound, playCallRingSound, playMessageSound } from '@/utils/notificationSound';
 import { getCommunicationDeviceId } from '@/utils/communicationDevice';
 import { filterDismissedMissedCalls, mergeUndismissedMissedCalls, persistThenDismissMissedCall } from './missedCallState';
+import { activeCallAfterUpdate, clearMatchingActiveCall, isPendingCallInvitation } from './activeCallState';
 
 export interface ChatMessage {
   id: string;
@@ -154,6 +155,7 @@ export const useChat = (currentUser: User | null) => {
   const notifiedMissedCallIdsRef = useRef<Set<string>>(new Set());
   const dismissedMissedCallIdsRef = useRef<Set<string>>(new Set());
   const missedCallEventVersionRef = useRef(0);
+  const callsResolvedOnAnotherDeviceRef = useRef<Set<string>>(new Set());
 
   const loadUsers = useCallback(async () => {
     try {
@@ -329,6 +331,7 @@ export const useChat = (currentUser: User | null) => {
     dismissedMissedCallIdsRef.current.clear();
     notifiedMissedCallIdsRef.current.clear();
     missedCallEventVersionRef.current = 0;
+    callsResolvedOnAnotherDeviceRef.current.clear();
     setMissedCalls([]);
     setDismissingMissedCallIds(new Set());
   }, [currentUserId]);
@@ -441,6 +444,7 @@ export const useChat = (currentUser: User | null) => {
   const startCall = useCallback(async (receiverIds: string | string[], callType: 'audio' | 'video') => {
     const targetIds = Array.isArray(receiverIds) ? receiverIds : [receiverIds];
     const call = await apiClient.post('/chat/calls', { receiver_id: targetIds[0], receiver_ids: targetIds, call_type: callType, device_id: getCommunicationDeviceId() }) as ChatMessage;
+    callsResolvedOnAnotherDeviceRef.current.delete(call.id);
     setActiveCall(call);
     appendOrReplaceMessage(call);
     return call;
@@ -464,7 +468,8 @@ export const useChat = (currentUser: User | null) => {
 
   const updateCallStatus = useCallback(async (callId: string, status: 'accepted' | 'declined' | 'ended' | 'missed') => {
     const call = await apiClient.patch(`/chat/calls/${callId}`, { status, device_id: getCommunicationDeviceId() }) as ChatMessage;
-    setActiveCall(['declined', 'ended', 'missed'].includes(status) ? null : call);
+    if (status === 'accepted') callsResolvedOnAnotherDeviceRef.current.delete(callId);
+    setActiveCall(current => ['declined', 'ended', 'missed'].includes(status) ? clearMatchingActiveCall(current, callId) : call);
     setIncomingCall(current => current?.id === callId ? null : current);
     appendOrReplaceMessage(call);
     return call;
@@ -535,13 +540,8 @@ export const useChat = (currentUser: User | null) => {
         } else if (data.type === 'call_updated') {
           const call = data.call as ChatMessage;
           appendOrReplaceMessage(call);
-          const ownParticipantStatus = call.call_participants?.find(participant => String(participant.user_id) === String(currentUserId))?.status;
-          const isPendingInvite = ['invited', 'ringing'].includes(String(ownParticipantStatus)) && String(call.sender_id) !== String(currentUserId);
-          const hasLeftCall = ['declined', 'ended', 'missed', 'cancelled', 'expired', 'failed'].includes(String(ownParticipantStatus));
-          if (!isPendingInvite) setIncomingCall(current => current?.id === call.id ? null : current);
-          setActiveCall(['declined', 'ended', 'missed'].includes(String(call.call_status)) || hasLeftCall
-            ? null
-            : isPendingInvite ? current => current?.id === call.id ? current : null : call);
+          if (!isPendingCallInvitation(call, currentUserId)) setIncomingCall(current => current?.id === call.id ? null : current);
+          setActiveCall(current => activeCallAfterUpdate(current, call, currentUserId, callsResolvedOnAnotherDeviceRef.current.has(call.id)));
           if (call.call_status === 'missed' && call.receiver_id === currentUserId) mergeMissedCalls([call]);
         } else if (data.type === 'call_recording_state') {
           const isRecordingActive = Boolean(data.active);
@@ -561,6 +561,7 @@ export const useChat = (currentUser: User | null) => {
           }
         } else if (data.type === 'call_device_resolved') {
           if (data.winningDeviceId !== getCommunicationDeviceId()) {
+            callsResolvedOnAnotherDeviceRef.current.add(data.callId);
             setIncomingCall(current => current?.id === data.callId ? null : current);
             setActiveCall(current => current?.id === data.callId ? null : current);
             setCallSignals(current => current.filter(signal => signal.callId !== data.callId));

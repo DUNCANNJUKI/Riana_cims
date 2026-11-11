@@ -7,6 +7,7 @@ import { Label } from '@crms/components/ui/label';
 import { Textarea } from '@crms/components/ui/textarea';
 import { useToast } from '@crms/hooks/use-toast';
 import { apiRequest } from '@crms/lib/apiRequest';
+import { errorMessage } from '@crms/lib/utils';
 import { ShieldCheck, CheckCircle2, RefreshCw, KeyRound, PenTool } from 'lucide-react';
 
 interface CloseChangeRequestDialogProps {
@@ -59,10 +60,10 @@ export const CloseChangeRequestDialog: React.FC<CloseChangeRequestDialogProps> =
 
       onOpenChange(false);
       if (onSuccess) onSuccess();
-    } catch (err: any) {
+    } catch (err: unknown) {
       toast({
         title: 'Closure Failed',
-        description: err.message,
+        description: errorMessage(err),
         variant: 'destructive',
       });
     } finally {

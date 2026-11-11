@@ -20,7 +20,7 @@ interface CreateAuditLogParams {
   details?: string;
   previousValue?: string;
   newValue?: string;
-  metadata?: Record<string, any>;
+  metadata?: Record<string, unknown>;
 }
 
 export async function createAuditLog(params: CreateAuditLogParams) {

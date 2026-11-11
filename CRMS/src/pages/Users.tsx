@@ -40,6 +40,9 @@ import {
 } from '@crms/components/ui/select';
 import { useUsersWithRoles, useCreateProfile, useUpdateProfile, useCreateUserRole, useUpdateUserRole, useDeleteProfile } from '@crms/hooks/useSupabaseData';
 import { useToast } from '@crms/hooks/use-toast';
+import { errorMessage } from '@crms/lib/utils';
+import type { Profile } from '@crms/hooks/useSupabaseData';
+import type { Database } from '@crms/integrations/supabase/types';
 import { Skeleton } from '@crms/components/ui/skeleton';
 import {
   Trash2,
@@ -80,10 +83,12 @@ const roleLabels: Record<string, string> = {
   sales: 'Sales Team',
 };
 
+type UserWithRoles = Profile & { roles: Database['public']['Tables']['user_roles']['Row'][] };
+
 export default function Users() {
   const [searchQuery, setSearchQuery] = useState('');
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
-  const [editingUser, setEditingUser] = useState<any>(null);
+  const [editingUser, setEditingUser] = useState<UserWithRoles | null>(null);
   const [formData, setFormData] = useState({
     name: '',
     email: '',
@@ -100,7 +105,7 @@ export default function Users() {
   const deleteProfile = useDeleteProfile();
   const { toast } = useToast();
 
-  const [userToDelete, setUserToDelete] = useState<any>(null);
+  const [userToDelete, setUserToDelete] = useState<UserWithRoles | null>(null);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
 
   const filteredUsers = users?.filter(user =>
@@ -115,7 +120,7 @@ export default function Users() {
     setIsAddDialogOpen(true);
   };
 
-  const handleOpenEdit = (user: any) => {
+  const handleOpenEdit = (user: UserWithRoles) => {
     setFormData({
       name: user.name,
       email: user.email,
@@ -174,31 +179,31 @@ export default function Users() {
       }
 
       setIsAddDialogOpen(false);
-    } catch (err: any) {
+    } catch (err: unknown) {
       toast({
         title: 'Error',
-        description: err.message || 'Failed to save user',
+        description: errorMessage(err, 'Failed to save user'),
         variant: 'destructive',
       });
     }
   };
 
-  const handleToggleStatus = async (user: any) => {
+  const handleToggleStatus = async (user: UserWithRoles) => {
     try {
       const newStatus = user.status === 'active' ? 'suspended' : 'active';
       await updateProfile.mutateAsync({
         id: user.id,
         status: newStatus,
-      } as any);
+      });
 
       toast({
         title: `User ${newStatus === 'active' ? 'Reactivated' : 'Suspended'}`,
         description: `${user.name} is now ${newStatus}.`,
       });
-    } catch (err: any) {
+    } catch (err: unknown) {
       toast({
         title: 'Error',
-        description: err.message || 'Failed to update status',
+        description: errorMessage(err, 'Failed to update status'),
         variant: 'destructive',
       });
     }
@@ -215,10 +220,10 @@ export default function Users() {
         title: 'User Deleted',
         description: 'The user has been successfully removed.',
       });
-    } catch (err: any) {
+    } catch (err: unknown) {
       toast({
         title: 'Error',
-        description: err.message || 'Failed to delete user',
+        description: errorMessage(err, 'Failed to delete user'),
         variant: 'destructive',
       });
     }
@@ -314,7 +319,7 @@ export default function Users() {
                 <Label htmlFor="role">Role</Label>
                 <Select
                   value={formData.role}
-                  onValueChange={(value: any) => setFormData(prev => ({ ...prev, role: value }))}
+                  onValueChange={(value) => setFormData(prev => ({ ...prev, role: value as Database['public']['Enums']['app_role'] }))}
                 >
                   <SelectTrigger>
                     <SelectValue placeholder="Select role" />

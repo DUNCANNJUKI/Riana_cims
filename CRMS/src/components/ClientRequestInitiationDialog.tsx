@@ -10,6 +10,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useClients, useClientScope } from '@crms/hooks/useSupabaseData';
 import { useToast } from '@crms/hooks/use-toast';
 import { apiRequest } from '@crms/lib/apiRequest';
+import { errorMessage } from '@crms/lib/utils';
+import type { ClientInvitation } from '@crms/types/clientWorkflow';
 import { Building2, User, Phone, Mail, Send, Save, Copy, Check, CheckCircle2, RefreshCw, AlertCircle } from 'lucide-react';
 
 interface ClientRequestInitiationDialogProps {
@@ -41,7 +43,7 @@ export const ClientRequestInitiationDialog: React.FC<ClientRequestInitiationDial
 
   const [submitting, setSubmitting] = useState(false);
   const [createdResult, setCreatedResult] = useState<{
-    invitation: any;
+    invitation: ClientInvitation;
     submissionUrl: string;
     sent?: {
       smsStatus?: string;
@@ -62,7 +64,7 @@ export const ClientRequestInitiationDialog: React.FC<ClientRequestInitiationDial
       return next;
     });
 
-    const client = clients.find((c: any) => c.id === clientId);
+    const client = clients.find((c) => c.id === clientId);
     if (client) {
       const contactPerson = client.contact_person_name || client.contact_person || '';
       const contactPhone = client.contact_person_phone || client.contact_phone || '';
@@ -86,7 +88,7 @@ export const ClientRequestInitiationDialog: React.FC<ClientRequestInitiationDial
     setSelectedBranchId(branchId);
     setSelectedDepartmentId('');
     if (branchId && branchId !== 'all') {
-      const branch = scope?.branches?.find((b: any) => b.id === branchId);
+      const branch = scope?.branches?.find((b) => b.id === branchId);
       if (branch && branch.contact_person_name) {
         setRepName(branch.contact_person_name);
         if (branch.contact_phone) setRepPhone(branch.contact_phone);
@@ -172,11 +174,11 @@ export const ClientRequestInitiationDialog: React.FC<ClientRequestInitiationDial
       });
 
       if (onSuccess) onSuccess();
-    } catch (err: any) {
-      setFormError(err.message || 'Failed to dispatch change request invitation.');
+    } catch (err: unknown) {
+      setFormError(errorMessage(err, 'Failed to dispatch change request invitation.'));
       toast({
         title: 'Operation Failed',
-        description: err.message,
+        description: errorMessage(err),
         variant: 'destructive',
       });
     } finally {
@@ -184,12 +186,16 @@ export const ClientRequestInitiationDialog: React.FC<ClientRequestInitiationDial
     }
   };
 
-  const handleCopyLink = () => {
+  const handleCopyLink = async () => {
     if (!createdResult) return;
-    navigator.clipboard.writeText(createdResult.submissionUrl);
-    setCopied(true);
-    toast({ title: 'Link Copied', description: 'Client submission URL copied to clipboard.' });
-    setTimeout(() => setCopied(false), 2500);
+    try {
+      await navigator.clipboard.writeText(createdResult.submissionUrl);
+      setCopied(true);
+      toast({ title: 'Link Copied', description: 'Client submission URL copied to clipboard.' });
+      setTimeout(() => setCopied(false), 2500);
+    } catch {
+      toast({ title: 'Copy Failed', description: 'Select and copy the submission link manually.', variant: 'destructive' });
+    }
   };
 
   const resetForm = () => {
@@ -210,7 +216,7 @@ export const ClientRequestInitiationDialog: React.FC<ClientRequestInitiationDial
   };
 
   const filteredDepartments = scope?.departments?.filter(
-    (d: any) => !selectedBranchId || selectedBranchId === 'all' || d.branch_id === selectedBranchId
+    (d) => !selectedBranchId || selectedBranchId === 'all' || d.branch_id === selectedBranchId
   ) || [];
 
   return (
@@ -290,7 +296,7 @@ export const ClientRequestInitiationDialog: React.FC<ClientRequestInitiationDial
                   <SelectValue placeholder={loadingClients ? 'Loading clients...' : 'Choose registered client'} />
                 </SelectTrigger>
                 <SelectContent className="max-h-60">
-                  {clients.map((c: any) => {
+                  {clients.map((c) => {
                     const clientName = (c.client_name || c.name || '').trim();
                     const branchName = c.branch ? ` (${c.branch})` : '';
                     const label = clientName ? `${clientName}${branchName}` : (c.branch || 'Unknown Client');
@@ -321,7 +327,7 @@ export const ClientRequestInitiationDialog: React.FC<ClientRequestInitiationDial
                   </SelectTrigger>
                   <SelectContent className="max-h-52">
                     <SelectItem value="all">Main / All Branches</SelectItem>
-                    {scope?.branches?.map((b: any) => (
+                    {scope?.branches?.map((b) => (
                       <SelectItem key={b.id} value={b.id}>
                         {b.branch_name}
                       </SelectItem>
@@ -342,7 +348,7 @@ export const ClientRequestInitiationDialog: React.FC<ClientRequestInitiationDial
                   </SelectTrigger>
                   <SelectContent className="max-h-52">
                     <SelectItem value="all">All Departments</SelectItem>
-                    {filteredDepartments.map((d: any) => (
+                    {filteredDepartments.map((d) => (
                       <SelectItem key={d.id} value={d.id}>
                         {d.department_name}
                       </SelectItem>

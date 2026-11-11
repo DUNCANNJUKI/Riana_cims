@@ -1322,9 +1322,9 @@ export const ChatModule = ({ currentUser, chat, onClose, onMinimize, onToggleFul
   useEffect(() => () => {
     if (typingTimerRef.current) window.clearTimeout(typingTimerRef.current);
     if (activeChatUserId) void setTyping(activeChatUserId, false);
-    closePeer();
-    stopStreams();
   }, [activeChatUserId, setTyping]);
+
+  useEffect(() => () => endLocalCallStateRef.current(), []);
 
   useEffect(() => {
     if (!localVideoRef.current) return;

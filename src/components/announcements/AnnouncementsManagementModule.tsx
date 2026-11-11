@@ -293,7 +293,7 @@ export const AnnouncementsManagementModule = ({ user }: AnnouncementsManagementM
   };
 
   const handleToggleActive = async (announcement: Announcement) => {
-    const nextActive = !Boolean(announcement.is_active);
+    const nextActive = !announcement.is_active;
     try {
       await apiClient.patch(`/announcements/${announcement.id}`, {
         is_active: nextActive,

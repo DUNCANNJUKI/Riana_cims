@@ -26,7 +26,7 @@ import {
   DialogTitle,
 } from '@crms/components/ui/dialog';
 import { useToast } from '@crms/hooks/use-toast';
-import { useChangeRequests, useUpdateChangeRequest } from '@crms/hooks/useSupabaseData';
+import { useChangeRequests, useUpdateChangeRequest, type ChangeRequestWithRelations } from '@crms/hooks/useSupabaseData';
 import type { Database } from '@crms/integrations/supabase/types';
 
 type RequestStatus = Database['public']['Enums']['request_status'];
@@ -53,9 +53,9 @@ export default function Approvals() {
     } as const;
 
     try {
-      const updateData: any = {
+      const updateData: { id: string } & Partial<ChangeRequestWithRelations> = {
         id: requestId,
-        status: statusMap[action] as any,
+        status: statusMap[action],
       };
 
       // Add comment if holding

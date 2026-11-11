@@ -1,14 +1,6 @@
 export type UserRole = 'admin' | 'senior_developer' | 'developer' | 'sales';
 
-export type RequestStatus =
-  | 'pending_approval'
-  | 'approved'
-  | 'rejected'
-  | 'waiting'
-  | 'waiting_clarification'
-  | 'assigned'
-  | 'in_progress'
-  | 'completed';
+export type RequestStatus = import('@crms/integrations/supabase/types').Database['public']['Enums']['request_status'];
 
 export type Priority = 'low' | 'medium' | 'high' | 'critical';
 

@@ -12,6 +12,22 @@ const {
   verifySignatureAndAccept,
 } = require('../services/clientChangeRequests');
 
+const respondWithError = (res, err) => {
+  const status = Number(err.status);
+  const expected = Number.isInteger(status) && status >= 400 && status < 500;
+  return res.status(expected ? status : 500).json({
+    error: expected ? err.message : 'Unable to process this request. Please try again later.',
+    ...(expected && err.code ? { code: err.code } : {}),
+  });
+};
+
+const removeUnclaimedFiles = (uploadsDir, files) => {
+  for (const storedName of files) {
+    try { fs.unlinkSync(path.join(uploadsDir, storedName)); }
+    catch (error) { if (error.code !== 'ENOENT') console.error('Unable to clean up an unclaimed portal upload.'); }
+  }
+};
+
 module.exports = function createClientChangeRequestPortalRouter({ pool, uploadsDir }) {
   const router = express.Router();
 
@@ -21,15 +37,21 @@ module.exports = function createClientChangeRequestPortalRouter({ pool, uploadsD
       const invitation = await getInvitationForClient(pool, req.params.token);
       res.json(invitation);
     } catch (err) {
-      res.status(err.status || 500).json({ error: err.message, code: err.code });
+      respondWithError(res, err);
     }
   });
 
   // 2. Submit Change Request Form
   router.post('/submit', async (req, res) => {
+    const writtenFiles = [];
     try {
       const { token, attachments: rawAttachments = [], ...submissionFields } = req.body;
       if (!token) return res.status(400).json({ error: 'Invitation token is required.' });
+      const invitation = await getInvitationForClient(pool, token);
+      if (invitation.is_submitted) return res.status(409).json({ error: 'This request has already been submitted.', code: 'ALREADY_SUBMITTED' });
+      if (!Array.isArray(rawAttachments) || rawAttachments.length > 10) {
+        return res.status(400).json({ error: 'Provide no more than 10 attachments.' });
+      }
 
       // Process and save attachments safely if provided
       const storedAttachments = [];
@@ -44,6 +66,7 @@ module.exports = function createClientChangeRequestPortalRouter({ pool, uploadsD
               });
               const dest = path.join(uploadsDir, storedName);
               fs.writeFileSync(dest, buffer, { mode: 0o640 });
+              writtenFiles.push(storedName);
               storedAttachments.push({
                 file_name: path.basename(item.fileName).slice(0, 255),
                 stored_name: storedName,
@@ -51,8 +74,10 @@ module.exports = function createClientChangeRequestPortalRouter({ pool, uploadsD
                 uploaded_at: new Date().toISOString(),
               });
             } catch (uploadErr) {
-              return res.status(uploadErr.status || 400).json({ error: `Attachment upload error: ${uploadErr.message}` });
+              throw uploadErr;
             }
+          } else {
+            throw Object.assign(new Error('Each attachment requires a file name and data.'), { status: 400 });
           }
         }
       }
@@ -66,7 +91,8 @@ module.exports = function createClientChangeRequestPortalRouter({ pool, uploadsD
 
       res.status(201).json(result);
     } catch (err) {
-      res.status(err.status || 500).json({ error: err.message, code: err.code });
+      removeUnclaimedFiles(uploadsDir, writtenFiles);
+      respondWithError(res, err);
     }
   });
 
@@ -76,7 +102,7 @@ module.exports = function createClientChangeRequestPortalRouter({ pool, uploadsD
       const report = await getCompletionReportForClient(pool, req.params.token);
       res.json(report);
     } catch (err) {
-      res.status(err.status || 500).json({ error: err.message });
+      respondWithError(res, err);
     }
   });
 
@@ -95,7 +121,7 @@ module.exports = function createClientChangeRequestPortalRouter({ pool, uploadsD
       });
       res.json(result);
     } catch (err) {
-      res.status(err.status || 500).json({ error: err.message });
+      respondWithError(res, err);
     }
   });
 
@@ -106,7 +132,7 @@ module.exports = function createClientChangeRequestPortalRouter({ pool, uploadsD
       const result = await requestClientOtp(pool, req.params.token, channel, req);
       res.json(result);
     } catch (err) {
-      res.status(err.status || 500).json({ error: err.message });
+      respondWithError(res, err);
     }
   });
 
@@ -124,17 +150,19 @@ module.exports = function createClientChangeRequestPortalRouter({ pool, uploadsD
       });
       res.json(result);
     } catch (err) {
-      res.status(err.status || 500).json({ error: err.message });
+      respondWithError(res, err);
     }
   });
 
   // 7. Signature Upload and Sign Off
   router.post('/review/:token/sign', async (req, res) => {
+    const writtenFiles = [];
     try {
       const { fileName, base64Data, representativeName, designation } = req.body;
       if (!fileName || !base64Data) {
         return res.status(400).json({ error: 'Signature image is required.' });
       }
+      await getCompletionReportForClient(pool, req.params.token);
       const { buffer, storedName } = safeUpload({
         fileName,
         base64Data,
@@ -142,6 +170,7 @@ module.exports = function createClientChangeRequestPortalRouter({ pool, uploadsD
       });
       const dest = path.join(uploadsDir, storedName);
       fs.writeFileSync(dest, buffer, { mode: 0o640 });
+      writtenFiles.push(storedName);
 
       const result = await verifySignatureAndAccept(pool, {
         token: req.params.token,
@@ -152,7 +181,8 @@ module.exports = function createClientChangeRequestPortalRouter({ pool, uploadsD
       });
       res.json(result);
     } catch (err) {
-      res.status(err.status || 500).json({ error: err.message });
+      removeUnclaimedFiles(uploadsDir, writtenFiles);
+      respondWithError(res, err);
     }
   });
 
@@ -168,7 +198,9 @@ module.exports = function createClientChangeRequestPortalRouter({ pool, uploadsD
          JOIN clients c ON c.id COLLATE utf8mb4_unicode_ci = cr.client_id COLLATE utf8mb4_unicode_ci
          LEFT JOIN client_branches cb ON cb.id COLLATE utf8mb4_unicode_ci = cr.branch_id COLLATE utf8mb4_unicode_ci
          LEFT JOIN crms_change_request_invitations i ON i.id COLLATE utf8mb4_unicode_ci = cr.invitation_id COLLATE utf8mb4_unicode_ci
-         WHERE i.invitation_token = ? OR cr.ticket_number = ? LIMIT 1`,
+         LEFT JOIN crms_completion_reports r ON r.change_request_id COLLATE utf8mb4_unicode_ci = cr.id COLLATE utf8mb4_unicode_ci
+         WHERE (i.invitation_token = ? AND i.status <> 'cancelled')
+            OR (r.acceptance_token = ? AND r.token_expires_at > NOW() AND r.status NOT IN ('draft','superseded')) LIMIT 1`,
         [req.params.token, req.params.token],
       );
       if (!rows.length) return res.status(404).json({ error: 'Request not found.' });
@@ -209,7 +241,7 @@ module.exports = function createClientChangeRequestPortalRouter({ pool, uploadsD
         acceptance_status: row.acceptance_status,
       });
     } catch (err) {
-      res.status(500).json({ error: err.message });
+      respondWithError(res, err);
     }
   });
 

@@ -7,6 +7,7 @@ const {
   createGlobalApiPolicy,
   createSessionAuthenticator,
   createSensitiveRateLimiter,
+  parseCookies,
   resolveJwtSecret,
   resolveStoredFile,
   safeUpload,
@@ -24,6 +25,17 @@ const response = () => ({
 
 const evaluateOrigin = (options, origin) => new Promise((resolve) => {
   options.origin(origin, (error, allowed) => resolve({ error, allowed }));
+});
+
+test('malformed cookie encoding does not reject unrelated cookies or crash authentication', async () => {
+  assert.deepEqual(parseCookies('analytics=%broken; riana_session=valid%2Etoken'), { riana_session: 'valid.token' });
+  const authenticate = createSessionAuthenticator({
+    pool: { query: async () => assert.fail('malformed session cookies must not reach the database') },
+    jwtSecret: 's'.repeat(48),
+  });
+  const res = response();
+  await authenticate({ headers: { cookie: 'riana_session=%E0%A4%A' } }, res, () => assert.fail('must not authenticate'));
+  assert.equal(res.statusCode, 401);
 });
 
 test('security policy permits WebAssembly while keeping JavaScript eval and external scripts blocked', () => {

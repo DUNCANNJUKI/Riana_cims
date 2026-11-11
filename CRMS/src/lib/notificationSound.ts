@@ -6,7 +6,9 @@ class NotificationSoundManager {
     if (typeof window === 'undefined') return;
     const unlock = async () => {
       try {
-        this.context ||= new (window.AudioContext || (window as any).webkitAudioContext)();
+        const AudioContextClass = window.AudioContext || (window as Window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+        if (!AudioContextClass) return;
+        this.context ||= new AudioContextClass();
         if (this.context.state === 'suspended') await this.context.resume();
         this.unlocked = true;
         document.removeEventListener('click', unlock);

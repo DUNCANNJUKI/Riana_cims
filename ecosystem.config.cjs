@@ -1,4 +1,15 @@
 const path = require('path');
+const fs = require('fs');
+
+const deployedRelease = () => {
+  try {
+    const release = fs.readFileSync(path.join(__dirname, '.runtime', 'app-release'), 'utf8').trim();
+    if (/^[a-f0-9]{40}$/i.test(release)) return release;
+  } catch (error) {
+    if (error.code !== 'ENOENT') throw error;
+  }
+  return process.env.APP_RELEASE || 'unversioned';
+};
 
 module.exports = {
   apps: [
@@ -14,7 +25,7 @@ module.exports = {
       kill_timeout: 10000,
       max_memory_restart: '750M',
       time: true,
-      env_production: { NODE_ENV: 'production', PORT: 8081, APP_RELEASE: process.env.APP_RELEASE || 'unversioned' },
+      env_production: { NODE_ENV: 'production', PORT: 8081, APP_RELEASE: deployedRelease() },
     },
     {
       name: 'riana-cims-web',

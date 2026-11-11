@@ -6,7 +6,11 @@ export function installAuthenticatedFetch() {
   installed = true;
   window.fetch = (input: RequestInfo | URL, init: RequestInit = {}) => {
     const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
-    if (!url.includes('/api/crms')) return nativeFetch(input, init);
+    const target = new URL(url, window.location.href);
+    if (target.origin !== window.location.origin
+      || !(target.pathname === '/api/crms' || target.pathname.startsWith('/api/crms/'))) {
+      return nativeFetch(input, init);
+    }
 
     const token = localStorage.getItem('riana-auth-token');
     const headers = new Headers(init.headers || (input instanceof Request ? input.headers : undefined));
