@@ -427,13 +427,14 @@ module.exports = function createCrmsRouter({ pool, jwtSecret }) {
   router.delete('/user_roles/:id', denyCrmsUserManagement);
 
   const clientSelect = `SELECT c.id, c.client_name, c.client_name AS name, c.branch, LOWER(c.contract_type) AS contract_type,
- c.contact_person_name, c.contact_person_name AS contact_person, c.contact_person_phone, c.contact_person_email,
-    c.contact_person_name AS contact_person,c.contact_email,c.contact_phone,c.subsidiary_id,
+ c.contact_person_name, c.contact_person_name AS contact_person,
+    c.contact_phone AS contact_person_phone,c.contact_email AS contact_person_email,
+    c.contact_email,c.contact_phone,c.subsidiary_id,
     s.subsidiary_name,c.created_at,c.updated_at FROM clients c
     LEFT JOIN subsidiaries s ON s.id = c.subsidiary_id`;
   router.get('/clients', async (_req, res) => {
     try { const [rows] = await pool.query(`${clientSelect} ORDER BY client_name`); res.json(rows); }
-    catch (error) { res.status(500).json({ error: error.message }); }
+    catch (error) { console.error('Unable to list CRMS clients:', error.code || 'DATABASE_ERROR'); res.status(500).json({ error: 'Unable to load clients. Please try again.' }); }
   });
   router.get('/clients/:id/scope', async (req, res) => {
     try {

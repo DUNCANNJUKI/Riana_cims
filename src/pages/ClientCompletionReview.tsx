@@ -102,16 +102,15 @@ export const ClientCompletionReview: React.FC = () => {
     }
     try {
       setLoading(true);
-      const res = await fetch(`${API_URL}/api/public/change-requests/review/${token}`);
+      const res = await fetch(`${API_URL}/public/change-requests/review/${token}`);
       const data = await res.json();
       if (!res.ok) {
         setError(data.error || 'Failed to load completion report.');
         return;
       }
-      setReport(data.report);
-      if (data.report.client_representative) {
-        setRepName(data.report.client_representative.name || '');
-      }
+      setError(null);
+      setReport({ ...data, status: data.report_status, change_request: { id: data.change_request_id, ticket_number: data.ticket_number, title: data.request_title, category: data.request_category, status: data.request_status }, client: { client_name: data.client.name, branch_name: data.client.branch, department_name: data.client.department }, client_representative: data.representative });
+      setRepName(data.representative?.name || '');
     } catch (err: any) {
       setError(err.message || 'Unable to connect to Riana servers.');
     } finally {
@@ -134,8 +133,10 @@ export const ClientCompletionReview: React.FC = () => {
   const handleRequestOtp = async () => {
     try {
       setRequestingOtp(true);
-      const res = await fetch(`${API_URL}/api/public/change-requests/review/${token}/request-otp`, {
+      const res = await fetch(`${API_URL}/public/change-requests/review/${token}/request-otp`, {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ channel: 'sms' }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to send OTP.');
@@ -144,7 +145,7 @@ export const ClientCompletionReview: React.FC = () => {
       setOtpTimer(60);
       toast({
         title: 'Verification Code Sent',
-        description: `A 6-digit OTP was sent to ${data.recipient_phone} and ${data.recipient_email}.`,
+        description: `A 6-digit code was sent by ${data.channel} to ${data.maskedTarget}.`,
       });
     } catch (err: any) {
       toast({
@@ -173,13 +174,13 @@ export const ClientCompletionReview: React.FC = () => {
 
     try {
       setSubmittingOtp(true);
-      const res = await fetch(`${API_URL}/api/public/change-requests/review/${token}/verify-otp`, {
+      const res = await fetch(`${API_URL}/public/change-requests/review/${token}/verify-otp`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          otp: otpCode.trim(),
-          client_representative_name: repName.trim(),
-          client_representative_designation: repDesignation.trim(),
+          code: otpCode.trim(),
+          representativeName: repName.trim(),
+          designation: repDesignation.trim(),
           declaration_confirmed: authorityDeclaration,
         }),
       });
@@ -237,13 +238,14 @@ export const ClientCompletionReview: React.FC = () => {
 
     try {
       setSubmittingSignature(true);
-      const res = await fetch(`${API_URL}/api/public/change-requests/review/${token}/sign`, {
+      const res = await fetch(`${API_URL}/public/change-requests/review/${token}/sign`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          signature_image_base64: signatureFile.base64,
-          client_representative_name: repName.trim(),
-          client_representative_designation: repDesignation.trim(),
+          fileName: signatureFile.name,
+          base64Data: signatureFile.base64,
+          representativeName: repName.trim(),
+          designation: repDesignation.trim(),
           declaration_confirmed: authorityDeclaration,
         }),
       });
@@ -279,12 +281,12 @@ export const ClientCompletionReview: React.FC = () => {
 
     try {
       setSubmittingAction(true);
-      const res = await fetch(`${API_URL}/api/public/change-requests/review/${token}/action`, {
+      const res = await fetch(`${API_URL}/public/change-requests/review/${token}/action`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          action_type: actionType,
-          response_text: actionText.trim(),
+          actionType: actionType === 'disputed' ? 'dispute_raised' : 'correction_requested',
+          explanation: actionText.trim(),
           client_representative_name: repName.trim() || report?.client_representative.name,
         }),
       });
@@ -334,6 +336,7 @@ export const ClientCompletionReview: React.FC = () => {
   }
 
   const isAlreadyAccepted = report.status === 'accepted' || Boolean(report.acceptance);
+  const canRespond = report.status === 'sent' && report.change_request.status === 'awaiting_client_acceptance';
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950 py-8 px-4 sm:px-6 lg:px-8">
@@ -531,10 +534,20 @@ export const ClientCompletionReview: React.FC = () => {
             )}
           </CardContent>
 
+          {report.attachments && report.attachments.length > 0 && (
+            <div className="flex flex-col gap-2 p-6">
+              <h2 className="font-semibold">Supporting documents</h2>
+              {report.attachments.map((attachment, index) => (
+                <a key={index} className="text-primary underline" href={`${API_URL}/public/change-requests/review/${encodeURIComponent(token || '')}/attachments/${index}`} download>
+                  {attachment.name}
+                </a>
+              ))}
+            </div>
+          )}
           {/* Action Bar */}
-          {!isAlreadyAccepted && (
+          {canRespond && (
             <CardFooter className="flex flex-col sm:flex-row justify-between gap-3 pt-6 border-t border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50">
-              <div className="flex items-center gap-2 w-full sm:w-auto">
+              <div className="flex flex-col sm:flex-row items-center gap-2 w-full sm:w-auto">
                 <Button
                   variant="outline"
                   onClick={() => {
@@ -621,7 +634,7 @@ export const ClientCompletionReview: React.FC = () => {
               {/* Method 1: OTP */}
               <TabsContent value="otp" className="space-y-4 pt-3">
                 <div className="bg-slate-50 dark:bg-slate-800 p-3.5 rounded-lg border border-slate-200 dark:border-slate-700 text-xs text-slate-600 dark:text-slate-300">
-                  A 6-digit one-time code will be dispatched to your registered phone (<strong>{report.client_representative.phone}</strong>) and email.
+                  A 6-digit one-time code will be dispatched by SMS to your registered phone (<strong>{report.client_representative.phone}</strong>).
                 </div>
 
                 {!otpRequested ? (

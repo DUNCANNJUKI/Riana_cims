@@ -89,7 +89,7 @@ export const ClientChangeRequestForm: React.FC = () => {
     const fetchInvitation = async () => {
       try {
         setLoading(true);
-        const res = await fetch(`${API_URL}/api/public/change-requests/invitation/${token}`);
+        const res = await fetch(`${API_URL}/public/change-requests/invitation/${token}`);
         const data = await res.json();
 
         if (!res.ok) {
@@ -105,7 +105,12 @@ export const ClientChangeRequestForm: React.FC = () => {
           return;
         }
 
-        setInvitation(data.invitation);
+        if (data.is_submitted) {
+          setError('This request has already been submitted. Use your tracking link to follow its progress.');
+          setErrorCode('ALREADY_SUBMITTED');
+          return;
+        }
+        setInvitation({ ...data, client: { client_name: data.client.name, branch_name: data.client.branch, department_name: data.client.department }, client_representative: data.representative });
       } catch (err: any) {
         setError(err.message || 'Unable to connect to Riana CIMS servers.');
       } finally {
@@ -197,9 +202,9 @@ export const ClientChangeRequestForm: React.FC = () => {
       setSubmitting(true);
       const payload = {
         token,
-        title: title.trim(),
-        category,
-        description: description.trim(),
+        request_title: title.trim(),
+        request_category: category,
+        change_description: description.trim(),
         current_behaviour: currentBehaviour.trim(),
         expected_behaviour: expectedBehaviour.trim(),
         business_problem: businessProblem.trim(),
@@ -208,10 +213,10 @@ export const ClientChangeRequestForm: React.FC = () => {
         preferred_timeline: preferredTimeline,
         additional_comments: additionalComments.trim(),
         declaration_confirmed: declarationConfirmed,
-        attachments,
+        attachments: attachments.map(file => ({ fileName: file.name, base64Data: file.base64 })),
       };
 
-      const res = await fetch(`${API_URL}/api/public/change-requests/submit`, {
+      const res = await fetch(`${API_URL}/public/change-requests/submit`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
@@ -669,7 +674,7 @@ export const ClientChangeRequestForm: React.FC = () => {
                 <ShieldCheck className="w-4 h-4 text-teal-600" />
                 <span>Protected by 256-bit cryptographic session token</span>
               </div>
-              <div className="flex items-center gap-3 w-full sm:w-auto">
+              <div className="flex flex-col sm:flex-row items-center gap-3 w-full sm:w-auto">
                 <Button
                   type="button"
                   variant="outline"

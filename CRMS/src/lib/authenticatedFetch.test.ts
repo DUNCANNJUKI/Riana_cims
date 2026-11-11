@@ -12,6 +12,6 @@ test('authenticated fetch attaches the session only to exact same-origin CRMS AP
   expect(new Headers(fetch.mock.calls[0][1].headers).get('Authorization')).toBe('Bearer test-session');
   for (const url of ['https://outside.invalid/api/crms/change_requests', '/other?redirect=/api/crms', '/api/crms-other']) {
     await window.fetch(url);
-    expect(fetch.mock.calls.at(-1)?.[1]).toEqual({});
+    expect(fetch.mock.calls[fetch.mock.calls.length - 1]?.[1]).toEqual({});
   }
 });

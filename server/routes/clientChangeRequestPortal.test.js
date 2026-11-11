@@ -12,6 +12,33 @@ const removeTemporaryUploads = directory => { for (const name of fs.readdirSync(
 const pdf = { fileName: 'example.pdf', base64Data: Buffer.from('%PDF-1.4 test fixture').toString('base64') };
 const request = { protocol: 'http', headers: {}, get: () => 'localhost:8081' };
 
+test('acceptance routes require explicit declaration before querying or writing', async () => {
+  const router = createPortalRouter({ pool: { query: async () => { throw new Error('Must not query'); } }, uploadsDir: os.tmpdir() });
+  for (const route of ['/review/:token/verify-otp', '/review/:token/sign']) {
+    const res = response();
+    await handler(router, route, 'post')({ params: { token: 'token' }, body: { code: '123456', declaration_confirmed: 'true' } }, res);
+    assert.equal(res.statusCode, 400);
+    assert.match(res.body.error, /declaration/);
+  }
+});
+
+test('completion downloads validate the review token and index, and never publish inline data in report JSON', async () => {
+  const report = { id: 'report', status: 'sent', token_expires_at: new Date(Date.now() + 60000), attachments: JSON.stringify([{ name: 'example.pdf', size: 21, base64: pdf.base64Data }]) };
+  const pool = { query: async sql => sql.includes('FROM crms_completion_reports r') ? [[report]] : [[]] };
+  const router = createPortalRouter({ pool, uploadsDir: os.tmpdir() });
+  const res = response();
+  await handler(router, '/review/:token', 'get')({ params: { token: 'valid' } }, res);
+  assert.equal(res.body.attachments[0].base64, undefined);
+  assert.match(res.body.attachments[0].url, /attachments\/0$/);
+  const download = { ...response(), headers: {}, set(name, value) { this.headers[name] = value; return this; }, attachment(name) { this.name = name; return this; }, type() { return this; }, send(buffer) { this.buffer = buffer; return this; } };
+  await handler(router, '/review/:token/attachments/:index', 'get')({ params: { token: 'valid', index: '0' } }, download);
+  assert.equal(download.buffer.toString(), '%PDF-1.4 test fixture');
+  assert.equal(download.headers['Cache-Control'], 'no-store');
+  const expired = response(); report.token_expires_at = new Date(0);
+  await handler(router, '/review/:token/attachments/:index', 'get')({ params: { token: 'valid', index: '0' } }, expired);
+  assert.equal(expired.statusCode, 410);
+});
+
 test('public portal responses do not expose internal database or filesystem errors', async () => {
   const pool = { query: async () => { throw new Error('ER_NO_SUCH_TABLE private_schema at D:\\private\\database'); } };
   const router = createPortalRouter({ pool, uploadsDir: os.tmpdir() });

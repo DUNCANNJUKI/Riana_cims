@@ -59,6 +59,7 @@ export const PrepareCompletionReportDialog: React.FC<PrepareCompletionReportDial
       setKnownLimitations(initialReport.known_limitations || '');
       setRecommendations(initialReport.client_recommendations || '');
       setAdditionalComments(initialReport.additional_comments || '');
+      setAttachments(initialReport.attachments || []);
     } else {
       setSummary('');
       setSolution('');
@@ -283,7 +284,7 @@ export const PrepareCompletionReportDialog: React.FC<PrepareCompletionReportDial
             <label className="cursor-pointer border border-dashed border-slate-300 dark:border-slate-700 hover:border-teal-500 rounded p-3 flex items-center justify-center gap-2 text-xs text-slate-600 dark:text-slate-400">
               <Upload className="w-4 h-4" />
               <span>Upload Delivery Documents or Screenshots</span>
-              <input type="file" multiple className="hidden" onChange={handleFileUpload} />
+              <input type="file" multiple accept=".pdf,.png,.jpg,.jpeg,.webp" className="hidden" onChange={handleFileUpload} />
             </label>
             {attachments.length > 0 && (
               <div className="space-y-1">

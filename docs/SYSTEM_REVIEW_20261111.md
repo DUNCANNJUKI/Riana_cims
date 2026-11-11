@@ -1,5 +1,7 @@
 # System review and remediation — 11 November 2026
 
+**Follow-up:** [12 November closure and client-request repair](SYSTEM_REVIEW_20261112.md) supersedes the dependency, isolated-database and attachment acceptance gaps below. The older results are retained as the original audit record.
+
 ## Outcome and scope
 
 Reviewed the existing uncommitted deployment changes and inventoried 478 files across the main frontend, API, CRMS frontend and scripts. Reviewed affected calling, client-request, authentication, packaging and deployment paths; ran repository-wide type/lint/build checks and the aggregated test suites. This is a code and local runtime review, not certification that every business workflow has passed production acceptance.

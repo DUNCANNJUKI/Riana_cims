@@ -20,6 +20,7 @@ export interface ClientAcceptance {
 }
 
 export interface CompletionReport {
+  attachments?: Array<{ name: string; size: number; base64: string }>;
   summary_of_change?: string | null;
   implemented_solution?: string | null;
   deliverables?: string | null;

@@ -19,6 +19,7 @@
     "test:authentication": "node --test server/tests/passkeyService.test.cjs server/tests/accountMfa.test.cjs && node --experimental-strip-types --test src/utils/dateTime.test.ts",
     "test:production-recovery": "node --experimental-strip-types --test src/components/inventory/hardwareCatalog.test.ts",
     "test": "npm run test:frontend && npm --prefix server test && npm --prefix CRMS test && npm run test:scripts",
+    "test:isolated-db": "node scripts/run-isolated-db-tests.cjs",
     "test:frontend": "node --experimental-strip-types --test src/hooks/*.test.ts src/utils/*.test.ts src/components/inventory/*.test.ts",
     "test:scripts": "node --test scripts/*.test.cjs",
     "typecheck": "tsc -p tsconfig.app.json --noEmit && tsc -p tsconfig.node.json --noEmit && tsc -p CRMS/tsconfig.app.json --noEmit",
@@ -113,12 +114,28 @@
     "eslint-plugin-react-refresh": "^0.4.9",
     "globals": "^15.9.0",
     "playwright": "^1.61.0",
-    "pm2": "^5.3.1",
+    "pm2": "^7.1.2",
     "postcss": "^8.4.47",
     "tailwindcss": "^4.3.3",
     "typescript": "^5.5.3",
     "typescript-eslint": "^8.62.1",
-    "vite": "^8.3.4",
+    "vite": "^8.3.8",
     "vite-plugin-pwa": "^2.0.0"
+  },
+  "overrides": {
+    "@typescript-eslint/typescript-estree": {
+      "minimatch": "^11.0.8"
+    },
+    "readdir-glob": {
+      "minimatch": "^11.0.8"
+    },
+    "workbox-build": {
+      "glob": "^14.0.5"
+    },
+    "@rollup/plugin-node-resolve": {
+      "deepmerge": "4.1.1"
+    },
+    "basic-ftp": "^6.2.6",
+    "js-yaml": "^4.3.2"
   }
 }

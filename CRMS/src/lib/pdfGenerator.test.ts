@@ -1,3 +1,4 @@
+/// <reference types="node" />
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';

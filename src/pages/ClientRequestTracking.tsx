@@ -69,13 +69,19 @@ export const ClientRequestTracking: React.FC = () => {
     }
     try {
       setLoading(true);
-      const res = await fetch(`${API_URL}/api/public/change-requests/track/${token}`);
+      const res = await fetch(`${API_URL}/public/change-requests/track/${token}`);
       const result = await res.json();
       if (!res.ok) {
         setError(result.error || 'Failed to load tracking information.');
         return;
       }
-      setData(result.tracking);
+      setError(null);
+      setData({ ...result,
+        client: { client_name: result.client.name, branch_name: result.client.branch },
+        client_representative: result.representative || { name: 'Client representative', phone: '', email: '' },
+        account_manager: result.account_manager || { name: 'Account Manager', email: '' },
+        stages: [{ key: 'current', label: result.current_status, description: result.status_description, current: !result.is_closed, completed: result.is_closed }],
+      });
     } catch (err: any) {
       setError(err.message || 'Unable to connect to tracking servers.');
     } finally {

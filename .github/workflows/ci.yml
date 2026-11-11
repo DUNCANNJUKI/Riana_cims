@@ -21,7 +21,7 @@ jobs:
       - run: npm run lint
       - run: npm run lint --prefix CRMS
       - run: npm test
-      - run: npm audit --omit=dev --audit-level=high
-      - run: npm audit --prefix server --omit=dev --audit-level=high
-      - run: npm audit --prefix CRMS --omit=dev --audit-level=high
+      - run: npm audit --audit-level=high
+      - run: npm audit --prefix server --audit-level=high
+      - run: npm audit --prefix CRMS --audit-level=high
       - run: npm run build:all

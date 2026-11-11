@@ -57,7 +57,7 @@ export default defineConfig(({ mode }) => ({
   },
   resolve: {
     alias: {
-      "@crms": path.resolve(__dirname, "./src"),
+      "@crms": path.resolve(import.meta.dirname, "./src"),
     },
   },
 }));

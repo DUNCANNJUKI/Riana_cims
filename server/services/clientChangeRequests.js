@@ -750,6 +750,7 @@ const submitClientChangeRequest = async (pool, { token, data, attachments = [], 
       success: true,
       ticket_number: ticketNumber,
       request_id: requestId,
+      tracking_url: `${applicationUrl}/change-request/track/${encodeURIComponent(token)}`,
       message: 'Your change request has been submitted successfully.',
     };
   } catch (error) {
@@ -1010,6 +1011,8 @@ const getCompletionReportForClient = async (pool, token) => {
 
   return {
     report_id: report.id,
+    version_number: report.version_number,
+    sent_at: report.sent_at,
     change_request_id: report.change_request_id,
     ticket_number: report.ticket_number,
     request_title: report.request_title,

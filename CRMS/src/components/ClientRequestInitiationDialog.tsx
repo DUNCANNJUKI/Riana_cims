@@ -26,7 +26,7 @@ export const ClientRequestInitiationDialog: React.FC<ClientRequestInitiationDial
   onSuccess,
 }) => {
   const { toast } = useToast();
-  const { data: clients = [], isLoading: loadingClients } = useClients();
+  const { data: clients = [], isLoading: loadingClients, error: clientsError, refetch: retryClients, isFetching: fetchingClients } = useClients();
 
   const [selectedClientId, setSelectedClientId] = useState<string>('');
   const { data: scope, isLoading: loadingScope } = useClientScope(selectedClientId || undefined);
@@ -69,6 +69,9 @@ export const ClientRequestInitiationDialog: React.FC<ClientRequestInitiationDial
       const contactPerson = client.contact_person_name || client.contact_person || '';
       const contactPhone = client.contact_person_phone || client.contact_phone || '';
       const contactEmail = client.contact_person_email || client.contact_email || '';
+      setRepName(contactPerson);
+      setRepPhone(contactPhone);
+      setRepEmail(contactEmail);
       if (contactPerson) {
         setRepName(contactPerson);
         setFieldErrors((prev) => { const next = { ...prev }; delete next.repName; return next; });
@@ -291,7 +294,7 @@ export const ClientRequestInitiationDialog: React.FC<ClientRequestInitiationDial
               <Label htmlFor="clientSelect" className="font-semibold text-xs">
                 Select Client <span className="text-red-500">*</span>
               </Label>
-              <Select value={selectedClientId} onValueChange={handleClientChange} disabled={loadingClients}>
+              <Select value={selectedClientId} onValueChange={handleClientChange} disabled={loadingClients || !!clientsError || clients.length === 0}>
                 <SelectTrigger id="clientSelect" className={fieldErrors.client ? 'border-red-500 ring-1 ring-red-500' : ''}>
                   <SelectValue placeholder={loadingClients ? 'Loading clients...' : 'Choose registered client'} />
                 </SelectTrigger>
@@ -308,6 +311,17 @@ export const ClientRequestInitiationDialog: React.FC<ClientRequestInitiationDial
                   })}
                 </SelectContent>
               </Select>
+              {clientsError && (
+                <div role="alert" className="flex items-center gap-2 text-sm text-destructive">
+                  <span>Unable to load clients.</span>
+                  <Button type="button" variant="outline" size="sm" disabled={fetchingClients} onClick={() => void retryClients()}>
+                    {fetchingClients ? 'Retrying...' : 'Retry'}
+                  </Button>
+                </div>
+              )}
+              {!loadingClients && !clientsError && clients.length === 0 && (
+                <p role="status" className="text-sm text-muted-foreground">No registered clients are available.</p>
+              )}
               {fieldErrors.client && (
                 <p className="text-[11px] text-red-500 font-medium">{fieldErrors.client}</p>
               )}

@@ -100,10 +100,27 @@ module.exports = function createClientChangeRequestPortalRouter({ pool, uploadsD
   router.get('/review/:token', async (req, res) => {
     try {
       const report = await getCompletionReportForClient(pool, req.params.token);
-      res.json(report);
+      res.json({ ...report, attachments: report.attachments.map((attachment, index) => ({
+        name: attachment.name, size: attachment.size,
+        url: `/api/public/change-requests/review/${encodeURIComponent(req.params.token)}/attachments/${index}`,
+      })) });
     } catch (err) {
       respondWithError(res, err);
     }
+  });
+
+  router.get('/review/:token/attachments/:index', async (req, res) => {
+    try {
+      const report = await getCompletionReportForClient(pool, req.params.token);
+      if (!/^(0|[1-9]\d*)$/.test(req.params.index)) return res.status(404).json({ error: 'Attachment not found.' });
+      const attachment = report.attachments[Number(req.params.index)];
+      if (!attachment?.base64) return res.status(404).json({ error: 'Attachment not found.' });
+      const { buffer } = safeUpload({ fileName: attachment.name, base64Data: attachment.base64, maxBytes: 5 * 1024 * 1024 });
+      res.set('Cache-Control', 'no-store');
+      res.set('X-Content-Type-Options', 'nosniff');
+      res.attachment(path.basename(attachment.name));
+      res.type('application/octet-stream').send(buffer);
+    } catch (err) { respondWithError(res, err); }
   });
 
   // 4. Request Corrections or Raise Dispute
@@ -140,6 +157,7 @@ module.exports = function createClientChangeRequestPortalRouter({ pool, uploadsD
   router.post('/review/:token/verify-otp', async (req, res) => {
     try {
       const { code, representativeName, designation } = req.body;
+      if (req.body.declaration_confirmed !== true) return res.status(400).json({ error: 'Confirm the client acceptance declaration.' });
       if (!code) return res.status(400).json({ error: 'Verification code is required.' });
       const result = await verifyOtpAndAccept(pool, {
         token: req.params.token,
@@ -159,6 +177,8 @@ module.exports = function createClientChangeRequestPortalRouter({ pool, uploadsD
     const writtenFiles = [];
     try {
       const { fileName, base64Data, representativeName, designation } = req.body;
+      if (req.body.declaration_confirmed !== true) return res.status(400).json({ error: 'Confirm the client acceptance declaration.' });
+      if (!/\.(png|jpe?g|webp)$/i.test(String(fileName || ''))) return res.status(400).json({ error: 'An image file is required for the signature.' });
       if (!fileName || !base64Data) {
         return res.status(400).json({ error: 'Signature image is required.' });
       }
