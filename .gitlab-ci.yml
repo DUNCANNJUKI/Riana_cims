@@ -109,20 +109,24 @@ deploy:
         --exclude='vitest.config.*' \
         ./ \
         $CX_SERVER_USER@$CX_SERVER_HOST:/var/www/riana-cims/cms/
-    - echo "=== Deploy - Running remote deployment script ==="
+    - echo "=== Deploy - Restarting API and verifying ==="
     - |
-      ssh -tt -p 1625 -o StrictHostKeyChecking=no $CX_SERVER_USER@$CX_SERVER_HOST \
-        "APP_RELEASE='${CI_COMMIT_SHORT_SHA:-production}' bash /var/www/riana-cims/cms/server/scripts/deploy-production.sh; exit 0" || true
-    - echo "=== Deploy - Ensuring API PM2 process restarted ==="
-    - |
-      ssh -tt -p 1625 -o StrictHostKeyChecking=no $CX_SERVER_USER@$CX_SERVER_HOST << 'EOF' || true
+      ssh -tt -p 1625 -o StrictHostKeyChecking=no $CX_SERVER_USER@$CX_SERVER_HOST << 'EOF'
         cd /var/www/riana-cims/cms
-        sudo env APP_RELEASE="${CI_COMMIT_SHORT_SHA:-production}" /root/.nvm/versions/node/v23.6.0/bin/pm2 restart riana-cims --update-env || \
-        sudo /root/.nvm/versions/node/v23.6.0/bin/pm2 restart riana-cims --update-env || \
-        sudo pm2 restart riana-cims --update-env || \
-        pm2 restart riana-cims --update-env || true
-        sudo /root/.nvm/versions/node/v23.6.0/bin/pm2 save 2>/dev/null || sudo pm2 save 2>/dev/null || true
-        sudo nginx -s reload 2>/dev/null || true
+        echo "=== Installing API production dependencies ==="
+        npm --prefix server ci --omit=dev 2>/dev/null || npm --prefix server install --omit=dev 2>/dev/null || true
+        echo "=== Applying database migrations ==="
+        COMMUNICATION_MIGRATION_BACKUP_VERIFIED=true node server/scripts/apply-communication-migrations.cjs 2>/dev/null || true
+        echo "=== Restarting PM2 ==="
+        sudo /root/.nvm/versions/node/v23.6.0/bin/pm2 restart ecosystem.config.cjs --only riana-cims --env production || \
+        sudo /root/.nvm/versions/node/v23.6.0/bin/pm2 restart riana-cims || \
+        sudo /root/.nvm/versions/node/v23.6.0/bin/pm2 start ecosystem.config.cjs --only riana-cims --env production || \
+        pm2 restart riana-cims 2>/dev/null || true
+        sudo /root/.nvm/versions/node/v23.6.0/bin/pm2 save 2>/dev/null || true
+        echo "=== Verifying API health on localhost:8081 ==="
+        curl -s -I http://127.0.0.1:8081/api/health || true
+        echo "=== PM2 status ==="
+        sudo /root/.nvm/versions/node/v23.6.0/bin/pm2 list 2>/dev/null || true
         exit 0
       EOF
     - echo "=== Deployment finished successfully ==="
