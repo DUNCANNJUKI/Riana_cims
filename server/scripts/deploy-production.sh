@@ -33,6 +33,9 @@ find server/backups -maxdepth 1 -type f -name '*.sql' -exec chmod 600 {} +
 echo "=== Applying database migrations after verified backup ==="
 COMMUNICATION_MIGRATION_BACKUP_VERIFIED=true node server/scripts/apply-communication-migrations.cjs
 
+echo "=== Verifying production passkey configuration and schema ==="
+NODE_ENV=production node server/scripts/verify-passkey-readiness.cjs
+
 # The root PM2 sudo rule does not preserve arbitrary environment assignments.
 # The ecosystem reads this private release marker when loading production config.
 mkdir -p .runtime

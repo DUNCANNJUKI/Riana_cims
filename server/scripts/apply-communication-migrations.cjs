@@ -2,6 +2,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 require('dotenv').config({ path: path.join(__dirname, '../../.env.local') });
 const pool = require('../db');
+const passkeySchema = require('../services/passkeySchema.cjs');
 
 const migrationIds = [
   '20260710_profile_avatar_chat_messages',
@@ -10,6 +11,7 @@ const migrationIds = [
   '20261030_installation_feedback_rating_nullability',
   '20261031_communication_backend_foundation',
   '20261101_totp_recovery_and_preferences',
+  '20261101_passkeys_and_account_security',
   '20261102_technician_installation_budgets',
   '20261104_communication_meeting_state',
   '20261107_call_recordings',
@@ -133,7 +135,7 @@ async function run() {
   const missingHistory = migrationIds.filter((migrationId) => !verifiedHistory.has(migrationId));
   if (missingHistory.length) throw new Error(`Communication migration history is incomplete: ${missingHistory.join(', ')}.`);
 
-  const requiredTables = ['call_device_sessions', 'call_meeting_state', 'call_recordings', 'message_reactions', 'message_recipient_status'];
+  const requiredTables = ['call_device_sessions', 'call_meeting_state', 'call_recordings', 'message_reactions', 'message_recipient_status', ...Object.keys(passkeySchema)];
   const [tableRowsAfter] = await pool.query(
     `SELECT TABLE_NAME FROM information_schema.TABLES
      WHERE TABLE_SCHEMA=DATABASE() AND TABLE_TYPE='BASE TABLE'
@@ -145,6 +147,7 @@ async function run() {
   if (missingTablesAfter.length) throw new Error(`Communication migration tables are missing: ${missingTablesAfter.join(', ')}.`);
 
   const requiredColumns = {
+    ...passkeySchema,
     messages: ['message_kind', 'call_type', 'call_status', 'call_started_at', 'call_ended_at', 'reply_to_message_id'],
     call_participants: ['status', 'joined_at', 'left_at', 'hand_raised', 'hand_raised_at', 'audio_enabled', 'video_enabled', 'screen_sharing'],
     call_device_sessions: ['call_id', 'user_id', 'device_id', 'status', 'accepted_at', 'resolved_at', 'last_seen_at'],

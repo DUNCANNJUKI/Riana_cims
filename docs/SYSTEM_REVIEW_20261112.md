@@ -64,6 +64,21 @@ This verifies the WebAuthn software path, not a physical fingerprint/face sensor
 
 No operational database schema/data or authentication rules were altered. Separate disposable databases created during verification contain fixtures only and are retained for inspection. Backups, uploads, credentials, audit/runtime logs and recovery snapshots are preserved.
 
+## Production passkey enrollment investigation
+
+The user clarified that the failure is **adding a passkey on `https://rianacims.marezi.co`**. Its public `/api/health` returned HTTP 200 with `status: ok` and `release: unversioned`; this establishes general API availability, not enrollment readiness or the deployed Git SHA. The exact authenticated failing response and production environment/schema are not yet available, so the production root cause is not claimed confirmed.
+
+Two repository defects were confirmed and repaired:
+
+- The production migration runner omitted `20261101_passkeys_and_account_security`; it now includes that additive migration and verifies both tables and every column used by the service.
+- The frontend masked `PASSKEY_CONFIGURATION_REQUIRED` and `PASSKEY_MIGRATION_REQUIRED` behind the generic 5xx message. It now shows safe, actionable passkey-specific guidance without exposing database/server diagnostics.
+
+Added a read-only production readiness checker for explicit HTTPS origin, matching RP ID, dependency loading and required schema columns. Deployment runs it after verified-backup migrations and before setting the release marker or restarting PM2. A failure stops deployment; it does not roll back installed dependencies or already executed MySQL DDL. [Production recovery guide](PASSKEY_PRODUCTION_RECOVERY.md) documents the exact Marezi settings, diagnostics, physical-device acceptance and rollback. Existing authentication requirements remain enforced.
+
+Validation for this change: **217 passed, 0 failed, 2 skipped** in the default aggregate (frontend 24, API 166, CRMS 10, script tests 17). The two isolated database integration cases were previously executed separately and passed. Eight new readiness cases cover valid configuration/schema, missing/insecure/wrong-domain configuration, unrelated RP ID, development mode, incomplete schema and sanitized database errors. Deployment simulations cover the new readiness failure gate. TypeScript, targeted lint, syntax checks and both production/PWA builds passed. The checker returned `ready: true` against the existing local schema with process-local Marezi configuration and a read-only metadata query. This is not a production check; local development's empty database password correctly fails the separate production database configuration guard.
+
+On the user's request to run checks through GitLab, the remote branch was fetched and confirmed behind the three existing local review commits, with no divergent remote work. GitLab Git read access and push dry-run succeeded; the stored credential's pipeline API request returned **HTTP 403**. Hosted results, deployment and physical enrollment remain unverified until remote evidence is available. No production account or schema was changed during this investigation.
+
 ## Rollback and support
 
 Revert this follow-up commit, reinstall the preceding package lockfiles, rebuild both frontends, and restart only `riana-cims` and `riana-cims-web`. No operational schema rollback is required. Keep data and backups intact. If a client list fails again, the dialog now shows Retry; inspect the sanitized API status and server error code rather than interpreting a failed fetch as zero clients.

@@ -26,6 +26,7 @@ function simulate(t, failure = '', options = {}) {
       case "$1" in
         *verify-backup*) stage=backup ;;
         *apply-communication*) stage=migrate; [[ "$COMMUNICATION_MIGRATION_BACKUP_VERIFIED" == true ]] || return 19 ;;
+        *verify-passkey-readiness*) stage=passkeys; [[ "$NODE_ENV" == production ]] || return 23 ;;
         *verify-production-runtime*) stage=health; [[ "$APP_RELEASE" == ${quote(release)} ]] || return 20 ;;
         *) return 21 ;;
       esac
@@ -56,7 +57,7 @@ test('deployment requires a commit identity before touching dependencies or data
   assert.deepEqual(result.steps, []);
 });
 
-for (const stage of ['install', 'backup', 'migrate', 'restart', 'health', 'save']) {
+for (const stage of ['install', 'backup', 'migrate', 'passkeys', 'restart', 'health', 'save']) {
   test(`deployment stops on ${stage} failure and never claims success`, (t) => {
     const result = simulate(t, stage);
     assert.notEqual(result.status, 0, result.stderr);
@@ -64,6 +65,10 @@ for (const stage of ['install', 'backup', 'migrate', 'restart', 'health', 'save'
     if (stage === 'install') assert.deepEqual(result.steps, ['install']);
     if (stage === 'backup') assert.deepEqual(result.steps, ['install', 'backup']);
     if (stage === 'migrate') assert.deepEqual(result.steps, ['install', 'backup', 'migrate']);
+    if (stage === 'passkeys') {
+      assert.deepEqual(result.steps, ['install', 'backup', 'migrate', 'passkeys']);
+      assert.equal(result.marker, null);
+    }
     if (stage === 'restart') assert.ok(!result.steps.includes('health'));
     if (stage === 'health') assert.ok(!result.steps.some((step) => step.startsWith('pm2 save')));
     assert.ok(!result.steps.some((step) => step.startsWith('pm2 start ')));
@@ -75,7 +80,7 @@ for (const mode of ['root', 'user']) {
     const result = simulate(t, '', { mode });
     assert.equal(result.status, 0, result.stderr);
     assert.deepEqual(result.steps, [
-      'install', 'backup', 'migrate', 'pm2 describe riana-cims',
+      'install', 'backup', 'migrate', 'passkeys', 'pm2 describe riana-cims',
       'pm2 restart ecosystem.config.cjs --only riana-cims --env production --update-env',
       'health', 'pm2 save',
     ]);

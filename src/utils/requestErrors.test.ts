@@ -15,3 +15,15 @@ test("communication migration failures show a safe actionable message", () => {
 test("unknown server failures remain generic", () => {
   assert.match(friendlyRequestError(500, { error: "private SQL failure" }), /temporarily unavailable/i);
 });
+
+test("passkey setup failures identify safe recovery steps without exposing server details", () => {
+  for (const [code, expected] of [
+    ['PASSKEY_CONFIGURATION_REQUIRED', /server configuration is incomplete/],
+    ['PASSKEY_MIGRATION_REQUIRED', /required system update/],
+  ] as const) {
+    const message = friendlyRequestError(503, { code, error: 'ER_NO_SUCH_TABLE private_schema.webauthn_credentials' });
+    assert.match(message, expected);
+    assert.match(message, /password/);
+    assert.doesNotMatch(message, /ER_NO_SUCH_TABLE|private_schema|webauthn_credentials/);
+  }
+});

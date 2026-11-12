@@ -4,6 +4,10 @@ export function friendlyRequestError(status: number, payload: unknown): string {
   const unsafe = /SQLSTATE|ER_[A-Z_]+|SELECT\s.+FROM|INSERT\s+INTO|stack trace|node_modules|ECONNREFUSED|<html|<!doctype/i.test(candidate);
   if (data.code === 'COMMUNICATION_MIGRATION_REQUIRED' || data.code === 'COMMUNICATION_SCHEMA_INCOMPLETE')
     return 'Communication is temporarily unavailable while a required system update is completed. Please try again shortly or contact your administrator.';
+  if (data.code === 'PASSKEY_CONFIGURATION_REQUIRED')
+    return 'Passkey setup is unavailable because the server configuration is incomplete. Contact your administrator. You can continue signing in with your password.';
+  if (data.code === 'PASSKEY_MIGRATION_REQUIRED')
+    return 'Passkey setup is unavailable until a required system update is completed. Contact your administrator. You can continue signing in with your password.';
   if (status >= 500 && data.code !== 'MAINTENANCE_MODE')
     return 'The service is temporarily unavailable. Please try again shortly. If this continues, contact your administrator.';
   if (candidate && candidate.length <= 1000 && !unsafe) return candidate;
