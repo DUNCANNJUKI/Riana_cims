@@ -253,8 +253,9 @@ const safeUpload = ({ fileName, base64Data, maxBytes = 10 * 1024 * 1024 }) => {
 };
 
 const resolveStoredFile = (uploadsDir, filename) => {
-  const name = path.basename(String(filename || ''));
-  if (!name || name !== filename) return null;
+  const safe = String(filename || '').replace(/\\/g, '/');
+  const name = path.basename(safe);
+  if (!name || name !== safe) return null;
   const resolved = path.resolve(uploadsDir, name);
   return resolved.startsWith(`${path.resolve(uploadsDir)}${path.sep}`) ? resolved : null;
 };
