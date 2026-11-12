@@ -32,6 +32,7 @@ function inventory(directory){
 async function main(){
   if(!output.startsWith(root+path.sep))throw new Error('Unsafe patch output path.');
   for(const input of ['dist/index.html','CRMS/dist/index.html','server/package-lock.json'])if(!fs.existsSync(path.join(root,input)))throw new Error(`Build input missing: ${input}`);
+  fs.mkdirSync(path.dirname(output), { recursive: true });
   fs.mkdirSync(output);
   const app=path.join(output,'node_app');
   copyTree(path.join(root,'server'),path.join(app,'server'));
@@ -59,13 +60,8 @@ async function main(){
     .replaceAll('LIVE_DB_UPDATE_20261014.sql','LIVE_DB_UPDATE.sql')
     .replace('The preflight stops on incompatible parent keys or missing base/private-file tables.', 'The preflight stops on incompatible parent keys, missing base/private-file tables or missing assignment hierarchy fields. Stop on errors; do not use --force or additionally run individual hardware migrations. DDL is not transactionally reversible.');
   fs.appendFileSync(path.join(output,'LIVE_DB_UPDATE.sql'),`\n-- Additive scheduling; no historical date conversions.\n${scheduling}\nINSERT INTO migration_history (migration_id,description) VALUES ('20261016_scheduling','Scoped scheduling, calendars and durable in-app reminders') ON DUPLICATE KEY UPDATE description=VALUES(description);\n\n-- Legacy chat schema compatibility; preserves all existing chat rows.\n${missedCallCompatibility}\n`);
-  fs.writeFileSync(path.join(output,'DEPLOYMENT.md'),deployment+'\nScheduling: read SCHEDULING.md before enabling the feature flag. Verify /api/time, time zones, scoped calendar access and overlapping booking rejection. Keep server and database clocks synchronized through the host time service. Current automated reminders are in-app only; email/SMS scheduling jobs are not enabled.\n\nProduction upload paths: retain the existing external folders. Set PRIVATE_UPLOAD_ROOT to the live riana_private_file_uploads folder and LEGACY_UPLOAD_ROOT to the live riana_private_uploads folder (use the actual absolute cPanel paths). Do not place either folder under web_root or node_app. A 404 for /uploads/<file> means the historical file is absent from LEGACY_UPLOAD_ROOT or its database reference no longer matches; restore that exact file from the external upload backup rather than copying it into the public web root.\n');
-  fs.copyFileSync(path.join(root,'docs/CLOUD_INVENTORY_PATCH.md'),path.join(output,'CHANGE_NOTES.md'));
-  fs.copyFileSync(path.join(root,'docs/SERIAL_ASSIGNMENT_ACCESS.md'),path.join(output,'SERIAL_ASSIGNMENT_ACCESS.md'));
-  fs.copyFileSync(path.join(root,'docs/HYBRID_EQUIPMENT.md'),path.join(output,'HYBRID_EQUIPMENT.md'));
-  fs.copyFileSync(path.join(root,'docs/INVENTORY_OPERATIONS.md'),path.join(output,'INVENTORY_OPERATIONS.md'));
-  fs.copyFileSync(path.join(root,'docs/RELEASE_QA_20261016.md'),path.join(output,'RELEASE_QA.md'));
-  fs.copyFileSync(path.join(root,'docs/SCHEDULING.md'),path.join(output,'SCHEDULING.md'));
+  fs.writeFileSync(path.join(output,'DEPLOYMENT.md'),deployment+'\nScheduling: read README.md before enabling the feature flag. Verify /api/time, time zones, scoped calendar access and overlapping booking rejection. Keep server and database clocks synchronized through the host time service. Current automated reminders are in-app only; email/SMS scheduling jobs are not enabled.\n\nProduction upload paths: retain the existing external folders. Set PRIVATE_UPLOAD_ROOT to the live riana_private_file_uploads folder and LEGACY_UPLOAD_ROOT to the live riana_private_uploads folder (use the actual absolute cPanel paths). Do not place either folder under web_root or node_app. A 404 for /uploads/<file> means the historical file is absent from LEGACY_UPLOAD_ROOT or its database reference no longer matches; restore that exact file from the external upload backup rather than copying it into the public web root.\n');
+  fs.copyFileSync(path.join(root,'README.md'),path.join(output,'README.md'));
   inventory(output);
   if(files.some((f)=>/(^|\/)(uploads|private_uploads|backups|node_modules|\.env)(\/|$)/.test(f.path)))throw new Error('Runtime data entered the package.');
   fs.writeFileSync(path.join(output,'MANIFEST.json'),JSON.stringify({releaseId,createdAt:createdAt.toISOString(),timezone:'Africa/Nairobi',sqlFile:'LIVE_DB_UPDATE.sql',files},null,2)+'\n');

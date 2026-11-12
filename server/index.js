@@ -2026,6 +2026,7 @@ app.get('/api/health', (_req, res) => res.json({
   status: 'ok',
   timestamp: new Date(),
   corsPolicy: 'same-origin-host-v1',
+  features: { clientRequestPortal: createCrmsRouter.clientRequestPortalVersion === 1 },
   release: String(process.env.APP_RELEASE || process.env.GIT_COMMIT || 'unversioned').slice(0, 80),
 }));
 

@@ -10,7 +10,7 @@ import {
   FileText, Plus, Search, RefreshCw, Send, CheckCircle2, Clock, AlertTriangle,
   Building2, User, Eye, FileCheck2, ShieldCheck, Copy, Check, ChevronRight
 } from 'lucide-react';
-import { apiRequest } from '@crms/lib/apiRequest';
+import { ApiRequestError, apiRequest } from '@crms/lib/apiRequest';
 import { useToast } from '@crms/hooks/use-toast';
 import { ClientRequestInitiationDialog } from '@crms/components/ClientRequestInitiationDialog';
 import { PrepareCompletionReportDialog } from '@crms/components/PrepareCompletionReportDialog';
@@ -23,6 +23,7 @@ export const ClientRequests: React.FC = () => {
   const { toast } = useToast();
 
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [requests, setRequests] = useState<ChangeRequestWithRelations[]>([]);
   const [invitations, setInvitations] = useState<ClientInvitation[]>([]);
   const [stats, setStats] = useState<Record<string, number> | null>(null);
@@ -52,6 +53,8 @@ export const ClientRequests: React.FC = () => {
       const invData = await invRes.json() as ClientInvitation[];
       const statsData = statsRes?.ok ? await statsRes.json().catch(() => null) : null;
 
+      if (!Array.isArray(reqData) || !Array.isArray(invData)) throw new Error('The client request service returned an unexpected response. Please try again.');
+
       if (Array.isArray(reqData)) {
         // Filter to client requests or all for account managers
         setRequests(reqData.filter((r) => r.is_client_request || r.client_name));
@@ -62,10 +65,15 @@ export const ClientRequests: React.FC = () => {
       if (statsData) {
         setStats(statsData.stats);
       }
+      setLoadError(null);
     } catch (err: unknown) {
+      const message = err instanceof ApiRequestError && err.status === 404
+        ? 'The client request service is unavailable on this server. Ask your administrator to complete the application update, then retry.'
+        : errorMessage(err);
+      setLoadError(message);
       toast({
         title: 'Error Loading Requests',
-        description: errorMessage(err),
+        description: message,
         variant: 'destructive',
       });
     } finally {
@@ -161,7 +169,7 @@ export const ClientRequests: React.FC = () => {
             Account Manager portal for client change initiation, completion reporting, and verified acceptance.
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <Button variant="outline" size="sm" onClick={fetchData} disabled={loading}>
             <RefreshCw className={`w-4 h-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
             Refresh
@@ -175,8 +183,13 @@ export const ClientRequests: React.FC = () => {
         </div>
       </div>
 
+      {loadError && <div role="alert" className="flex flex-col gap-3 rounded-lg border border-destructive/40 bg-destructive/5 p-4 sm:flex-row sm:items-center sm:justify-between">
+        <div><p className="font-semibold">Client requests could not be loaded</p><p className="mt-1 text-sm">{loadError}</p>{(requests.length > 0 || invitations.length > 0) && <p className="mt-1 text-sm">Previously loaded records are shown below and may be out of date.</p>}</div>
+        <Button type="button" variant="outline" onClick={() => void fetchData()} disabled={loading} className="shrink-0">{loading ? 'Retrying…' : 'Retry'}</Button>
+      </div>}
+
       {/* Metrics Cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+      {(!loadError || requests.length > 0 || invitations.length > 0) && <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
         <Card className="border-slate-200 dark:border-slate-800">
           <CardContent className="pt-4 pb-3">
             <p className="text-xs text-slate-500 uppercase font-semibold">Total Invitations</p>
@@ -219,10 +232,11 @@ export const ClientRequests: React.FC = () => {
         </Card>
       </div>
 
+      }
       {/* Tabs and Search */}
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          <TabsList className="bg-slate-100 dark:bg-slate-800">
+          <TabsList className="flex-wrap bg-slate-100 dark:bg-slate-800">
             <TabsTrigger value="all">All Requests</TabsTrigger>
             <TabsTrigger value="invitations">Invitations ({invitations.length})</TabsTrigger>
             <TabsTrigger value="in_dev">In Development</TabsTrigger>
@@ -261,7 +275,7 @@ export const ClientRequests: React.FC = () => {
                   {filteredRequests.length === 0 ? (
                     <TableRow>
                       <TableCell colSpan={7} className="text-center py-8 text-slate-500 text-sm">
-                        {loading ? 'Loading change requests...' : 'No change requests match your criteria.'}
+                        {loading ? 'Loading change requests...' : loadError ? 'Client requests are unavailable. Use Retry above to load them.' : 'No change requests match your criteria.'}
                       </TableCell>
                     </TableRow>
                   ) : (
@@ -357,7 +371,7 @@ export const ClientRequests: React.FC = () => {
                   {invitations.length === 0 ? (
                     <TableRow>
                       <TableCell colSpan={7} className="text-center py-8 text-slate-500 text-sm">
-                        No invitations found. Click "+ Create Client Change Request" to initiate one.
+                        {loadError ? 'Invitations are unavailable. Use Retry above to load them.' : 'No invitations found. Click "+ Create Client Change Request" to initiate one.'}
                       </TableCell>
                     </TableRow>
                   ) : (

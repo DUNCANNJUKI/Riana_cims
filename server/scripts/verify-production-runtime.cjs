@@ -27,8 +27,8 @@ async function run() {
   for (let attempt = 0; attempt < 15; attempt += 1) {
     try {
       health = await request('/api/health', async (res) => ({ status: res.statusCode, body: await readJson(res) }));
-      if (health.status === 200 && health.body.status === 'ok' && health.body.release === expectedRelease) break;
-      lastHealthError = `HTTP ${health.status}, release ${health.body.release || 'missing'}`;
+      if (health.status === 200 && health.body.status === 'ok' && health.body.release === expectedRelease && health.body.features?.clientRequestPortal === true) break;
+      lastHealthError = `HTTP ${health.status}, release ${health.body.release || 'missing'}, client request routes ${health.body.features?.clientRequestPortal === true ? 'available' : 'missing'}`;
       health = null;
     } catch (error) {
       lastHealthError = error.message;

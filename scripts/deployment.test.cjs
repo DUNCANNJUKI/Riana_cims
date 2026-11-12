@@ -38,7 +38,8 @@ function simulate(t, failure = '', options = {}) {
       if [[ "$1" == describe ]]; then return ${options.absent ? '1' : '0'}; fi
       [[ "$FAIL_STAGE" != "$1" ]]
     }
-    sudo() { [[ "$1" == -n ]] || return 22; shift; "$@"; }
+    id() { [[ "$1" == -u ]] || return 24; echo ${options.rootLogin ? '0' : '1000'}; }
+    sudo() { ${options.rootLogin ? 'return 25;' : '[[ "$1" == -n ]] || return 22; shift; "$@";'} }
     source ${quote(shellPath(path.join(root, 'server/scripts/deploy-production.sh')))} ${quote(options.release || release)}
   `;
   const result = spawnSync(bash, ['--noprofile', '--norc', '-c', script], { encoding: 'utf8', timeout: 15000 });
@@ -94,6 +95,12 @@ test('deployment starts an absent managed API without an unmanaged listener fall
   assert.equal(result.status, 0, result.stderr);
   assert.ok(result.steps.includes('pm2 start ecosystem.config.cjs --only riana-cims --env production'));
   assert.ok(!result.steps.some((step) => step.startsWith('pm2 restart ')));
+});
+
+test('deployment logged in as root invokes the existing PM2 owner without sudo', (t) => {
+  const result = simulate(t, '', { mode: 'root', rootLogin: true });
+  assert.equal(result.status, 0, result.stderr);
+  assert.ok(result.steps.includes('pm2 restart ecosystem.config.cjs --only riana-cims --env production --update-env'));
 });
 
 test('production release marker reaches ecosystem configuration without sudo environment propagation', (t) => {

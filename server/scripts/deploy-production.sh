@@ -16,7 +16,7 @@ trap 'echo "Deployment failed at line $LINENO; release was not verified." >&2' E
 # Select one PM2 owner. Never start a second daemon or kill an arbitrary port owner.
 PM2_BIN="${DEPLOY_PM2_BIN:-/root/.nvm/versions/node/v23.6.0/bin/pm2}"
 case "${DEPLOY_PM2_MODE:-root}" in
-  root) pm2_run() { sudo -n "$PM2_BIN" "$@"; } ;;
+  root) pm2_run() { if [[ "$(id -u)" == 0 ]]; then "$PM2_BIN" "$@"; else sudo -n "$PM2_BIN" "$@"; fi; } ;;
   user) pm2_run() { "$PM2_BIN" "$@"; } ;;
   *) echo "DEPLOY_PM2_MODE must be root or user." >&2; exit 1 ;;
 esac

@@ -1062,6 +1062,8 @@ module.exports = function createCrmsRouter({ pool, jwtSecret }) {
   return router;
 };
 
+module.exports.clientRequestPortalVersion = 1;
+
 
 
 
