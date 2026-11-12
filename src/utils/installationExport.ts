@@ -61,8 +61,8 @@ export const generateInstallationReport = async (
   // Derive primary color from company settings (primary_color field) or default to Riana deep blue
   const companyPrimaryColor: [number, number, number] = brand.id === 'marezi'
     ? brand.primary
-    : (company as any).primary_color
-      ? parseHexColor((company as any).primary_color)
+    : company.primary_color
+      ? parseHexColor(company.primary_color)
       : [13, 131, 144];
 
   const textColor: [number, number, number] = [31, 41, 55];
@@ -99,16 +99,16 @@ export const generateInstallationReport = async (
 
   // â”€â”€â”€ HEADER â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   // Company Logo (left side)
-  const logoSrc = (company as any).logo_path
-    ? ((company as any).logo_path.startsWith('http')
-        ? (company as any).logo_path
-        : ((company as any).logo_path.startsWith('/')
-            ? `${window.location.protocol}//${window.location.hostname}:8090${(company as any).logo_path}`
-            : `http://${window.location.hostname}:8081/uploads/${(company as any).logo_path}`))
+  const logoSrc = company.logo_path
+    ? (company.logo_path.startsWith('http')
+        ? company.logo_path
+        : (company.logo_path.startsWith('/')
+            ? `${window.location.protocol}//${window.location.hostname}:8090${company.logo_path}`
+            : `http://${window.location.hostname}:8081/uploads/${company.logo_path}`))
     : `${window.location.protocol}//${window.location.hostname}:8090/Riana_logo.png`;
 
   await addCimsDocumentHeader(doc, {
-    title: (company as any).company_name || company.name || 'RIANA CIMS',
+    title: company.company_name || company.name || 'RIANA CIMS',
     subtitle: 'E-HANDOVER FORM',
     documentTitle: 'Installation Completion & Handover Certificate',
     logoPath: logoSrc,
@@ -132,7 +132,7 @@ export const generateInstallationReport = async (
   const col2X = pageWidth / 2 + 5;
   const lineHeight = 6;
 
-  const rawStartDate = client.start_date || completedInstallation.assigned_date || (completedInstallation as any).installation_start_date || completedInstallation.created_at;
+  const rawStartDate = client.start_date || completedInstallation.assigned_date || completedInstallation.installation_start_date || completedInstallation.created_at;
   const startDateFormatted = rawStartDate
     ? new Date(rawStartDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
     : formattedExportDate;
@@ -140,16 +140,16 @@ export const generateInstallationReport = async (
   const completionDateFormatted = completionDateIso
     ? new Date(completionDateIso).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
     : formattedExportDate;
-  const clientPhone = (client as any).contact_person_phone || (client as any).contact_phone || (client as any).contact_person_phone_masked || (client as any).contact_phone_masked || 'N/A';
-  const clientEmail = (client as any).contact_person_email || (client as any).contact_email || (client as any).contact_person_email_masked || (client as any).contact_email_masked || 'N/A';
+  const clientPhone = client.contact_person_phone || client.contact_phone || client.contact_person_phone_masked || client.contact_phone_masked || 'N/A';
+  const clientEmail = client.contact_person_email || client.contact_email || client.contact_person_email_masked || client.contact_email_masked || 'N/A';
   const handoverScope = {
     ...client,
     ...completedInstallation,
-    branch: (completedInstallation as any).branch_name || completedInstallation.branch || client.branch,
-    branch_name: (completedInstallation as any).branch_name,
-    department_name: (completedInstallation as any).department_name,
-    branch_count: (completedInstallation as any).branch_count,
-    department_count: (completedInstallation as any).department_count,
+    branch: completedInstallation.branch_name || completedInstallation.branch || client.branch,
+    branch_name: completedInstallation.branch_name,
+    department_name: completedInstallation.department_name,
+    branch_count: completedInstallation.branch_count,
+    department_count: completedInstallation.department_count,
   };
   const installationBranch = getBranchLabel(handoverScope);
   const installationDepartment = getDepartmentLabel(handoverScope);
@@ -218,10 +218,10 @@ export const generateInstallationReport = async (
     },
   });
 
-  yPos = (doc as any).lastAutoTable.finalY + 8;
+  yPos = doc.lastAutoTable.finalY + 8;
 
   // â”€â”€â”€ LED DISPLAY NAMES â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-  const ledNames = (completedInstallation as any).led_names as string[] | string | null;
+  const ledNames = completedInstallation.led_names as string[] | string | null;
   const parsedLedNames: string[] = Array.isArray(ledNames)
     ? ledNames
     : typeof ledNames === 'string'
@@ -256,7 +256,7 @@ export const generateInstallationReport = async (
       showHead: 'everyPage',
     });
 
-    yPos = (doc as any).lastAutoTable.finalY + 8;
+    yPos = doc.lastAutoTable.finalY + 8;
   }
 
   // â”€â”€â”€ REMARKS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -322,7 +322,7 @@ export const generateInstallationReport = async (
       }
     });
 
-    yPos = (doc as any).lastAutoTable.finalY + 8;
+    yPos = doc.lastAutoTable.finalY + 8;
   }
 
   // â”€â”€â”€ SIGNATURE SECTION â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -344,7 +344,7 @@ export const generateInstallationReport = async (
   // Company signature box
   const compName = brand.id === 'marezi'
     ? brand.name
-    : ((company as any).company_name || company.name || 'RIANA Technologies');
+    : (company.company_name || company.name || 'RIANA Technologies');
   doc.setFillColor(250, 250, 250);
   doc.rect(margin + sigBoxWidth + 10, yPos, sigBoxWidth, sigBoxHeight, 'F');
   doc.rect(margin + sigBoxWidth + 10, yPos, sigBoxWidth, sigBoxHeight);

@@ -98,18 +98,18 @@ export const EHandoverForm = ({ client, installation, user }: EHandoverFormProps
   const handoverScope = {
     ...client,
     ...displayInstallation,
-    branch: (displayInstallation as any).branch_name || (displayInstallation as any).branch || client.branch,
-    branch_name: (displayInstallation as any).branch_name,
-    department_name: (displayInstallation as any).department_name,
-    branch_count: (displayInstallation as any).branch_count,
-    department_count: (displayInstallation as any).department_count,
+    branch: displayInstallation.branch_name || displayInstallation.branch || client.branch,
+    branch_name: displayInstallation.branch_name,
+    department_name: displayInstallation.department_name,
+    branch_count: displayInstallation.branch_count,
+    department_count: displayInstallation.department_count,
   };
   const branchLabel = getBranchLabel(handoverScope);
   const departmentLabel = getDepartmentLabel(handoverScope);
   const scopeFileSegment = getScopeFileSegment(handoverScope);
-  const clientPhone = (client as any).contact_person_phone || (client as any).contact_phone || (client as any).contact_person_phone_masked || (client as any).contact_phone_masked || 'N/A';
-  const clientEmail = (client as any).contact_person_email || (client as any).contact_email || (client as any).contact_person_email_masked || (client as any).contact_email_masked || 'N/A';
-  const startDateValue = client.start_date || displayInstallation.assigned_date || (displayInstallation as any).installation_start_date || displayInstallation.created_at;
+  const clientPhone = client.contact_person_phone || client.contact_phone || client.contact_person_phone_masked || client.contact_phone_masked || 'N/A';
+  const clientEmail = client.contact_person_email || client.contact_email || client.contact_person_email_masked || client.contact_email_masked || 'N/A';
+  const startDateValue = client.start_date || displayInstallation.assigned_date || displayInstallation.installation_start_date || displayInstallation.created_at;
 
   // Load installation data
   const loadInstallationData = useCallback(async () => {
@@ -422,7 +422,7 @@ export const EHandoverForm = ({ client, installation, user }: EHandoverFormProps
         },
       });
 
-      yPos = (doc as any).lastAutoTable.finalY + 10;
+      yPos = doc.lastAutoTable.finalY + 10;
 
       if (serializedHardware.length) {
         checkPageBreak(30);
@@ -433,7 +433,7 @@ export const EHandoverForm = ({ client, installation, user }: EHandoverFormProps
           margin:{left:margin,right:margin,top:DOCUMENT_LAYOUT.continuationContentTop,bottom:DOCUMENT_LAYOUT.autoTableBottomMargin},
           styles:{fontSize:7,cellPadding:2},headStyles:{fillColor:primaryColor},
         });
-        yPos=(doc as any).lastAutoTable.finalY+10;
+        yPos=doc.lastAutoTable.finalY+10;
       }
 
       // ========== LED DISPLAY NAMES SECTION - Multi-page support ==========
@@ -491,7 +491,7 @@ export const EHandoverForm = ({ client, installation, user }: EHandoverFormProps
             pageBreak: 'auto',
             showHead: 'everyPage'
           });
-          yPos = (doc as any).lastAutoTable.finalY + 6;
+          yPos = doc.lastAutoTable.finalY + 6;
         });
       }
 
@@ -526,7 +526,7 @@ export const EHandoverForm = ({ client, installation, user }: EHandoverFormProps
           pageBreak: 'auto',
           showHead: 'everyPage'
           });
-        yPos = (doc as any).lastAutoTable.finalY + 8;
+        yPos = doc.lastAutoTable.finalY + 8;
         }
       }
 

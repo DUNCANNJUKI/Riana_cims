@@ -1,3 +1,4 @@
+import { errorDetails } from '@/utils/errorDetails';
 import * as React from "react";
 import { fetchAuthenticatedBlob } from '@/integrations/apiClient';
 import { AlertCircle, Download, Eye, FileText, ImageIcon, RefreshCcw, Trash2, Upload, X } from "lucide-react";
@@ -104,8 +105,8 @@ export const SecureFileUploader = ({
       });
       setSelectedFiles([]);
       onUploaded?.(uploaded);
-    } catch (uploadError: any) {
-      if (uploadError?.name !== "AbortError") setError(uploadError?.message || "The upload could not be completed.");
+    } catch (uploadError: unknown) {
+      if (errorDetails(uploadError)?.name !== "AbortError") setError(errorDetails(uploadError)?.message || "The upload could not be completed.");
     } finally {
       setIsUploading(false);
       abortRef.current = null;

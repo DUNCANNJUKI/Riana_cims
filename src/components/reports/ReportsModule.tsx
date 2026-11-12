@@ -1,3 +1,6 @@
+import type { HandoverRecord } from '@/types/apiRecords';
+import type { Client } from '@/types';
+import { errorDetails } from '@/utils/errorDetails';
 import { useState, useEffect } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -100,7 +103,7 @@ export const ReportsModule = ({ user }: ReportsModuleProps) => {
   const [dateTo, setDateTo] = useState<string>('');
   const [isGenerating, setIsGenerating] = useState<string>('');
   const [isPreviewing, setIsPreviewing] = useState<string>('');
-  const [handoverUploads, setHandoverUploads] = useState<any[]>([]);
+  const [handoverUploads, setHandoverUploads] = useState<HandoverRecord[]>([]);
   const [loadingUploads, setLoadingUploads] = useState(false);
   const [previewBlob, setPreviewBlob] = useState<Blob | null>(null);
   const [previewFileName, setPreviewFileName] = useState<string>('');
@@ -136,8 +139,8 @@ export const ReportsModule = ({ user }: ReportsModuleProps) => {
         getClients()
       ]);
 
-      const enrichedUploads = (uploads || []).map((upload: any) => {
-        const client = clients?.find((c: any) => c.id === upload.client_id);
+      const enrichedUploads = (uploads || []).map((upload: HandoverRecord) => {
+        const client = clients?.find((c: Client) => c.id === upload.client_id);
         const scopedUpload = {
           ...upload,
           branch: upload.branch_name || upload.branch || upload.clients?.branch || client?.branch,
@@ -203,11 +206,11 @@ export const ReportsModule = ({ user }: ReportsModuleProps) => {
         setPreviewTitle(reportName);
         setIsPreviewOpen(true);
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error generating preview:', error);
       toast({
         title: "Error Generating Preview",
-        description: error.message || "There was an error generating the report preview. Please try again.",
+        description: errorDetails(error).message || "There was an error generating the report preview. Please try again.",
         variant: "destructive",
       });
     } finally {
@@ -215,41 +218,41 @@ export const ReportsModule = ({ user }: ReportsModuleProps) => {
     }
   };
 
-  const getFreshHandoverUpload = async (upload: any) => {
+  const getFreshHandoverUpload = async (upload: HandoverRecord) => {
     const uploads = await apiClient.get('/handover_uploads');
-    const freshUpload = (uploads || []).find((candidate: any) => String(candidate.id) === String(upload.id));
+    const freshUpload = (uploads || []).find((candidate: HandoverRecord) => String(candidate.id) === String(upload.id));
     if (!freshUpload) return upload;
     setHandoverUploads(prev => prev.map(item => String(item.id) === String(freshUpload.id) ? { ...item, ...freshUpload } : item));
     return { ...upload, ...freshUpload };
   };
 
-  const assertHandoverFileReady = (upload: any) => {
+  const assertHandoverFileReady = (upload: HandoverRecord) => {
     if (upload.file_available === false) {
       throw new Error('The handover file is missing from server storage. Restore the uploads backup or re-upload the signed document.');
     }
   };
 
-  const handlePreviewHandover = async (upload: any) => {
+  const handlePreviewHandover = async (upload: HandoverRecord) => {
     try {
       const freshUpload = await getFreshHandoverUpload(upload);
       assertHandoverFileReady(freshUpload);
       if (!freshUpload.secure_preview_url) throw new Error('Secure preview link is unavailable. Please refresh and try again.');
       await previewAuthenticatedFile(freshUpload.secure_preview_url);
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error previewing handover:', error);
-      toast({ title: 'Preview Failed', description: error.message || 'Unable to preview this handover document.', variant: 'destructive' });
+      toast({ title: 'Preview Failed', description: errorDetails(error).message || 'Unable to preview this handover document.', variant: 'destructive' });
     }
   };
 
-  const handleDownloadHandover = async (upload: any) => {
+  const handleDownloadHandover = async (upload: HandoverRecord) => {
     try {
       const freshUpload = await getFreshHandoverUpload(upload);
       assertHandoverFileReady(freshUpload);
       if (!freshUpload.secure_download_url) throw new Error('Secure download link is unavailable. Please refresh and try again.');
       await downloadAuthenticatedFile(freshUpload.secure_download_url, freshUpload.file_name || freshUpload.file_path_label || 'handover.pdf');
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error downloading handover:', error);
-      toast({ title: 'Download Failed', description: error.message || 'Unable to download this handover document.', variant: 'destructive' });
+      toast({ title: 'Download Failed', description: errorDetails(error).message || 'Unable to download this handover document.', variant: 'destructive' });
     }
   };
 

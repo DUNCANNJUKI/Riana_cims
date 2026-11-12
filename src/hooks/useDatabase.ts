@@ -1,3 +1,6 @@
+import type { FeedbackResponse } from '@/types/apiRecords';
+import type { Client, Installation, User, Company, ClientAssignment, EscalationMatrix } from '@/types';
+import { errorDetails } from '@/utils/errorDetails';
 import { useState } from 'react';
 import { apiClient } from '@/integrations/apiClient';
 import { useToast } from '@/hooks/use-toast';
@@ -21,7 +24,7 @@ export const useDatabase = () => {
       setLoading(true);
       const data = await apiClient.get('/clients');
       return data || [];
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error fetching clients:', error);
       toast({
         title: "Error",
@@ -34,7 +37,7 @@ export const useDatabase = () => {
     }
   };
 
-  const addClient = async (clientData: any) => {
+  const addClient = async (clientData: Partial<Client> & Record<string, unknown>) => {
     try {
       setLoading(true);
       const data = await apiClient.post('/clients', clientData);
@@ -52,7 +55,7 @@ export const useDatabase = () => {
       });
       window.dispatchEvent(new CustomEvent('data-updated'));
       return data;
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error adding client:', error);
       toast({
         title: "Error",
@@ -65,7 +68,7 @@ export const useDatabase = () => {
     }
   };
 
-  const updateClient = async (id: string, clientData: any) => {
+  const updateClient = async (id: string, clientData: Partial<Client> & Record<string, unknown>) => {
     try {
       setLoading(true);
       const data = await apiClient.put(`/clients/${id}`, clientData);
@@ -75,7 +78,7 @@ export const useDatabase = () => {
       });
       window.dispatchEvent(new CustomEvent('data-updated'));
       return data;
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error updating client:', error);
       toast({
         title: "Error",
@@ -97,7 +100,7 @@ export const useDatabase = () => {
         description: "Client deleted successfully",
       });
       window.dispatchEvent(new CustomEvent('data-updated'));
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error deleting client:', error);
       toast({
         title: "Error",
@@ -117,7 +120,7 @@ export const useDatabase = () => {
       setLoading(true);
       const data = await apiClient.get('/installations');
       return data || [];
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error fetching installations:', error);
       toast({
         title: "Error",
@@ -130,7 +133,7 @@ export const useDatabase = () => {
     }
   };
 
-  const addInstallation = async (installationData: any) => {
+  const addInstallation = async (installationData: Partial<Installation> & Record<string, unknown>) => {
     try {
       setLoading(true);
       const data = await apiClient.post('/installations', installationData);
@@ -141,11 +144,11 @@ export const useDatabase = () => {
       });
       window.dispatchEvent(new CustomEvent('data-updated'));
       return data;
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error adding installation:', error);
       toast({
         title: "Error",
-        description: error.message || "Failed to add installation",
+        description: errorDetails(error).message || "Failed to add installation",
         variant: "destructive",
       });
       throw error;
@@ -154,7 +157,7 @@ export const useDatabase = () => {
     }
   };
 
-  const updateInstallation = async (id: string, installationData: any) => {
+  const updateInstallation = async (id: string, installationData: Partial<Installation> & Record<string, unknown>) => {
     try {
       setLoading(true);
       const data = await apiClient.patch(`/installations/${id}`, installationData);
@@ -165,11 +168,11 @@ export const useDatabase = () => {
       });
       window.dispatchEvent(new CustomEvent('data-updated'));
       return data;
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error updating installation:', error);
       toast({
         title: "Error",
-        description: error.message || "Failed to update installation",
+        description: errorDetails(error).message || "Failed to update installation",
         variant: "destructive",
       });
       throw error;
@@ -182,7 +185,7 @@ export const useDatabase = () => {
   const updateInstallationStatus = async (id: string, status: string, userId: string, waitingReason?: string) => {
     try {
       setLoading(true);
-      const updateData: any = { status };
+      const updateData: { status: string; waiting_reason?: string } = { status };
       if (status === 'waiting' && waitingReason) {
         updateData.waiting_reason = waitingReason;
       }
@@ -201,7 +204,7 @@ export const useDatabase = () => {
         description: "Installation status updated successfully",
       });
       window.dispatchEvent(new CustomEvent('data-updated'));
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error updating installation status:', error);
       toast({
         title: "Error",
@@ -215,7 +218,7 @@ export const useDatabase = () => {
   };
 
   // Installation progress operations
-  const updateInstallationProgress = async (installationId: string, progressData: any, userId: string) => {
+  const updateInstallationProgress = async (installationId: string, progressData: { progress_percentage: number; notes?: string }, userId: string) => {
     try {
       setLoading(true);
       await apiClient.post('/installation_progress', {
@@ -229,7 +232,7 @@ export const useDatabase = () => {
         title: "Success",
         description: "Installation progress updated successfully",
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error updating installation progress:', error);
       toast({
         title: "Error",
@@ -248,7 +251,7 @@ export const useDatabase = () => {
       setLoading(true);
       const data = await apiClient.get('/user_profiles');
       return data || [];
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error fetching users:', error);
       toast({
         title: "Error",
@@ -261,7 +264,7 @@ export const useDatabase = () => {
     }
   };
 
-  const createUser = async (userData: any) => {
+  const createUser = async (userData: Partial<User> & Record<string, unknown>) => {
     try {
       setLoading(true);
       const data = await apiClient.post('/user_profiles', userData);
@@ -277,7 +280,7 @@ export const useDatabase = () => {
       });
 
       return data;
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error creating user:', error);
       throw error;
     } finally {
@@ -291,7 +294,7 @@ export const useDatabase = () => {
       setLoading(true);
       const data = await apiClient.get('/companies');
       return data;
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error fetching company settings:', error);
       toast({
         title: "Error",
@@ -304,7 +307,7 @@ export const useDatabase = () => {
     }
   };
 
-  const updateCompanySettings = async (settings: any) => {
+  const updateCompanySettings = async (settings: Partial<Company> & Record<string, unknown>) => {
     try {
       setLoading(true);
       const data = await apiClient.put('/companies', settings);
@@ -315,7 +318,7 @@ export const useDatabase = () => {
       });
 
       return data;
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error updating company settings:', error);
       toast({
         title: "Error",
@@ -335,7 +338,7 @@ export const useDatabase = () => {
       console.log('Local file upload simulated for:', path);
       // In a real local setup, you'd POST to a file upload endpoint
       return URL.createObjectURL(file); 
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error uploading file:', error);
       toast({
         title: "Error",
@@ -350,7 +353,7 @@ export const useDatabase = () => {
   const getDepartments = async () => {
     try {
       return await apiClient.get('/departments');
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error fetching departments:', error);
       return [];
     }
@@ -359,7 +362,7 @@ export const useDatabase = () => {
   const getSubsidiaries = async () => {
     try {
       return await apiClient.get('/subsidiaries');
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error fetching subsidiaries:', error);
       return [];
     }
@@ -370,22 +373,22 @@ export const useDatabase = () => {
       const feedbackData = await apiClient.get('/installation_feedback');
       
       const satisfaction = calculateSatisfaction(feedbackData);
-      const getRecommendationScore = (feedback: any) => {
+      const getRecommendationScore = (feedback: FeedbackResponse) => {
         const directScore = Number(feedback.recommendation_score);
         if (Number.isFinite(directScore) && directScore >= 0 && directScore <= 10) return directScore;
         const responses = feedback.dynamic_responses && typeof feedback.dynamic_responses === 'object'
           ? Object.values(feedback.dynamic_responses)
           : [];
         const dynamicScore = responses
-          .map((value: any) => Number(value))
+          .map((value: unknown) => Number(value))
           .find((score: number) => Number.isFinite(score) && score >= 0 && score <= 10);
         return dynamicScore;
       };
-      const feedbackWithNps = feedbackData.map((feedback: any) => ({
+      const feedbackWithNps = feedbackData.map((feedback: FeedbackResponse) => ({
         ...feedback,
         recommendation_score: getRecommendationScore(feedback),
       }));
-      const getClientComments = (feedback: any) => {
+      const getClientComments = (feedback: FeedbackResponse) => {
         const responseComments = feedback.dynamic_responses && typeof feedback.dynamic_responses === 'object'
           ? Object.values(feedback.dynamic_responses)
               .filter((value): value is string => typeof value === 'string')
@@ -406,7 +409,7 @@ export const useDatabase = () => {
 
       const csatScore = satisfaction.csatScore;
 
-      const recentFeedback = feedbackWithNps.slice(0, 10).map((feedback: any) => ({
+      const recentFeedback = feedbackWithNps.slice(0, 10).map((feedback: FeedbackResponse) => ({
         ...feedback,
         client_name: feedback.clients?.client_name || 'Unknown Client',
         nps_category: classifyNpsScore(feedback.recommendation_score) || 'unrated',
@@ -442,17 +445,17 @@ export const useDatabase = () => {
     }
   };
 
-  const updateAssignment = async (id: string, assignmentData: any) => {
+  const updateAssignment = async (id: string, assignmentData: Partial<Omit<ClientAssignment, 'status'>> & { status?: string } & Record<string, unknown>) => {
     try {
       setLoading(true);
       const data = await apiClient.patch(`/client_assignments/${id}`, assignmentData);
       window.dispatchEvent(new CustomEvent('data-updated'));
       return data;
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error updating assignment:', error);
       toast({
         title: "Error",
-        description: error.message || "Failed to update assignment",
+        description: errorDetails(error).message || "Failed to update assignment",
         variant: "destructive",
       });
       throw error;
@@ -464,13 +467,13 @@ export const useDatabase = () => {
   const getAssignments = async () => {
     try {
       return await apiClient.get('/client_assignments');
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error fetching assignments:', error);
       return [];
     }
   };
 
-  const addAssignment = async (assignmentData: any) => {
+  const addAssignment = async (assignmentData: Partial<Omit<ClientAssignment, 'status'>> & { status?: string } & Record<string, unknown>) => {
     try {
       setLoading(true);
       const data = await apiClient.post('/client_assignments', assignmentData);
@@ -480,11 +483,11 @@ export const useDatabase = () => {
       });
       window.dispatchEvent(new CustomEvent('data-updated'));
       return data;
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error creating assignment:', error);
       toast({
         title: "Error",
-        description: error.message || "Failed to create assignment",
+        description: errorDetails(error).message || "Failed to create assignment",
         variant: "destructive",
       });
       throw error;
@@ -493,14 +496,14 @@ export const useDatabase = () => {
     }
   };
 
-  const updateEscalationMatrix = async (id: string, matrix: any) => {
+  const updateEscalationMatrix = async (id: string, matrix: EscalationMatrix) => {
     try {
       await apiClient.patch(`/installations/${id}`, { escalation_matrix: matrix });
       toast({
         title: "Success",
         description: "Escalation matrix saved successfully",
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error saving escalation matrix:', error);
       toast({
         title: "Error",
@@ -510,7 +513,7 @@ export const useDatabase = () => {
     }
   };
 
-  const updateUser = async (id: string, userData: any) => {
+  const updateUser = async (id: string, userData: Partial<User> & Record<string, unknown>) => {
 
     try {
       setLoading(true);
@@ -519,7 +522,7 @@ export const useDatabase = () => {
         title: "Success",
         description: "User updated successfully",
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error updating user:', error);
       throw error;
     } finally {
@@ -535,7 +538,7 @@ export const useDatabase = () => {
         title: "Success",
         description: "User deleted successfully",
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error deleting user:', error);
       throw error;
     } finally {
@@ -547,17 +550,17 @@ export const useDatabase = () => {
     try {
       const url = clientId ? `/feedback_links?client_id=${clientId}` : '/feedback_links';
       return await apiClient.get(url);
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error fetching feedback links:', error);
       return [];
     }
   };
 
-  const createFeedbackLink = async (linkData: any) => {
+  const createFeedbackLink = async (linkData: Record<string, unknown>) => {
     try {
       setLoading(true);
       return await apiClient.post('/feedback_links', linkData);
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error creating feedback link:', error);
       throw error;
     } finally {
@@ -565,10 +568,10 @@ export const useDatabase = () => {
     }
   };
 
-  const updateFeedbackLink = async (id: string, linkData: any) => {
+  const updateFeedbackLink = async (id: string, linkData: Record<string, unknown>) => {
     try {
       await apiClient.patch(`/feedback_links/${id}`, linkData);
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error updating feedback link:', error);
       throw error;
     }
@@ -577,7 +580,7 @@ export const useDatabase = () => {
   const getLatestFeedback = async (clientId: string, installationId: string) => {
     try {
       return await apiClient.get(`/installation_feedback/latest?client_id=${clientId}&installation_id=${installationId}`);
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error fetching latest feedback:', error);
       return null;
     }
@@ -591,7 +594,7 @@ export const useDatabase = () => {
         title: "Success",
         description: "Password changed successfully",
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error changing user password:', error);
       throw error;
     }

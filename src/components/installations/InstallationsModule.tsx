@@ -1,3 +1,5 @@
+import type { AssignmentRecord } from '@/types/apiRecords';
+import { errorDetails } from '@/utils/errorDetails';
 import { useState, useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { normalizeHandoverEquipmentConfiguration } from '@/utils/equipmentConfiguration';
@@ -56,7 +58,7 @@ export const InstallationsModule = ({ user }: InstallationsModuleProps) => {
   const [isFeedbackDialogOpen, setIsFeedbackDialogOpen] = useState(false);
   const [selectedFeedbackInstallation, setSelectedFeedbackInstallation] = useState<Installation | null>(null);
   const [currentEscalationInstallation, setCurrentEscalationInstallation] = useState<Installation | null>(null);
-  const [assignments, setAssignments] = useState<any[]>([]);
+  const [assignments, setAssignments] = useState<AssignmentRecord[]>([]);
   const [isUploadHandoverOpen, setIsUploadHandoverOpen] = useState(false);
   const [selectedInstallationForHandover, setSelectedInstallationForHandover] = useState<Installation | null>(null);
   const { toast } = useToast();
@@ -97,7 +99,7 @@ export const InstallationsModule = ({ user }: InstallationsModuleProps) => {
       ]);
       
       // Remove exact duplicate assignment scopes while preserving branch/department-specific rows.
-      const uniqueAssignments = assignmentsData?.filter((assignment: any, index: number, self: any[]) =>
+      const uniqueAssignments = assignmentsData?.filter((assignment: AssignmentRecord, index: number, self: AssignmentRecord[]) =>
         index === self.findIndex((a) => (
           (a.installation_id || '') === (assignment.installation_id || '') &&
           a.client_id === assignment.client_id &&
@@ -122,7 +124,7 @@ export const InstallationsModule = ({ user }: InstallationsModuleProps) => {
     }
   };
 
-  const normalizeBranches = (branches: any[]): ClientBranch[] => (Array.isArray(branches) ? branches : [])
+  const normalizeBranches = (branches: Array<ClientBranch & { name?: string }>): ClientBranch[] => (Array.isArray(branches) ? branches : [])
     .filter((branch) => branch && (!branch.status || branch.status === 'active'))
     .map((branch) => ({
       ...branch,
@@ -130,7 +132,7 @@ export const InstallationsModule = ({ user }: InstallationsModuleProps) => {
     }))
     .filter((branch) => Boolean(branch.branch_name));
 
-  const normalizeDepartments = (departments: any[]): ClientDepartment[] => (Array.isArray(departments) ? departments : [])
+  const normalizeDepartments = (departments: Array<ClientDepartment & { name?: string }>): ClientDepartment[] => (Array.isArray(departments) ? departments : [])
     .filter((department) => department && (!department.status || department.status === 'active'))
     .map((department) => ({
       ...department,
@@ -182,11 +184,11 @@ export const InstallationsModule = ({ user }: InstallationsModuleProps) => {
         branch: selectedBranch.branch_name,
         department_id: selectedDepartment?.id || '',
       }));
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error loading client installation hierarchy:', error);
       toast({
         title: "Hierarchy loading failed",
-        description: error?.message || "Could not load branches and departments for this client.",
+        description: errorDetails(error)?.message || "Could not load branches and departments for this client.",
         variant: "destructive",
       });
     } finally {
@@ -211,9 +213,9 @@ export const InstallationsModule = ({ user }: InstallationsModuleProps) => {
     setIsHierarchyLoading(true);
     try {
       await loadDepartmentsForBranch(branchId);
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error loading branch departments:', error);
-      toast({ title: "Department loading failed", description: error?.message || "Could not load departments for this branch.", variant: "destructive" });
+      toast({ title: "Department loading failed", description: errorDetails(error)?.message || "Could not load departments for this branch.", variant: "destructive" });
     } finally {
       setIsHierarchyLoading(false);
     }
@@ -225,23 +227,23 @@ export const InstallationsModule = ({ user }: InstallationsModuleProps) => {
   const getInstallationAssignment = (installation: Installation) => {
     const client = clients.find(c => c.id === installation.client_id);
     const installationBranch = normalizeScopeLabel(
-      (installation as any).branch_name || (installation as any).branch || client?.branch
+      installation.branch_name || installation.branch || client?.branch
     );
-    const installationDepartment = normalizeScopeLabel((installation as any).department_name);
+    const installationDepartment = normalizeScopeLabel(installation.department_name);
 
     return assignments.find((assignment) => {
       if (String(assignment.installation_id || '') === String(installation.id || '')) return true;
       if (String(assignment.client_id || '') !== String(installation.client_id || '')) return false;
 
-      if ((installation as any).branch_id || assignment.branch_id) {
-        if (String(assignment.branch_id || '') !== String((installation as any).branch_id || '')) return false;
+      if (installation.branch_id || assignment.branch_id) {
+        if (String(assignment.branch_id || '') !== String(installation.branch_id || '')) return false;
       } else {
         const assignmentBranch = normalizeScopeLabel(assignment.branch_name || assignment.branch || assignment.clients?.branch);
         if (installationBranch && assignmentBranch && installationBranch !== assignmentBranch) return false;
       }
 
-      if ((installation as any).department_id || assignment.department_id) {
-        if (String(assignment.department_id || '') !== String((installation as any).department_id || '')) return false;
+      if (installation.department_id || assignment.department_id) {
+        if (String(assignment.department_id || '') !== String(installation.department_id || '')) return false;
       } else {
         const assignmentDepartment = normalizeScopeLabel(assignment.department_name);
         if (installationDepartment && assignmentDepartment && installationDepartment !== assignmentDepartment) return false;
@@ -343,12 +345,12 @@ export const InstallationsModule = ({ user }: InstallationsModuleProps) => {
         title: "Success",
         description: "Installation added successfully",
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error adding installation:', error);
-      setSaveError(error.message || 'Unable to save installation.');
+      setSaveError(errorDetails(error).message || 'Unable to save installation.');
       toast({
         title: "Error",
-        description: error.message || "Failed to add installation. Please check all required fields.",
+        description: errorDetails(error).message || "Failed to add installation. Please check all required fields.",
         variant: "destructive",
       });
     }
@@ -829,12 +831,12 @@ export const InstallationsModule = ({ user }: InstallationsModuleProps) => {
                   </TableCell>
                   <TableCell>
                     <div className="flex items-center gap-2">
-                      {(installation as any).handover_status === 'signed' ? (
+                      {installation.handover_status === 'signed' ? (
                         <Badge className="bg-emerald-500/10 text-emerald-600 border-emerald-500/20">
                           <Upload className="h-3 w-3 mr-1" />
                           Signed
                         </Badge>
-                      ) : (installation as any).handover_status === 'uploaded' || installation.handover_file_path ? (
+                      ) : installation.handover_status === 'uploaded' || installation.handover_file_path ? (
                         <Badge className="bg-blue-500/10 text-blue-600 border-blue-500/20">
                           <Upload className="h-3 w-3 mr-1" />
                           Uploaded

@@ -201,7 +201,7 @@ export const PerformanceReportGenerator = ({ user }: PerformanceReportGeneratorP
       });
 
       // Get the final Y position after the table
-      const finalY = (doc as any).lastAutoTable?.finalY || yPos + 50;
+      const finalY = doc.lastAutoTable?.finalY || yPos + 50;
 
       // Badge Summary
       if (finalY < 240) {

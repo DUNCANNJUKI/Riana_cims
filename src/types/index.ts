@@ -23,6 +23,7 @@ export interface User {
 }
 
 export interface Company {
+  company_name?: string;
   id: string;
   name: string;
   logo_path?: string;
@@ -71,6 +72,8 @@ export interface Department {
 }
 
 export interface Client {
+  contact_phone?: string;
+  contact_email?: string;
   id: string;
   department_id: string;
   subsidiary_id: string;
@@ -95,6 +98,9 @@ export interface Client {
 }
 
 export interface Installation {
+  installation_start_date?: string;
+  branch_count?: number;
+  department_count?: number;
   equipment_quantities?: Record<string,number> | string | null;
   id: string;
   client_id: string;

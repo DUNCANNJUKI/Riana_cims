@@ -1,3 +1,4 @@
+import { errorDetails } from '@/utils/errorDetails';
 import React, { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
@@ -111,8 +112,8 @@ export const ClientChangeRequestForm: React.FC = () => {
           return;
         }
         setInvitation({ ...data, client: { client_name: data.client.name, branch_name: data.client.branch, department_name: data.client.department }, client_representative: data.representative });
-      } catch (err: any) {
-        setError(err.message || 'Unable to connect to Riana CIMS servers.');
+      } catch (err: unknown) {
+        setError(errorDetails(err).message || 'Unable to connect to Riana CIMS servers.');
       } finally {
         setLoading(false);
       }
@@ -237,10 +238,10 @@ export const ClientChangeRequestForm: React.FC = () => {
         title: 'Request Submitted Successfully',
         description: `Ticket ${data.ticket_number} created and dispatched to the Riana development team.`,
       });
-    } catch (err: any) {
+    } catch (err: unknown) {
       toast({
         title: 'Submission Failed',
-        description: err.message || 'An error occurred while submitting your request.',
+        description: errorDetails(err).message || 'An error occurred while submitting your request.',
         variant: 'destructive',
       });
     } finally {

@@ -1,3 +1,10 @@
+import type { Client, Installation, User, SystemLog } from '@/types';
+import type { AssignmentRecord, HandoverRecord, FeedbackResponse } from '@/types/apiRecords';
+interface SummaryRow {
+ month?: string; newClients?: number; newInstallations?: number; completed?: number; totalDays?: number; count?: number; satisfaction?: number; feedbackCount?: number; name?: string; total?: number; inProgress?: number; equipment_type?: string; total_count?: number; average?: string; percentage?: number | string;
+}
+type ReportRow = Partial<Omit<Client & Installation & AssignmentRecord & HandoverRecord & SystemLog, 'status'>> & SummaryRow & { status?: string; user_profiles?: Partial<User>; email?: string };
+type TableCell = string | number;
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { apiClient } from '@/integrations/apiClient';
@@ -10,7 +17,7 @@ interface ReportData {
   title: string;
   dateRange?: { from: string; to: string };
   generatedBy: string;
-  data: any[];
+  data: ReportRow[];
 }
 
 // Company branding colors (RIANA colors)
@@ -183,7 +190,7 @@ export const generateCSVReport = async (reportType: string, dateRange?: { from: 
   let csvContent = headers.join(',') + '\n';
   
   formattedData.forEach(row => {
-    const rowData = row.map((cell: any) => {
+    const rowData = row.map((cell: unknown) => {
       // Escape quotes and wrap in quotes if contains comma
       const cellStr = String(cell || '');
       if (cellStr.includes(',') || cellStr.includes('"') || cellStr.includes('\n')) {
@@ -239,7 +246,7 @@ const getTableHeaders = (reportType: string): string[] => {
 };
 
 
-const toDateTime = (value: any, endOfDay = false) => {
+const toDateTime = (value: unknown, endOfDay = false) => {
   if (!value) return null;
   const text = String(value);
   const date = new Date(/^\d{4}-\d{2}-\d{2}$/.test(text) ? `${text}T${endOfDay ? '23:59:59.999' : '00:00:00.000'}` : text);
@@ -247,7 +254,7 @@ const toDateTime = (value: any, endOfDay = false) => {
   return Number.isFinite(time) ? time : null;
 };
 
-const withinDateRange = (value: any, dateRange?: { from: string; to: string }) => {
+const withinDateRange = (value: unknown, dateRange?: { from: string; to: string }) => {
   const time = toDateTime(value);
   if (time === null) return !dateRange?.from && !dateRange?.to;
   const from = dateRange?.from ? toDateTime(dateRange.from) : null;
@@ -260,28 +267,28 @@ const fetchReportData = async (reportType: string, dateRange?: { from: string; t
       case 'clients-summary': {
         const data = await apiClient.get('/clients');
         let filtered = data || [];
-        filtered = filtered.filter((c: any) => withinDateRange(c.start_date || c.created_at, dateRange));
+        filtered = filtered.filter((c: Client) => withinDateRange(c.start_date || c.created_at, dateRange));
         return filtered;
       }
       
       case 'installations-overview': {
         const data = await apiClient.get('/installations');
         let filtered = data || [];
-        filtered = filtered.filter((i: any) => withinDateRange(i.created_at || i.assigned_date, dateRange));
+        filtered = filtered.filter((i: Installation) => withinDateRange(i.created_at || i.assigned_date, dateRange));
         return filtered;
       }
       
       case 'e-handover': {
         const data = await apiClient.get('/handover_uploads');
         let filtered = data || [];
-        filtered = filtered.filter((h: any) => withinDateRange(h.upload_date, dateRange));
+        filtered = filtered.filter((h: HandoverRecord) => withinDateRange(h.upload_date, dateRange));
         return filtered;
       }
       
       case 'installation-progress': {
         const data = await apiClient.get('/client_assignments');
         let filtered = data || [];
-        filtered = filtered.filter((a: any) => withinDateRange(a.installation_start_date || a.created_at, dateRange));
+        filtered = filtered.filter((a: AssignmentRecord) => withinDateRange(a.installation_start_date || a.created_at, dateRange));
         return filtered;
       }
       
@@ -292,14 +299,14 @@ const fetchReportData = async (reportType: string, dateRange?: { from: string; t
           apiClient.get('/installation_feedback')
         ]);
         
-        const monthlyData: any = {};
-        clients?.forEach((client: any) => {
+        const monthlyData: Record<string, SummaryRow> = {};
+        clients?.forEach((client: Client) => {
           const month = new Date(client.created_at).toLocaleDateString('en-US', { year: 'numeric', month: 'short' });
           if (!monthlyData[month]) monthlyData[month] = { month, newClients: 0, newInstallations: 0, completed: 0, totalDays: 0, count: 0 };
           monthlyData[month].newClients++;
         });
 
-        installations?.forEach((inst: any) => {
+        installations?.forEach((inst: Installation) => {
           const startDate = inst.assigned_date || inst.installation_start_date || inst.created_at;
           const month = new Date(startDate || inst.created_at).toLocaleDateString('en-US', { year: 'numeric', month: 'short' });
           if (!monthlyData[month]) monthlyData[month] = { month, newClients: 0, newInstallations: 0, completed: 0, totalDays: 0, count: 0 };
@@ -314,7 +321,7 @@ const fetchReportData = async (reportType: string, dateRange?: { from: string; t
           }
         });
 
-        feedback?.forEach((fb: any) => {
+        feedback?.forEach((fb: FeedbackResponse) => {
           const month = new Date(fb.created_at).toLocaleDateString('en-US', { year: 'numeric', month: 'short' });
           if (monthlyData[month]) {
             monthlyData[month].satisfaction = (monthlyData[month].satisfaction || 0) + fb.overall_satisfaction;
@@ -328,13 +335,13 @@ const fetchReportData = async (reportType: string, dateRange?: { from: string; t
       case 'user-activity': {
         const data = await apiClient.get(`/system_logs?limit=100`);
         let filtered = data || [];
-        filtered = filtered.filter((l: any) => withinDateRange(l.created_at, dateRange));
+        filtered = filtered.filter((l: SystemLog) => withinDateRange(l.created_at, dateRange));
         return filtered;
       }
       
       case 'contract-distribution': {
         const data = await apiClient.get('/clients');
-        const distribution = (data || []).reduce((acc: any, client: any) => {
+        const distribution = (data || []).reduce((acc: Record<string, number>, client: Client) => {
           const type = client.contract_type || 'OTHER';
           acc[type] = (acc[type] || 0) + 1;
           return acc;
@@ -351,18 +358,18 @@ const fetchReportData = async (reportType: string, dateRange?: { from: string; t
         const data = await apiClient.get('/installations');
         const total = data?.length || 1;
         const equipmentTotals = {
-          'Kiosks': data?.reduce((sum: number, i: any) => sum + (i.kiosk_count || 0), 0) || 0,
-          'LED Displays': data?.reduce((sum: number, i: any) => sum + (i.led_count || 0), 0) || 0,
-          'TVs/Screens': data?.reduce((sum: number, i: any) => sum + (i.screen_count || 0), 0) || 0,
-          'Tablets': data?.reduce((sum: number, i: any) => sum + (i.tablets || 0), 0) || 0,
-          'UPS Units': data?.reduce((sum: number, i: any) => sum + (i.ups_count || 0), 0) || 0,
-          'Speakers': data?.reduce((sum: number, i: any) => sum + (i.speakers || 0), 0) || 0,
-          'Media Controllers': data?.reduce((sum: number, i: any) => sum + (i.media_controllers || 0), 0) || 0,
-          'Digital Signage': data?.reduce((sum: number, i: any) => sum + (i.digital_signage_system || 0), 0) || 0,
-          'Service Points': data?.reduce((sum: number, i: any) => sum + (i.service_points || 0), 0) || 0,
-          'Amplifiers': data?.reduce((sum: number, i: any) => sum + (i.amplifiers || 0), 0) || 0,
-          'HDMI Cables': data?.reduce((sum: number, i: any) => sum + (i.hdmis || 0), 0) || 0,
-          'Splitters': data?.reduce((sum: number, i: any) => sum + (i.splitters || 0), 0) || 0
+          'Kiosks': data?.reduce((sum: number, i: Installation) => sum + (i.kiosk_count || 0), 0) || 0,
+          'LED Displays': data?.reduce((sum: number, i: Installation) => sum + (i.led_count || 0), 0) || 0,
+          'TVs/Screens': data?.reduce((sum: number, i: Installation) => sum + (i.screen_count || 0), 0) || 0,
+          'Tablets': data?.reduce((sum: number, i: Installation) => sum + (i.tablets || 0), 0) || 0,
+          'UPS Units': data?.reduce((sum: number, i: Installation) => sum + (i.ups_count || 0), 0) || 0,
+          'Speakers': data?.reduce((sum: number, i: Installation) => sum + (i.speakers || 0), 0) || 0,
+          'Media Controllers': data?.reduce((sum: number, i: Installation) => sum + (i.media_controllers || 0), 0) || 0,
+          'Digital Signage': data?.reduce((sum: number, i: Installation) => sum + (i.digital_signage_system || 0), 0) || 0,
+          'Service Points': data?.reduce((sum: number, i: Installation) => sum + (i.service_points || 0), 0) || 0,
+          'Amplifiers': data?.reduce((sum: number, i: Installation) => sum + (i.amplifiers || 0), 0) || 0,
+          'HDMI Cables': data?.reduce((sum: number, i: Installation) => sum + (i.hdmis || 0), 0) || 0,
+          'Splitters': data?.reduce((sum: number, i: Installation) => sum + (i.splitters || 0), 0) || 0
         };
         return Object.entries(equipmentTotals).map(([type, count]) => ({
           equipment_type: type,
@@ -373,9 +380,9 @@ const fetchReportData = async (reportType: string, dateRange?: { from: string; t
       
       case 'technician-performance': {
         const assignments = await apiClient.get('/client_assignments');
-        const techStats: any = {};
-        assignments?.forEach((assignment: any) => {
-          [assignment.hardware_tech, assignment.software_tech].forEach((tech: any) => {
+        const techStats: Record<string, SummaryRow> = {};
+        assignments?.forEach((assignment: AssignmentRecord) => {
+          [assignment.hardware_tech, assignment.software_tech].forEach((tech: Partial<User> & SummaryRow) => {
             if (tech && (tech.id || tech.first_name)) {
               const techId = tech.id || `${tech.first_name}-${tech.last_name}`;
               if (!techStats[techId]) {
@@ -411,7 +418,7 @@ const fetchReportData = async (reportType: string, dateRange?: { from: string; t
 };
 
 
-const formatTableData = (reportType: string, data: any[]): any[][] => {
+const formatTableData = (reportType: string, data: ReportRow[]): TableCell[][] => {
   switch (reportType) {
     case 'clients-summary':
       return data.map(client => [
@@ -458,7 +465,7 @@ const formatTableData = (reportType: string, data: any[]): any[][] => {
       ]);
     
     case 'monthly-analytics':
-      return data.map((month: any) => [
+      return data.map((month: SummaryRow) => [
         month.month,
         month.newClients || 0,
         month.newInstallations || 0,
@@ -482,14 +489,14 @@ const formatTableData = (reportType: string, data: any[]): any[][] => {
       ]);
     
     case 'installation-by-type':
-      return data.map((item: any) => [
+      return data.map((item: SummaryRow) => [
         item.equipment_type,
         item.total_count,
         item.average
       ]);
     
     case 'technician-performance':
-      return data.map((tech: any) => [
+      return data.map((tech: SummaryRow) => [
         tech.name,
         tech.total || 0,
         tech.completed || 0,

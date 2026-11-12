@@ -1,3 +1,5 @@
+import type { AnnouncementReader } from '@/types/apiRecords';
+import { errorDetails } from '@/utils/errorDetails';
 import { useState, useEffect, useRef } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -80,6 +82,7 @@ interface Announcement {
   };
   read_count?: number;
   total_target?: number;
+  total_target_users?: number;
 }
 
 interface AnnouncementsManagementModuleProps {
@@ -107,8 +110,8 @@ export const AnnouncementsManagementModule = ({ user }: AnnouncementsManagementM
   const [subsidiaries, setSubsidiaries] = useState<{ id: string; subsidiary_name: string }[]>([]);
   const [selectedAnnouncement, setSelectedAnnouncement] = useState<Announcement | null>(null);
   const [totalUsers, setTotalUsers] = useState(0);
-  const [readDetails, setReadDetails] = useState<any[]>([]);
-  const [unreadUsers, setUnreadUsers] = useState<any[]>([]);
+  const [readDetails, setReadDetails] = useState<AnnouncementReader[]>([]);
+  const [unreadUsers, setUnreadUsers] = useState<AnnouncementReader[]>([]);
   const [reachTab, setReachTab] = useState<'read' | 'unread'>('read');
   const [showReadDetails, setShowReadDetails] = useState(false);
   
@@ -157,7 +160,7 @@ export const AnnouncementsManagementModule = ({ user }: AnnouncementsManagementM
   const loadTotalUsers = async () => {
     try {
       const data = await apiClient.get('/user_profiles');
-      const activeCount = (Array.isArray(data) ? data : []).filter((u: any) => u.is_active).length;
+      const activeCount = (Array.isArray(data) ? data : []).filter((u: User) => u.is_active).length;
       setTotalUsers(activeCount);
     } catch (error) {
       console.error('Error loading total users:', error);
@@ -177,7 +180,7 @@ export const AnnouncementsManagementModule = ({ user }: AnnouncementsManagementM
     if (showLoading) setIsLoading(true);
     try {
       const data = await apiClient.get('/announcements');
-      const normalized = (Array.isArray(data) ? data : []).map((item: any) => ({
+      const normalized = (Array.isArray(data) ? data : []).map((item: Announcement) => ({
         ...item,
         is_active: Boolean(item.is_active),
         is_expired: isAnnouncementExpired(item),
@@ -260,11 +263,11 @@ export const AnnouncementsManagementModule = ({ user }: AnnouncementsManagementM
       resetForm();
       await loadAnnouncements();
       notifyAnnouncementsUpdated();
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error saving announcement:', error);
       toast({
         title: "Error",
-        description: error?.message || "Failed to save announcement",
+        description: errorDetails(error)?.message || "Failed to save announcement",
         variant: "destructive",
       });
     }
@@ -312,11 +315,11 @@ export const AnnouncementsManagementModule = ({ user }: AnnouncementsManagementM
 
       await loadAnnouncements(false);
       notifyAnnouncementsUpdated();
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error toggling announcement:', error);
       toast({
         title: "Error",
-        description: error?.message || "Failed to toggle announcement status",
+        description: errorDetails(error)?.message || "Failed to toggle announcement status",
         variant: "destructive",
       });
     }
@@ -443,7 +446,7 @@ export const AnnouncementsManagementModule = ({ user }: AnnouncementsManagementM
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-2">
                   <Label>Priority</Label>
-                  <Select value={priority} onValueChange={(v: any) => setPriority(v)}>
+                  <Select value={priority} onValueChange={(v) => setPriority(v as Announcement['priority'])}>
                     <SelectTrigger>
                       <SelectValue />
                     </SelectTrigger>
@@ -779,7 +782,7 @@ export const AnnouncementsManagementModule = ({ user }: AnnouncementsManagementM
                   </div>
                 ) : (
                   <div className="space-y-2">
-                    {readDetails.map((read: any) => (
+                    {readDetails.map((read: AnnouncementReader) => (
                       <div key={read.id} className="flex items-center justify-between p-3 border rounded-lg">
                         <div>
                           <p className="font-medium text-sm">
@@ -807,7 +810,7 @@ export const AnnouncementsManagementModule = ({ user }: AnnouncementsManagementM
                   </div>
                 ) : (
                   <div className="space-y-2">
-                    {unreadUsers.map((unreadUser: any) => (
+                    {unreadUsers.map((unreadUser: AnnouncementReader) => (
                       <div key={unreadUser.id} className="flex items-center justify-between p-3 border rounded-lg">
                         <div>
                           <p className="font-medium text-sm">

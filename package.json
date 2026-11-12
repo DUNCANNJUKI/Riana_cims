@@ -20,6 +20,7 @@
     "test:production-recovery": "node --experimental-strip-types --test src/components/inventory/hardwareCatalog.test.ts",
     "test": "npm run test:frontend && npm --prefix server test && npm --prefix CRMS test && npm run test:scripts",
     "test:isolated-db": "node scripts/run-isolated-db-tests.cjs",
+    "test:passkeys:browser": "node scripts/passkey-browser-qa.cjs",
     "test:frontend": "node --experimental-strip-types --test src/hooks/*.test.ts src/utils/*.test.ts src/components/inventory/*.test.ts",
     "test:scripts": "node --test scripts/*.test.cjs",
     "typecheck": "tsc -p tsconfig.app.json --noEmit && tsc -p tsconfig.node.json --noEmit && tsc -p CRMS/tsconfig.app.json --noEmit",

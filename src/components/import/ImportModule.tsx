@@ -1,3 +1,4 @@
+import { errorDetails } from '@/utils/errorDetails';
 import { useState, useEffect } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -194,8 +195,8 @@ export const ImportModule = ({ user }: ImportModuleProps) => {
             });
             
             successCount++;
-          } catch (err: any) {
-            errors.push(`Row ${i + 2}: ${err.message}`);
+          } catch (err: unknown) {
+            errors.push(`Row ${i + 2}: ${errorDetails(err).message}`);
             errorCount++;
           }
           setUploadProgress(50 + Math.floor((i / records.length) * 40));
@@ -241,8 +242,8 @@ export const ImportModule = ({ user }: ImportModuleProps) => {
             });
             
             successCount++;
-          } catch (err: any) {
-            errors.push(`Row ${i + 2}: ${err.message}`);
+          } catch (err: unknown) {
+            errors.push(`Row ${i + 2}: ${errorDetails(err).message}`);
             errorCount++;
           }
           setUploadProgress(50 + Math.floor((i / records.length) * 40));
@@ -271,10 +272,10 @@ export const ImportModule = ({ user }: ImportModuleProps) => {
         description: `Successfully processed ${successCount} of ${records.length} records`,
         variant: errorCount > 0 ? "destructive" : "default",
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       toast({
         title: "Import Failed",
-        description: error.message || "Failed to process the file",
+        description: errorDetails(error).message || "Failed to process the file",
         variant: "destructive",
       });
     } finally {
@@ -337,10 +338,10 @@ export const ImportModule = ({ user }: ImportModuleProps) => {
         title: "Export Successful",
         description: `Exported ${data.length} ${type} records`,
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       toast({
         title: "Export Failed",
-        description: error.message,
+        description: errorDetails(error).message,
         variant: "destructive",
       });
     }

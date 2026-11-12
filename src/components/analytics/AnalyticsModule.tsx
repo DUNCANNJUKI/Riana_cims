@@ -1,3 +1,4 @@
+import type { Client, Installation } from '@/types';
 import { useState, useEffect } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -21,10 +22,10 @@ const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6'];
 
 export const AnalyticsModule = ({ user }: AnalyticsModuleProps) => {
   const [isLoading, setIsLoading] = useState(true);
-  const [clientsByIndustry, setClientsByIndustry] = useState<any[]>([]);
-  const [installationsByMonth, setInstallationsByMonth] = useState<any[]>([]);
-  const [contractTypes, setContractTypes] = useState<any[]>([]);
-  const [equipmentStats, setEquipmentStats] = useState<any[]>([]);
+  const [clientsByIndustry, setClientsByIndustry] = useState<Array<{ name: string; count: number; percentage: number }>>([]);
+  const [installationsByMonth, setInstallationsByMonth] = useState<Array<{ month: string; installations: number; clients: number }>>([]);
+  const [contractTypes, setContractTypes] = useState<Array<{ name: string; value: number; color: string }>>([]);
+  const [equipmentStats, setEquipmentStats] = useState<Array<{ equipment: string; count: number; trend: string; change: string }>>([]);
   const [performanceMetrics, setPerformanceMetrics] = useState({
     totalInstallations: 0,
     avgInstallationTime: 0,
@@ -55,7 +56,7 @@ export const AnalyticsModule = ({ user }: AnalyticsModuleProps) => {
 
       // Calculate clients by industry
       const industryMap = new Map<string, number>();
-      clients?.forEach((client: any) => {
+      clients?.forEach((client: Client) => {
         const industry = client.industry_classification || 'Other';
         industryMap.set(industry, (industryMap.get(industry) || 0) + 1);
       });
@@ -71,7 +72,7 @@ export const AnalyticsModule = ({ user }: AnalyticsModuleProps) => {
 
       // Calculate contract types distribution
       const contractMap = new Map<string, number>();
-      clients?.forEach((client: any) => {
+      clients?.forEach((client: Client) => {
         const type = client.contract_type || 'OTHER';
         contractMap.set(type, (contractMap.get(type) || 0) + 1);
       });
@@ -88,7 +89,7 @@ export const AnalyticsModule = ({ user }: AnalyticsModuleProps) => {
       const monthlyMap = new Map<string, { installations: number; clients: Set<string> }>();
       const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
       
-      installations?.forEach((installation: any) => {
+      installations?.forEach((installation: Installation) => {
         if (installation.created_at) {
           const date = new Date(installation.created_at);
           const monthKey = months[date.getMonth()];
@@ -112,10 +113,10 @@ export const AnalyticsModule = ({ user }: AnalyticsModuleProps) => {
       setInstallationsByMonth(monthlyData);
 
       // Calculate equipment statistics
-      const totalKiosks = installations?.reduce((sum: number, i: any) => sum + (i.kiosk_count || 0), 0) || 0;
-      const totalDisplays = installations?.reduce((sum: number, i: any) => sum + (i.led_count || 0), 0) || 0;
-      const totalTablets = installations?.reduce((sum: number, i: any) => sum + (i.tablets || 0), 0) || 0;
-      const totalUPS = installations?.reduce((sum: number, i: any) => sum + (i.ups_count || 0), 0) || 0;
+      const totalKiosks = installations?.reduce((sum: number, i: Installation) => sum + (i.kiosk_count || 0), 0) || 0;
+      const totalDisplays = installations?.reduce((sum: number, i: Installation) => sum + (i.led_count || 0), 0) || 0;
+      const totalTablets = installations?.reduce((sum: number, i: Installation) => sum + (i.tablets || 0), 0) || 0;
+      const totalUPS = installations?.reduce((sum: number, i: Installation) => sum + (i.ups_count || 0), 0) || 0;
 
       setEquipmentStats([
         { equipment: 'Total Kiosks', count: totalKiosks, trend: 'up', change: '+' + Math.round(totalKiosks * 0.05) + '%' },
@@ -125,14 +126,14 @@ export const AnalyticsModule = ({ user }: AnalyticsModuleProps) => {
       ]);
 
       // Calculate performance metrics
-      const completedInstallations = installations?.filter((i: any) => i.status === 'completed') || [];
+      const completedInstallations = installations?.filter((i: Installation) => i.status === 'completed') || [];
       const installationsWithDates = completedInstallations.filter(
-        (i: any) => i.assigned_date && i.completion_date
+        (i: Installation) => i.assigned_date && i.completion_date
       );
 
       let avgTime = 0;
       if (installationsWithDates.length > 0) {
-        const totalDays = installationsWithDates.reduce((sum: number, i: any) => {
+        const totalDays = installationsWithDates.reduce((sum: number, i: Installation) => {
           const start = new Date(i.assigned_date!);
           const end = new Date(i.completion_date!);
           const days = Math.max(1, Math.round((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)));

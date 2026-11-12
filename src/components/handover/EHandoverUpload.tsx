@@ -1,3 +1,4 @@
+import { errorDetails } from '@/utils/errorDetails';
 import { useState, useRef, useEffect } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -52,11 +53,11 @@ export const EHandoverUpload = ({ user, client, installation, onUploadComplete }
   const handoverScope = {
     ...client,
     ...installation,
-    branch: (installation as any)?.branch_name || (installation as any)?.branch || client.branch,
-    branch_name: (installation as any)?.branch_name,
-    department_name: (installation as any)?.department_name,
-    branch_count: (installation as any)?.branch_count,
-    department_count: (installation as any)?.department_count,
+    branch: installation?.branch_name || installation?.branch || client.branch,
+    branch_name: installation?.branch_name,
+    department_name: installation?.department_name,
+    branch_count: installation?.branch_count,
+    department_count: installation?.department_count,
   };
   const scopeLabel = getScopeLabel(handoverScope);
 
@@ -97,8 +98,8 @@ export const EHandoverUpload = ({ user, client, installation, onUploadComplete }
             base64Data,
             client_id: client.id,
             installation_id: installation?.id,
-            branch_id: (installation as any)?.branch_id,
-            department_id: (installation as any)?.department_id,
+            branch_id: installation?.branch_id,
+            department_id: installation?.department_id,
             uploaded_by_user_id: user.id,
             is_signed: isSigned,
             notes: uploadNotes
@@ -129,11 +130,11 @@ export const EHandoverUpload = ({ user, client, installation, onUploadComplete }
           setIsSigned(false);
           setIsDialogOpen(false);
           loadFiles();
-        } catch (error: any) {
+        } catch (error: unknown) {
           console.error('Inner upload error:', error);
           toast({
             title: "Upload failed",
-            description: error.message || "Failed to process file upload",
+            description: errorDetails(error).message || "Failed to process file upload",
             variant: "destructive",
           });
         } finally {
@@ -189,11 +190,11 @@ export const EHandoverUpload = ({ user, client, installation, onUploadComplete }
         title: "Download Started",
         description: "E-handover document is being downloaded",
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error downloading file:', error);
       toast({
         title: "Download Failed",
-        description: error.message || "Failed to download the document",
+        description: errorDetails(error).message || "Failed to download the document",
         variant: "destructive",
       });
     }
@@ -203,11 +204,11 @@ export const EHandoverUpload = ({ user, client, installation, onUploadComplete }
     try {
       if (!upload.secure_preview_url) throw new Error('Secure preview link is unavailable. Please refresh and try again.');
       await previewAuthenticatedFile(upload.secure_preview_url);
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error previewing file:', error);
       toast({
         title: "Preview Failed",
-        description: error.message || "Failed to preview the document",
+        description: errorDetails(error).message || "Failed to preview the document",
         variant: "destructive",
       });
     }

@@ -1,3 +1,4 @@
+import { errorDetails } from '@/utils/errorDetails';
 import React, { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
@@ -82,8 +83,8 @@ export const ClientRequestTracking: React.FC = () => {
         account_manager: result.account_manager || { name: 'Account Manager', email: '' },
         stages: [{ key: 'current', label: result.current_status, description: result.status_description, current: !result.is_closed, completed: result.is_closed }],
       });
-    } catch (err: any) {
-      setError(err.message || 'Unable to connect to tracking servers.');
+    } catch (err: unknown) {
+      setError(errorDetails(err).message || 'Unable to connect to tracking servers.');
     } finally {
       setLoading(false);
     }

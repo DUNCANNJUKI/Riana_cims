@@ -1,3 +1,4 @@
+import { errorDetails } from '@/utils/errorDetails';
 import { useState, useEffect } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -173,11 +174,11 @@ export const HandoverUploadModule = ({ user }: HandoverUploadModuleProps) => {
           });
 
           await loadData();
-        } catch (error: any) {
+        } catch (error: unknown) {
           console.error('Inner upload error:', error);
           toast({
             title: "Upload failed",
-            description: error.message || "Failed to process file upload",
+            description: errorDetails(error).message || "Failed to process file upload",
             variant: "destructive",
           });
         } finally {
@@ -194,11 +195,11 @@ export const HandoverUploadModule = ({ user }: HandoverUploadModuleProps) => {
         });
         setIsUploading(false);
       };
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Upload error:', error);
       toast({
         title: "Upload failed",
-        description: error.message || "Failed to initiate upload",
+        description: errorDetails(error).message || "Failed to initiate upload",
         variant: "destructive",
       });
       setIsUploading(false);
@@ -230,11 +231,11 @@ export const HandoverUploadModule = ({ user }: HandoverUploadModuleProps) => {
         title: "Download Started",
         description: "Handover document is being downloaded",
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Download error:', error);
       toast({
         title: "Download Failed",
-        description: error.message || "Failed to download handover document",
+        description: errorDetails(error).message || "Failed to download handover document",
         variant: "destructive",
       });
     }
@@ -246,11 +247,11 @@ export const HandoverUploadModule = ({ user }: HandoverUploadModuleProps) => {
       assertHandoverFileReady(freshHandover);
       if (!freshHandover.secure_preview_url) throw new Error('Secure preview link is unavailable. Please refresh and try again.');
       await previewAuthenticatedFile(freshHandover.secure_preview_url);
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Preview error:', error);
       toast({
         title: "Preview Failed",
-        description: error.message || "Failed to preview handover document",
+        description: errorDetails(error).message || "Failed to preview handover document",
         variant: "destructive",
       });
     }

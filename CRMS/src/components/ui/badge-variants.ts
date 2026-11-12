@@ -1,0 +1,18 @@
+import { cva } from 'class-variance-authority';
+const badgeVariants = cva(
+  "inline-flex min-h-6 items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold leading-none transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2",
+  {
+    variants: {
+      variant: {
+        default: "border-primary/20 bg-primary/12 text-primary hover:bg-primary/18",
+        secondary: "border-transparent bg-secondary text-secondary-foreground hover:bg-secondary/80",
+        destructive: "border-destructive/20 bg-destructive/12 text-destructive hover:bg-destructive/18",
+        outline: "border-border bg-background text-foreground",
+      },
+    },
+    defaultVariants: {
+      variant: "default",
+    },
+  },
+);
+export { badgeVariants };

@@ -1,3 +1,6 @@
+import type { AnnouncementRecord, AnnouncementReader } from '@/types/apiRecords';
+import type { Subsidiary } from '@/types';
+import { errorDetails } from '@/utils/errorDetails';
 import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -31,22 +34,22 @@ const formatLocalDateTimeInput = (isoValue: string | null | undefined) => {
   return format(parsed, "yyyy-MM-dd'T'HH:mm");
 };
 
-const isAnnouncementExpired = (announcement: any) => {
+const isAnnouncementExpired = (announcement: AnnouncementRecord) => {
   if (typeof announcement?.is_expired === 'boolean') return announcement.is_expired;
   if (!announcement?.expires_at) return false;
   return new Date(announcement.expires_at).getTime() <= Date.now();
 };
 
 export const NoticeBoard = ({ onNavigate }: NoticeBoardProps) => {
-  const [announcements, setAnnouncements] = useState<any[]>([]);
-  const [subsidiaries, setSubsidiaries] = useState<any[]>([]);
+  const [announcements, setAnnouncements] = useState<AnnouncementRecord[]>([]);
+  const [subsidiaries, setSubsidiaries] = useState<Subsidiary[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [viewFilter, setViewFilter] = useState<'active' | 'all'>('active');
-  const [selectedAnnouncement, setSelectedAnnouncement] = useState<any | null>(null);
-  const [readDetails, setReadDetails] = useState<any[]>([]);
-  const [unreadUsers, setUnreadUsers] = useState<any[]>([]);
+  const [selectedAnnouncement, setSelectedAnnouncement] = useState<AnnouncementRecord | null>(null);
+  const [readDetails, setReadDetails] = useState<AnnouncementReader[]>([]);
+  const [unreadUsers, setUnreadUsers] = useState<AnnouncementReader[]>([]);
   const [reachTab, setReachTab] = useState<'read' | 'unread'>('read');
   const [showReadDetails, setShowReadDetails] = useState(false);
 
@@ -85,7 +88,7 @@ export const NoticeBoard = ({ onNavigate }: NoticeBoardProps) => {
         apiClient.get(canManage ? '/announcements' : '/announcements?scope=active'),
       ]);
       setSubsidiaries(subsData || []);
-      const normalized = (Array.isArray(data) ? data : []).map((item: any) => ({
+      const normalized = (Array.isArray(data) ? data : []).map((item: AnnouncementRecord) => ({
         ...item,
         is_active: Boolean(item.is_active),
         is_expired: isAnnouncementExpired(item),
@@ -114,7 +117,7 @@ export const NoticeBoard = ({ onNavigate }: NoticeBoardProps) => {
     setIsDialogOpen(false);
   };
 
-  const handleOpenEdit = (announcement: any) => {
+  const handleOpenEdit = (announcement: AnnouncementRecord) => {
     setFormState({
       title: announcement.title || "",
       content: announcement.content || "",
@@ -158,17 +161,17 @@ export const NoticeBoard = ({ onNavigate }: NoticeBoardProps) => {
       resetForm();
       await loadInitialData(false);
       notifyAnnouncementsUpdated();
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error("Error saving announcement:", error);
       toast({
         title: "Error",
-        description: error?.message || "Failed to save announcement.",
+        description: errorDetails(error)?.message || "Failed to save announcement.",
         variant: "destructive",
       });
     }
   };
 
-  const handleToggleActive = async (announcement: any) => {
+  const handleToggleActive = async (announcement: AnnouncementRecord) => {
     const nextActive = !announcement.is_active;
     try {
       await apiClient.patch(`/announcements/${announcement.id}`, {
@@ -185,11 +188,11 @@ export const NoticeBoard = ({ onNavigate }: NoticeBoardProps) => {
       });
       await loadInitialData(false);
       notifyAnnouncementsUpdated();
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error("Error toggling announcement:", error);
       toast({
         title: "Error",
-        description: error?.message || "Failed to toggle announcement.",
+        description: errorDetails(error)?.message || "Failed to toggle announcement.",
         variant: "destructive",
       });
     }
@@ -209,7 +212,7 @@ export const NoticeBoard = ({ onNavigate }: NoticeBoardProps) => {
     }
   };
 
-  const handleMarkAsRead = async (announcement: any) => {
+  const handleMarkAsRead = async (announcement: AnnouncementRecord) => {
     if (announcement.is_read) return;
     try {
       await apiClient.post(`/announcements/${announcement.id}/read`, {});
@@ -226,7 +229,7 @@ export const NoticeBoard = ({ onNavigate }: NoticeBoardProps) => {
     }
   };
 
-  const handleViewReach = async (announcement: any) => {
+  const handleViewReach = async (announcement: AnnouncementRecord) => {
     try {
       setSelectedAnnouncement(announcement);
       setReachTab('read');
@@ -362,7 +365,7 @@ export const NoticeBoard = ({ onNavigate }: NoticeBoardProps) => {
                       <Label>Priority</Label>
                       <Select 
                         value={formState.priority} 
-                        onValueChange={(value: any) => setFormState({...formState, priority: value})}
+                        onValueChange={(value) => setFormState({...formState, priority: value as AnnouncementRecord['priority']})}
                       >
                         <SelectTrigger>
                           <SelectValue placeholder="Select priority" />
@@ -613,7 +616,7 @@ export const NoticeBoard = ({ onNavigate }: NoticeBoardProps) => {
                   </div>
                 ) : (
                   <div className="space-y-2">
-                    {readDetails.map((read: any) => (
+                    {readDetails.map((read: AnnouncementReader) => (
                       <div key={read.id} className="flex items-center justify-between p-3 border rounded-lg">
                         <div>
                           <p className="font-medium text-sm">
@@ -641,7 +644,7 @@ export const NoticeBoard = ({ onNavigate }: NoticeBoardProps) => {
                   </div>
                 ) : (
                   <div className="space-y-2">
-                    {unreadUsers.map((unreadUser: any) => (
+                    {unreadUsers.map((unreadUser: AnnouncementReader) => (
                       <div key={unreadUser.id} className="flex items-center justify-between p-3 border rounded-lg">
                         <div>
                           <p className="font-medium text-sm">

@@ -1,3 +1,4 @@
+import { GState } from 'jspdf';
 /**
  * Company Logo Management Utility
  * Provides unified logo handling for all PDF reports
@@ -195,7 +196,7 @@ export const addLogoWatermark = async (
     for (let i = 1; i <= pageCount; i++) {
       doc.setPage(i);
       doc.saveGraphicsState();
-      (doc as any).setGState(new (doc as any).GState({ opacity }));
+      doc.setGState(new GState({ opacity }));
       
       doc.addImage(logoImg, 'PNG', x, y, width, height);
       
@@ -257,7 +258,7 @@ export const addTextLogo = (
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(fontSize);
   doc.setTextColor(...color);
-  doc.text('RIANA', posX, posY, { align: align as any });
+  doc.text('RIANA', posX, posY, { align });
 };
 
 /**

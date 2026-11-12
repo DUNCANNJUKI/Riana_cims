@@ -1,3 +1,5 @@
+import type { Department, Subsidiary } from '@/types';
+import { errorDetails } from '@/utils/errorDetails';
 import { useEffect, useMemo, useState } from "react";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -38,8 +40,8 @@ interface ClientDetailsDialogProps {
   onHierarchyChange?: () => void | Promise<void>;
   isEditing?: boolean;
   user: User;
-  departments?: any[];
-  subsidiaries?: any[];
+  departments?: Department[];
+  subsidiaries?: Subsidiary[];
 }
 
 const sameText = (left?: string | null, right?: string | null) => String(left || '').trim().toLowerCase() === String(right || '').trim().toLowerCase();
@@ -114,9 +116,9 @@ export const ClientDetailsDialog = ({
       if (!normalizedBranches.length && client.branch) {
         setNewBranch((current) => current.branch_name ? current : { ...current, branch_name: client.branch || '' });
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error loading client hierarchy:', error);
-      const message = error?.message || 'Failed to load client branches and departments';
+      const message = errorDetails(error)?.message || 'Failed to load client branches and departments';
       setHierarchyError(message);
       toast({ title: 'Hierarchy loading failed', description: message, variant: 'destructive' });
     } finally {
@@ -160,9 +162,9 @@ export const ClientDetailsDialog = ({
       await loadClientHierarchy(createdBranch?.id || '');
       await onHierarchyChange?.();
       toast({ title: 'Branch added', description: `${branchName} is now available for this client.` });
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error adding branch:', error);
-      toast({ title: 'Unable to add branch', description: error?.message || 'Failed to add branch', variant: 'destructive' });
+      toast({ title: 'Unable to add branch', description: errorDetails(error)?.message || 'Failed to add branch', variant: 'destructive' });
     } finally {
       setIsHierarchySaving(false);
     }
@@ -185,9 +187,9 @@ export const ClientDetailsDialog = ({
       await loadClientHierarchy(selectedBranchForDepartment);
       await onHierarchyChange?.();
       toast({ title: 'Department added', description: `${departmentName} was added under ${selectedBranch?.branch_name || 'the selected branch'}.` });
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error adding department:', error);
-      toast({ title: 'Unable to add department', description: error?.message || 'Failed to add department', variant: 'destructive' });
+      toast({ title: 'Unable to add department', description: errorDetails(error)?.message || 'Failed to add department', variant: 'destructive' });
     } finally {
       setIsHierarchySaving(false);
     }

@@ -1,3 +1,4 @@
+import { errorDetails } from '../utils/errorDetails';
 import { friendlyRequestError, connectionErrorMessage } from '../utils/requestErrors';
 
 const configuredDevelopmentApiUrl = import.meta.env.DEV
@@ -55,7 +56,7 @@ const clearLocalAuthState = () => {
   localStorage.removeItem('crms-auth-token');
 };
 
-const handleUnauthorizedResponse = (endpoint: string, token: string | null, errorData: any) => {
+const handleUnauthorizedResponse = (endpoint: string, token: string | null, errorData: { code?: string; message?: string; error?: string }) => {
   const code = typeof errorData?.code === 'string' ? errorData.code : undefined;
   const shouldClearSession = AUTH_FAILURE_CODES.has(code || '') || (Boolean(token) && !endpointCanReturnBusiness401(endpoint));
   if (!shouldClearSession) return;
@@ -65,7 +66,7 @@ const handleUnauthorizedResponse = (endpoint: string, token: string | null, erro
   else window.location.assign('/');
 };
 
-const handleMaintenanceResponse = (errorData: any) => {
+const handleMaintenanceResponse = (errorData: { code?: string; message?: string; error?: string }) => {
   if (errorData?.code !== 'MAINTENANCE_MODE') return;
   clearLocalAuthState();
   sessionStorage.setItem(AUTH_MESSAGE_KEY, errorData?.message || 'System is currently under maintenance.');
@@ -115,16 +116,16 @@ export const apiFetch = async (endpoint: string, options: RequestInit = {}, retr
     }
 
     return response.json();
-  } catch (error: any) {
+  } catch (error: unknown) {
     const method = (options.method || 'GET').toUpperCase();
     const isSafeToRetry = method === 'GET' || method === 'HEAD';
-    if (isSafeToRetry && retries > 0 && (error.message.includes('Failed to fetch') || error.name === 'TypeError')) {
+    if (isSafeToRetry && retries > 0 && (errorDetails(error).message.includes('Failed to fetch') || errorDetails(error).name === 'TypeError')) {
       console.warn(`API request failed, retrying... (${retries} left)`, endpoint);
       // Wait a bit before retrying
       await new Promise(resolve => setTimeout(resolve, 1000));
       return apiFetch(endpoint, options, retries - 1);
     }
-    if (error instanceof TypeError || error?.name === 'AbortError') throw new Error(connectionErrorMessage);
+    if (error instanceof TypeError || errorDetails(error)?.name === 'AbortError') throw new Error(connectionErrorMessage);
     throw error;
   }
 };
@@ -182,8 +183,8 @@ export const previewAuthenticatedFile = async (endpoint: string) => {
 
 export const apiClient = {
   get: (endpoint: string) => apiFetch(endpoint, { method: 'GET' }),
-  post: (endpoint: string, body: any) => apiFetch(endpoint, { method: 'POST', body: JSON.stringify(body) }),
-  put: (endpoint: string, body: any) => apiFetch(endpoint, { method: 'PUT', body: JSON.stringify(body) }),
-  patch: (endpoint: string, body: any) => apiFetch(endpoint, { method: 'PATCH', body: JSON.stringify(body) }),
+  post: (endpoint: string, body: unknown) => apiFetch(endpoint, { method: 'POST', body: JSON.stringify(body) }),
+  put: (endpoint: string, body: unknown) => apiFetch(endpoint, { method: 'PUT', body: JSON.stringify(body) }),
+  patch: (endpoint: string, body: unknown) => apiFetch(endpoint, { method: 'PATCH', body: JSON.stringify(body) }),
   delete: (endpoint: string, body?: unknown) => apiFetch(endpoint, { method: 'DELETE', body: body === undefined ? undefined : JSON.stringify(body) })
 };

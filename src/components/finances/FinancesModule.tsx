@@ -1,3 +1,4 @@
+import { errorDetails } from '@/utils/errorDetails';
 import { useState, useEffect } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -227,11 +228,11 @@ export const FinancesModule = ({ user }: FinancesModuleProps) => {
         title: "Success",
         description: "Budget created successfully",
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error adding budget:', error);
       toast({
         title: "Error",
-        description: error.response?.data?.error || "Failed to create budget",
+        description: errorDetails(error).response?.data?.error || "Failed to create budget",
         variant: "destructive",
       });
     }
@@ -261,11 +262,11 @@ export const FinancesModule = ({ user }: FinancesModuleProps) => {
         title: "Success",
         description: "Budget updated successfully",
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error updating budget:', error);
       toast({
         title: "Error",
-        description: error.response?.data?.error || "Failed to update budget",
+        description: errorDetails(error).response?.data?.error || "Failed to update budget",
         variant: "destructive",
       });
     }
@@ -282,11 +283,11 @@ export const FinancesModule = ({ user }: FinancesModuleProps) => {
         title: "Success",
         description: "Budget deleted successfully",
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error deleting budget:', error);
       toast({
         title: "Error",
-        description: error.response?.data?.error || "Failed to delete budget",
+        description: errorDetails(error).response?.data?.error || "Failed to delete budget",
         variant: "destructive",
       });
     }
@@ -387,11 +388,11 @@ export const FinancesModule = ({ user }: FinancesModuleProps) => {
     // Add notes if present
     if (budget.notes) {
       doc.setFont('helvetica', 'bold');
-      doc.text('Notes:', 20, (doc as any).lastAutoTable.finalY + 15);
+      doc.text('Notes:', 20, doc.lastAutoTable.finalY + 15);
       doc.setFont('helvetica', 'normal');
       doc.setFontSize(10);
       const splitNotes = doc.splitTextToSize(budget.notes, 170);
-      doc.text(splitNotes, 20, (doc as any).lastAutoTable.finalY + 25);
+      doc.text(splitNotes, 20, doc.lastAutoTable.finalY + 25);
     }
     
     // Add letterhead with watermark and footer

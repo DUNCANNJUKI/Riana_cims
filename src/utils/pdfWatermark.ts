@@ -1,3 +1,4 @@
+import { GState } from 'jspdf';
 import jsPDF from "jspdf";
 import { BrandIdentity, isMareziSubsidiary, resolveBrandIdentity } from './brandIdentity';
 
@@ -355,7 +356,7 @@ export const addLetterheadToDocument = async (
     // Add NEW FULL-PAGE watermark (Visible B/W)
     if (watermarkBase64) {
       doc.saveGraphicsState();
-      (doc as any).setGState(new (doc as any).GState({ opacity: 0.12 }));
+      doc.setGState(new GState({ opacity: 0.12 }));
       
       const imgWidth = pageWidth - 40;
       const imgHeight = (imgWidth / 210) * 297 * 0.4; // Maintain aspect ratio approx
@@ -371,7 +372,7 @@ export const addLetterheadToDocument = async (
       doc.restoreGraphicsState();
     } else if (logoBase64) {
       doc.saveGraphicsState();
-      (doc as any).setGState(new (doc as any).GState({ opacity: 0.15 }));
+      doc.setGState(new GState({ opacity: 0.15 }));
       
       const logoWidth = 80;
       const logoHeight = 65;
@@ -387,7 +388,7 @@ export const addLetterheadToDocument = async (
       doc.restoreGraphicsState();
     } else if (letterheadBase64) {
       doc.saveGraphicsState();
-      (doc as any).setGState(new (doc as any).GState({ opacity: 0.03 }));
+      doc.setGState(new GState({ opacity: 0.03 }));
       
       const watermarkSize = 70;
       const centerX = (pageWidth - watermarkSize) / 2;
@@ -478,7 +479,7 @@ export const addLetterheadBackground = async (
 
     if (letterheadBase64) {
       doc.saveGraphicsState();
-      (doc as any).setGState(new (doc as any).GState({ opacity: 0.04 }));
+      doc.setGState(new GState({ opacity: 0.04 }));
       
       const watermarkSize = 60;
       const centerX = (pageWidth - watermarkSize) / 2;
@@ -514,7 +515,7 @@ export const addWatermarkToAllPages = async (
     
     if (logoBase64) {
       doc.saveGraphicsState();
-      (doc as any).setGState(new (doc as any).GState({ opacity }));
+      doc.setGState(new GState({ opacity }));
       
       const logoWidth = 55;
       const logoHeight = 45;

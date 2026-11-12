@@ -1,3 +1,4 @@
+import { errorDetails } from '@/utils/errorDetails';
 import React, { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
@@ -111,8 +112,8 @@ export const ClientCompletionReview: React.FC = () => {
       setError(null);
       setReport({ ...data, status: data.report_status, change_request: { id: data.change_request_id, ticket_number: data.ticket_number, title: data.request_title, category: data.request_category, status: data.request_status }, client: { client_name: data.client.name, branch_name: data.client.branch, department_name: data.client.department }, client_representative: data.representative });
       setRepName(data.representative?.name || '');
-    } catch (err: any) {
-      setError(err.message || 'Unable to connect to Riana servers.');
+    } catch (err: unknown) {
+      setError(errorDetails(err).message || 'Unable to connect to Riana servers.');
     } finally {
       setLoading(false);
     }
@@ -147,10 +148,10 @@ export const ClientCompletionReview: React.FC = () => {
         title: 'Verification Code Sent',
         description: `A 6-digit code was sent by ${data.channel} to ${data.maskedTarget}.`,
       });
-    } catch (err: any) {
+    } catch (err: unknown) {
       toast({
         title: 'Error Requesting OTP',
-        description: err.message,
+        description: errorDetails(err).message,
         variant: 'destructive',
       });
     } finally {
@@ -193,10 +194,10 @@ export const ClientCompletionReview: React.FC = () => {
       });
       setAcceptModalOpen(false);
       fetchReport();
-    } catch (err: any) {
+    } catch (err: unknown) {
       toast({
         title: 'Verification Failed',
-        description: err.message,
+        description: errorDetails(err).message,
         variant: 'destructive',
       });
     } finally {
@@ -258,10 +259,10 @@ export const ClientCompletionReview: React.FC = () => {
       });
       setAcceptModalOpen(false);
       fetchReport();
-    } catch (err: any) {
+    } catch (err: unknown) {
       toast({
         title: 'Submission Failed',
-        description: err.message,
+        description: errorDetails(err).message,
         variant: 'destructive',
       });
     } finally {
@@ -299,10 +300,10 @@ export const ClientCompletionReview: React.FC = () => {
       });
       setActionModalOpen(false);
       fetchReport();
-    } catch (err: any) {
+    } catch (err: unknown) {
       toast({
         title: 'Action Failed',
-        description: err.message,
+        description: errorDetails(err).message,
         variant: 'destructive',
       });
     } finally {

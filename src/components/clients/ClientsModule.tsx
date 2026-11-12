@@ -1,3 +1,5 @@
+import type { Department, Subsidiary, ClientBranch } from '@/types';
+import { errorDetails } from '@/utils/errorDetails';
 import { useState, useEffect } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -31,11 +33,11 @@ export const ClientsModule = ({ user }: ClientsModuleProps) => {
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [newClient, setNewClient] = useState<Partial<Client>>({});
   const [clientEntryMode, setClientEntryMode] = useState<'new-client' | 'branch' | 'department'>('new-client');
-  const [clientBranches, setClientBranches] = useState<any[]>([]);
+  const [clientBranches, setClientBranches] = useState<ClientBranch[]>([]);
   const [branchForm, setBranchForm] = useState({ client_id: '', branch_name: '', branch_code: '', notes: '' });
   const [departmentForm, setDepartmentForm] = useState({ client_id: '', branch_id: '', department_name: '', department_code: '', notes: '' });
-  const [departments, setDepartments] = useState<any[]>([]);
-  const [subsidiaries, setSubsidiaries] = useState<any[]>([]);
+  const [departments, setDepartments] = useState<Department[]>([]);
+  const [subsidiaries, setSubsidiaries] = useState<Subsidiary[]>([]);
   const [selectedClient, setSelectedClient] = useState<Client | null>(null);
   const [revealedContacts, setRevealedContacts] = useState<Record<string, string>>({});
   const [isDetailsDialogOpen, setIsDetailsDialogOpen] = useState(false);
@@ -61,7 +63,7 @@ export const ClientsModule = ({ user }: ClientsModuleProps) => {
       sourceClients.map(async (client) => {
         try {
           const branches = await apiClient.get(`/clients/${client.id}/branches`);
-          return (branches || []).map((branch: any) => ({ ...branch, client_id: client.id }));
+          return (branches || []).map((branch: ClientBranch) => ({ ...branch, client_id: client.id }));
         } catch (error) {
           console.warn('Unable to load client branches:', client.id, error);
           return [];
@@ -196,9 +198,9 @@ export const ClientsModule = ({ user }: ClientsModuleProps) => {
         title: "Success",
         description: "Client added successfully",
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error adding client data:', error);
-      const serverMessage = error?.response?.data?.error || error?.message;
+      const serverMessage = errorDetails(error)?.response?.data?.error || errorDetails(error)?.message;
       toast({
         title: "Error",
         description: serverMessage || "Failed to save client data",
@@ -290,7 +292,7 @@ export const ClientsModule = ({ user }: ClientsModuleProps) => {
         description: "Client deleted successfully",
       });
       setIsDeleteDialogOpen(false);
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error deleting client:', error);
       toast({
         title: "Error",

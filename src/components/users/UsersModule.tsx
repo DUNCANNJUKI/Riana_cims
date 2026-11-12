@@ -1,3 +1,5 @@
+import type { Department, Subsidiary } from '@/types';
+import { errorDetails } from '@/utils/errorDetails';
 import { useState, useEffect } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -31,8 +33,8 @@ export const UsersModule = ({ user }: UsersModuleProps) => {
   const [newPasswordValue, setNewPasswordValue] = useState('');
   const [newUser, setNewUser] = useState<Partial<User>>({});
   const [editingUser, setEditingUser] = useState<User | null>(null);
-  const [departments, setDepartments] = useState<any[]>([]);
-  const [subsidiaries, setSubsidiaries] = useState<any[]>([]);
+  const [departments, setDepartments] = useState<Department[]>([]);
+  const [subsidiaries, setSubsidiaries] = useState<Subsidiary[]>([]);
   const { toast } = useToast();
   const { 
     getUsers, 
@@ -155,11 +157,11 @@ export const UsersModule = ({ user }: UsersModuleProps) => {
         title: "Success",
         description: `User ${newUser.first_name} ${newUser.last_name} added successfully.`,
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error creating user:', error);
       toast({
         title: "Error",
-        description: error.message || "Failed to create user. Please check your configuration.",
+        description: errorDetails(error).message || "Failed to create user. Please check your configuration.",
         variant: "destructive",
       });
     }
@@ -226,7 +228,7 @@ export const UsersModule = ({ user }: UsersModuleProps) => {
       setIsPasswordDialogOpen(false);
       setNewPasswordValue('');
       setPasswordChangeUser(null);
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error changing password:', error);
     }
   };
@@ -265,7 +267,7 @@ export const UsersModule = ({ user }: UsersModuleProps) => {
       await loadInitialData();
       setIsEditDialogOpen(false);
       setEditingUser(null);
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error updating user:', error);
     }
   };
