@@ -16,6 +16,7 @@ import { isHostedPlaceholderMessage, stripHostedPlaceholderLines } from "@/utils
 import { useToast } from "@/hooks/use-toast";
 import { playCallHangupSound, playCallPickupSound, playCallRingSound } from "@/utils/notificationSound";
 import { CALL_VIDEO_BACKGROUND_OPTIONS, createCallVideoBackground, createRotatedVideoTrack, type CallVideoBackground } from "@/utils/callVideoBackground";
+import { callBackgroundErrorMessage } from "@/utils/callBackgroundError";
 import { startCallRecordingSession, type CallRecordingSession } from "@/utils/callRecordingComposer";
 
 const formatRecordingDuration = (seconds?: number | null) => {
@@ -1078,11 +1079,7 @@ export const ChatModule = ({ currentUser, chat, onClose, onMinimize, onToggleFul
       preparedProcessor?.stop();
       callVideoBackgroundRef.current = previousBackground;
       setCallVideoBackground(previousBackground);
-      const rawMessage = error instanceof Error ? error.message : "Unable to apply the selected background effect.";
-      const displayMessage = rawMessage.includes("WebAssembly") || rawMessage.includes("Content Security policy")
-        ? "Virtual background requires WebAssembly execution. Please verify your browser security settings or refresh."
-        : rawMessage;
-      setCallError(displayMessage);
+      setCallError(callBackgroundErrorMessage(error));
     } finally {
       if (requestId === videoBackgroundRequestRef.current) setIsChangingCallBackground(false);
     }

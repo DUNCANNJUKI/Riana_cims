@@ -1,8 +1,11 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import path from "path";
+import { prepareCallBackgroundAssets } from "./scripts/call-background-assets.cjs";
 
 import { VitePWA } from "vite-plugin-pwa";
+
+const backgroundRuntime = prepareCallBackgroundAssets(import.meta.dirname);
 
 const packageNameFromId = (id: string) => {
   const normalized = id.replace(/\\/g, "/");
@@ -31,6 +34,9 @@ const manualChunks = (id: string) => {
   return undefined;
 };// https://vitejs.dev/config/
 export default defineConfig(({ mode }) => ({
+  define: {
+    'import.meta.env.CALL_BACKGROUND_ASSET_PATH': JSON.stringify(backgroundRuntime.assetPath),
+  },
   server: {
     watch: { ignored: ['**/release/**', '**/CRMS/dist/**', '**/Deployment/**', '**/Deployment-packages/**', '**/server/private_uploads/**', '**/server/uploads/**'] },
     fs: {
@@ -118,7 +124,7 @@ export default defineConfig(({ mode }) => ({
             handler: 'CacheFirst',
             options: {
               cacheName: 'riana-call-background-model-v1',
-              expiration: { maxEntries: 4, maxAgeSeconds: 60 * 60 * 24 * 90 },
+              expiration: { maxEntries: 8, maxAgeSeconds: 60 * 60 * 24 * 90 },
               cacheableResponse: { statuses: [200] },
             },
           },

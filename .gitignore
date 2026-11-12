@@ -51,3 +51,5 @@ Deployment-packages/database_private.zip
 *.sw?
 node_modules
 public/mediapipe/wasm/*.wasm
+/public/mediapipe/wasm/runtime-*/
+/public/call-background-runtime.json

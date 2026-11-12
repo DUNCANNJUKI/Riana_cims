@@ -1,4 +1,7 @@
 import type { ImageSegmenter, ImageSegmenterResult, MPMask } from "@mediapipe/tasks-vision";
+import { CallBackgroundError } from './callBackgroundError';
+
+const runtimePath = `${import.meta.env.BASE_URL}${import.meta.env.CALL_BACKGROUND_ASSET_PATH}`;
 
 export const CALL_VIDEO_BACKGROUND_OPTIONS = [
   { value: "riana-office", label: "RIANA Office - Branded Vector", fileName: "riana-office.svg" },
@@ -372,7 +375,7 @@ export async function createCallVideoBackground(
   mirror: boolean = true,
 ): Promise<BackgroundPipeline> {
   if (!isWebAssemblySupported()) {
-    throw new Error("Virtual background requires WebAssembly execution, which is restricted in this browser session. Please refresh the page.");
+    throw new CallBackgroundError('WASM_UNAVAILABLE');
   }
   const selectedPreset = CALL_VIDEO_BACKGROUND_OPTIONS.find(background => background.value === effect);
   const customImageUrl = !selectedPreset && effect !== "blur" ? String(effect) : null;
@@ -384,9 +387,9 @@ export async function createCallVideoBackground(
     import("@mediapipe/tasks-vision"),
     backgroundUrl ? loadImage(backgroundUrl) : Promise.resolve(null),
   ]);
-  const vision = await FilesetResolver.forVisionTasks(`${import.meta.env.BASE_URL}mediapipe/wasm`);
+  const vision = await FilesetResolver.forVisionTasks(runtimePath);
   const cpuOptions = {
-    baseOptions: { modelAssetPath: `${import.meta.env.BASE_URL}models/selfie_segmenter_landscape.tflite`, delegate: "CPU" },
+    baseOptions: { modelAssetPath: `${runtimePath}/selfie_segmenter_landscape.tflite`, delegate: "CPU" },
     runningMode: "VIDEO",
     outputCategoryMask: true,
     outputConfidenceMasks: true,

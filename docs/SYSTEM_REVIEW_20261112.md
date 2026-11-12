@@ -79,6 +79,12 @@ Validation for this change: **217 passed, 0 failed, 2 skipped** in the default a
 
 On the user's request to run checks through GitLab, the remote branch was fetched and confirmed behind the three existing local review commits, with no divergent remote work. GitLab Git read access and push dry-run succeeded; the stored credential's pipeline API request returned **HTTP 403**. Hosted results, deployment and physical enrollment remain unverified until remote evidence is available. No production account or schema was changed during this investigation.
 
+## Production call background follow-up
+
+The user's production background failure was reproduced on the actual Marezi page: its CSP rejects WebAssembly compilation. Public runtime/model assets are present with valid types/signatures; the document and API still send the old restrictive policy and an unversioned release. The repository policy already permits WebAssembly narrowly, so applying and verifying the correct production release is required. The exact running API/proxy source of the stale header remains pending host inspection.
+
+Added content-versioned matching runtime/model assets, accurate background failure messages, real MediaPipe/loopback-WebRTC browser QA, and GitLab public-release diagnostics/deployment verification. Blur, preset/custom/Off, rotation, simulated camera replacement and blocked-policy recovery passed with original audio/source continuity. Both production builds and type checks passed. No `.env` or production data changes were made. Full details, evidence, pending physical/PWA acceptance and recovery steps: [Production background report](COMMUNICATION_PRODUCTION_BACKGROUND_20261112.md).
+
 ## Rollback and support
 
 Revert this follow-up commit, reinstall the preceding package lockfiles, rebuild both frontends, and restart only `riana-cims` and `riana-cims-web`. No operational schema rollback is required. Keep data and backups intact. If a client list fails again, the dialog now shows Retry; inspect the sanitized API status and server error code rather than interpreting a failed fetch as zero clients.
