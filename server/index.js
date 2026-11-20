@@ -544,7 +544,7 @@ const notificationBranding = async (loginUrl) => {
   const settings = rows[0] || {};
   const logoPath = String(settings.logo_path || '/Riana_logo.png').trim();
   const branding = {
-    name: settings.name || 'RIANA CIMS',
+    name: settings.name || 'C.I.M.S',
     primaryColor: settings.primary_color || '#0D8390',
     secondaryColor: settings.secondary_color || '#2563EB',
     fontFamily: settings.font_type || 'Arial',
