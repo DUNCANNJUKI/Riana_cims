@@ -586,7 +586,7 @@ async function sendVerificationCode({ channel, destination, code }) {
   if (channel === 'email') {
     return sendEmail({ recipientEmail: destination, recipientName: 'RIANA user', notificationType: 'login_verification', requestDescription: `Your verification code is ${code}. It expires in 10 minutes.` });
   }
-  const message = `RIANA verification code: ${code}. Expires in 10 minutes.`;
+  const message = `Your verification code: ${code}. Expires in 10 minutes.`;
   if (channel === 'whatsapp') return sendWhatsApp({ phoneNumber: destination, message, recipientName: 'RIANA user', serviceName: 'Verification code', bookingDate: new Date().toLocaleDateString('en-GB'), notificationType: 'login_verification' });
   return sendSms({ phoneNumber: destination, message });
 }

@@ -450,6 +450,7 @@ export const ClientRequests: React.FC = () => {
           changeRequestId={selectedRequest.id}
           ticketNumber={selectedRequest.ticket_number}
           requestTitle={selectedRequest.title || selectedRequest.ticket_number}
+          confirmImplementation={Boolean(selectedRequest.account_manager_id)}
           onSuccess={fetchData}
         />
       )}

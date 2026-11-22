@@ -125,9 +125,11 @@ async function runSurface(browser, surface) {
     if (!checks[0].error) {
       await page.setViewportSize({width:844,height:390});
       await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+      await page.waitForTimeout(220);
       checks.push({width:844,height:390,state:'landscape-short',...await inspect(page)});
       await page.setViewportSize({width:320,height:480});
       await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+      await page.waitForTimeout(220);
       checks.push({width:320,height:480,state:'portrait-short',...await inspect(page)});
     }
   } catch (error) { errors.push(error.message); }

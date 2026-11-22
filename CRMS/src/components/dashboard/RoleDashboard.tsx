@@ -76,7 +76,7 @@ export function RoleDashboard() {
    const pendingApproval = requests?.filter(r => r.status === 'pending_approval').length || 0;
    const inProgress = requests?.filter(r => r.status === 'in_progress').length || 0;
    const waitingClarification = requests?.filter(r => ['waiting', 'waiting_clarification'].includes(String(r.status))).length || 0;
-   const completed = requests?.filter(r => r.status === 'completed').length || 0;
+   const completed = requests?.filter(r => ['completed', 'client_accepted', 'closed_client_accepted'].includes(r.status)).length || 0;
    const critical = requests?.filter(r => r.priority === 'critical' && r.status !== 'completed').length || 0;
    const assigned = requests?.filter(r => r.status === 'assigned').length || 0;
  

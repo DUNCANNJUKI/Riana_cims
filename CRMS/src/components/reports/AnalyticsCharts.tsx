@@ -124,7 +124,7 @@ export function AnalyticsCharts() {
         return isWithinInterval(created, { start: monthStart, end: monthEnd });
       });
       
-      const completedRequests = monthRequests.filter(r => r.status === 'completed');
+      const completedRequests = monthRequests.filter(r => ['completed', 'client_accepted', 'closed_client_accepted'].includes(r.status));
       
       months.push({
         month: format(monthDate, 'MMM'),
@@ -204,7 +204,7 @@ export function AnalyticsCharts() {
 
   const kpis = useMemo(() => {
     const total = requests?.length || 0;
-    const completed = requests?.filter((r) => r.status === 'completed').length || 0;
+    const completed = requests?.filter((r) => ['completed', 'client_accepted', 'closed_client_accepted'].includes(r.status)).length || 0;
     const active = requests?.filter((r) => !['completed', 'rejected'].includes(r.status)).length || 0;
     const critical = requests?.filter((r) => r.priority === 'critical' && r.status !== 'completed').length || 0;
     return {

@@ -686,7 +686,7 @@ app.use('/uploads', authMiddleware, authorizeStoredFile,(req,res,next)=>{
   if(path.extname(req.storedFile.resolved).toLowerCase()==='.pdf')res.setHeader('Content-Disposition','attachment');
   res.sendFile(req.storedFile.resolved,(error)=>{if(error)next(error);});
 });
-app.use('/api/crms', createCrmsRouter({ pool, jwtSecret: JWT_SECRET }));
+app.use('/api/crms', createCrmsRouter({ pool, jwtSecret: JWT_SECRET, resolveSignature: resolveExistingUpload }));
 app.use('/api/public/change-requests', createClientChangeRequestPortalRouter({ pool, uploadsDir }));
 app.use('/api/files', createFilesRouter({ pool, config: privateFileConfig }));
 
@@ -3050,7 +3050,7 @@ app.patch('/api/auth/password', authMiddleware, async (req, res) => {
       notificationType: 'password_changed',
       email: true,
       sms: true,
-      smsMessage: 'RIANA CIMS: Your password was changed. If this was not you, contact an administrator immediately.',
+      smsMessage: 'Your password was changed. If this was not you, contact an administrator immediately.',
     });
     res.json({ success: true, notification_delivery: delivery });
   } catch (err) { res.status(500).json({ error: err.message }); }
@@ -3629,7 +3629,7 @@ app.post('/api/client_assignments', requireCapability('assignments.manage'), asy
       notificationType: 'assignment',
       email: true,
       sms: true,
-      smsMessage: `RIANA CIMS: New assignment for ${clientLabel}. Sign in to review the details.`,
+      smsMessage: `New assignment for ${clientLabel}. Sign in to review the details.`,
       details: { clientName: clientLabel },
     });
     res.json({ id, ...Object.fromEntries(updates), notification_delivery: notificationDelivery });
@@ -3738,8 +3738,8 @@ app.patch('/api/client_assignments/:id', async (req, res) => {
         email: true,
         sms: technicianChanged || ['waiting', 'completed'].includes(after.status),
         smsMessage: statusChanged
-          ? `RIANA CIMS: ${clientLabel} assignment status is now ${statusLabel}.`
-          : `RIANA CIMS: New assignment for ${clientLabel}. Sign in to review details.`,
+          ? `${clientLabel} assignment status is now ${statusLabel}.`
+          : `New assignment for ${clientLabel}. Sign in to review details.`,
         details: { clientName: clientLabel },
       });
     }
@@ -3817,7 +3817,7 @@ app.post('/api/auth/reset-password', async (req, res) => {
       notificationType: 'password_changed',
       email: true,
       sms: true,
-      smsMessage: 'RIANA CIMS: Your password reset is complete. If this was not you, contact an administrator immediately.',
+      smsMessage: 'Your password reset is complete. If this was not you, contact an administrator immediately.',
     });
     res.json({ success: true });
   } catch (err) {
@@ -4060,7 +4060,7 @@ app.patch('/api/user_profiles/:id/password', authMiddleware, async (req, res) =>
       notificationType: 'password_reset',
       email: true,
       sms: true,
-      smsMessage: 'RIANA CIMS: An administrator reset your password. Use the temporary password supplied by the administrator and change it after signing in.',
+      smsMessage: 'An administrator reset your password. Use the temporary password supplied by the administrator and change it after signing in.',
     });
     res.json({ success: true, notification_delivery: delivery });
   } catch (err) { res.status(500).json({ error: err.message }); }

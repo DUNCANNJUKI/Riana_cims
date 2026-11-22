@@ -63,6 +63,10 @@ async function insert(connection, table, overrides) {
   await service.verifyOtpAndAccept(pool,{token:report.acceptance_token,code:otp,representativeName:'Client Signatory',designation:'Manager',feedback:{rating:5,comment:'Implemented successfully <text remains text>'},req});
   await assert.rejects(service.verifyOtpAndAccept(pool,{token:report.acceptance_token,code:otp,req}),{status:409});
   const [[acceptance]]=await pool.query('SELECT * FROM crms_client_acceptances WHERE change_request_id=?',['qa-request']);assert.equal(acceptance.feedback_rating,5);assert.equal(acceptance.feedback_comment,'Implemented successfully <text remains text>');
+  const [[closedOtp]]=await pool.query('SELECT status FROM crms_change_requests WHERE id=?',['qa-request']);assert.equal(closedOtp.status,'closed_client_accepted');
+  const { signedCompletionReport }=require('../../server/services/signedCompletionReport');
+  const otpPdf=await signedCompletionReport(pool,{token:report.acceptance_token});assert.equal(otpPdf.buffer.subarray(0,5).toString(),'%PDF-');assert.ok(otpPdf.buffer.toString('latin1').includes('OTP attestation'));assert.ok(otpPdf.buffer.toString('latin1').includes('Client Signatory'));
+  await assert.rejects(signedCompletionReport(pool,{token:'invalid-token'}),{status:404});
   await service.closeChangeRequest(pool,{changeRequestId:'qa-request',accountManagerId:'qa-manager',user:req.user,closureNotes:'Verified client acceptance'});
   const router=portalRouter({pool,uploadsDir:'.runtime/unused-qa-uploads'});
   const track=router.stack.find(l=>l.route?.path==='/track/:token'&&l.route.methods.get).route.stack[0].handle;
@@ -73,7 +77,28 @@ async function insert(connection, table, overrides) {
   const signed=await service.confirmImplementation(pool,{...input,changeRequestId:'qa-signature'});
   await service.verifySignatureAndAccept(pool,{token:signed.acceptance_token,signaturePath:'isolated-signature.png',representativeName:'Client Signatory',designation:'Manager',feedback:{rating:4,comment:'Signed and verified'},req});
   const [[signature]]=await pool.query('SELECT sign_off_method,feedback_rating FROM crms_client_acceptances WHERE change_request_id=?',['qa-signature']);assert.equal(signature.sign_off_method,'signature');assert.equal(signature.feedback_rating,4);
+  const [[closedSignature]]=await pool.query('SELECT status FROM crms_change_requests WHERE id=?',['qa-signature']);assert.equal(closedSignature.status,'closed_client_accepted');
+  fs.mkdirSync('.runtime',{recursive:true});const signatureFile='.runtime/isolated-client-signature.png';await require('../../server/node_modules/sharp')({create:{width:240,height:80,channels:4,background:'#ffffff'}}).composite([{input:Buffer.from('<svg width="240" height="80"><path d="M15 60 Q60 0 100 50 T220 20" fill="none" stroke="#154a63" stroke-width="3"/></svg>')}]).png().toFile(signatureFile);
+  const signedPdf=await signedCompletionReport(pool,{requestId:'qa-signature',resolveSignature:()=>signatureFile});assert.ok(signedPdf.buffer.toString('latin1').includes('/Subtype /Image'));fs.writeFileSync('.runtime/signed-client-completion-qa.pdf',signedPdf.buffer);
+  const [[closureCount]]=await pool.query('SELECT COUNT(*) AS n FROM crms_request_closures');assert.equal(closureCount.n,2);
+  summary.push('OTP and signature immediately close each request exactly once; signed PDF embeds the client signature, OTP PDF records attestation, and invalid tokens cannot download.');
   summary.push('Signature acceptance stores feedback in the same transaction. No live providers were called.');
+  for(const delivery of deliveries.filter(d=>d.channel==='sms'))assert.ok(!/^RIANA CIMS:/i.test(delivery.message.message),'SMS body must not duplicate the sender name');
+  for(const kind of ['valid','disputed','unverified','newer']) {
+    const id=`legacy-${kind}`, reportId=`report-${kind}`;
+    await insert(pool,'crms_change_requests',{id,ticket_number:id,client_id:'qa-client',account_manager_id:'qa-manager',status:'client_accepted',modules_affected:'[]'});
+    await insert(pool,'crms_completion_reports',{id:reportId,change_request_id:id,account_manager_id:'qa-manager',version_number:1,status:'accepted',acceptance_token:crypto.randomBytes(32).toString('hex'),token_expires_at:new Date(Date.now()+86400000)});
+    await insert(pool,'crms_client_acceptances',{id:`accept-${kind}`,change_request_id:id,completion_report_id:reportId,sign_off_method:'otp',declaration_confirmed:1,otp_verified_at:kind==='unverified'?null:new Date()});
+    if(kind==='disputed')await insert(pool,'crms_client_action_responses',{id:'legacy-dispute',change_request_id:id,completion_report_id:reportId,response_type:'dispute_raised',resolved:0});
+    if(kind==='newer')await insert(pool,'crms_completion_reports',{id:'newer-draft',change_request_id:id,account_manager_id:'qa-manager',version_number:2,status:'draft',acceptance_token:crypto.randomBytes(32).toString('hex'),token_expires_at:new Date(Date.now()+86400000)});
+  }
+  const runner=fs.readFileSync('server/scripts/apply-communication-migrations.cjs','utf8');
+  const parseSql=new Function(runner.slice(runner.indexOf('const splitSqlStatements ='),runner.indexOf('async function run()'))+';return splitSqlStatements;')();
+  for(let n=0;n<2;n++)for(const sql of parseSql(fs.readFileSync('server/migrations/20261122_verified_signoff_closure.sql','utf8')))await pool.query(sql);
+  const [legacy]=await pool.query("SELECT id,status FROM crms_change_requests WHERE id LIKE 'legacy-%'");for(const row of legacy)assert.equal(row.status,row.id==='legacy-valid'?'closed_client_accepted':'client_accepted');
+  for(const kind of ['disputed','unverified','newer'])await assert.rejects(signedCompletionReport(pool,{requestId:`legacy-${kind}`}),{status:404});
+  const [[reconciledAudit]]=await pool.query("SELECT COUNT(*) AS n FROM crms_audit_logs WHERE action_label='Verified Client Sign-off Reconciled'");assert.equal(reconciledAudit.n,1);
+  summary.push('Historical reconciliation closes only the verified latest undisputed acceptance, preserves all other states, records one audit and is retry-safe.');
   fs.mkdirSync('docs/evidence/client-implementation',{recursive:true});fs.writeFileSync('docs/evidence/client-implementation/integration.json',JSON.stringify({passed:true,checks:summary},null,2));console.log(summary.join('\n'));
  }finally{
   if(pool)await pool.end();

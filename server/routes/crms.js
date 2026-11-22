@@ -71,7 +71,7 @@ const REQUEST_STATUSES = {
 };
 const storedRequestStatus = (status) => status === 'waiting_clarification' ? 'waiting' : status;
 
-module.exports = function createCrmsRouter({ pool, jwtSecret }) {
+module.exports = function createCrmsRouter({ pool, jwtSecret, resolveSignature }) {
   const router = express.Router();
   const tableColumnCache = new Map();
   const assertPortalRecordAccess = async (tableName, recordId, user, { readOnly = false } = {}) => {
@@ -218,7 +218,7 @@ module.exports = function createCrmsRouter({ pool, jwtSecret }) {
       requestId: request.id,
       notificationType: 'approval_needed',
       ...delivery,
-      smsMessage: `RIANA CIMS: ${request.ticket_number} is awaiting Sales approval. Review: ${actionUrl}`,
+      smsMessage: `${request.ticket_number} is awaiting Sales approval. Review: ${actionUrl}`,
       details: requestSummary(request),
     });
   };
@@ -237,7 +237,7 @@ module.exports = function createCrmsRouter({ pool, jwtSecret }) {
       requestId: request.id,
       notificationType: 'assigned',
       ...delivery,
-      smsMessage: `RIANA CIMS: ${request.ticket_number} assigned to you. Review: ${actionUrl}`,
+      smsMessage: `${request.ticket_number} assigned to you. Review: ${actionUrl}`,
       details: {
         ...requestSummary(request),
         developerName: request.assigned_developer?.name,
@@ -317,7 +317,7 @@ module.exports = function createCrmsRouter({ pool, jwtSecret }) {
       requestId: request.id,
       notificationType: 'completed',
       ...delivery,
-      smsMessage: `RIANA CIMS: ${request.ticket_number} has been marked complete. Verify: ${actionUrl}`,
+      smsMessage: `${request.ticket_number} has been marked complete. Verify: ${actionUrl}`,
       details: {
         ...requestSummary(request),
         developerName: request.assigned_developer?.name,
@@ -657,6 +657,9 @@ module.exports = function createCrmsRouter({ pool, jwtSecret }) {
         [req.params.id],
       );
       if (!existingRows.length) return res.status(404).json({ error: 'Not found' });
+      if (['client_accepted', 'closed_client_accepted'].includes(req.body.status) && req.body.status !== existingRows[0].status) {
+        return res.status(409).json({ error: 'Client sign-off and closure must use the verified completion workflow.' });
+      }
       if (req.user.role === 'Developer' && existingRows[0].assigned_developer_id !== req.user.id) {
         return res.status(403).json({ error: 'Developers may only update their assigned requests.' });
       }
@@ -839,8 +842,8 @@ module.exports = function createCrmsRouter({ pool, jwtSecret }) {
           COUNT(*) totalRequests,
           SUM(status='pending_approval') pendingApproval,
           SUM(status='in_progress') inProgress,
-          SUM(status='completed') completed,
-          SUM(estimated_completion_date IS NOT NULL AND status <> 'completed' AND estimated_completion_date < CURDATE()) overdue,
+          SUM(status IN ('completed','client_accepted','closed_client_accepted')) completed,
+          SUM(estimated_completion_date IS NOT NULL AND status NOT IN ('completed','client_accepted','closed_client_accepted','rejected') AND estimated_completion_date < CURDATE()) overdue,
           COALESCE(ROUND(AVG(CASE WHEN commencement_date IS NOT NULL AND completion_date IS NOT NULL THEN DATEDIFF(completion_date, commencement_date) END), 1), 0) avgCompletionDays
         FROM crms_change_requests
       `);
@@ -992,6 +995,17 @@ module.exports = function createCrmsRouter({ pool, jwtSecret }) {
       console.error('CRMS POST /completion_reports error:', error);
       res.status(error.status || 400).json({ error: error.message });
     }
+  });
+
+  router.get('/change_requests/:id/completion.pdf', async (req, res) => {
+    try {
+      await assertPortalRecordAccess('crms_change_requests', req.params.id, req.user);
+      const { signedCompletionReport } = require('../services/signedCompletionReport');
+      const pdf = await signedCompletionReport(pool, { requestId: req.params.id, resolveSignature });
+      res.set('Cache-Control', 'no-store');
+      res.set('Content-Disposition', `attachment; filename="${pdf.filename}"`);
+      res.type('application/pdf').send(pdf.buffer);
+    } catch (error) { res.status(error.status || 500).json({ error: error.status ? error.message : 'Unable to generate the signed completion report.' }); }
   });
 
   router.post('/completion_reports/:id/send', async (req, res) => {

@@ -15,6 +15,7 @@ import { cn } from "@crms/lib/utils";
 import { installAuthenticatedFetch } from "@crms/lib/authenticatedFetch";
 import { useRealtimeSubscription } from "@crms/hooks/useRealtimeSubscription";
 import { Toaster } from "@crms/components/ui/toaster";
+import { PageLoader } from "@crms/components/common/CompanyLogoLoader";
 
 const preloadDashboard = () => import("@crms/pages/Dashboard");
 const preloadRequestList = () => import("@crms/pages/RequestList");
@@ -117,7 +118,7 @@ export function NativeDevelopersWorkspace({ userId, role }: NativeDevelopersWork
       </div>
 
       <div className="min-h-[calc(100dvh-14rem)] min-w-0 bg-background p-1 sm:p-2">
-        <Suspense fallback={<div className="flex min-h-[360px] items-center justify-center text-sm text-muted-foreground">Loading Developers workspace...</div>}>
+        <Suspense fallback={<PageLoader />}>
         <Routes>
           <Route path="/developers" element={<Dashboard />} />
           <Route path="/developers/client-requests" element={<ClientRequests />} />

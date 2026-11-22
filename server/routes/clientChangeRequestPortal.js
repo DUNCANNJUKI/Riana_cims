@@ -2,7 +2,7 @@ const express = require('express');
 const path = require('node:path');
 const fs = require('node:fs');
 const { clientRequestProgress } = require('../services/clientRequestProgress');
-const { safeUpload } = require('../security/apiSecurity');
+const { safeUpload, resolveStoredFile } = require('../security/apiSecurity');
 const {
   getInvitationForClient,
   submitClientChangeRequest,
@@ -31,6 +31,27 @@ const removeUnclaimedFiles = (uploadsDir, files) => {
 
 module.exports = function createClientChangeRequestPortalRouter({ pool, uploadsDir }) {
   const router = express.Router();
+  const withCompletionDocument = async (token, result) => {
+    try {
+      const { signedCompletionReport } = require('../services/signedCompletionReport');
+      const pdf = await signedCompletionReport(pool, { token, resolveSignature: filename => resolveStoredFile(uploadsDir, filename) });
+      return { ...result, request_status: 'closed_client_accepted', report_pdf_base64: pdf.buffer.toString('base64'), report_filename: pdf.filename };
+    } catch (error) {
+      // A retryable rendering failure must never undo or disguise a verified sign-off.
+      console.error('Signed completion document unavailable:', error.code || error.message);
+      return { ...result, request_status: 'closed_client_accepted', report_pending: true };
+    }
+  };
+
+  router.get('/review/:token/completion.pdf', async (req, res) => {
+    try {
+      const { signedCompletionReport } = require('../services/signedCompletionReport');
+      const pdf = await signedCompletionReport(pool, { token: req.params.token, resolveSignature: filename => resolveStoredFile(uploadsDir, filename) });
+      res.set('Cache-Control', 'no-store');
+      res.set('Content-Disposition', `attachment; filename="${pdf.filename}"`);
+      res.type('application/pdf').send(pdf.buffer);
+    } catch (error) { respondWithError(res, error); }
+  });
 
   // 1. Get Invitation by Token
   router.get('/invitation/:token', async (req, res) => {
@@ -168,7 +189,7 @@ module.exports = function createClientChangeRequestPortalRouter({ pool, uploadsD
         feedback: req.body.feedback,
         req,
       });
-      res.json(result);
+      res.json(await withCompletionDocument(req.params.token, result));
     } catch (err) {
       respondWithError(res, err);
     }
@@ -202,7 +223,7 @@ module.exports = function createClientChangeRequestPortalRouter({ pool, uploadsD
         feedback: req.body.feedback,
         req,
       });
-      res.json(result);
+      res.json(await withCompletionDocument(req.params.token, result));
     } catch (err) {
       removeUnclaimedFiles(uploadsDir, writtenFiles);
       respondWithError(res, err);

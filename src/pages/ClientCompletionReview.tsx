@@ -94,6 +94,22 @@ export const ClientCompletionReview: React.FC = () => {
   const [signatureFile, setSignatureFile] = useState<{ base64: string; name: string } | null>(null);
   const [submittingSignature, setSubmittingSignature] = useState(false);
 
+  const downloadCompletion = async (base64?: string) => {
+    try {
+      let blob: Blob;
+      if (base64) blob = new Blob([Uint8Array.from(atob(base64), character => character.charCodeAt(0))], { type: 'application/pdf' });
+      else {
+        const response = await fetch(`${API_URL}/public/change-requests/review/${encodeURIComponent(token || '')}/completion.pdf`);
+        if (!response.ok || !response.headers.get('content-type')?.includes('application/pdf')) throw new Error('Your sign-off is saved. The signed report is temporarily unavailable; please try Download again.');
+        blob = await response.blob();
+      }
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url; link.download = 'signed-completion-report.pdf'; link.click();
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (error) { toast({ title: 'Report download unavailable', description: error instanceof Error ? error.message : 'Please try again.', variant: 'destructive' }); }
+  };
+
   // Corrections / Action Modal State
   const [actionModalOpen, setActionModalOpen] = useState(false);
   const [actionType, setActionType] = useState<'correction_requested' | 'disputed'>('correction_requested');
@@ -196,10 +212,11 @@ export const ClientCompletionReview: React.FC = () => {
 
       toast({
         title: 'Acceptance Confirmed',
-        description: 'Thank you. The change request has been formally accepted.',
+        description: 'Thank you. Your implementation is confirmed and the request is closed.',
       });
       setAcceptModalOpen(false);
-      fetchReport();
+      await fetchReport();
+      void downloadCompletion(data.report_pdf_base64);
     } catch (err: unknown) {
       toast({
         title: 'Verification Failed',
@@ -262,10 +279,11 @@ export const ClientCompletionReview: React.FC = () => {
 
       toast({
         title: 'Acceptance Confirmed',
-        description: 'Thank you. Your signed acceptance has been verified and recorded.',
+        description: 'Thank you. Your signature is recorded and the request is closed.',
       });
       setAcceptModalOpen(false);
-      fetchReport();
+      await fetchReport();
+      void downloadCompletion(data.report_pdf_base64);
     } catch (err: unknown) {
       toast({
         title: 'Submission Failed',
@@ -395,7 +413,7 @@ export const ClientCompletionReview: React.FC = () => {
               </div>
               <div>
                 <p className="font-bold text-emerald-900 dark:text-emerald-200 text-base">
-                  Delivered Work Accepted & Confirmed
+                  {report.change_request.status === 'closed_client_accepted' ? 'Implementation Confirmed & Request Closed' : 'Delivered Work Accepted & Confirmed'}
                 </p>
                 <p className="text-sm text-emerald-700 dark:text-emerald-400 mt-0.5">
                   Signed off by <strong>{report.acceptance.client_representative_name}</strong> ({report.acceptance.client_representative_designation}) via{' '}
@@ -406,6 +424,7 @@ export const ClientCompletionReview: React.FC = () => {
                   {report.acceptance.feedback_rating != null && <p>Feedback rating: {report.acceptance.feedback_rating} / 5</p>}
                   {report.acceptance.feedback_comment && <p className="whitespace-pre-wrap break-words">{report.acceptance.feedback_comment}</p>}
                 </div>}
+                  <Button variant="outline" className="mt-3" onClick={() => void downloadCompletion()}><Download className="mr-2 h-4 w-4" />Download Signed Completion Report</Button>
               </div>
             </div>
             <Button asChild variant="outline" className="border-emerald-600 text-emerald-700 dark:text-emerald-300">

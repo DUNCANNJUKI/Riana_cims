@@ -39,6 +39,7 @@ import { generateChangeRequestPDF, generateCompletionReportPDF, generateRequestS
 import { useToast } from '@crms/hooks/use-toast';
 import { downloadRequestsCsv } from '@crms/lib/requestListData';
 import { errorMessage } from '@crms/lib/utils';
+import { downloadSignedCompletionReport } from '@crms/lib/signedCompletionReport';
 
 export default function Reports() {
   const { toast } = useToast();
@@ -70,7 +71,7 @@ export default function Reports() {
   // Calculate summary stats
   const summary = {
     total: filteredRequests.length,
-    completed: filteredRequests.filter((r) => r.status === 'completed').length,
+    completed: filteredRequests.filter((r) => ['completed', 'client_accepted', 'closed_client_accepted'].includes(r.status)).length,
     inProgress: filteredRequests.filter((r) => r.status === 'in_progress').length,
     pending: filteredRequests.filter((r) => r.status === 'pending_approval').length,
     chargeable: filteredRequests.filter((r) => r.is_chargeable).length,
@@ -98,6 +99,11 @@ export default function Reports() {
   };
 
   const handleDownloadCompletionReport = async (request: typeof changeRequests[number]) => {
+    if (['client_accepted', 'closed_client_accepted'].includes(request.status)) {
+      try { await downloadSignedCompletionReport(request.id, request.ticket_number); }
+      catch (error) { toast({ title: 'Report unavailable', description: errorMessage(error), variant: 'destructive' }); }
+      return;
+    }
     const doc = await generateCompletionReportPDF(request);
     downloadPDF(doc, `${request.ticket_number}-completion-report.pdf`);
     toast({
@@ -408,7 +414,7 @@ export default function Reports() {
                         </Button>
                       </TableCell>
                       <TableCell mobileLabel="Completion Report">
-                        {request.status === 'completed' ? (
+                        {['completed', 'client_accepted', 'closed_client_accepted'].includes(request.status) ? (
                           <Button
                             variant="outline"
                             size="sm"

@@ -1,42 +1,22 @@
-const LOADER_LETTERS = "RIANA CIMS".split("");
+import { useEffect, useState } from 'react';
+import { SiteLoaderArtwork } from '../../../../src/components/common/SiteLoaderArtwork';
 
-export function CompanyLogoLoader({ className = "", size = "md" }: { className?: string; size?: "sm" | "md" | "lg" }) {
-    const sizeClasses = {
-        sm: "h-12 w-12 rounded-xl",
-        md: "h-24 w-24 rounded-2xl",
-        lg: "h-32 w-32 rounded-3xl",
-    };
+const bundledLogo = new URL('../../../../public/Riana_mark_color_trimmed.png', import.meta.url).href;
 
-    return (
-        <div className={`flex flex-col items-center justify-center gap-5 ${className}`}>
-            <div className={`relative overflow-hidden bg-[#086f76] shadow-lg ring-1 ring-white/20 ${sizeClasses[size]}`}>
-                <img
-                    src="/pwa-icon.svg"
-                    alt="RIANA CIMS"
-                    className="h-full w-full object-cover"
-                />
-                <div className="absolute inset-0 rounded-[inherit] ring-4 ring-primary/20 animate-ping" />
-            </div>
-            <div className="flex h-8 items-end justify-center gap-1 text-lg font-extrabold text-primary sm:text-xl" aria-label="RIANA CIMS loading">
-                {LOADER_LETTERS.map((letter, index) => (
-                    <span
-                        key={`${letter}-${index}`}
-                        className={letter === " " ? "w-2" : "inline-block animate-bounce"}
-                        style={letter === " " ? undefined : { animationDelay: `${index * 80}ms`, animationDuration: "900ms" }}
-                        aria-hidden="true"
-                    >
-                        {letter === " " ? "\u00A0" : letter}
-                    </span>
-                ))}
-            </div>
-        </div>
-    );
+export function CompanyLogoLoader({ className = '', size = 'md' }: { className?: string; size?: 'sm' | 'md' | 'lg' }) {
+  if (size !== 'sm') return <div className={className}><PageLoader /></div>;
+  return <span role="status" aria-label="Loading" className={className + ' inline-flex h-5 w-5 items-center justify-center'}><img src={bundledLogo} alt="" className="h-full w-full object-contain motion-safe:animate-pulse" /></span>;
 }
 
 export function PageLoader() {
-    return (
-        <div className="flex h-[70vh] w-full items-center justify-center">
-            <CompanyLogoLoader size="lg" />
-        </div>
-    );
+  const [brand, setBrand] = useState({ companyName: 'RIANA CIMS', companyLogo: bundledLogo });
+  useEffect(() => {
+    const controller = new AbortController();
+    fetch('/api/public/company-branding', { signal: controller.signal, credentials: 'same-origin' })
+      .then(r => r.ok ? r.json() : null).then(b => {
+        if (b && !controller.signal.aborted) setBrand({ companyName: b.name || 'RIANA CIMS', companyLogo: b.logo_path || bundledLogo });
+      }).catch(() => {});
+    return () => controller.abort();
+  }, []);
+  return <SiteLoaderArtwork {...brand} status="Loading Developer workspace..." />;
 }

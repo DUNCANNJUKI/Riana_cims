@@ -17,6 +17,7 @@ const migrationIds = [
   '20261107_call_recordings',
   '20261110_client_change_requests_portal',
   '20261122_client_implementation_feedback',
+  '20261122_verified_signoff_closure',
 ];
 
 const splitSqlStatements = (sql) => {

@@ -40,6 +40,7 @@ import { apiRequest } from '@crms/lib/apiRequest';
 import { Label } from '@crms/components/ui/label';
 import { useChangeRequest, useProfiles, useUpdateChangeRequest, useCreateAuditLog, useAuditLogs, useClientScope } from '@crms/hooks/useSupabaseData';
 import { generateChangeRequestPDF, generateCompletionReportPDF, downloadPDF } from '@crms/lib/pdfGenerator';
+import { downloadSignedCompletionReport } from '@crms/lib/signedCompletionReport';
 import { PrepareCompletionReportDialog } from '@crms/components/PrepareCompletionReportDialog';
 import { CloseChangeRequestDialog } from '@crms/components/CloseChangeRequestDialog';
 import { FileCheck2, ShieldCheck, AlertCircle, ExternalLink } from 'lucide-react';
@@ -390,6 +391,11 @@ export default function RequestDetail() {
   };
 
   const handleDownloadPDF = async (type: 'request' | 'completion') => {
+    if (type === 'completion' && ['client_accepted', 'closed_client_accepted'].includes(request.status)) {
+      try { await downloadSignedCompletionReport(request.id, request.ticket_number); }
+      catch (error) { toast({ title: 'Report unavailable', description: errorMessage(error), variant: 'destructive' }); }
+      return;
+    }
     const formattedLogs = auditLogs.map(log => ({
       action_label: log.action_label,
       created_at: log.created_at,
@@ -435,7 +441,7 @@ export default function RequestDetail() {
             <Download className="mr-2 h-4 w-4" />
             Request Form
           </Button>
-          {request.status === 'completed' && (
+          {['completed', 'client_accepted', 'closed_client_accepted'].includes(request.status) && (
             <Button variant="outline" size="sm" onClick={() => handleDownloadPDF('completion')}>
               <FileCheck className="mr-2 h-4 w-4" />
               Completion Report

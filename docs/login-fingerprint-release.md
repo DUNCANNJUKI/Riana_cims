@@ -8,6 +8,8 @@ Safe cleanup is confined to these affected CSS rules. Runtime data, credentials,
 
 This release also includes the previously prepared PWA startup fix and the prior responsive/client-implementation commit. Release inspection found that the existing production migration runner did not list the additive feedback migration. The runner now includes it after the original client-portal migration and verifies all three columns. The SQL also registers its migration history idempotently, matching the existing runner's contract. The established deploy script verifies a database backup before applying migrations and restarting the managed API. No additional production database operation is performed outside that process.
 
+Follow-up compatibility review replaced MariaDB-specific `ADD COLUMN IF NOT EXISTS` with the project's existing information-schema/procedure pattern, using ordinary `ADD COLUMN` only for missing columns. This supports MySQL syntax as well as MariaDB, preserves pre-existing feedback on partial retries, and cleans up only its temporary helper routine. See [MySQL ALTER syntax](https://dev.mysql.com/doc/refman/8.0/en/alter-table.html) and [MariaDB's additional IF NOT EXISTS syntax](https://mariadb.com/docs/server/reference/sql-statements/data-definition/alter/alter-table). Disposable MariaDB checks use the production runner's delimiter parser and execute fresh and partial migrations twice; native MySQL execution is not claimed. This is a compatibility correction, not a confirmed diagnosis of an inaccessible GitLab deploy log.
+
 Validation:
 
 - CIMS and CRMS production builds; TypeScript checks; full regression suite: 241 passed, two existing integration skips.

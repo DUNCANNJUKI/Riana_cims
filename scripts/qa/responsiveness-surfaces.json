@@ -370,5 +370,11 @@
     "file": "/CRMS/src/components/dashboard/RecentRequestsTable.tsx",
     "name": "RecentRequestsTable",
     "crms": true
+  },
+  {
+    "id": "developer-loader",
+    "file": "/CRMS/src/components/common/CompanyLogoLoader.tsx",
+    "name": "PageLoader",
+    "public": true
   }
 ]

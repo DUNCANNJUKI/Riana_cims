@@ -40,6 +40,18 @@ const saveClientFeedback = async (connection, acceptanceId, feedback) => {
   await connection.query('UPDATE crms_client_acceptances SET feedback_rating = ?, feedback_comment = ?, feedback_submitted_at = NOW() WHERE id = ?', [feedback.rating, feedback.comment || null, acceptanceId]);
 };
 
+const closeVerifiedImplementation = async (connection, report, acceptanceId) => {
+  // Sign-off on a newer delivered version resolves feedback on superseded versions.
+  await connection.query("UPDATE crms_client_action_responses SET resolved = TRUE, resolved_at = NOW(), resolution_notes = 'Client signed off the revised completion report.' WHERE change_request_id = ? AND completion_report_id <> ? AND resolved = FALSE", [report.change_request_id, report.id]);
+  const [unresolved] = await connection.query('SELECT id FROM crms_client_action_responses WHERE change_request_id = ? AND resolved = FALSE LIMIT 1', [report.change_request_id]);
+  if (unresolved.length) throw Object.assign(new Error('Outstanding corrections or disputes must be resolved before signing off this implementation.'), { status: 409 });
+  const closureId = uuidv4();
+  await connection.query('INSERT INTO crms_request_closures (id, change_request_id, account_manager_id, acceptance_id, closure_notes) VALUES (?, ?, ?, ?, ?)', [closureId, report.change_request_id, report.account_manager_id, acceptanceId, 'Automatically closed after verified client sign-off.']);
+  await connection.query("UPDATE crms_change_requests SET status = 'closed_client_accepted', acceptance_status = 'closed', completion_date = CURDATE() WHERE id = ?", [report.change_request_id]);
+  const auditId = await recordCrmsAudit(connection, { requestId: report.change_request_id, action: 'status_changed', actionLabel: 'Request Closed after Verified Client Sign-off', previousValue: 'awaiting_client_acceptance', newValue: 'closed_client_accepted', metadata: { acceptanceId, closureId } });
+  if (!auditId) throw new Error('Unable to record the implementation closure audit. Please retry.');
+};
+
 const generateReference = (prefix = 'CR') => {
   const year = new Date().getFullYear();
   const random = crypto.randomInt(10000, 99999);
@@ -75,7 +87,7 @@ const withReviewTransaction = async (pool, token, operation) => {
   try {
     await connection.beginTransaction();
     const [reports] = await connection.query(
-      `SELECT r.*, cr.ticket_number, cr.request_title, cr.account_manager_id, cr.status AS request_status,
+      `SELECT r.*, cr.ticket_number, cr.request_title, COALESCE(cr.account_manager_id, r.account_manager_id) AS account_manager_id, cr.status AS request_status,
               cr.client_representative_name, cr.client_representative_phone, cr.client_representative_email, c.client_name
        FROM crms_completion_reports r
        JOIN crms_change_requests cr ON cr.id COLLATE utf8mb4_unicode_ci = r.change_request_id COLLATE utf8mb4_unicode_ci
@@ -315,7 +327,7 @@ const sendInvitation = async (pool, invitationId, req) => {
   // 1. Send SMS
   let smsStatus = 'failed';
   try {
-    const smsText = `RIANA CIMS: Hello ${invitation.client_representative_name}, you are invited to submit a Change Request for ${invitation.client_name} (${invitation.branch_name}). Open here: ${publicUrl}`;
+    const smsText = `Hello ${invitation.client_representative_name}, you are invited to submit a Change Request for ${invitation.client_name} (${invitation.branch_name}). Open here: ${publicUrl}`;
     const smsResult = await sendSms({
       phoneNumber: invitation.client_representative_phone,
       message: smsText,
@@ -707,7 +719,7 @@ const submitClientChangeRequest = async (pool, { token, data, attachments = [], 
 
     // 3. Notify Client Representative (SMS + Email confirmation)
     try {
-      const smsText = `RIANA CIMS: Hello ${invitation.client_representative_name}, your Change Request has been received. Reference: ${ticketNumber}. Our team has begun internal assessment.`;
+      const smsText = `Hello ${invitation.client_representative_name}, your Change Request has been received. Reference: ${ticketNumber}. Our team has begun internal assessment.`;
       await sendSms({
         phoneNumber: invitation.client_representative_phone,
         message: smsText,
@@ -802,6 +814,10 @@ const createOrUpdateCompletionReport = async (pool, {
   const request = requests[0];
 
   if (user && request.account_manager_id) assertResponsibleManager(request, user);
+
+  if (['client_accepted', 'closed_client_accepted'].includes(request.status)) {
+    throw Object.assign(new Error('A signed-off request cannot be replaced with another completion report.'), { status: 409 });
+  }
 
   const summary = String(data.summary_of_change || '').trim();
   const solution = String(data.implemented_solution || '').trim();
@@ -959,7 +975,7 @@ const sendCompletionReport = async (pool, reportId, req) => {
   // 1. Send SMS
   let smsStatus = 'failed';
   try {
-    const smsMessage = `RIANA CIMS: Hello ${clientName}, Change Request ${report.ticket_number} is complete and implemented. Confirm by OTP or e-signature and share feedback: ${reviewUrl} Track progress: ${trackingUrl}`;
+    const smsMessage = `Hello ${clientName}, Change Request ${report.ticket_number} is complete and implemented. Confirm by OTP or e-signature and share feedback: ${reviewUrl} Track progress: ${trackingUrl}`;
     await sendSms({ phoneNumber: clientPhone, message: smsMessage });
     smsStatus = 'sent';
     await recordDeliveryLog(pool, {
@@ -1250,7 +1266,7 @@ const requestClientOtp = async (pool, token, channel = 'sms', req) => {
   } else {
     await sendSms({
       phoneNumber: target,
-      message: `RIANA CIMS: Your verification code for Change Request ${report.ticket_number} completion acceptance is ${otp}. Valid for 10 minutes.`,
+      message: `Hello ${report.client_representative_name}, your verification code for Change Request ${report.ticket_number} completion acceptance is ${otp}. Valid for 10 minutes.`,
     });
   }
 
@@ -1313,10 +1329,7 @@ const verifyOtpAndAccept = async (pool, { token, code, representativeName, desig
 
   await saveClientFeedback(connection, acceptanceId, clientFeedback);
   await connection.query("UPDATE crms_completion_reports SET status = 'accepted' WHERE id = ?", [report.id]);
-  await connection.query(
-    "UPDATE crms_change_requests SET status = 'client_accepted', acceptance_status = 'accepted' WHERE id = ?",
-    [report.change_request_id],
-  );
+  await closeVerifiedImplementation(connection, report, acceptanceId);
   return { acceptanceId };
   });
   if (invalidCode) throw Object.assign(new Error('Invalid verification code.'), { status: 400 });
@@ -1327,7 +1340,7 @@ const verifyOtpAndAccept = async (pool, { token, code, representativeName, desig
     actionLabel: 'Client Accepted Completion via OTP',
     details: `Delivered work formally accepted by ${representativeName || report.client_representative_name} (${designation}) via verified OTP.`,
     previousValue: 'awaiting_client_acceptance',
-    newValue: 'client_accepted',
+    newValue: 'closed_client_accepted',
     metadata: { method: 'otp', acceptanceId },
   });
 
@@ -1338,7 +1351,7 @@ const verifyOtpAndAccept = async (pool, { token, code, representativeName, desig
       pool,
       userId: report.account_manager_id,
       title: `Client Accepted: ${report.ticket_number}`,
-      message: `${report.client_representative_name} has formally accepted the completion report for ${report.ticket_number}. Perform final closure here: ${actionUrl}`,
+      message: `${report.client_representative_name} has formally accepted the completion report for ${report.ticket_number}. The request is now closed. View the signed completion report: ${actionUrl}`,
       type: 'success',
       actionUrl,
       requestId: report.change_request_id,
@@ -1353,7 +1366,7 @@ const verifyOtpAndAccept = async (pool, { token, code, representativeName, desig
     console.error('Failed to notify account manager of client acceptance:', e.message);
   }
 
-  return { success: true, message: 'Thank you! Completion accepted successfully.', acceptanceId };
+  return { success: true, message: 'Thank you! Implementation confirmed and request closed.', acceptanceId };
 };
 
 const verifySignatureAndAccept = async (pool, { token, signaturePath, representativeName, designation, feedback, req }) => {
@@ -1390,10 +1403,7 @@ const verifySignatureAndAccept = async (pool, { token, signaturePath, representa
 
   await saveClientFeedback(connection, acceptanceId, clientFeedback);
   await connection.query("UPDATE crms_completion_reports SET status = 'accepted' WHERE id = ?", [report.id]);
-  await connection.query(
-    "UPDATE crms_change_requests SET status = 'client_accepted', acceptance_status = 'accepted' WHERE id = ?",
-    [report.change_request_id],
-  );
+  await closeVerifiedImplementation(connection, report, acceptanceId);
   return { acceptanceId };
   });
 
@@ -1403,7 +1413,7 @@ const verifySignatureAndAccept = async (pool, { token, signaturePath, representa
     actionLabel: 'Client Accepted Completion via Signature',
     details: `Delivered work formally accepted with uploaded signature by ${representativeName} (${designation}).`,
     previousValue: 'awaiting_client_acceptance',
-    newValue: 'client_accepted',
+    newValue: 'closed_client_accepted',
     metadata: { method: 'signature', acceptanceId, signaturePath },
   });
 
@@ -1414,7 +1424,7 @@ const verifySignatureAndAccept = async (pool, { token, signaturePath, representa
       pool,
       userId: report.account_manager_id,
       title: `Client Accepted: ${report.ticket_number}`,
-      message: `${representativeName} has signed and accepted completion of ${report.ticket_number}. Perform final closure here: ${actionUrl}`,
+      message: `${representativeName} has signed and accepted completion of ${report.ticket_number}. The request is now closed. View the signed completion report: ${actionUrl}`,
       type: 'success',
       actionUrl,
       requestId: report.change_request_id,
@@ -1429,7 +1439,7 @@ const verifySignatureAndAccept = async (pool, { token, signaturePath, representa
     console.error('Failed to notify account manager of signature acceptance:', e.message);
   }
 
-  return { success: true, message: 'Thank you! Completion accepted with signature.', acceptanceId };
+  return { success: true, message: 'Thank you! Implementation signed off and request closed.', acceptanceId };
 };
 
 // -------------------------------------------------------------
@@ -1449,7 +1459,7 @@ const closeChangeRequest = async (pool, { changeRequestId, accountManagerId, clo
 
   if (user && request.account_manager_id) assertResponsibleManager(request, user);
   if (request.status === 'closed_client_accepted') {
-    throw Object.assign(new Error('Request has already been closed.'), { status: 400 });
+    return { success: true, alreadyClosed: true, message: 'The request is already closed after verified client sign-off.' };
   }
 
   // Verification 1: Client acceptance must exist
