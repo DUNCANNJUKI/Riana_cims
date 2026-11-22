@@ -12,9 +12,8 @@
   overflow-y: auto;
   padding: 40px 20px;
   background:
-    radial-gradient(circle at 16% 12%, rgba(28, 177, 204, 0.14), transparent 32%),
-    radial-gradient(circle at 82% 88%, rgba(4, 127, 146, 0.12), transparent 30%),
-    linear-gradient(135deg, rgba(233, 247, 250, 0.9), rgba(255, 255, 255, 0.98) 50%, rgba(239, 250, 252, 0.92));
+    radial-gradient(ellipse at 50% 44%, #e4f8ff 0%, transparent 68%),
+    linear-gradient(135deg, #c9f4fc, #aeeffa);
 }
 
 .riana-login-card {
@@ -26,9 +25,9 @@
   overflow: hidden;
   padding: 48px 58px 36px;
   background:
-    radial-gradient(circle at 91% 7%, rgba(31, 194, 220, 0.16), transparent 30%),
-    radial-gradient(circle at 5% 95%, rgba(19, 153, 185, 0.13), transparent 32%),
-    linear-gradient(145deg, rgba(255, 255, 255, 0.99), rgba(248, 253, 255, 0.97));
+    radial-gradient(ellipse at 96% 4%, #aeeffa 0%, transparent 52%),
+    radial-gradient(ellipse at 4% 96%, #aeeffa 0%, transparent 52%),
+    linear-gradient(140deg, #e4f8ff, #c9f4fc 52%, #e4f8ff);
   border: 1px solid rgba(173, 217, 229, 0.42);
   border-radius: 27px;
   box-shadow:
@@ -905,5 +904,88 @@
 @media (max-width: 640px) and (max-height: 680px) {
   .riana-login-page {
     align-items: flex-start;
+  }
+}
+
+/* Approved login branding; form controls retain their existing responsive rules. */
+.riana-login-page {
+  min-height: 100svh;
+  padding-top: max(16px, env(safe-area-inset-top));
+  padding-bottom: max(16px, env(safe-area-inset-bottom));
+  padding-left: max(10px, env(safe-area-inset-left));
+  padding-right: max(10px, env(safe-area-inset-right));
+}
+
+.riana-login-card__header {
+  container-type: inline-size;
+  display: grid;
+  grid-template-columns: auto auto;
+  justify-content: center;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: clamp(28px, 5vh, 42px);
+  text-align: left;
+}
+
+.riana-login-card__logo-wrap {
+  width: auto;
+}
+
+.riana-login-card .riana-login-card__logo {
+  width: clamp(32px, 13cqi, 52px);
+  height: auto;
+  max-height: none;
+  margin: 0;
+  filter: none;
+}
+
+.riana-login-card__brand-text {
+  min-width: 0;
+}
+
+.riana-login-card .riana-login-card__title {
+  color: #00889b;
+  font-size: clamp(24px, 11.2cqi, 44.8px);
+  font-weight: 800;
+  line-height: 1.08;
+  letter-spacing: -0.035em;
+  white-space: nowrap;
+}
+
+.riana-login-card__name {
+  color: #00bfd4;
+  background-image:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 170 50'%3E%3Cg fill='none' stroke='%23e4fcff' stroke-opacity='.5' stroke-width='.6'%3E%3Cpath d='M6 12L29 29L49 9L73 36L94 12L119 30L145 10L164 36M29 29L73 36L94 12L145 10M49 9L50 38L119 30L145 40'/%3E%3C/g%3E%3Cg fill='%23effeff' fill-opacity='.85'%3E%3Ccircle cx='6' cy='12' r='1.6'/%3E%3Ccircle cx='29' cy='29' r='1.8'/%3E%3Ccircle cx='49' cy='9' r='1.5'/%3E%3Ccircle cx='73' cy='36' r='1.9'/%3E%3Ccircle cx='94' cy='12' r='1.8'/%3E%3Ccircle cx='119' cy='30' r='1.8'/%3E%3Ccircle cx='145' cy='10' r='1.5'/%3E%3Ccircle cx='164' cy='36' r='1.6'/%3E%3C/g%3E%3C/svg%3E"),
+    linear-gradient(120deg, #00d4e6, #00afc6);
+  background-size: 100% 100%;
+  background-repeat: no-repeat;
+  background-clip: text;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.riana-login-card__system {
+  color: #00889b;
+}
+
+.riana-login-card .riana-login-card__subtitle {
+  margin: 3px 0 0;
+  color: #586477;
+  font-size: clamp(9px, 3.45cqi, 13.8px);
+  font-weight: 400;
+  line-height: 1.35;
+  white-space: nowrap;
+}
+
+.riana-login-card .riana-login-card__footer {
+  color: #586477;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+@media (forced-colors: active) {
+  .riana-login-card__name {
+    background: none;
+    -webkit-text-fill-color: currentColor;
   }
 }

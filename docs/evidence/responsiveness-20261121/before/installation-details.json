@@ -1,0 +1,75 @@
+{
+  "surface": "installation-details",
+  "file": "/src/components/dialogs/InstallationDetailsDialog.tsx",
+  "checks": [
+    {
+      "width": 320,
+      "height": 900,
+      "state": "default",
+      "pageOverflow": false,
+      "mainOverflow": false,
+      "escaped": [],
+      "dialogs": [
+        {
+          "top": 90,
+          "bottom": 810,
+          "width": 304,
+          "fits": true,
+          "scrollable": true,
+          "scrollHeight": 2262
+        }
+      ],
+      "ready": true,
+      "text": "RIANA CIMS\nAM\n\n© 2026 RIANA Group. All rights reserved. | www.riana.co\n\nInstallation Details\n\nComplete installation information and equipment specifications\n\nSe"
+    },
+    {
+      "width": 1280,
+      "height": 900,
+      "state": "default",
+      "pageOverflow": false,
+      "mainOverflow": false,
+      "escaped": [],
+      "dialogs": [
+        {
+          "top": 16,
+          "bottom": 884,
+          "width": 896,
+          "fits": true,
+          "scrollable": true,
+          "scrollHeight": 1681
+        }
+      ],
+      "ready": true,
+      "text": "OVERVIEW\nDashboard\nMANAGEMENT\nClients\nAssigned Technicians\nWorkload Calendar\nOPERATIONS\nInstallations\nHardware & Inventory\nInstallation Progress\nADMINISTRATION\n"
+    },
+    {
+      "width": 844,
+      "height": 390,
+      "state": "landscape-short",
+      "pageOverflow": false,
+      "mainOverflow": false,
+      "escaped": [],
+      "dialogs": [
+        {
+          "top": 16,
+          "bottom": 374,
+          "width": 844,
+          "fits": true,
+          "scrollable": true,
+          "scrollHeight": 1681
+        }
+      ],
+      "ready": true,
+      "text": "RIANA CIMS\n\nClient Installation Management\n\nAM\n\n© 2026 RIANA Group. All rights reserved. | www.riana.co\n\nInstallation Details\n\nComplete installation information"
+    }
+  ],
+  "errors": [],
+  "fixtureRequests": [
+    "/api/client_assignments",
+    "/api/announcements",
+    "/api/chat/missed-calls",
+    "/api/chat/recordings",
+    "/api/chat/stream"
+  ],
+  "interceptedWrites": []
+}

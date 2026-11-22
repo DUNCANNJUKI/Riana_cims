@@ -1,0 +1,8 @@
+{
+  "passed": true,
+  "checks": [
+    "Concurrent confirmation creates one report and one email/SMS pair; unrelated managers are denied.",
+    "OTP rejection, verified feedback, replay prevention, closure gating and original-link tracking pass against real SQL.",
+    "Signature acceptance stores feedback in the same transaction. No live providers were called."
+  ]
+}

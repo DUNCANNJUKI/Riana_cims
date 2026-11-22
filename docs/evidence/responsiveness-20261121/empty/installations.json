@@ -1,0 +1,67 @@
+{
+  "surface": "installations",
+  "file": "/src/components/installations/InstallationsModule.tsx",
+  "checks": [
+    {
+      "width": 320,
+      "height": 900,
+      "state": "default",
+      "pageOverflow": false,
+      "mainOverflow": false,
+      "escaped": [],
+      "dialogs": [],
+      "popups": [],
+      "ready": true,
+      "text": "RIANA CIMS\nAM\nInstallations Management\n\nTrack and manage client installations and equipment\n\nEquipment Serial Requirements\nAdd Installation\n\nTotal Kiosks\n\n0\n\nDi"
+    },
+    {
+      "width": 1024,
+      "height": 900,
+      "state": "default",
+      "pageOverflow": false,
+      "mainOverflow": false,
+      "escaped": [],
+      "dialogs": [],
+      "popups": [],
+      "ready": true,
+      "text": "OVERVIEW\nDashboard\nMANAGEMENT\nClients\nAssigned Technicians\nWorkload Calendar\nOPERATIONS\nInstallations\nHardware & Inventory\nInstallation Progress\nADMINISTRATION\n"
+    },
+    {
+      "width": 844,
+      "height": 390,
+      "state": "landscape-short",
+      "pageOverflow": false,
+      "mainOverflow": false,
+      "escaped": [],
+      "dialogs": [],
+      "popups": [],
+      "ready": true,
+      "text": "RIANA CIMS\n\nClient Installation Management\n\nAM\nInstallations Management\n\nTrack and manage client installations and equipment\n\nEquipment Serial Requirements\nAdd "
+    },
+    {
+      "width": 320,
+      "height": 480,
+      "state": "portrait-short",
+      "pageOverflow": false,
+      "mainOverflow": false,
+      "escaped": [],
+      "dialogs": [],
+      "popups": [],
+      "ready": true,
+      "text": "RIANA CIMS\nAM\nInstallations Management\n\nTrack and manage client installations and equipment\n\nEquipment Serial Requirements\nAdd Installation\n\nTotal Kiosks\n\n0\n\nDi"
+    }
+  ],
+  "errors": [],
+  "fixtureRequests": [
+    "/api/client_assignments",
+    "/api/installations",
+    "/api/announcements",
+    "/api/chat/users",
+    "/api/chat/missed-calls",
+    "/api/chat/recordings",
+    "/api/chat/stream",
+    "/api/clients",
+    "/api/user_profiles"
+  ],
+  "interceptedWrites": []
+}

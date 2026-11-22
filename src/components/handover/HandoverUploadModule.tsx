@@ -384,7 +384,7 @@ export const HandoverUploadModule = ({ user }: HandoverUploadModuleProps) => {
             </div>
           </div>
 
-          <Table>
+          <Table mobileLayout="cards" aria-label="E-handover records">
             <TableHeader>
               <TableRow>
                 <TableHead>Client</TableHead>
@@ -398,25 +398,25 @@ export const HandoverUploadModule = ({ user }: HandoverUploadModuleProps) => {
             <TableBody>
               {filteredHandovers.map((handover) => (
                 <TableRow key={handover.id}>
-                  <TableCell>
+                  <TableCell mobileLabel="Client">
                     <div className="font-medium">{getClientName(handover.client_id)}</div>
                   </TableCell>
-                  <TableCell>{handover.branch_label || getBranchLabel(handover)}</TableCell>
-                  <TableCell>{handover.department_label || getDepartmentLabel(handover)}</TableCell>
-                  <TableCell>
+                  <TableCell mobileLabel="Branch">{handover.branch_label || getBranchLabel(handover)}</TableCell>
+                  <TableCell mobileLabel="Department">{handover.department_label || getDepartmentLabel(handover)}</TableCell>
+                  <TableCell mobileLabel="Document">
                     <div className="flex items-center gap-2">
-                      <FileText className="h-4 w-4 text-muted-foreground" />
+                      <FileText className="h-4 w-4 shrink-0 text-muted-foreground" />
                       <span className="text-sm">{handover.file_name || handover.file_path.split('/').pop()}</span>
                     </div>
                   </TableCell>
-                  <TableCell>
+                  <TableCell mobileLabel="Upload date">
                     <div className="flex items-center gap-1">
                       <Calendar className="h-3 w-3" />
                       {new Date(handover.upload_date).toLocaleDateString()}
                     </div>
                   </TableCell>
-                  <TableCell>
-                    <div className="flex gap-2">
+                  <TableCell mobileLabel="Actions">
+                    <div className="flex flex-wrap gap-2">
                       {(user.role === 'SuperAdmin' || user.role === 'Admin' || user.role === 'Teamlead') && (
                         <>
                           <Button

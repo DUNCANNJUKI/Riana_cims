@@ -1,5 +1,5 @@
 import { errorDetails } from '@/utils/errorDetails';
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -11,6 +11,7 @@ import {
 import { API_URL } from '@/integrations/apiClient';
 
 interface TrackingData {
+  feedback?: { rating: number | null; comment: string | null; submitted_at: string } | null;
   ticket_number: string;
   title: string;
   category: string;
@@ -62,36 +63,51 @@ export const ClientRequestTracking: React.FC = () => {
   const [data, setData] = useState<TrackingData | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const fetchTracking = async () => {
-    if (!token) {
-      setError('A valid tracking token is required.');
-      setLoading(false);
-      return;
-    }
-    try {
-      setLoading(true);
-      const res = await fetch(`${API_URL}/public/change-requests/track/${token}`);
-      const result = await res.json();
-      if (!res.ok) {
-        setError(result.error || 'Failed to load tracking information.');
-        return;
-      }
-      setError(null);
-      setData({ ...result,
-        client: { client_name: result.client.name, branch_name: result.client.branch },
-        client_representative: result.representative || { name: 'Client representative', phone: '', email: '' },
-        account_manager: result.account_manager || { name: 'Account Manager', email: '' },
-        stages: [{ key: 'current', label: result.current_status, description: result.status_description, current: !result.is_closed, completed: result.is_closed }],
-      });
-    } catch (err: unknown) {
-      setError(errorDetails(err).message || 'Unable to connect to tracking servers.');
-    } finally {
-      setLoading(false);
-    }
-  };
+  const [refreshError, setRefreshError] = useState('');
+  const refreshRef = useRef<() => void>(() => {});
+  const fetchTracking = () => refreshRef.current();
 
   useEffect(() => {
-    fetchTracking();
+    let alive = true;
+    let inFlight = false;
+    let hasData = false;
+    const controller = new AbortController();
+    setLoading(true);
+    setData(null);
+    setError(null);
+    const load = async () => {
+      if (inFlight || !alive) return;
+      if (!token) { setError('A valid tracking token is required.'); setLoading(false); return; }
+      inFlight = true;
+      try {
+        const response = await fetch(API_URL + '/public/change-requests/track/' + encodeURIComponent(token), { cache: 'no-store', signal: controller.signal });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || 'Unable to refresh request progress.');
+        if (!alive) return;
+        hasData = true;
+        setData({ ...result,
+          client: { client_name: result.client.name || result.client.client_name, branch_name: result.client.branch || result.client.branch_name },
+          client_representative: result.representative || { name: 'Client representative', phone: '', email: '' },
+          account_manager: result.account_manager || { name: 'Account Manager', email: '' },
+          stages: result.stages?.length ? result.stages : [{ key: 'current', label: result.current_status, description: result.status_description, current: !result.is_closed, completed: result.is_closed }],
+        });
+        setError(null);
+        setRefreshError('');
+      } catch (reason) {
+        if (!alive || controller.signal.aborted) return;
+        const message = errorDetails(reason).message || 'Unable to refresh request progress.';
+        if (hasData) setRefreshError(message); else setError(message);
+      } finally {
+        inFlight = false;
+        if (alive) setLoading(false);
+      }
+    };
+    refreshRef.current = () => { void load(); };
+    const onVisible = () => { if (document.visibilityState === 'visible') void load(); };
+    void load();
+    const timer = window.setInterval(onVisible, 5000);
+    document.addEventListener('visibilitychange', onVisible);
+    return () => { alive = false; controller.abort(); window.clearInterval(timer); document.removeEventListener('visibilitychange', onVisible); refreshRef.current = () => {}; };
   }, [token]);
 
   if (loading) {
@@ -142,6 +158,12 @@ export const ClientRequestTracking: React.FC = () => {
             <RefreshCw className="w-4 h-4 mr-2" /> Refresh Status
           </Button>
         </div>
+
+        <p className="text-xs text-muted-foreground" role="status">{refreshError ? 'Progress updates are temporarily unavailable; retrying automatically. Your last update is still displayed.' : 'Progress updates automatically every 5 seconds while this page is visible.'}</p>
+        {data.feedback && <Card><CardHeader><CardTitle>Implementation feedback recorded</CardTitle></CardHeader><CardContent>
+          {data.feedback.rating != null && <p>Rating: {data.feedback.rating} / 5</p>}
+          {data.feedback.comment && <p className="whitespace-pre-wrap break-words">{data.feedback.comment}</p>}
+        </CardContent></Card>}
 
         {/* Completion Report Action Callout */}
         {data.latest_completion_report && data.latest_completion_report.acceptance_token && (

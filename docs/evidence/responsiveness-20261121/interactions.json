@@ -1,0 +1,11 @@
+[
+  "Touch navigation opens, scrolls, closes at 320x480",
+  "Notifications stay within the short mobile viewport",
+  "Profile menu remains accessible by touch",
+  "Browser-zoom reflow equivalent 100%",
+  "Browser-zoom reflow equivalent 125%",
+  "Browser-zoom reflow equivalent 150%",
+  "Browser-zoom reflow equivalent 200%",
+  "Desktop sidebar collapse/expand preserves content width",
+  "Light/dark theme controls remain accessible"
+]

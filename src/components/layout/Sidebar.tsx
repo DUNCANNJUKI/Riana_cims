@@ -105,7 +105,7 @@ export const Sidebar = ({ user, activeModule, setActiveModule, isMobileOpen, onM
       });
       
       setTimeout(() => {
-        window.open('https://optimus.rianadevelopment.com/auth/login', '_blank');
+        window.open('https://optimusv2.rianadevelopment.com', '_blank');
       }, 1500);
       return;
     }

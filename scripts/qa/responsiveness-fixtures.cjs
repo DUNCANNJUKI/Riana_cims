@@ -1,0 +1,67 @@
+﻿const date = '2026-11-21T12:00:00Z';
+const user = { id: 'qa-user', email: 'alex@example.invalid', name: 'Alexandra Morgan', first_name: 'Alexandra', last_name: 'Morgan', role: 'SuperAdmin', module_roles: { cims: 'SuperAdmin', crms: 'SuperAdmin' }, designation: 'SuperAdmin', department_id: null, subsidiary_id: 'qa-subsidiary', is_active: true, created_at: date, status: 'active', permissions: [] };
+const client = { id: 'qa-client', name: 'Northside Technology Centre', client_name: 'Northside Technology Centre', branch: 'Westlands', contact_person_name: 'Alexandra Morgan', contact_person_phone_masked: '+254 *** *** 321', contact_phone_masked: '+254 *** *** 321', contact_person_email: 'alex@example.invalid', contact_email: 'alex@example.invalid', contract_type: 'AMC', industry_classification: 'Technology services', start_date: '2026-10-01', current_vendor: 'Example vendor', subsidiary_id: 'qa-subsidiary', created_at: date };
+const installation = { id: 'qa-installation', client_id: client.id, client_name: client.client_name, installation_date: '2026-11-10', start_date: '2026-11-10', installation_start_date: '2026-11-10', status: 'in_progress', installation_type: 'Software', kiosk_type: 'Information kiosk', screen_with_size: '24 inch', serial_number: 'QA-SERIAL-123', software_type: 'ERP', software_name: 'Example enterprise software', user_id: user.id, created_at: date, equipment_configuration: [] };
+const request = { id: 'qa-request', ticket_number: 'CR-2026-00123', request_title: 'Review operational reporting requirements', title: 'Review operational reporting requirements', change_description: 'Detailed reporting and analytics changes with a long reference for responsive validation.', request_description: 'A detailed synthetic request used only for responsive validation.', client_id: client.id, client, priority: 'high', status: 'in_progress', request_source: 'email', modules_affected: ['Reporting', 'Analytics'], request_date: date, date_requested: date, estimated_completion_date: date, commencement_date: date, created_at: date, updated_at: date, requested_by: user.id, created_by: user.id, assigned_developer_id: user.id, assigned_developer: user, category: 'enhancement' };
+const audit = { id: 'qa-audit', event_uuid: 'qa-audit', user_id: user.id, action: 'login_success', module: 'Auth', entity_type: 'session', entity_id: 'qa-session', description: 'Synthetic activity description for responsive layout testing.', status: 'success', severity: 'info', created_at: date, user, profiles: user };
+const company = { id: 'qa-company', company_name: 'RIANA Group', logo_path: '/Riana_logo.png', tagline: 'Innovative Technology Solutions', primary_color: '#087f92', timezone: 'Africa/Nairobi', contract_types: ['AMC','WARRANTY','LEASE','POC'], contract_durations: {}, maintenance_enabled: false };
+const representative = { name: 'Alexandra Morgan', phone: '+254700000000', email: 'alex@example.invalid' };
+
+function fixture(url, state = 'populated') {
+  const p = new URL(url).pathname.replace(/^\/api/, '');
+  const empty = state === 'empty';
+  const rows = values => empty ? [] : state === 'stress' ? Array.from({length:100}, (_, i) => values.map(value => ({...value, id:i?`${value.id}-${i}`:value.id, ...(value.client_name?{client_name:`${value.client_name} ${'LongClientReference'.repeat(5)}`}:{})}))).flat() : values;
+  if (p === '/time') return { now: date, serverTime: date, timestamp: date };
+  if (p === '/auth/me') return { user };
+  if (p.includes('maintenance')) return { maintenance: { enabled: false, message: 'Scheduled maintenance', allow_api_access: false } };
+  if (p === '/public/company-branding') return company;
+  if (p === '/companies') return [company];
+  if (p.includes('/auth/2fa-settings')) return { enabled: false, method: 'totp', methods: ['totp'], settings: {} };
+  if (p.includes('/auth/passkeys')) return [];
+  if (p.includes('/auth/sessions')) return [];
+  if (p.includes('/communication/preferences')) return { preferences: {} };
+  if (p.includes('/chat/calls/active')) return { activeCall: null };
+  if (p.includes('/chat/users')) return rows([{ ...user, id: 'qa-colleague', first_name: 'Jamie', role: 'Developer', is_online: true }]);
+  if (p.includes('/chat/')) return [];
+  if (p.includes('/notifications/summary')) return { notifications: [], unreadCount: 0, total: 0 };
+  if (p.includes('/dashboard/stats')) return { totalClients: 12000, totalInstallations: 25000, totalUsers: 3000, recentLogs: rows([audit]), total: 100, pending: 20, in_progress: 35, completed: 45, byStatus: [], byPriority: [] };
+  if (p === '/clients' || p === '/crms/clients') return rows([client]);
+  if (/\/clients\/[^/]+\/scope$/.test(p)) return { branches: rows([{ id: 'qa-branch', client_id: client.id, branch_name: 'Westlands' }]), departments: rows([{ id: 'qa-department', branch_id: 'qa-branch', department_name: 'Operations' }]) };
+  if (p.includes('/branches')) return rows([{ id: 'qa-branch', client_id: client.id, branch_name: 'Westlands', department_count: 1, installation_count: 1 }]);
+  if (p.includes('/departments')) return rows([{ id: 'qa-department', branch_id: 'qa-branch', department_name: 'Operations' }]);
+  if (p === '/subsidiaries') return [{ id: 'qa-subsidiary', subsidiary_name: 'Example subsidiary' }];
+  if (p === '/user_profiles' || p === '/crms/profiles') return rows([user, { ...user, id: 'qa-technician', role: 'User', first_name: 'Jamie' }]);
+  if (p.startsWith('/user_profiles/')) return user;
+  if (p === '/installations') return rows([installation]);
+  if (p === '/client_assignments') return [];
+  if (p.includes('performance_scores')) return [];
+  if (p === '/installation_feedback' || p === '/feedback_questions' || p === '/admin/feedback_questions') return [];
+  if (p === '/admin/audit-logs' || p.includes('/me/activity-logs')) return { rows: rows([audit]) };
+  if (p === '/uploads' || p === '/handover_uploads') return rows([{id:'qa-handover',client_id:client.id,installation_id:installation.id,client_name:client.client_name,branch_label:'Westlands',department_label:'Operations and technical support',file_name:'Signed_implementation_handover_document_with_long_reference_2026.pdf',file_path:'/synthetic-document.pdf',upload_date:date,is_signed:true}]);
+  if (p === '/announcements') return [];
+  if (p.includes('/hardware/catalog')) return { variants: [], models: [], locations: [], subsidiaries: [{ id: 'qa-subsidiary', subsidiary_name: 'Example subsidiary' }], statuses: ['in_stock','installed'], conditions: ['new','good'], policy: { issuance_approved: 0, field_approval_required: 1 } };
+  if (p.includes('/hardware/equipment-requirements')) return { subsidiaries: [] };
+  if (p.startsWith('/hardware/alerts')) return { rows: [], assets: [], alerts: [], low_stock: [], warranty: [], maintenance: [] };
+  if (p.startsWith('/hardware/')) return { rows: [], total: 0, summary: { counts: {}, total: 0 }, counts: {}, status_totals: {}, by_status: {}, statuses: [], groups: [] };
+  if (p.includes('/scheduling/catalog')) return { subsidiaries: [{ id:'qa-subsidiary',subsidiary_name:'Example subsidiary' }], resources: [], branches: [] };
+  if (p.includes('/scheduling/policy')) return { configuration: { time_zone: 'Africa/Nairobi' }, overrides: {}, version: 1, scope_key:'qa' };
+  if (p.includes('/scheduling/')) return { rows: [], policy: {}, total: 0 };
+  if (p.includes('/admin/email-configuration')) return { configuration: {}, status: {} };
+  if (p.includes('/budgets')) return [];
+  if (p.includes('/crms/change_requests/')) return state === 'implementation-ready' ? { ...request, status:'ready_for_completion_report', account_manager_id:user.id } : request;
+  if (p === '/crms/change_requests') {
+    const clientRequest = { ...request, is_client_request: true, client_name: client.client_name, client_representative_name: representative.name, client_representative_phone: representative.phone };
+    return rows(state === 'developer' ? ['in_progress', 'pending_approval', 'approved', 'waiting', 'completed', 'awaiting_client_acceptance', 'client_accepted'].map((status, i) => ({ ...clientRequest, id: i ? `qa-request-${i}` : request.id, ticket_number: `CR-2026-0012${i}`, status })) : [clientRequest]);
+  }
+  if (p === '/crms/invitations') return rows([{ id: 'qa-invitation', request_reference: 'INV-2026-00123', client_name: client.client_name, branch_name: 'Westlands', client_representative_name: representative.name, client_representative_phone: representative.phone, invitation_token: 'synthetic-layout-token', status: 'draft', created_at: date, expires_at: '2027-01-01T00:00:00Z' }]);
+  if (p === '/crms/audit_logs') return rows([{ ...audit, action: 'created', change_request: request }]);
+  if (p.includes('/crms/client-request')) return { rows: [], requests: [], invitations: [], total: 0 };
+  if (p.includes('/crms/')) return [];
+  if (p.includes('/public/hardware/')) return { asset: { serial_number: 'RIANA-2026-000123', model_number: 'QA-MODEL', family: 'Network equipment', nickname: 'Example switch', status: 'installed' }, history: [{ action: 'installed', occurred_at: date }] };
+  if (p.includes('/public/feedback-links/')) return { client: { client_name: client.client_name, branch: 'Westlands' }, installation: { ...installation }, client_name: client.client_name, installation_id: installation.id, installation_date: date, installation_type: 'Software', equipment_name: 'Example software', questions: [] };
+  if (p.includes('/public/change-requests/invitation/')) return { id: 'qa-invitation', request_reference: 'REQ-2026-00123', status: 'pending', expires_at: '2027-01-01T00:00:00Z', client: { client_name: client.client_name, name: client.client_name }, client_representative: representative, representative, account_manager: representative };
+  if (p.includes('/public/change-requests/review/')) return { id: 'qa-report', report_reference: 'REP-2026-00123', version_number: 1, status: 'sent', client: { name: client.client_name, client_name: client.client_name }, representative, account_manager: representative, request_id: request.id, ticket_number: request.ticket_number, request_title: request.title, request_category: 'enhancement', request_status: 'completed', work_summary: 'Synthetic work summary', changes_made: 'Synthetic completed changes', change_request: request };
+  if (p.includes('/public/change-requests/track/')) return { ...request, client: { client_name: client.client_name }, client_representative: representative, account_manager: representative, current_stage: 'in_progress', stage_index: 1, stages: [{ key: 'submitted', label: 'Submitted', description: 'Request received', completed: true, current: false }, { key: 'in_progress', label: 'In progress', description: 'Development in progress', completed: false, current: true }] };
+  return [];
+}
+module.exports = { user, client, installation, request, company, audit, fixture };

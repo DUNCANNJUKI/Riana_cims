@@ -281,7 +281,7 @@ export const SubsidiaryEscalationManager = ({ user }: { user: User }) => {
   return (
     <Card className="shadow-riana">
       <CardHeader>
-        <div className="flex items-center justify-between">
+        <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <CardTitle className="flex items-center gap-2"><Building2 className="h-5 w-5" /> Subsidiary Configuration</CardTitle>
             <CardDescription>Configure escalation contacts and each subsidiary's E-handover equipment list.</CardDescription>

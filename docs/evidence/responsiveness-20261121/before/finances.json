@@ -1,0 +1,49 @@
+{
+  "surface": "finances",
+  "file": "/src/components/finances/TechnicianFinancesModule.tsx",
+  "checks": [
+    {
+      "width": 320,
+      "height": 900,
+      "state": "default",
+      "pageOverflow": false,
+      "mainOverflow": false,
+      "escaped": [],
+      "dialogs": [],
+      "ready": true,
+      "text": "RIANA CIMS\nAM\nInstallation Finances\n\nTechnician expenses by installation, branch, and client\n\nAll time\nCreate budget\nInstallation budgets\n\nCurrent and historica"
+    },
+    {
+      "width": 1280,
+      "height": 900,
+      "state": "default",
+      "pageOverflow": false,
+      "mainOverflow": false,
+      "escaped": [],
+      "dialogs": [],
+      "ready": true,
+      "text": "OVERVIEW\nDashboard\nMANAGEMENT\nClients\nAssigned Technicians\nWorkload Calendar\nOPERATIONS\nInstallations\nHardware & Inventory\nInstallation Progress\nADMINISTRATION\n"
+    },
+    {
+      "width": 844,
+      "height": 390,
+      "state": "landscape-short",
+      "pageOverflow": false,
+      "mainOverflow": false,
+      "escaped": [],
+      "dialogs": [],
+      "ready": true,
+      "text": "RIANA CIMS\n\nClient Installation Management\n\nAM\nInstallation Finances\n\nTechnician expenses by installation, branch, and client\n\nAll time\nCreate budget\nInstallati"
+    }
+  ],
+  "errors": [],
+  "fixtureRequests": [
+    "/api/client_assignments",
+    "/api/announcements",
+    "/api/chat/missed-calls",
+    "/api/chat/recordings",
+    "/api/chat/stream",
+    "/api/budgets"
+  ],
+  "interceptedWrites": []
+}

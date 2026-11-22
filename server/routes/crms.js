@@ -15,6 +15,7 @@ const {
   cancelInvitation,
   createOrUpdateCompletionReport,
   sendCompletionReport,
+  confirmImplementation,
   closeChangeRequest,
 } = require('../services/clientChangeRequests');
 
@@ -592,7 +593,14 @@ module.exports = function createCrmsRouter({ pool, jwtSecret }) {
         developerOnly ? [req.params.id, req.user.id] : [req.params.id],
       );
       if (!rows.length) return res.status(404).json({ error: 'Not found' });
-      res.json(formatRequest(rows[0]));
+      const result = formatRequest(rows[0]);
+      if (['SuperAdmin', 'Admin', 'Management'].includes(req.user.role) || String(rows[0].account_manager_id) === String(req.user.id)) {
+        const [acceptances] = await pool.query('SELECT client_representative_name, client_representative_designation, sign_off_method, accepted_at, feedback_rating, feedback_comment, feedback_submitted_at FROM crms_client_acceptances WHERE change_request_id = ? ORDER BY accepted_at DESC LIMIT 1', [req.params.id]);
+        result.client_acceptance = acceptances[0] || null;
+        const [reports] = await pool.query("SELECT id, version_number, status FROM crms_completion_reports WHERE change_request_id = ? AND status <> 'superseded' ORDER BY version_number DESC LIMIT 1", [req.params.id]);
+        result.latest_completion_report = reports[0] || null;
+      }
+      res.json(result);
     } catch (error) { res.status(500).json({ error: error.message }); }
   });
   router.get('/assigned_requests/:developerId', async (req, res) => {
@@ -939,6 +947,15 @@ module.exports = function createCrmsRouter({ pool, jwtSecret }) {
     }
   });
 
+  router.post('/change_requests/:id/confirm-implementation', async (req, res) => {
+    try {
+      const result = await confirmImplementation(pool, { changeRequestId: req.params.id, data: req.body, user: req.user, req });
+      res.status(result.alreadyConfirmed ? 200 : 201).json(result);
+    } catch (error) {
+      res.status(error.status || 500).json({ error: error.status ? error.message : 'Unable to confirm implementation. Please retry or contact your administrator.' });
+    }
+  });
+
   router.get('/completion_reports', async (req, res) => {
     try {
       const requestId = req.query.change_request_id;
@@ -995,6 +1012,7 @@ module.exports = function createCrmsRouter({ pool, jwtSecret }) {
         changeRequestId: req.params.id,
         accountManagerId: req.user.id,
         closureNotes: req.body.closure_notes,
+        user: req.user,
       });
       res.json(result);
     } catch (error) {

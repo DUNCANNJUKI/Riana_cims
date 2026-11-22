@@ -739,7 +739,7 @@ export const InstallationsModule = ({ user }: InstallationsModuleProps) => {
             </div>
           </div>
 
-          <Table>
+          <Table mobileLayout="cards" aria-label="Installation records">
             <TableHeader>
               <TableRow>
                 <TableHead>Client</TableHead>
@@ -754,11 +754,11 @@ export const InstallationsModule = ({ user }: InstallationsModuleProps) => {
             <TableBody>
               {filteredInstallations.map((installation) => (
                 <TableRow key={installation.id}>
-                  <TableCell>
+                  <TableCell mobileLabel="Client">
                     <div className="font-medium">{getClientName(installation.client_id)}</div>
                     <div className="text-sm text-muted-foreground">{getInstallationScopeLabel(installation)}</div>
                   </TableCell>
-                  <TableCell>
+                  <TableCell mobileLabel="Kiosk type">
                     <div>
                       <div className="font-medium">{installation.kiosk_type}</div>
                       <div className="text-sm text-muted-foreground">
@@ -766,7 +766,7 @@ export const InstallationsModule = ({ user }: InstallationsModuleProps) => {
                       </div>
                     </div>
                   </TableCell>
-                  <TableCell>
+                  <TableCell mobileLabel="Equipment">
                     <div className="text-sm">
                       <div>LEDs: {installation.led_count}</div>
                       <div>Tripleplay: {installation.counter_count}</div>
@@ -776,13 +776,13 @@ export const InstallationsModule = ({ user }: InstallationsModuleProps) => {
                       <div>Splitters: {installation.splitters}</div>
                     </div>
                   </TableCell>
-                  <TableCell>
+                  <TableCell mobileLabel="Status">
                     {canManageInstallations ? (
                       <Select 
                         value={installation.status} 
                         onValueChange={(value) => handleStatusChange(installation.id, value)}
                       >
-                        <SelectTrigger className="w-32">
+                        <SelectTrigger className="w-full min-w-0 sm:w-32">
                           <SelectValue>
                             <Badge className={getStatusColor(installation.status)}>
                               {installation.status.replace('_', ' ')}
@@ -802,7 +802,7 @@ export const InstallationsModule = ({ user }: InstallationsModuleProps) => {
                       </Badge>
                     )}
                   </TableCell>
-                  <TableCell>
+                  <TableCell mobileLabel="Assignment">
                     {(() => {
                       const assignment = getInstallationAssignment(installation);
                       return (
@@ -829,7 +829,7 @@ export const InstallationsModule = ({ user }: InstallationsModuleProps) => {
                       );
                     })()}
                   </TableCell>
-                  <TableCell>
+                  <TableCell mobileLabel="Handover">
                     <div className="flex items-center gap-2">
                       {installation.handover_status === 'signed' ? (
                         <Badge className="bg-emerald-500/10 text-emerald-600 border-emerald-500/20">
@@ -848,7 +848,7 @@ export const InstallationsModule = ({ user }: InstallationsModuleProps) => {
                       )}
                     </div>
                   </TableCell>
-                  <TableCell>
+                  <TableCell mobileLabel="Actions">
                     <InstallationActionsMenu
                       installation={installation}
                       user={user}
@@ -876,7 +876,7 @@ export const InstallationsModule = ({ user }: InstallationsModuleProps) => {
           )}
           
           {/* Items Counter */}
-          <div className="mt-4 pt-4 border-t flex items-center justify-between text-sm text-muted-foreground">
+          <div className="mt-4 pt-4 border-t flex flex-wrap items-center justify-between gap-2 text-sm text-muted-foreground">
             <span>
               Showing {filteredInstallations.length} of {installations.length} installations
             </span>

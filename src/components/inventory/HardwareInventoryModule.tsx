@@ -1455,7 +1455,7 @@ export function HardwareInventoryModule({ user }: { user: User }) {
                     empty="All Assets"
                   />
                 )}
-                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
                   <div className="space-y-1.5">
                     <Label htmlFor="hw-search">Serial, Model or Asset ID</Label>
                     <div className="relative">
@@ -1531,7 +1531,7 @@ export function HardwareInventoryModule({ user }: { user: User }) {
                 {advanced && (
                   <div
                     id={`hardware-advanced-${view}`}
-                    className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 border-b pb-4"
+                    className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4 border-b pb-4"
                   >
                     <HardwareSelect
                       label="Model Filter"

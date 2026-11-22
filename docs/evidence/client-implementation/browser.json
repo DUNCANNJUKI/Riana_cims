@@ -1,0 +1,11 @@
+{
+  "passed": true,
+  "checks": [
+    "Responsible manager button opens the report dialog, confirms implementation and exposes delivery retry.",
+    "Unrelated Sales account does not receive the confirmation action.",
+    "Client OTP confirmation submits and displays feedback with the verified acceptance.",
+    "Client signature confirmation includes feedback.",
+    "Tracking refreshes automatically, displays sign-off/feedback, and retains the last good state on refresh failure.",
+    "The original submitted request link opens its lifecycle tracking view."
+  ]
+}

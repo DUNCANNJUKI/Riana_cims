@@ -464,7 +464,7 @@ export default function NewRequest() {
             </CardContent>
           </Card>
 
-          <div className="flex justify-end gap-3">
+          <div className="flex flex-col gap-3 sm:flex-row sm:justify-end">
             <Button type="button" variant="outline" onClick={(event) => handleSubmit(false, event)} disabled={isSubmitting}>
               <Save className="mr-2 h-4 w-4" />
               Save as Draft

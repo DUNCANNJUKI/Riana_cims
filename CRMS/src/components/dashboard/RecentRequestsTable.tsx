@@ -28,7 +28,7 @@ export function RecentRequestsTable() {
   if (isLoading) {
     return (
       <div className="rounded-xl border bg-card">
-        <div className="flex items-center justify-between border-b px-6 py-4">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b px-4 py-4 sm:px-6">
           <div>
             <h3 className="font-semibold">Recent Change Requests</h3>
             <p className="text-sm text-muted-foreground">Latest requests requiring attention</p>
@@ -43,7 +43,7 @@ export function RecentRequestsTable() {
 
   return (
     <div className="rounded-xl border bg-card">
-      <div className="flex items-center justify-between border-b px-6 py-4">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b px-4 py-4 sm:px-6">
         <div>
           <h3 className="font-semibold">Recent Change Requests</h3>
           <p className="text-sm text-muted-foreground">Latest requests requiring attention</p>
@@ -55,50 +55,50 @@ export function RecentRequestsTable() {
           </Button>
         </Link>
       </div>
-      <Table>
+      <Table mobileLayout="cards" aria-label="Recent change requests">
         <TableHeader>
           <TableRow className="hover:bg-transparent">
             <TableHead className="w-[120px]">Ticket #</TableHead>
             <TableHead>Client</TableHead>
-            <TableHead className="hidden md:table-cell">Description</TableHead>
+            <TableHead >Description</TableHead>
             <TableHead>Priority</TableHead>
             <TableHead>Status</TableHead>
-            <TableHead className="hidden lg:table-cell">Date</TableHead>
-            <TableHead className="w-[50px]"></TableHead>
+            <TableHead >Date</TableHead>
+            <TableHead className="w-[50px]"><span className="sr-only">Actions</span></TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
           {recentRequests.map((request) => (
             <TableRow key={request.id} className="table-row-interactive">
-              <TableCell className="font-medium text-primary">
+              <TableCell mobileLabel="Ticket #" className="font-medium text-primary">
                 <Link to={`/developers/requests/${request.id}`} className="hover:underline">
                   {request.ticket_number}
                 </Link>
               </TableCell>
-              <TableCell>
+              <TableCell mobileLabel="Client">
                 <div>
                   <p className="font-medium">{request.client?.name || 'Unknown'}</p>
                   <p className="text-xs text-muted-foreground">{request.client?.branch}</p>
                 </div>
               </TableCell>
-              <TableCell className="hidden md:table-cell max-w-[300px]">
-                <p className="truncate text-sm text-muted-foreground">
+              <TableCell mobileLabel="Description" className="max-w-[300px]">
+                <p className="whitespace-normal break-words text-sm text-muted-foreground">
                   {request.change_description}
                 </p>
               </TableCell>
-              <TableCell>
+              <TableCell mobileLabel="Priority">
                 <PriorityBadge priority={request.priority} />
               </TableCell>
-              <TableCell>
+              <TableCell mobileLabel="Status">
                 <StatusBadge status={request.status} />
               </TableCell>
-              <TableCell className="hidden lg:table-cell text-muted-foreground">
+              <TableCell mobileLabel="Date" className="text-muted-foreground">
                 {format(new Date(request.date_requested), 'MMM d, yyyy')}
               </TableCell>
-              <TableCell>
+              <TableCell mobileLabel="Actions">
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
-                    <Button variant="ghost" size="icon" className="h-8 w-8">
+                    <Button variant="ghost" size="icon" className="h-8 w-8" aria-label={`Actions for ${request.ticket_number}`}>
                       <MoreHorizontal className="h-4 w-4" />
                     </Button>
                   </DropdownMenuTrigger>

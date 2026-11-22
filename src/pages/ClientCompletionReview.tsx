@@ -57,6 +57,9 @@ interface ReportDetails {
   };
   acceptance?: {
     accepted_at: string;
+    feedback_rating?: number | null;
+    feedback_comment?: string | null;
+    feedback_submitted_at?: string | null;
     sign_off_method: string;
     client_representative_name: string;
     client_representative_designation: string;
@@ -77,6 +80,8 @@ export const ClientCompletionReview: React.FC = () => {
   const [repName, setRepName] = useState('');
   const [repDesignation, setRepDesignation] = useState('');
   const [authorityDeclaration, setAuthorityDeclaration] = useState(false);
+  const [feedbackRating, setFeedbackRating] = useState('');
+  const [feedbackComment, setFeedbackComment] = useState('');
 
   // OTP State
   const [otpRequested, setOtpRequested] = useState(false);
@@ -183,6 +188,7 @@ export const ClientCompletionReview: React.FC = () => {
           representativeName: repName.trim(),
           designation: repDesignation.trim(),
           declaration_confirmed: authorityDeclaration,
+          feedback: { rating: feedbackRating ? Number(feedbackRating) : null, comment: feedbackComment.trim() },
         }),
       });
       const data = await res.json();
@@ -248,6 +254,7 @@ export const ClientCompletionReview: React.FC = () => {
           representativeName: repName.trim(),
           designation: repDesignation.trim(),
           declaration_confirmed: authorityDeclaration,
+          feedback: { rating: feedbackRating ? Number(feedbackRating) : null, comment: feedbackComment.trim() },
         }),
       });
       const data = await res.json();
@@ -395,6 +402,10 @@ export const ClientCompletionReview: React.FC = () => {
                   <span className="uppercase font-mono text-xs">{report.acceptance.sign_off_method}</span> on{' '}
                   {new Date(report.acceptance.accepted_at).toLocaleString()}.
                 </p>
+                {report.acceptance.feedback_submitted_at && <div className="mt-2 text-sm">
+                  {report.acceptance.feedback_rating != null && <p>Feedback rating: {report.acceptance.feedback_rating} / 5</p>}
+                  {report.acceptance.feedback_comment && <p className="whitespace-pre-wrap break-words">{report.acceptance.feedback_comment}</p>}
+                </div>}
               </div>
             </div>
             <Button asChild variant="outline" className="border-emerald-600 text-emerald-700 dark:text-emerald-300">
@@ -599,6 +610,16 @@ export const ClientCompletionReview: React.FC = () => {
           </DialogHeader>
 
           <div className="space-y-4 pt-2">
+            <div className="space-y-2">
+              <Label htmlFor="implementation-feedback-rating">Implementation feedback (optional)</Label>
+              <select id="implementation-feedback-rating" className="h-10 w-full min-w-0 rounded-md border border-input bg-background px-3 text-sm" value={feedbackRating} onChange={event => setFeedbackRating(event.target.value)}>
+                <option value="">Select a rating</option>
+                {[1, 2, 3, 4, 5].map(rating => <option key={rating} value={rating}>{rating} / 5</option>)}
+              </select>
+              <Label htmlFor="implementation-feedback-comment">Feedback and comments</Label>
+              <Textarea id="implementation-feedback-comment" value={feedbackComment} onChange={event => setFeedbackComment(event.target.value)} maxLength={2000} placeholder="Share your feedback about the implemented change" />
+              <p className="text-xs text-muted-foreground">Feedback is saved together with your verified OTP or signature confirmation.</p>
+            </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <Label htmlFor="repName" className="font-semibold text-xs">Full Name of Signatory *</Label>

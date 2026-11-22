@@ -1,0 +1,415 @@
+{
+  "surface": "crms-select-menu",
+  "file": "/CRMS/src/components/ui/select.tsx",
+  "checks": [
+    {
+      "width": 320,
+      "height": 900,
+      "state": "default",
+      "pageOverflow": false,
+      "mainOverflow": false,
+      "escaped": [],
+      "dialogs": [],
+      "popups": [
+        {
+          "top": 0,
+          "bottom": 384,
+          "right": 355.015625,
+          "fits": false
+        },
+        {
+          "top": 112,
+          "bottom": 496,
+          "right": 365.015625,
+          "fits": false
+        }
+      ],
+      "ready": true,
+      "text": "RIANA CIMS\nAM\nOption 1: a detailed synthetic record description\n\n© 2026 RIANA Group. All rights reserved. | www.riana.co\n\nOption 1: a detailed synthetic record "
+    },
+    {
+      "width": 360,
+      "height": 900,
+      "state": "default",
+      "pageOverflow": false,
+      "mainOverflow": false,
+      "escaped": [],
+      "dialogs": [],
+      "popups": [
+        {
+          "top": 0,
+          "bottom": 384,
+          "right": 355.015625,
+          "fits": true
+        },
+        {
+          "top": 112,
+          "bottom": 496,
+          "right": 365.015625,
+          "fits": false
+        }
+      ],
+      "ready": true,
+      "text": "RIANA CIMS\nAM\nOption 1: a detailed synthetic record description\n\n© 2026 RIANA Group. All rights reserved. | www.riana.co\n\nOption 1: a detailed synthetic record "
+    },
+    {
+      "width": 375,
+      "height": 900,
+      "state": "default",
+      "pageOverflow": false,
+      "mainOverflow": false,
+      "escaped": [],
+      "dialogs": [],
+      "popups": [
+        {
+          "top": 0,
+          "bottom": 384,
+          "right": 355.015625,
+          "fits": true
+        },
+        {
+          "top": 112,
+          "bottom": 496,
+          "right": 365.015625,
+          "fits": true
+        }
+      ],
+      "ready": true,
+      "text": "RIANA CIMS\nAM\nOption 1: a detailed synthetic record description\n\n© 2026 RIANA Group. All rights reserved. | www.riana.co\n\nOption 1: a detailed synthetic record "
+    },
+    {
+      "width": 390,
+      "height": 900,
+      "state": "default",
+      "pageOverflow": false,
+      "mainOverflow": false,
+      "escaped": [],
+      "dialogs": [],
+      "popups": [
+        {
+          "top": 0,
+          "bottom": 384,
+          "right": 355.015625,
+          "fits": true
+        },
+        {
+          "top": 112,
+          "bottom": 496,
+          "right": 367.015625,
+          "fits": true
+        }
+      ],
+      "ready": true,
+      "text": "RIANA CIMS\nAM\nOption 1: a detailed synthetic record description\n\n© 2026 RIANA Group. All rights reserved. | www.riana.co\n\nOption 1: a detailed synthetic record "
+    },
+    {
+      "width": 414,
+      "height": 900,
+      "state": "default",
+      "pageOverflow": false,
+      "mainOverflow": false,
+      "escaped": [],
+      "dialogs": [],
+      "popups": [
+        {
+          "top": 0,
+          "bottom": 384,
+          "right": 355.015625,
+          "fits": true
+        },
+        {
+          "top": 112,
+          "bottom": 496,
+          "right": 389,
+          "fits": true
+        }
+      ],
+      "ready": true,
+      "text": "RIANA CIMS\nAM\nOption 1: a detailed synthetic record description\n\n© 2026 RIANA Group. All rights reserved. | www.riana.co\n\nOption 1: a detailed synthetic record "
+    },
+    {
+      "width": 430,
+      "height": 900,
+      "state": "default",
+      "pageOverflow": false,
+      "mainOverflow": false,
+      "escaped": [],
+      "dialogs": [],
+      "popups": [
+        {
+          "top": 0,
+          "bottom": 384,
+          "right": 355.015625,
+          "fits": true
+        },
+        {
+          "top": 112,
+          "bottom": 496,
+          "right": 405,
+          "fits": true
+        }
+      ],
+      "ready": true,
+      "text": "RIANA CIMS\n\nClient Installation Management\n\nAM\nOption 1: a detailed synthetic record description\n\n© 2026 RIANA Group. All rights reserved. | www.riana.co\n\nOptio"
+    },
+    {
+      "width": 600,
+      "height": 900,
+      "state": "default",
+      "pageOverflow": false,
+      "mainOverflow": false,
+      "escaped": [],
+      "dialogs": [],
+      "popups": [
+        {
+          "top": 0,
+          "bottom": 384,
+          "right": 355.015625,
+          "fits": true
+        },
+        {
+          "top": 112,
+          "bottom": 496,
+          "right": 575,
+          "fits": true
+        }
+      ],
+      "ready": true,
+      "text": "RIANA CIMS\n\nClient Installation Management\n\nAM\nOption 1: a detailed synthetic record description\n\n© 2026 RIANA Group. All rights reserved. | www.riana.co\n\nOptio"
+    },
+    {
+      "width": 768,
+      "height": 900,
+      "state": "default",
+      "pageOverflow": false,
+      "mainOverflow": false,
+      "escaped": [],
+      "dialogs": [],
+      "popups": [
+        {
+          "top": 0,
+          "bottom": 384,
+          "right": 355.015625,
+          "fits": true
+        },
+        {
+          "top": 108,
+          "bottom": 492,
+          "right": 743,
+          "fits": true
+        }
+      ],
+      "ready": true,
+      "text": "RIANA CIMS\n\nClient Installation Management\n\nAM\nOption 1: a detailed synthetic record description\n\n© 2026 RIANA Group. All rights reserved. | www.riana.co\n\nOptio"
+    },
+    {
+      "width": 820,
+      "height": 900,
+      "state": "default",
+      "pageOverflow": false,
+      "mainOverflow": false,
+      "escaped": [],
+      "dialogs": [],
+      "popups": [
+        {
+          "top": 0,
+          "bottom": 384,
+          "right": 355.015625,
+          "fits": true
+        },
+        {
+          "top": 124,
+          "bottom": 508,
+          "right": 787,
+          "fits": true
+        }
+      ],
+      "ready": true,
+      "text": "RIANA CIMS\n\nClient Installation Management\n\nAM\nOption 1: a detailed synthetic record description\n\n© 2026 RIANA Group. All rights reserved. | www.riana.co\n\nOptio"
+    },
+    {
+      "width": 1024,
+      "height": 900,
+      "state": "default",
+      "pageOverflow": false,
+      "mainOverflow": false,
+      "escaped": [],
+      "dialogs": [],
+      "popups": [
+        {
+          "top": 0,
+          "bottom": 384,
+          "right": 355.015625,
+          "fits": true
+        },
+        {
+          "top": 124,
+          "bottom": 508,
+          "right": 787,
+          "fits": true
+        }
+      ],
+      "ready": true,
+      "text": "OVERVIEW\nDashboard\nMANAGEMENT\nClients\nAssigned Technicians\nWorkload Calendar\nOPERATIONS\nInstallations\nHardware & Inventory\nInstallation Progress\nADMINISTRATION\n"
+    },
+    {
+      "width": 1280,
+      "height": 900,
+      "state": "default",
+      "pageOverflow": false,
+      "mainOverflow": false,
+      "escaped": [],
+      "dialogs": [],
+      "popups": [
+        {
+          "top": 0,
+          "bottom": 384,
+          "right": 355.015625,
+          "fits": true
+        },
+        {
+          "top": 124,
+          "bottom": 508,
+          "right": 962,
+          "fits": true
+        }
+      ],
+      "ready": true,
+      "text": "OVERVIEW\nDashboard\nMANAGEMENT\nClients\nAssigned Technicians\nWorkload Calendar\nOPERATIONS\nInstallations\nHardware & Inventory\nInstallation Progress\nADMINISTRATION\n"
+    },
+    {
+      "width": 1366,
+      "height": 900,
+      "state": "default",
+      "pageOverflow": false,
+      "mainOverflow": false,
+      "escaped": [],
+      "dialogs": [],
+      "popups": [
+        {
+          "top": 0,
+          "bottom": 384,
+          "right": 381.03125,
+          "fits": true
+        },
+        {
+          "top": 132,
+          "bottom": 516,
+          "right": 1325,
+          "fits": true
+        }
+      ],
+      "ready": true,
+      "text": "OVERVIEW\nDashboard\nMANAGEMENT\nClients\nAssigned Technicians\nWorkload Calendar\nOPERATIONS\nInstallations\nHardware & Inventory\nInstallation Progress\nADMINISTRATION\n"
+    },
+    {
+      "width": 1440,
+      "height": 900,
+      "state": "default",
+      "pageOverflow": false,
+      "mainOverflow": false,
+      "escaped": [],
+      "dialogs": [],
+      "popups": [
+        {
+          "top": 0,
+          "bottom": 384,
+          "right": 381.03125,
+          "fits": true
+        },
+        {
+          "top": 132,
+          "bottom": 516,
+          "right": 1399,
+          "fits": true
+        }
+      ],
+      "ready": true,
+      "text": "OVERVIEW\nDashboard\nMANAGEMENT\nClients\nAssigned Technicians\nWorkload Calendar\nOPERATIONS\nInstallations\nHardware & Inventory\nInstallation Progress\nADMINISTRATION\n"
+    },
+    {
+      "width": 1920,
+      "height": 900,
+      "state": "default",
+      "pageOverflow": false,
+      "mainOverflow": false,
+      "escaped": [],
+      "dialogs": [],
+      "popups": [
+        {
+          "top": 0,
+          "bottom": 384,
+          "right": 381.03125,
+          "fits": true
+        },
+        {
+          "top": 132,
+          "bottom": 516,
+          "right": 1879,
+          "fits": true
+        }
+      ],
+      "ready": true,
+      "text": "OVERVIEW\nDashboard\nMANAGEMENT\nClients\nAssigned Technicians\nWorkload Calendar\nOPERATIONS\nInstallations\nHardware & Inventory\nInstallation Progress\nADMINISTRATION\n"
+    },
+    {
+      "width": 844,
+      "height": 390,
+      "state": "landscape-short",
+      "pageOverflow": false,
+      "mainOverflow": false,
+      "escaped": [],
+      "dialogs": [],
+      "popups": [
+        {
+          "top": 0,
+          "bottom": 384,
+          "right": 381.03125,
+          "fits": true
+        },
+        {
+          "top": 132,
+          "bottom": 516,
+          "right": 785,
+          "fits": false
+        }
+      ],
+      "ready": true,
+      "text": "RIANA CIMS\n\nClient Installation Management\n\nAM\nOption 1: a detailed synthetic record description\n\n© 2026 RIANA Group. All rights reserved. | www.riana.co\n\nOptio"
+    },
+    {
+      "width": 320,
+      "height": 480,
+      "state": "portrait-short",
+      "pageOverflow": false,
+      "mainOverflow": false,
+      "escaped": [],
+      "dialogs": [],
+      "popups": [
+        {
+          "top": 0,
+          "bottom": 384,
+          "right": 381.03125,
+          "fits": false
+        },
+        {
+          "top": 124,
+          "bottom": 508,
+          "right": 811,
+          "fits": false
+        }
+      ],
+      "ready": true,
+      "text": "RIANA CIMS\nAM\nOption 1: a detailed synthetic record description\n\n© 2026 RIANA Group. All rights reserved. | www.riana.co\n\nOption 1: a detailed synthetic record "
+    }
+  ],
+  "errors": [],
+  "fixtureRequests": [
+    "/api/client_assignments",
+    "/api/announcements",
+    "/api/chat/missed-calls",
+    "/api/chat/recordings",
+    "/api/chat/stream"
+  ],
+  "interceptedWrites": []
+}

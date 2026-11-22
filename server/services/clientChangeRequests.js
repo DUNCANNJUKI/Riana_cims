@@ -18,6 +18,28 @@ const html = (parts, ...values) => parts.reduce((result, part, index) => result 
 
 const generateSecureToken = () => crypto.randomBytes(32).toString('hex');
 
+const assertResponsibleManager = (request, user) => {
+  if (!user?.id || (!['SuperAdmin', 'Admin', 'Management'].includes(user.role)
+    && String(request.account_manager_id || '') !== String(user.id))) {
+    throw Object.assign(new Error('Only the responsible Account Manager or an administrator can confirm implementation.'), { status: 403 });
+  }
+};
+
+const normalizeClientFeedback = (feedback = {}) => {
+  if (!feedback || typeof feedback !== 'object' || Array.isArray(feedback)) throw Object.assign(new Error('Invalid client feedback.'), { status: 400 });
+  const rating = feedback.rating === undefined || feedback.rating === null || feedback.rating === '' ? null : feedback.rating;
+  if (rating !== null && (!Number.isInteger(rating) || rating < 1 || rating > 5)) throw Object.assign(new Error('Feedback rating must be an integer from 1 to 5.'), { status: 400 });
+  if (feedback.comment != null && typeof feedback.comment !== 'string') throw Object.assign(new Error('Feedback comment must be text.'), { status: 400 });
+  const comment = (feedback.comment || '').trim();
+  if (comment.length > 2000) throw Object.assign(new Error('Feedback comment cannot exceed 2000 characters.'), { status: 400 });
+  return { rating, comment };
+};
+
+const saveClientFeedback = async (connection, acceptanceId, feedback) => {
+  if (feedback.rating === null && !feedback.comment) return;
+  await connection.query('UPDATE crms_client_acceptances SET feedback_rating = ?, feedback_comment = ?, feedback_submitted_at = NOW() WHERE id = ?', [feedback.rating, feedback.comment || null, acceptanceId]);
+};
+
 const generateReference = (prefix = 'CR') => {
   const year = new Date().getFullYear();
   const random = crypto.randomInt(10000, 99999);
@@ -709,7 +731,7 @@ const submitClientChangeRequest = async (pool, { token, data, attachments = [], 
         notificationType: 'client_change_request_received',
         clientName: invitation.client_name,
         requestDescription: `Change Request Submission Confirmation (${ticketNumber})`,
-        text: `Hello ${invitation.client_representative_name},\n\nThank you for submitting your Change Request for ${invitation.client_name}.\n\nOfficial Reference: ${ticketNumber}\nSubmission Date: ${new Date().toLocaleDateString('en-GB')}\n\nYour request has been received and entered our internal technical and commercial assessment workflow. You will receive progress updates and a formal completion report once implemented.\n\nRIANA Technologies`,
+        text: `Hello ${invitation.client_representative_name},\n\nThank you for submitting your Change Request for ${invitation.client_name}.\n\nOfficial Reference: ${ticketNumber}\nSubmission Date: ${new Date().toLocaleDateString('en-GB')}\n\nYour request has been received and entered our internal technical and commercial assessment workflow. Track progress through implementation, confirmation and feedback: ${applicationUrl}/change-request/track/${encodeURIComponent(token)}. You will receive a formal completion report once implemented.\n\nRIANA Technologies`,
         html: html`
           <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 600px; margin: 0 auto; background-color: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden;">
             <div style="background-color: #0f766e; padding: 24px; text-align: center; color: #ffffff;">
@@ -778,6 +800,8 @@ const createOrUpdateCompletionReport = async (pool, {
   );
   if (!requests.length) throw Object.assign(new Error('Change request not found.'), { status: 404 });
   const request = requests[0];
+
+  if (user && request.account_manager_id) assertResponsibleManager(request, user);
 
   const summary = String(data.summary_of_change || '').trim();
   const solution = String(data.implemented_solution || '').trim();
@@ -864,16 +888,51 @@ const createOrUpdateCompletionReport = async (pool, {
   };
 };
 
+const confirmImplementation = async (pool, { changeRequestId, data = {}, user, req }) => {
+  const connection = await pool.getConnection();
+  let report;
+  let responsibleId;
+  try {
+    await connection.beginTransaction();
+    const [requests] = await connection.query('SELECT * FROM crms_change_requests WHERE id = ? LIMIT 1 FOR UPDATE', [changeRequestId]);
+    if (!requests.length) throw Object.assign(new Error('Change request not found.'), { status: 404 });
+    const request = requests[0];
+    assertResponsibleManager(request, user);
+    if (!request.account_manager_id) throw Object.assign(new Error('Assign the responsible Account Manager before confirming implementation.'), { status: 409 });
+    responsibleId = request.account_manager_id;
+    if (['awaiting_client_acceptance', 'client_accepted', 'closed_client_accepted'].includes(request.status)) {
+      const [existing] = await connection.query("SELECT id, version_number, status FROM crms_completion_reports WHERE change_request_id = ? AND status <> 'superseded' ORDER BY version_number DESC LIMIT 1", [changeRequestId]);
+      await connection.commit();
+      return { ...existing[0], alreadyConfirmed: true, message: 'Implementation has already been confirmed. No duplicate notification was sent.' };
+    }
+    if (!['completed', 'ready_for_completion_report'].includes(request.status)) throw Object.assign(new Error('Development must be completed before implementation can be confirmed.'), { status: 409 });
+    for (const field of ['summary_of_change', 'implemented_solution']) {
+      if (typeof data[field] !== 'string' || !data[field].trim() || data[field].length > 10000) throw Object.assign(new Error('Provide a summary and implemented solution, each no longer than 10000 characters.'), { status: 400 });
+    }
+    report = await createOrUpdateCompletionReport(connection, { changeRequestId, accountManagerId: responsibleId, data, isDraft: false, user });
+    await connection.query("UPDATE crms_change_requests SET status = 'awaiting_client_acceptance', acceptance_status = 'awaiting_acceptance' WHERE id = ?", [changeRequestId]);
+    await recordCrmsAudit(connection, { requestId: changeRequestId, userId: user.id, action: 'status_changed', actionLabel: 'Implementation Confirmed by Account Manager', previousValue: request.status, newValue: 'awaiting_client_acceptance' });
+    await connection.commit();
+  } catch (error) {
+    await connection.rollback().catch(() => {});
+    throw error;
+  } finally { connection.release(); }
+  const delivery = await sendCompletionReport(pool, report.id, req);
+  return { ...report, account_manager_id: responsibleId, delivery, alreadyConfirmed: false };
+};
+
 const sendCompletionReport = async (pool, reportId, req) => {
   const [rows] = await pool.query(
-    `SELECT r.*, cr.ticket_number, cr.request_title, cr.client_representative_name,
+    `SELECT r.*, cr.ticket_number, cr.request_title, cr.status AS request_status, cr.client_representative_name,
             cr.client_representative_phone, cr.client_representative_email,
             c.client_name, COALESCE(cb.branch_name, c.branch) AS branch_name,
-            u.first_name AS am_first_name, u.last_name AS am_last_name
+            u.first_name AS am_first_name, u.last_name AS am_last_name,
+            i.invitation_token AS tracking_token
      FROM crms_completion_reports r
      JOIN crms_change_requests cr ON cr.id COLLATE utf8mb4_unicode_ci = r.change_request_id COLLATE utf8mb4_unicode_ci
      JOIN clients c ON c.id COLLATE utf8mb4_unicode_ci = cr.client_id COLLATE utf8mb4_unicode_ci
      LEFT JOIN client_branches cb ON cb.id COLLATE utf8mb4_unicode_ci = cr.branch_id COLLATE utf8mb4_unicode_ci
+     LEFT JOIN crms_change_request_invitations i ON i.id COLLATE utf8mb4_unicode_ci = cr.invitation_id COLLATE utf8mb4_unicode_ci
      JOIN user_profiles u ON u.id COLLATE utf8mb4_unicode_ci = r.account_manager_id COLLATE utf8mb4_unicode_ci
      WHERE r.id = ? LIMIT 1`,
     [reportId],
@@ -882,6 +941,12 @@ const sendCompletionReport = async (pool, reportId, req) => {
   if (!rows.length) throw Object.assign(new Error('Completion report not found.'), { status: 404 });
   const report = rows[0];
 
+  if (req?.user) assertResponsibleManager(report, req.user);
+  if (!['draft', 'sent'].includes(report.status) || ['client_accepted', 'closed_client_accepted'].includes(report.request_status)) {
+    throw Object.assign(new Error('This report is no longer awaiting client confirmation.'), { status: 409 });
+  }
+  if (new Date(report.token_expires_at).getTime() <= Date.now()) throw Object.assign(new Error('This review link has expired. Prepare a new report before notifying the client.'), { status: 410 });
+
   const clientPhone = report.client_representative_phone;
   const clientEmail = report.client_representative_email;
   const clientName = report.client_representative_name || 'Client Representative';
@@ -889,10 +954,12 @@ const sendCompletionReport = async (pool, reportId, req) => {
 
   const reviewUrl = `${canonicalAppUrl(req).replace(/\/+$/, '')}/change-request/review/${encodeURIComponent(report.acceptance_token)}`;
 
+  const trackingUrl = `${canonicalAppUrl(req).replace(/\/+$/, '')}/change-request/track/${encodeURIComponent(report.tracking_token || report.acceptance_token)}`;
+
   // 1. Send SMS
   let smsStatus = 'failed';
   try {
-    const smsMessage = `RIANA CIMS: Hello ${clientName}, the completion report for Change Request ${report.ticket_number} is ready for your review and acceptance. Please review here: ${reviewUrl}`;
+    const smsMessage = `RIANA CIMS: Hello ${clientName}, Change Request ${report.ticket_number} is complete and implemented. Confirm by OTP or e-signature and share feedback: ${reviewUrl} Track progress: ${trackingUrl}`;
     await sendSms({ phoneNumber: clientPhone, message: smsMessage });
     smsStatus = 'sent';
     await recordDeliveryLog(pool, {
@@ -905,6 +972,7 @@ const sendCompletionReport = async (pool, reportId, req) => {
     });
   } catch (e) {
     console.error('Failed to send completion report SMS:', e.message);
+    await recordDeliveryLog(pool, { eventType: 'completion_report', recipientType: 'client', recipientContact: clientPhone, channel: 'sms', changeRequestId: report.change_request_id, status: 'failed', errorMessage: 'SMS provider did not confirm dispatch.' });
   }
 
   // 2. Send Email
@@ -918,7 +986,7 @@ const sendCompletionReport = async (pool, reportId, req) => {
       requestDescription: `Change Request Completion Report (${report.ticket_number})`,
       actionUrl: reviewUrl,
       actionText: 'Review and Accept Delivered Work',
-      text: `Hello ${clientName},\n\nThe implementation for your Change Request (${report.ticket_number}: ${report.request_title}) is complete.\n\nAccount Manager: ${amName}\nClient: ${report.client_name} (${report.branch_name})\n\nPlease access the Completion Review Portal to review the delivered solution and provide formal electronic acceptance or request adjustments:\n${reviewUrl}\n\nRIANA Technologies`,
+      text: `Hello ${clientName},\n\nThe implementation for your Change Request (${report.ticket_number}: ${report.request_title}) is complete.\n\nAccount Manager: ${amName}\nClient: ${report.client_name} (${report.branch_name})\n\nPlease access the Completion Review Portal to review the delivered solution and confirm implementation using OTP or e-signature, share feedback/comments, or request adjustments:\n${reviewUrl}\n\nTrack progress and feedback status: ${trackingUrl}\n\nRIANA Technologies`,
       html: html`
         <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 600px; margin: 0 auto; background-color: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden;">
           <div style="background-color: #0f766e; padding: 24px; text-align: center; color: #ffffff;">
@@ -933,7 +1001,7 @@ const sendCompletionReport = async (pool, reportId, req) => {
               <p style="margin: 0; font-size: 13px; color: #64748b;">Account Manager</p>
               <p style="margin: 4px 0 0; font-size: 14px; color: #1e293b;">${amName}</p>
             </div>
-            <p>Please review the full report and provide your formal electronic sign-off or request any needed adjustments:</p>
+            <p>Please confirm implementation with OTP or your e-signature, share your feedback and comments, or request adjustments.</p><p>Track progress through confirmation and feedback: <a href="${trackingUrl}">View request progress</a></p>
             <div style="text-align: center; margin: 28px 0;">
               <a href="${reviewUrl}" style="background-color: #0f766e; color: #ffffff; text-decoration: none; padding: 12px 28px; border-radius: 6px; font-weight: 600; display: inline-block;">Review & Accept Completion</a>
             </div>
@@ -955,6 +1023,7 @@ const sendCompletionReport = async (pool, reportId, req) => {
     });
   } catch (e) {
     console.error('Failed to send completion report Email:', e.message);
+    await recordDeliveryLog(pool, { eventType: 'completion_report', recipientType: 'client', recipientContact: clientEmail, channel: 'email', changeRequestId: report.change_request_id, status: 'failed', errorMessage: 'Email provider did not confirm dispatch.' });
   }
 
   // Update report and request status
@@ -977,7 +1046,7 @@ const sendCompletionReport = async (pool, reportId, req) => {
     newValue: 'awaiting_client_acceptance',
   });
 
-  return { success: true, smsStatus, emailStatus, reviewUrl };
+  return { success: true, smsStatus, emailStatus, reviewUrl, trackingUrl };
 };
 
 const getCompletionReportForClient = async (pool, token) => {
@@ -1005,7 +1074,7 @@ const getCompletionReportForClient = async (pool, token) => {
 
   // Check if acceptance exists
   const [acceptances] = await pool.query(
-    'SELECT id, sign_off_method, accepted_at, client_representative_name, client_representative_designation FROM crms_client_acceptances WHERE completion_report_id = ? LIMIT 1',
+    'SELECT id, sign_off_method, accepted_at, client_representative_name, client_representative_designation, feedback_rating, feedback_comment, feedback_submitted_at FROM crms_client_acceptances WHERE completion_report_id = ? LIMIT 1',
     [report.id],
   );
 
@@ -1193,7 +1262,8 @@ const requestClientOtp = async (pool, token, channel = 'sms', req) => {
   };
 };
 
-const verifyOtpAndAccept = async (pool, { token, code, representativeName, designation, req }) => {
+const verifyOtpAndAccept = async (pool, { token, code, representativeName, designation, feedback, req }) => {
+  const clientFeedback = normalizeClientFeedback(feedback);
   const { report, acceptanceId, invalidCode } = await withReviewTransaction(pool, token, async (connection, report) => {
 
   const [otps] = await connection.query(
@@ -1241,6 +1311,7 @@ const verifyOtpAndAccept = async (pool, { token, code, representativeName, desig
     ],
   );
 
+  await saveClientFeedback(connection, acceptanceId, clientFeedback);
   await connection.query("UPDATE crms_completion_reports SET status = 'accepted' WHERE id = ?", [report.id]);
   await connection.query(
     "UPDATE crms_change_requests SET status = 'client_accepted', acceptance_status = 'accepted' WHERE id = ?",
@@ -1285,7 +1356,8 @@ const verifyOtpAndAccept = async (pool, { token, code, representativeName, desig
   return { success: true, message: 'Thank you! Completion accepted successfully.', acceptanceId };
 };
 
-const verifySignatureAndAccept = async (pool, { token, signaturePath, representativeName, designation, req }) => {
+const verifySignatureAndAccept = async (pool, { token, signaturePath, representativeName, designation, feedback, req }) => {
+  const clientFeedback = normalizeClientFeedback(feedback);
   const { report, acceptanceId } = await withReviewTransaction(pool, token, async (connection, report) => {
 
   if (!signaturePath) throw Object.assign(new Error('Signature image upload is required.'), { status: 400 });
@@ -1316,6 +1388,7 @@ const verifySignatureAndAccept = async (pool, { token, signaturePath, representa
     ],
   );
 
+  await saveClientFeedback(connection, acceptanceId, clientFeedback);
   await connection.query("UPDATE crms_completion_reports SET status = 'accepted' WHERE id = ?", [report.id]);
   await connection.query(
     "UPDATE crms_change_requests SET status = 'client_accepted', acceptance_status = 'accepted' WHERE id = ?",
@@ -1374,11 +1447,13 @@ const closeChangeRequest = async (pool, { changeRequestId, accountManagerId, clo
   if (!requests.length) throw Object.assign(new Error('Change request not found.'), { status: 404 });
   const request = requests[0];
 
+  if (user && request.account_manager_id) assertResponsibleManager(request, user);
   if (request.status === 'closed_client_accepted') {
     throw Object.assign(new Error('Request has already been closed.'), { status: 400 });
   }
 
   // Verification 1: Client acceptance must exist
+  if (request.status !== 'client_accepted') throw Object.assign(new Error('The current implementation must be accepted by the client before closure.'), { status: 409 });
   const [acceptances] = await pool.query(
     'SELECT * FROM crms_client_acceptances WHERE change_request_id = ? ORDER BY accepted_at DESC LIMIT 1',
     [changeRequestId],
@@ -1430,6 +1505,8 @@ module.exports = {
   submitClientChangeRequest,
   createOrUpdateCompletionReport,
   sendCompletionReport,
+  confirmImplementation,
+  normalizeClientFeedback,
   getCompletionReportForClient,
   handleClientAction,
   requestClientOtp,

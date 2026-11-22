@@ -1,0 +1,76 @@
+{
+  "surface": "feedback-dialog",
+  "file": "/src/components/feedback/ClientFeedbackForm.tsx",
+  "checks": [
+    {
+      "width": 320,
+      "height": 900,
+      "state": "default",
+      "pageOverflow": false,
+      "mainOverflow": false,
+      "escaped": [],
+      "dialogs": [
+        {
+          "top": 272.25,
+          "bottom": 627.75,
+          "width": 304,
+          "fits": true,
+          "scrollable": false,
+          "scrollHeight": 354
+        }
+      ],
+      "ready": true,
+      "text": "RIANA CIMS\nAM\n\n© 2026 RIANA Group. All rights reserved. | www.riana.co\n\nInstallation Feedback - Northside Technology Centre\n\nPlease share your experience with o"
+    },
+    {
+      "width": 1280,
+      "height": 900,
+      "state": "default",
+      "pageOverflow": false,
+      "mainOverflow": false,
+      "escaped": [],
+      "dialogs": [
+        {
+          "top": 305.5,
+          "bottom": 594.5,
+          "width": 896,
+          "fits": true,
+          "scrollable": false,
+          "scrollHeight": 287
+        }
+      ],
+      "ready": true,
+      "text": "OVERVIEW\nDashboard\nMANAGEMENT\nClients\nAssigned Technicians\nWorkload Calendar\nOPERATIONS\nInstallations\nHardware & Inventory\nInstallation Progress\nADMINISTRATION\n"
+    },
+    {
+      "width": 844,
+      "height": 390,
+      "state": "landscape-short",
+      "pageOverflow": false,
+      "mainOverflow": false,
+      "escaped": [],
+      "dialogs": [
+        {
+          "top": 50.5,
+          "bottom": 339.5,
+          "width": 844,
+          "fits": true,
+          "scrollable": false,
+          "scrollHeight": 287
+        }
+      ],
+      "ready": true,
+      "text": "RIANA CIMS\n\nClient Installation Management\n\nAM\n\n© 2026 RIANA Group. All rights reserved. | www.riana.co\n\nInstallation Feedback - Northside Technology Centre\n\nPl"
+    }
+  ],
+  "errors": [],
+  "fixtureRequests": [
+    "/api/client_assignments",
+    "/api/announcements",
+    "/api/chat/missed-calls",
+    "/api/chat/recordings",
+    "/api/chat/stream",
+    "/api/feedback_questions"
+  ],
+  "interceptedWrites": []
+}

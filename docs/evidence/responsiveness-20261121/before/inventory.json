@@ -1,0 +1,68 @@
+{
+  "surface": "inventory",
+  "file": "/src/components/inventory/HardwareInventoryModule.tsx",
+  "checks": [
+    {
+      "width": 320,
+      "height": 900,
+      "state": "default",
+      "pageOverflow": false,
+      "mainOverflow": false,
+      "escaped": [],
+      "dialogs": [],
+      "popups": [],
+      "ready": true,
+      "text": "RIANA CIMS\nAM\nHardware & Inventory\nModule Tour\nGenerate Serials\nRegister Legacy Hardware\nSerial issuance awaits formal serialization policy approval.\nTotal Regi"
+    },
+    {
+      "width": 1280,
+      "height": 900,
+      "state": "default",
+      "pageOverflow": false,
+      "mainOverflow": false,
+      "escaped": [],
+      "dialogs": [],
+      "popups": [],
+      "ready": true,
+      "text": "OVERVIEW\nDashboard\nMANAGEMENT\nClients\nAssigned Technicians\nWorkload Calendar\nOPERATIONS\nInstallations\nHardware & Inventory\nInstallation Progress\nADMINISTRATION\n"
+    },
+    {
+      "width": 320,
+      "height": 568,
+      "state": "tab:Registry",
+      "pageOverflow": false,
+      "mainOverflow": false,
+      "escaped": [],
+      "dialogs": [],
+      "popups": [],
+      "ready": true,
+      "text": "RIANA CIMS\nAM\nHardware & Inventory\nModule Tour\nGenerate Serials\nRegister Legacy Hardware\nSerial issuance awaits formal serialization policy approval.\nTotal Regi"
+    },
+    {
+      "width": 320,
+      "height": 568,
+      "state": "tab:Equipment Requirements",
+      "pageOverflow": true,
+      "mainOverflow": false,
+      "escaped": [],
+      "dialogs": [],
+      "popups": [],
+      "ready": true,
+      "error": "TypeError: Cannot read properties of undefined (reading 'flatMap')\n    at EquipmentRequirements (http://127.0.0.1:8090/src/components/inventory/EquipmentRequirements.tsx:109:85)\n    at renderWithHooks (http://127.0.0.1:8090/node_modules/.vite/deps/react-dom-BCNX9mNN.js?v=a21b752d:9621:19)\n    at updateFunctionComponent (http://127.0.0.1:8090/node_modules/.vite/deps/react-dom-BCNX9mNN.js?v=a21b752d:12115:19)\n    at beginWork (http://127.0.0.1:8090/node_modules/.vite/deps/react-dom-BCNX9mNN.js?v=a21b752d:13089:13)\n    at beginWork$1 (http://127.0.0.1:8090/node_modules/.vite/deps/react-dom-BCNX9mNN.js?v=a21b752d:15975:12)\n    at performUnitOfWork (http://127.0.0.1:8090/node_modules/.vite/deps/react-dom-BCNX9mNN.js?v=a21b752d:15558:12)\n    at workLoopSync (http://127.0.0.1:8090/node_modules/.vite/deps/react-dom-BCNX9mNN.js?v=a21b752d:15507:36)\n    at renderRootSync (http://127.0.0.1:8090/node_modules/.vite/deps/react-dom-BCNX9mNN.js?v=a21b752d:15490:6)\n    at recoverFromConcurrentError (http://127.0.0.1:8090/node_modules/.vite/deps/react-dom-BCNX9mNN.js?v=a21b752d:15183:21)\n    at performSyncWorkOnRoot (http://127.0.0.1:8090/node_modules/.vite/deps/react-dom-BCNX9mNN.js?v=a21b752d:15294:19)",
+      "text": "Cannot read properties of undefined (reading 'flatMap')"
+    }
+  ],
+  "errors": [
+    "Cannot read properties of undefined (reading 'flatMap')",
+    "Cannot read properties of undefined (reading 'flatMap')",
+    "locator.isDisabled: Timeout 30000ms exceeded.\nCall log:\n\u001b[2m  - waiting for getByRole('tab').nth(2)\u001b[22m\n"
+  ],
+  "fixtureRequests": [
+    "/api/client_assignments",
+    "/api/announcements",
+    "/api/chat/missed-calls",
+    "/api/chat/recordings",
+    "/api/chat/stream"
+  ],
+  "interceptedWrites": []
+}

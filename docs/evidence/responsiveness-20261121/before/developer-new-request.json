@@ -1,0 +1,51 @@
+{
+  "surface": "developer-new-request",
+  "file": "/CRMS/src/pages/NewRequest.tsx",
+  "checks": [
+    {
+      "width": 320,
+      "height": 900,
+      "state": "default",
+      "pageOverflow": false,
+      "mainOverflow": true,
+      "escaped": [],
+      "dialogs": [],
+      "popups": [],
+      "ready": true,
+      "text": "RIANA CIMS\nAM\nNew Change Request\n\nCreate a new system modification request\n\nClient Information\n\nSelect the client and provide contract details\n\nClient *\nSelect "
+    },
+    {
+      "width": 1280,
+      "height": 900,
+      "state": "default",
+      "pageOverflow": false,
+      "mainOverflow": false,
+      "escaped": [],
+      "dialogs": [],
+      "popups": [],
+      "ready": true,
+      "text": "OVERVIEW\nDashboard\nMANAGEMENT\nClients\nAssigned Technicians\nWorkload Calendar\nOPERATIONS\nInstallations\nHardware & Inventory\nInstallation Progress\nADMINISTRATION\n"
+    },
+    {
+      "width": 844,
+      "height": 390,
+      "state": "landscape-short",
+      "pageOverflow": false,
+      "mainOverflow": false,
+      "escaped": [],
+      "dialogs": [],
+      "popups": [],
+      "ready": true,
+      "text": "RIANA CIMS\n\nClient Installation Management\n\nAM\nNew Change Request\n\nCreate a new system modification request\n\nClient Information\n\nSelect the client and provide c"
+    }
+  ],
+  "errors": [],
+  "fixtureRequests": [
+    "/api/client_assignments",
+    "/api/announcements",
+    "/api/chat/missed-calls",
+    "/api/chat/recordings",
+    "/api/chat/stream"
+  ],
+  "interceptedWrites": []
+}

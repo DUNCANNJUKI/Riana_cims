@@ -244,7 +244,7 @@ export const ClientRequests: React.FC = () => {
             <TabsTrigger value="accepted_closed">Accepted / Closed</TabsTrigger>
           </TabsList>
 
-          <div className="relative w-full sm:w-72">
+          <div className="relative w-full min-w-0 sm:w-72 sm:shrink-0">
             <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
             <Input
               placeholder="Search by ticket, client, rep..."
@@ -259,7 +259,7 @@ export const ClientRequests: React.FC = () => {
         {activeTab !== 'invitations' ? (
           <Card className="border-slate-200 dark:border-slate-800">
             <CardContent className="p-0">
-              <Table>
+              <Table mobileLayout="cards" aria-label="Client change requests">
                 <TableHeader>
                   <TableRow>
                     <TableHead>Ticket #</TableHead>
@@ -281,16 +281,16 @@ export const ClientRequests: React.FC = () => {
                   ) : (
                     filteredRequests.map((r) => (
                       <TableRow key={r.id}>
-                        <TableCell className="font-mono font-bold text-teal-700 dark:text-teal-400">
+                        <TableCell mobileLabel="Ticket #" className="font-mono font-bold text-teal-700 dark:text-teal-400">
                           <Link to={`/developers/requests/${r.id}`} className="hover:underline">
                             {r.ticket_number}
                           </Link>
                         </TableCell>
-                        <TableCell>
-                          <div className="font-medium text-slate-900 dark:text-white line-clamp-1">{r.title}</div>
+                        <TableCell mobileLabel="Title & Category">
+                          <div className="font-medium text-slate-900 dark:text-white sm:line-clamp-1">{r.title}</div>
                           <span className="text-xs text-slate-500">{r.category}</span>
                         </TableCell>
-                        <TableCell>
+                        <TableCell mobileLabel="Client & Scope">
                           <div className="font-semibold text-slate-800 dark:text-slate-200">
                             {r.client?.client_name || r.client_name || 'N/A'}
                           </div>
@@ -298,16 +298,16 @@ export const ClientRequests: React.FC = () => {
                             {r.branch_name ? r.branch_name : 'Main'}
                           </div>
                         </TableCell>
-                        <TableCell>
+                        <TableCell mobileLabel="Representative">
                           <div className="text-sm font-medium">{r.client_representative_name || 'N/A'}</div>
                           <div className="text-xs text-slate-500">{r.client_representative_phone || ''}</div>
                         </TableCell>
-                        <TableCell>{getStatusBadge(r.status)}</TableCell>
-                        <TableCell className="text-xs text-slate-500">
+                        <TableCell mobileLabel="Status">{getStatusBadge(r.status)}</TableCell>
+                        <TableCell mobileLabel="Updated" className="text-xs text-slate-500">
                           {r.updated_at ? new Date(r.updated_at).toLocaleDateString() : 'N/A'}
                         </TableCell>
-                        <TableCell className="text-right">
-                          <div className="flex items-center justify-end gap-1.5">
+                        <TableCell mobileLabel="Actions" className="text-right">
+                          <div className="flex flex-wrap items-center justify-start sm:justify-end gap-1.5">
                             <Button asChild variant="ghost" size="sm" className="h-8 px-2">
                               <Link to={`/developers/requests/${r.id}`}>
                                 <Eye className="w-3.5 h-3.5 mr-1" /> View
@@ -355,7 +355,7 @@ export const ClientRequests: React.FC = () => {
           /* Invitations Tab */
           <Card className="border-slate-200 dark:border-slate-800">
             <CardContent className="p-0">
-              <Table>
+              <Table mobileLayout="cards" aria-label="Client request invitations">
                 <TableHeader>
                   <TableRow>
                     <TableHead>Reference</TableHead>
@@ -377,30 +377,30 @@ export const ClientRequests: React.FC = () => {
                   ) : (
                     invitations.map((inv) => (
                       <TableRow key={inv.id}>
-                        <TableCell className="font-mono font-bold text-teal-700 dark:text-teal-400">
+                        <TableCell mobileLabel="Reference" className="font-mono font-bold text-teal-700 dark:text-teal-400">
                           {inv.request_reference}
                         </TableCell>
-                        <TableCell>
+                        <TableCell mobileLabel="Client & Scope">
                           <div className="font-semibold text-slate-800 dark:text-slate-200">{inv.client_name}</div>
                           <div className="text-xs text-slate-500">{inv.branch_name || 'Main'}</div>
                         </TableCell>
-                        <TableCell>
+                        <TableCell mobileLabel="Representative">
                           <div className="text-sm font-medium">{inv.client_representative_name}</div>
                           <div className="text-xs text-slate-500">{inv.client_representative_phone}</div>
                         </TableCell>
-                        <TableCell>
+                        <TableCell mobileLabel="Status">
                           <Badge variant="outline" className="capitalize">
                             {inv.status}
                           </Badge>
                         </TableCell>
-                        <TableCell className="text-xs text-slate-500">
+                        <TableCell mobileLabel="Created" className="text-xs text-slate-500">
                           {new Date(inv.created_at).toLocaleDateString()}
                         </TableCell>
-                        <TableCell className="text-xs text-slate-500">
+                        <TableCell mobileLabel="Expires" className="text-xs text-slate-500">
                           {new Date(inv.expires_at).toLocaleDateString()}
                         </TableCell>
-                        <TableCell className="text-right">
-                          <div className="flex items-center justify-end gap-1.5">
+                        <TableCell mobileLabel="Actions" className="text-right">
+                          <div className="flex flex-wrap items-center justify-start sm:justify-end gap-1.5">
                             <Button
                               variant="outline"
                               size="sm"

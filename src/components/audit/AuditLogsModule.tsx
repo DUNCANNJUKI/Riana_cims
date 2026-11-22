@@ -32,8 +32,7 @@ const statusVariant = (status: string) => status === "success" ? "default" : "de
 const formatActor = (row: AuditRow) => [row.first_name, row.last_name].filter(Boolean).join(" ") || row.email || row.user_id || "System";
 
 const AuditTable = ({ rows, showActor, showIp }: { rows: AuditRow[]; showActor?: boolean; showIp?: boolean }) => (
-  <div className="overflow-x-auto rounded-lg border bg-background">
-    <Table>
+    <Table mobileLayout="cards" aria-label={showActor ? "System audit logs" : "My activity"}>
       <TableHeader>
         <TableRow>
           <TableHead>Date</TableHead>
@@ -49,23 +48,22 @@ const AuditTable = ({ rows, showActor, showIp }: { rows: AuditRow[]; showActor?:
       </TableHeader>
       <TableBody>
         {rows.length === 0 ? (
-          <TableRow><TableCell colSpan={showActor && showIp ? 9 : 7} className="h-24 text-center text-muted-foreground">No audit events found.</TableCell></TableRow>
+          <TableRow><TableCell colSpan={7 + Number(Boolean(showActor)) + Number(Boolean(showIp))} className="h-24 text-center text-muted-foreground">No audit events found.</TableCell></TableRow>
         ) : rows.map((row) => (
           <TableRow key={row.id}>
-            <TableCell className="whitespace-nowrap text-xs">{format(new Date(row.created_at), "MMM d, yyyy h:mm a")}</TableCell>
-            {showActor && <TableCell className="max-w-44 truncate text-xs">{formatActor(row)}</TableCell>}
-            <TableCell className="font-medium">{row.action.replace(/_/g, " ")}</TableCell>
-            <TableCell>{row.module}</TableCell>
-            <TableCell className="max-w-40 truncate text-xs">{[row.entity_type, row.entity_id].filter(Boolean).join(": ") || "-"}</TableCell>
-            <TableCell><Badge variant={statusVariant(row.status)}>{row.status}</Badge></TableCell>
-            <TableCell><Badge variant="outline">{row.severity}</Badge></TableCell>
-            {showIp && <TableCell className="text-xs">{row.ip_address || "-"}</TableCell>}
-            <TableCell className="max-w-80 truncate text-xs text-muted-foreground">{row.description || row.device || "-"}</TableCell>
+            <TableCell mobileLabel="Date" className="whitespace-nowrap text-xs">{format(new Date(row.created_at), "MMM d, yyyy h:mm a")}</TableCell>
+            {showActor && <TableCell mobileLabel="User" className="max-w-44 truncate text-xs" title={formatActor(row)}>{formatActor(row)}</TableCell>}
+            <TableCell mobileLabel="Action" className="font-medium">{row.action.replace(/_/g, " ")}</TableCell>
+            <TableCell mobileLabel="Module">{row.module}</TableCell>
+            <TableCell mobileLabel="Entity" className="max-w-40 truncate text-xs" title={[row.entity_type, row.entity_id].filter(Boolean).join(": ")}>{[row.entity_type, row.entity_id].filter(Boolean).join(": ") || "-"}</TableCell>
+            <TableCell mobileLabel="Status"><Badge variant={statusVariant(row.status)}>{row.status}</Badge></TableCell>
+            <TableCell mobileLabel="Severity"><Badge variant="outline">{row.severity}</Badge></TableCell>
+            {showIp && <TableCell mobileLabel="IP" className="text-xs">{row.ip_address || "-"}</TableCell>}
+            <TableCell mobileLabel="Details" className="max-w-80 truncate text-xs text-muted-foreground" title={row.description || row.device || undefined}>{row.description || row.device || "-"}</TableCell>
           </TableRow>
         ))}
       </TableBody>
     </Table>
-  </div>
 );
 
 export const AuditLogsModule = ({ user }: { user: User }) => {

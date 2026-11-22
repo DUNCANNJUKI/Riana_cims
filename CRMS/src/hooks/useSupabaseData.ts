@@ -71,6 +71,9 @@ export interface RequestScopeSummary {
 }
 
 export interface ChangeRequestWithRelations extends ChangeRequest {
+  account_manager_id?: string | null;
+  latest_completion_report?: { id: string; version_number: number; status: string } | null;
+  request_title?: string | null;
   title?: string | null;
   category?: string | null;
   client_name?: string | null;

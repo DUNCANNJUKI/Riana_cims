@@ -10,7 +10,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import "./LoginForm.css";
 
-const LOGIN_LOGO_PATH = "/Riana_logo_transparent.png";
+const LOGIN_LOGO_PATH = "/Riana_mark_color_trimmed.png";
 
 export const LoginForm = () => {
   const [email, setEmail] = useState("");
@@ -158,10 +158,15 @@ export const LoginForm = () => {
                   }}
                 />
               </div>
-              <h1 className="riana-login-card__title">RIANA CIMS</h1>
-              <p className="riana-login-card__subtitle">
-                Client Installation Management System
-              </p>
+              <div className="riana-login-card__brand-text">
+                <h1 className="riana-login-card__title">
+                  <span className="riana-login-card__name">RIANA</span>{" "}
+                  <span className="riana-login-card__system">CIMS</span>
+                </h1>
+                <p className="riana-login-card__subtitle">
+                  Client Installation Management System
+                </p>
+              </div>
             </header>
 
             <form onSubmit={handleSubmit} className="riana-login-card__form">
@@ -281,7 +286,7 @@ export const LoginForm = () => {
             <footer className="riana-login-card__footer">
               <div className="riana-login-card__divider"></div>
               <p>
-                &copy; {new Date().getFullYear()} RIANA Group. All rights reserved.
+                &copy; 2026 RIANA Group. All rights reserved.
               </p>
             </footer>
           </div>

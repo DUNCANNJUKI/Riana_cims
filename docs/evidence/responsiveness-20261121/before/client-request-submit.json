@@ -1,0 +1,42 @@
+{
+  "surface": "client-request-submit",
+  "file": "/src/pages/ClientChangeRequestForm.tsx",
+  "checks": [
+    {
+      "width": 320,
+      "height": 900,
+      "state": "default",
+      "pageOverflow": false,
+      "mainOverflow": false,
+      "escaped": [],
+      "dialogs": [],
+      "ready": true,
+      "text": "RIANA\nCIMS PORTAL\nClient Change Request Form\n\nInitiated by your Riana Account Manager • Ref: REQ-2026-00123\n\nExpires: 1/1/2027\nVERIFIED CLIENT & SCOPE INFORMATI"
+    },
+    {
+      "width": 1280,
+      "height": 900,
+      "state": "default",
+      "pageOverflow": false,
+      "mainOverflow": false,
+      "escaped": [],
+      "dialogs": [],
+      "ready": true,
+      "text": "RIANA\nCIMS PORTAL\nClient Change Request Form\n\nInitiated by your Riana Account Manager • Ref: REQ-2026-00123\n\nExpires: 1/1/2027\nVERIFIED CLIENT & SCOPE INFORMATI"
+    },
+    {
+      "width": 844,
+      "height": 390,
+      "state": "landscape-short",
+      "pageOverflow": false,
+      "mainOverflow": false,
+      "escaped": [],
+      "dialogs": [],
+      "ready": true,
+      "text": "RIANA\nCIMS PORTAL\nClient Change Request Form\n\nInitiated by your Riana Account Manager • Ref: REQ-2026-00123\n\nExpires: 1/1/2027\nVERIFIED CLIENT & SCOPE INFORMATI"
+    }
+  ],
+  "errors": [],
+  "fixtureRequests": [],
+  "interceptedWrites": []
+}

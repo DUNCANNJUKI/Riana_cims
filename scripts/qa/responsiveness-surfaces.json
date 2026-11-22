@@ -1,0 +1,374 @@
+[
+  {
+    "id": "dashboard",
+    "file": "/src/components/dashboard/ModernDashboard.tsx",
+    "name": "Dashboard"
+  },
+  {
+    "id": "clients",
+    "file": "/src/components/clients/ClientsModule.tsx",
+    "name": "ClientsModule",
+    "actions": [
+      "Add Client"
+    ]
+  },
+  {
+    "id": "assignments",
+    "file": "/src/components/assignments/AssignmentModule.tsx",
+    "name": "AssignmentModule"
+  },
+  {
+    "id": "installations",
+    "file": "/src/components/installations/InstallationsModule.tsx",
+    "name": "InstallationsModule"
+  },
+  {
+    "id": "inventory",
+    "file": "/src/components/inventory/HardwareInventoryModule.tsx",
+    "name": "HardwareInventoryModule",
+    "tabs": true
+  },
+  {
+    "id": "progress",
+    "file": "/src/components/progress/InstallationProgressModule.tsx",
+    "name": "InstallationProgressModule"
+  },
+  {
+    "id": "users",
+    "file": "/src/components/users/UsersModule.tsx",
+    "name": "UsersModule"
+  },
+  {
+    "id": "finances",
+    "file": "/src/components/finances/TechnicianFinancesModule.tsx",
+    "name": "FinancesModule"
+  },
+  {
+    "id": "company",
+    "file": "/src/components/company/CompanySettingsModule.tsx",
+    "name": "CompanySettingsModule",
+    "tabs": true
+  },
+  {
+    "id": "import",
+    "file": "/src/components/import/ImportModule.tsx",
+    "name": "ImportModule"
+  },
+  {
+    "id": "reports",
+    "file": "/src/components/reports/ReportsModule.tsx",
+    "name": "ReportsModule"
+  },
+  {
+    "id": "analytics",
+    "file": "/src/components/analytics/AnalyticsModule.tsx",
+    "name": "AnalyticsModule",
+    "tabs": true
+  },
+  {
+    "id": "audit",
+    "file": "/src/components/audit/AuditLogsModule.tsx",
+    "name": "AuditLogsModule"
+  },
+  {
+    "id": "activity",
+    "file": "/src/components/audit/AuditLogsModule.tsx",
+    "name": "MyActivityModule"
+  },
+  {
+    "id": "handover",
+    "file": "/src/components/handover/HandoverUploadModule.tsx",
+    "name": "HandoverUploadModule"
+  },
+  {
+    "id": "calendar",
+    "file": "/src/components/calendar/TechnicianWorkloadCalendar.tsx",
+    "name": "TechnicianWorkloadCalendar"
+  },
+  {
+    "id": "scheduling",
+    "file": "/src/components/calendar/SchedulingWorkspace.tsx",
+    "name": "SchedulingWorkspace"
+  },
+  {
+    "id": "announcements",
+    "file": "/src/components/announcements/AnnouncementsManagementModule.tsx",
+    "name": "AnnouncementsManagementModule",
+    "tabs": true
+  },
+  {
+    "id": "help",
+    "file": "/src/components/help/HelpModule.tsx",
+    "name": "HelpModule"
+  },
+  {
+    "id": "technician-dashboard",
+    "file": "/src/components/technician/TechnicianMobileDashboard.tsx",
+    "name": "TechnicianMobileDashboard",
+    "role": "User"
+  },
+  {
+    "id": "technician-profile",
+    "file": "/src/components/profile/TechnicianProfilePage.tsx",
+    "name": "TechnicianProfilePage",
+    "role": "User",
+    "tabs": true
+  },
+  {
+    "id": "profile",
+    "file": "/src/components/profile/ProfileSettingsDialog.tsx",
+    "name": "ProfileSettingsDialog",
+    "dialog": true,
+    "tabs": true
+  },
+  {
+    "id": "preferences",
+    "file": "/src/components/profile/ProfileSettingsDialog.tsx",
+    "name": "ProfileSettingsDialog",
+    "dialog": true,
+    "tabs": true,
+    "props": {
+      "view": "settings"
+    }
+  },
+  {
+    "id": "client-details",
+    "file": "/src/components/dialogs/ClientDetailsDialog.tsx",
+    "name": "ClientDetailsDialog",
+    "dialog": true
+  },
+  {
+    "id": "client-edit",
+    "file": "/src/components/dialogs/ClientDetailsDialog.tsx",
+    "name": "ClientDetailsDialog",
+    "dialog": true,
+    "props": {
+      "isEditing": true
+    }
+  },
+  {
+    "id": "installation-details",
+    "file": "/src/components/dialogs/InstallationDetailsDialog.tsx",
+    "name": "InstallationDetailsDialog",
+    "dialog": true
+  },
+  {
+    "id": "feedback-dialog",
+    "file": "/src/components/feedback/ClientFeedbackForm.tsx",
+    "name": "ClientFeedbackForm",
+    "dialog": true
+  },
+  {
+    "id": "password-change",
+    "file": "/src/components/auth/ForcePasswordChange.tsx",
+    "name": "ForcePasswordChange",
+    "dialog": true
+  },
+  {
+    "id": "login",
+    "file": "/src/components/auth/LoginForm.tsx",
+    "name": "LoginForm",
+    "public": true
+  },
+  {
+    "id": "reset-password",
+    "file": "/src/pages/ResetPassword.tsx",
+    "name": "ResetPassword",
+    "public": true,
+    "path": "/reset-password?token=qa-token"
+  },
+  {
+    "id": "install-app",
+    "file": "/src/pages/InstallApp.tsx",
+    "name": "default",
+    "public": true
+  },
+  {
+    "id": "maintenance",
+    "file": "/src/components/maintenance/MaintenancePage.tsx",
+    "name": "MaintenancePage",
+    "public": true
+  },
+  {
+    "id": "asset-history",
+    "file": "/src/pages/PublicAssetHistory.tsx",
+    "name": "PublicAssetHistory",
+    "public": true,
+    "path": "/asset/qa-asset",
+    "route": "/asset/:assetId"
+  },
+  {
+    "id": "feedback-page",
+    "file": "/src/pages/FeedbackForm.tsx",
+    "name": "FeedbackForm",
+    "public": true,
+    "path": "/feedback/qa-token",
+    "route": "/feedback/:token"
+  },
+  {
+    "id": "client-request-submit",
+    "file": "/src/pages/ClientChangeRequestForm.tsx",
+    "name": "ClientChangeRequestForm",
+    "public": true,
+    "path": "/client-request/qa-token",
+    "route": "/client-request/:token"
+  },
+  {
+    "id": "client-request-review",
+    "file": "/src/pages/ClientCompletionReview.tsx",
+    "name": "ClientCompletionReview",
+    "public": true,
+    "path": "/change-request/review/qa-token",
+    "route": "/change-request/review/:token"
+  },
+  {
+    "id": "client-request-tracking",
+    "file": "/src/pages/ClientRequestTracking.tsx",
+    "name": "ClientRequestTracking",
+    "public": true,
+    "path": "/change-request/track/qa-token",
+    "route": "/change-request/track/:token"
+  },
+  {
+    "id": "not-found",
+    "file": "/src/pages/NotFound.tsx",
+    "name": "default",
+    "public": true
+  },
+  {
+    "id": "developer-overview",
+    "file": "/CRMS/src/pages/Dashboard.tsx",
+    "name": "default",
+    "crms": true
+  },
+  {
+    "id": "developer-client-requests",
+    "file": "/CRMS/src/pages/ClientRequests.tsx",
+    "name": "ClientRequests",
+    "crms": true,
+    "tabs": true
+  },
+  {
+    "id": "developer-pending",
+    "file": "/CRMS/src/pages/Pending.tsx",
+    "name": "default",
+    "crms": true
+  },
+  {
+    "id": "developer-requests",
+    "file": "/CRMS/src/pages/RequestList.tsx",
+    "name": "default",
+    "crms": true
+  },
+  {
+    "id": "developer-new-request",
+    "file": "/CRMS/src/pages/NewRequest.tsx",
+    "name": "default",
+    "crms": true
+  },
+  {
+    "id": "developer-request-detail",
+    "file": "/CRMS/src/pages/RequestDetail.tsx",
+    "name": "default",
+    "crms": true,
+    "path": "/developers/requests/qa-request",
+    "route": "/developers/requests/:id"
+  },
+  {
+    "id": "developer-approvals",
+    "file": "/CRMS/src/pages/Approvals.tsx",
+    "name": "default",
+    "crms": true
+  },
+  {
+    "id": "developer-assignments",
+    "file": "/CRMS/src/pages/Assignments.tsx",
+    "name": "default",
+    "crms": true
+  },
+  {
+    "id": "developer-reports",
+    "file": "/CRMS/src/pages/Reports.tsx",
+    "name": "default",
+    "crms": true,
+    "tabs": true
+  },
+  {
+    "id": "developer-audit",
+    "file": "/CRMS/src/pages/AuditLog.tsx",
+    "name": "default",
+    "crms": true
+  },
+  {
+    "id": "developer-users",
+    "file": "/CRMS/src/pages/Users.tsx",
+    "name": "default",
+    "crms": true
+  },
+  {
+    "id": "developer-not-found",
+    "file": "/CRMS/src/pages/NotFound.tsx",
+    "name": "default",
+    "crms": true
+  },
+  {
+    "id": "communication",
+    "file": "/src/components/chat/ChatModule.tsx",
+    "name": "ChatModule",
+    "chat": true
+  },
+  {
+    "id": "confirmation-dialog",
+    "file": "/src/components/ui/alert-dialog.tsx",
+    "name": "__probe",
+    "kind": "AlertDialog"
+  },
+  {
+    "id": "crms-confirmation-dialog",
+    "file": "/CRMS/src/components/ui/alert-dialog.tsx",
+    "name": "__probe",
+    "kind": "AlertDialog"
+  },
+  {
+    "id": "select-menu",
+    "file": "/src/components/ui/select.tsx",
+    "name": "__probe",
+    "kind": "Select"
+  },
+  {
+    "id": "crms-select-menu",
+    "file": "/CRMS/src/components/ui/select.tsx",
+    "name": "__probe",
+    "kind": "Select"
+  },
+  {
+    "id": "popover",
+    "file": "/src/components/ui/popover.tsx",
+    "name": "__probe",
+    "kind": "Popover"
+  },
+  {
+    "id": "crms-popover",
+    "file": "/CRMS/src/components/ui/popover.tsx",
+    "name": "__probe",
+    "kind": "Popover"
+  },
+  {
+    "id": "dropdown",
+    "file": "/src/components/ui/dropdown-menu.tsx",
+    "name": "__probe",
+    "kind": "DropdownMenu"
+  },
+  {
+    "id": "crms-dropdown",
+    "file": "/CRMS/src/components/ui/dropdown-menu.tsx",
+    "name": "__probe",
+    "kind": "DropdownMenu"
+  },
+  {
+    "id": "recent-requests",
+    "file": "/CRMS/src/components/dashboard/RecentRequestsTable.tsx",
+    "name": "RecentRequestsTable",
+    "crms": true
+  }
+]

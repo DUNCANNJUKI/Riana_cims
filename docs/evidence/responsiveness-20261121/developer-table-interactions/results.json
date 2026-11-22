@@ -1,0 +1,318 @@
+[
+  {
+    "surface": "developer-requests",
+    "file": "/CRMS/src/pages/RequestList.tsx",
+    "checks": [
+      {
+        "width": 320,
+        "height": 900,
+        "state": "default",
+        "pageOverflow": false,
+        "mainOverflow": false,
+        "mobileCellOverflow": [],
+        "escaped": [],
+        "dialogs": [],
+        "popups": [],
+        "ready": true,
+        "text": "RIANA CIMS\nAM\nChange Requests\n\nManage and track all system modification requests\n\nNew Request\nAll Status\nAll Priority\nTicket # ↑\nTicket #\n\tCLIENT\tDESCRIPTION\tPR"
+      },
+      {
+        "width": 768,
+        "height": 900,
+        "state": "default",
+        "pageOverflow": false,
+        "mainOverflow": false,
+        "mobileCellOverflow": [],
+        "escaped": [],
+        "dialogs": [],
+        "popups": [],
+        "ready": true,
+        "text": "RIANA CIMS\n\nClient Installation Management\n\nAM\nChange Requests\n\nManage and track all system modification requests\n\nNew Request\nAll Status\nAll Priority\nTicket # "
+      },
+      {
+        "width": 1280,
+        "height": 900,
+        "state": "default",
+        "pageOverflow": false,
+        "mainOverflow": false,
+        "mobileCellOverflow": [],
+        "escaped": [],
+        "dialogs": [],
+        "popups": [],
+        "ready": true,
+        "text": "OVERVIEW\nDashboard\nMANAGEMENT\nClients\nAssigned Technicians\nWorkload Calendar\nOPERATIONS\nInstallations\nHardware & Inventory\nInstallation Progress\nADMINISTRATION\n"
+      },
+      {
+        "width": 844,
+        "height": 390,
+        "state": "landscape-short",
+        "pageOverflow": false,
+        "mainOverflow": false,
+        "mobileCellOverflow": [],
+        "escaped": [],
+        "dialogs": [],
+        "popups": [],
+        "ready": true,
+        "text": "RIANA CIMS\n\nClient Installation Management\n\nAM\nChange Requests\n\nManage and track all system modification requests\n\nNew Request\nAll Status\nAll Priority\nTicket # "
+      },
+      {
+        "width": 320,
+        "height": 480,
+        "state": "portrait-short",
+        "pageOverflow": false,
+        "mainOverflow": false,
+        "mobileCellOverflow": [],
+        "escaped": [],
+        "dialogs": [],
+        "popups": [],
+        "ready": true,
+        "text": "RIANA CIMS\nAM\nChange Requests\n\nManage and track all system modification requests\n\nNew Request\nAll Status\nAll Priority\nTicket # ↑\nTicket #\n\tCLIENT\tDESCRIPTION\tPR"
+      }
+    ],
+    "interactions": [
+      "Mobile search, clear, ticket sort and request actions"
+    ],
+    "errors": [],
+    "fixtureRequests": [
+      "/api/client_assignments",
+      "/api/announcements",
+      "/api/chat/missed-calls",
+      "/api/chat/recordings",
+      "/api/chat/stream"
+    ],
+    "interceptedWrites": []
+  },
+  {
+    "surface": "developer-users",
+    "file": "/CRMS/src/pages/Users.tsx",
+    "checks": [
+      {
+        "width": 320,
+        "height": 900,
+        "state": "default",
+        "pageOverflow": false,
+        "mainOverflow": false,
+        "mobileCellOverflow": [],
+        "escaped": [],
+        "dialogs": [],
+        "popups": [],
+        "ready": true,
+        "text": "RIANA CIMS\nAM\nUsers\n\nManage system users and their roles\n\nAdd User\n\n2\n\nTotal Users\n\n0\n\nAdmins\n\n0\n\nDevelopers\n\n0\n\nSales\n\nAll Users\n\n2 users found\n\nUSER\tEMAIL\tDEP"
+      },
+      {
+        "width": 768,
+        "height": 900,
+        "state": "default",
+        "pageOverflow": false,
+        "mainOverflow": false,
+        "mobileCellOverflow": [],
+        "escaped": [],
+        "dialogs": [],
+        "popups": [],
+        "ready": true,
+        "text": "RIANA CIMS\n\nClient Installation Management\n\nAM\nUsers\n\nManage system users and their roles\n\nAdd User\n\n2\n\nTotal Users\n\n0\n\nAdmins\n\n0\n\nDevelopers\n\n0\n\nSales\n\nAll Use"
+      },
+      {
+        "width": 1280,
+        "height": 900,
+        "state": "default",
+        "pageOverflow": false,
+        "mainOverflow": false,
+        "mobileCellOverflow": [],
+        "escaped": [],
+        "dialogs": [],
+        "popups": [],
+        "ready": true,
+        "text": "OVERVIEW\nDashboard\nMANAGEMENT\nClients\nAssigned Technicians\nWorkload Calendar\nOPERATIONS\nInstallations\nHardware & Inventory\nInstallation Progress\nADMINISTRATION\n"
+      },
+      {
+        "width": 844,
+        "height": 390,
+        "state": "landscape-short",
+        "pageOverflow": false,
+        "mainOverflow": false,
+        "mobileCellOverflow": [],
+        "escaped": [],
+        "dialogs": [],
+        "popups": [],
+        "ready": true,
+        "text": "RIANA CIMS\n\nClient Installation Management\n\nAM\nUsers\n\nManage system users and their roles\n\nAdd User\n\n2\n\nTotal Users\n\n0\n\nAdmins\n\n0\n\nDevelopers\n\n0\n\nSales\n\nAll Use"
+      },
+      {
+        "width": 320,
+        "height": 480,
+        "state": "portrait-short",
+        "pageOverflow": false,
+        "mainOverflow": false,
+        "mobileCellOverflow": [],
+        "escaped": [],
+        "dialogs": [],
+        "popups": [],
+        "ready": true,
+        "text": "RIANA CIMS\nAM\nUsers\n\nManage system users and their roles\n\nAdd User\n\n2\n\nTotal Users\n\n0\n\nAdmins\n\n0\n\nDevelopers\n\n0\n\nSales\n\nAll Users\n\n2 users found\n\nUSER\tEMAIL\tDEP"
+      }
+    ],
+    "interactions": [
+      "Mobile user actions menu"
+    ],
+    "errors": [],
+    "fixtureRequests": [
+      "/api/client_assignments",
+      "/api/announcements",
+      "/api/chat/missed-calls",
+      "/api/chat/recordings",
+      "/api/chat/stream",
+      "/api/crms/user_roles"
+    ],
+    "interceptedWrites": []
+  },
+  {
+    "surface": "developer-client-requests",
+    "file": "/CRMS/src/pages/ClientRequests.tsx",
+    "checks": [
+      {
+        "width": 320,
+        "height": 900,
+        "state": "default",
+        "pageOverflow": false,
+        "mainOverflow": false,
+        "mobileCellOverflow": [],
+        "escaped": [],
+        "dialogs": [],
+        "popups": [],
+        "ready": true,
+        "text": "RIANA CIMS\nAM\nClient Change Request Management\n\nAccount Manager portal for client change initiation, completion reporting, and verified acceptance.\n\nRefresh\nCre"
+      },
+      {
+        "width": 768,
+        "height": 900,
+        "state": "default",
+        "pageOverflow": false,
+        "mainOverflow": false,
+        "mobileCellOverflow": [],
+        "escaped": [],
+        "dialogs": [],
+        "popups": [],
+        "ready": true,
+        "text": "RIANA CIMS\n\nClient Installation Management\n\nAM\nClient Change Request Management\n\nAccount Manager portal for client change initiation, completion reporting, and "
+      },
+      {
+        "width": 1280,
+        "height": 900,
+        "state": "default",
+        "pageOverflow": false,
+        "mainOverflow": false,
+        "mobileCellOverflow": [],
+        "escaped": [],
+        "dialogs": [],
+        "popups": [],
+        "ready": true,
+        "text": "OVERVIEW\nDashboard\nMANAGEMENT\nClients\nAssigned Technicians\nWorkload Calendar\nOPERATIONS\nInstallations\nHardware & Inventory\nInstallation Progress\nADMINISTRATION\n"
+      },
+      {
+        "width": 320,
+        "height": 568,
+        "state": "tab:All Requests",
+        "pageOverflow": false,
+        "mainOverflow": false,
+        "mobileCellOverflow": [],
+        "escaped": [],
+        "dialogs": [],
+        "popups": [],
+        "ready": true,
+        "text": "RIANA CIMS\nAM\nClient Change Request Management\n\nAccount Manager portal for client change initiation, completion reporting, and verified acceptance.\n\nRefresh\nCre"
+      },
+      {
+        "width": 320,
+        "height": 568,
+        "state": "tab:Invitations (1)",
+        "pageOverflow": false,
+        "mainOverflow": false,
+        "mobileCellOverflow": [],
+        "escaped": [],
+        "dialogs": [],
+        "popups": [],
+        "ready": true,
+        "text": "RIANA CIMS\nAM\nClient Change Request Management\n\nAccount Manager portal for client change initiation, completion reporting, and verified acceptance.\n\nRefresh\nCre"
+      },
+      {
+        "width": 320,
+        "height": 568,
+        "state": "tab:In Development",
+        "pageOverflow": false,
+        "mainOverflow": false,
+        "mobileCellOverflow": [],
+        "escaped": [],
+        "dialogs": [],
+        "popups": [],
+        "ready": true,
+        "text": "RIANA CIMS\nAM\nClient Change Request Management\n\nAccount Manager portal for client change initiation, completion reporting, and verified acceptance.\n\nRefresh\nCre"
+      },
+      {
+        "width": 320,
+        "height": 568,
+        "state": "tab:Awaiting Acceptance",
+        "pageOverflow": false,
+        "mainOverflow": false,
+        "mobileCellOverflow": [],
+        "escaped": [],
+        "dialogs": [],
+        "popups": [],
+        "ready": true,
+        "text": "RIANA CIMS\nAM\nClient Change Request Management\n\nAccount Manager portal for client change initiation, completion reporting, and verified acceptance.\n\nRefresh\nCre"
+      },
+      {
+        "width": 320,
+        "height": 568,
+        "state": "tab:Accepted / Closed",
+        "pageOverflow": false,
+        "mainOverflow": false,
+        "mobileCellOverflow": [],
+        "escaped": [],
+        "dialogs": [],
+        "popups": [],
+        "ready": true,
+        "text": "RIANA CIMS\nAM\nClient Change Request Management\n\nAccount Manager portal for client change initiation, completion reporting, and verified acceptance.\n\nRefresh\nCre"
+      },
+      {
+        "width": 844,
+        "height": 390,
+        "state": "landscape-short",
+        "pageOverflow": false,
+        "mainOverflow": false,
+        "mobileCellOverflow": [],
+        "escaped": [],
+        "dialogs": [],
+        "popups": [],
+        "ready": true,
+        "text": "RIANA CIMS\n\nClient Installation Management\n\nAM\nClient Change Request Management\n\nAccount Manager portal for client change initiation, completion reporting, and "
+      },
+      {
+        "width": 320,
+        "height": 480,
+        "state": "portrait-short",
+        "pageOverflow": false,
+        "mainOverflow": false,
+        "mobileCellOverflow": [],
+        "escaped": [],
+        "dialogs": [],
+        "popups": [],
+        "ready": true,
+        "text": "RIANA CIMS\nAM\nClient Change Request Management\n\nAccount Manager portal for client change initiation, completion reporting, and verified acceptance.\n\nRefresh\nCre"
+      }
+    ],
+    "interactions": [
+      "Mobile client request search and clear"
+    ],
+    "errors": [],
+    "fixtureRequests": [
+      "/api/client_assignments",
+      "/api/announcements",
+      "/api/chat/missed-calls",
+      "/api/chat/recordings",
+      "/api/chat/stream",
+      "/api/crms/account-manager/stats"
+    ],
+    "interceptedWrites": []
+  }
+]

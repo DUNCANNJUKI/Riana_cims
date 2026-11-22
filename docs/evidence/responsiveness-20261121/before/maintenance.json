@@ -1,0 +1,42 @@
+{
+  "surface": "maintenance",
+  "file": "/src/components/maintenance/MaintenancePage.tsx",
+  "checks": [
+    {
+      "width": 320,
+      "height": 900,
+      "state": "default",
+      "pageOverflow": false,
+      "mainOverflow": false,
+      "escaped": [],
+      "dialogs": [],
+      "ready": true,
+      "text": "RIANA\nGROUP\nRIANA CIMS\n\nScheduled Maintenance\n\nScheduled maintenance is in progress.\n\nMaintenance in progress\n\nSuper Administrators can sign in while maintenanc"
+    },
+    {
+      "width": 1280,
+      "height": 900,
+      "state": "default",
+      "pageOverflow": false,
+      "mainOverflow": false,
+      "escaped": [],
+      "dialogs": [],
+      "ready": true,
+      "text": "RIANA\nGROUP\nRIANA CIMS\n\nScheduled Maintenance\n\nScheduled maintenance is in progress.\n\nMaintenance in progress\n\nSuper Administrators can sign in while maintenanc"
+    },
+    {
+      "width": 844,
+      "height": 390,
+      "state": "landscape-short",
+      "pageOverflow": false,
+      "mainOverflow": false,
+      "escaped": [],
+      "dialogs": [],
+      "ready": true,
+      "text": "RIANA\nGROUP\nRIANA CIMS\n\nScheduled Maintenance\n\nScheduled maintenance is in progress.\n\nMaintenance in progress\n\nSuper Administrators can sign in while maintenanc"
+    }
+  ],
+  "errors": [],
+  "fixtureRequests": [],
+  "interceptedWrites": []
+}

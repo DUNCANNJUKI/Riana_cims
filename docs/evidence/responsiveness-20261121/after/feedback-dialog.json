@@ -1,0 +1,480 @@
+{
+  "surface": "feedback-dialog",
+  "file": "/src/components/feedback/ClientFeedbackForm.tsx",
+  "checks": [
+    {
+      "width": 320,
+      "height": 900,
+      "state": "default",
+      "pageOverflow": false,
+      "mainOverflow": false,
+      "escaped": [],
+      "dialogs": [
+        {
+          "top": 272.25,
+          "bottom": 627.75,
+          "width": 304,
+          "fits": true,
+          "scrollable": false,
+          "scrollHeight": 354
+        },
+        {
+          "top": 272.25,
+          "bottom": 627.75,
+          "width": 304,
+          "fits": true,
+          "scrollable": false,
+          "scrollHeight": 354
+        }
+      ],
+      "popups": [],
+      "ready": true,
+      "text": "RIANA CIMS\nAM\n\n© 2026 RIANA Group. All rights reserved. | www.riana.co\n\nInstallation Feedback - Northside Technology Centre\n\nPlease share your experience with o"
+    },
+    {
+      "width": 360,
+      "height": 900,
+      "state": "default",
+      "pageOverflow": false,
+      "mainOverflow": false,
+      "escaped": [],
+      "dialogs": [
+        {
+          "top": 283.5,
+          "bottom": 616.5,
+          "width": 344,
+          "fits": true,
+          "scrollable": false,
+          "scrollHeight": 331
+        },
+        {
+          "top": 283.5,
+          "bottom": 616.5,
+          "width": 344,
+          "fits": true,
+          "scrollable": false,
+          "scrollHeight": 331
+        }
+      ],
+      "popups": [],
+      "ready": true,
+      "text": "RIANA CIMS\nAM\n\n© 2026 RIANA Group. All rights reserved. | www.riana.co\n\nInstallation Feedback - Northside Technology Centre\n\nPlease share your experience with o"
+    },
+    {
+      "width": 375,
+      "height": 900,
+      "state": "default",
+      "pageOverflow": false,
+      "mainOverflow": false,
+      "escaped": [],
+      "dialogs": [
+        {
+          "top": 293.5,
+          "bottom": 606.5,
+          "width": 359,
+          "fits": true,
+          "scrollable": false,
+          "scrollHeight": 311
+        },
+        {
+          "top": 293.5,
+          "bottom": 606.5,
+          "width": 359,
+          "fits": true,
+          "scrollable": false,
+          "scrollHeight": 311
+        }
+      ],
+      "popups": [],
+      "ready": true,
+      "text": "RIANA CIMS\nAM\n\n© 2026 RIANA Group. All rights reserved. | www.riana.co\n\nInstallation Feedback - Northside Technology Centre\n\nPlease share your experience with o"
+    },
+    {
+      "width": 390,
+      "height": 900,
+      "state": "default",
+      "pageOverflow": false,
+      "mainOverflow": false,
+      "escaped": [],
+      "dialogs": [
+        {
+          "top": 293.5,
+          "bottom": 606.5,
+          "width": 374,
+          "fits": true,
+          "scrollable": false,
+          "scrollHeight": 311
+        },
+        {
+          "top": 293.5,
+          "bottom": 606.5,
+          "width": 374,
+          "fits": true,
+          "scrollable": false,
+          "scrollHeight": 311
+        }
+      ],
+      "popups": [],
+      "ready": true,
+      "text": "RIANA CIMS\nAM\n\n© 2026 RIANA Group. All rights reserved. | www.riana.co\n\nInstallation Feedback - Northside Technology Centre\n\nPlease share your experience with o"
+    },
+    {
+      "width": 414,
+      "height": 900,
+      "state": "default",
+      "pageOverflow": false,
+      "mainOverflow": false,
+      "escaped": [],
+      "dialogs": [
+        {
+          "top": 293.5,
+          "bottom": 606.5,
+          "width": 398,
+          "fits": true,
+          "scrollable": false,
+          "scrollHeight": 311
+        },
+        {
+          "top": 293.5,
+          "bottom": 606.5,
+          "width": 398,
+          "fits": true,
+          "scrollable": false,
+          "scrollHeight": 311
+        }
+      ],
+      "popups": [],
+      "ready": true,
+      "text": "RIANA CIMS\nAM\n\n© 2026 RIANA Group. All rights reserved. | www.riana.co\n\nInstallation Feedback - Northside Technology Centre\n\nPlease share your experience with o"
+    },
+    {
+      "width": 430,
+      "height": 900,
+      "state": "default",
+      "pageOverflow": false,
+      "mainOverflow": false,
+      "escaped": [],
+      "dialogs": [
+        {
+          "top": 293.5,
+          "bottom": 606.5,
+          "width": 414,
+          "fits": true,
+          "scrollable": false,
+          "scrollHeight": 311
+        },
+        {
+          "top": 293.5,
+          "bottom": 606.5,
+          "width": 414,
+          "fits": true,
+          "scrollable": false,
+          "scrollHeight": 311
+        }
+      ],
+      "popups": [],
+      "ready": true,
+      "text": "RIANA CIMS\n\nClient Installation Management\n\nAM\n\n© 2026 RIANA Group. All rights reserved. | www.riana.co\n\nInstallation Feedback - Northside Technology Centre\n\nPl"
+    },
+    {
+      "width": 600,
+      "height": 900,
+      "state": "default",
+      "pageOverflow": false,
+      "mainOverflow": false,
+      "escaped": [],
+      "dialogs": [
+        {
+          "top": 304.75,
+          "bottom": 595.25,
+          "width": 584,
+          "fits": true,
+          "scrollable": false,
+          "scrollHeight": 289
+        },
+        {
+          "top": 304.75,
+          "bottom": 595.25,
+          "width": 584,
+          "fits": true,
+          "scrollable": false,
+          "scrollHeight": 289
+        }
+      ],
+      "popups": [],
+      "ready": true,
+      "text": "RIANA CIMS\n\nClient Installation Management\n\nAM\n\n© 2026 RIANA Group. All rights reserved. | www.riana.co\n\nInstallation Feedback - Northside Technology Centre\n\nPl"
+    },
+    {
+      "width": 768,
+      "height": 900,
+      "state": "default",
+      "pageOverflow": false,
+      "mainOverflow": false,
+      "escaped": [],
+      "dialogs": [
+        {
+          "top": 305.5,
+          "bottom": 594.5,
+          "width": 768,
+          "fits": true,
+          "scrollable": false,
+          "scrollHeight": 287
+        },
+        {
+          "top": 305.5,
+          "bottom": 594.5,
+          "width": 768,
+          "fits": true,
+          "scrollable": false,
+          "scrollHeight": 287
+        }
+      ],
+      "popups": [],
+      "ready": true,
+      "text": "RIANA CIMS\n\nClient Installation Management\n\nAM\n\n© 2026 RIANA Group. All rights reserved. | www.riana.co\n\nInstallation Feedback - Northside Technology Centre\n\nPl"
+    },
+    {
+      "width": 820,
+      "height": 900,
+      "state": "default",
+      "pageOverflow": false,
+      "mainOverflow": false,
+      "escaped": [],
+      "dialogs": [
+        {
+          "top": 305.5,
+          "bottom": 594.5,
+          "width": 820,
+          "fits": true,
+          "scrollable": false,
+          "scrollHeight": 287
+        },
+        {
+          "top": 305.5,
+          "bottom": 594.5,
+          "width": 820,
+          "fits": true,
+          "scrollable": false,
+          "scrollHeight": 287
+        }
+      ],
+      "popups": [],
+      "ready": true,
+      "text": "RIANA CIMS\n\nClient Installation Management\n\nAM\n\n© 2026 RIANA Group. All rights reserved. | www.riana.co\n\nInstallation Feedback - Northside Technology Centre\n\nPl"
+    },
+    {
+      "width": 1024,
+      "height": 900,
+      "state": "default",
+      "pageOverflow": false,
+      "mainOverflow": false,
+      "escaped": [],
+      "dialogs": [
+        {
+          "top": 305.5,
+          "bottom": 594.5,
+          "width": 896,
+          "fits": true,
+          "scrollable": false,
+          "scrollHeight": 287
+        },
+        {
+          "top": 305.5,
+          "bottom": 594.5,
+          "width": 896,
+          "fits": true,
+          "scrollable": false,
+          "scrollHeight": 287
+        }
+      ],
+      "popups": [],
+      "ready": true,
+      "text": "OVERVIEW\nDashboard\nMANAGEMENT\nClients\nAssigned Technicians\nWorkload Calendar\nOPERATIONS\nInstallations\nHardware & Inventory\nInstallation Progress\nADMINISTRATION\n"
+    },
+    {
+      "width": 1280,
+      "height": 900,
+      "state": "default",
+      "pageOverflow": false,
+      "mainOverflow": false,
+      "escaped": [],
+      "dialogs": [
+        {
+          "top": 305.5,
+          "bottom": 594.5,
+          "width": 896,
+          "fits": true,
+          "scrollable": false,
+          "scrollHeight": 287
+        },
+        {
+          "top": 305.5,
+          "bottom": 594.5,
+          "width": 896,
+          "fits": true,
+          "scrollable": false,
+          "scrollHeight": 287
+        }
+      ],
+      "popups": [],
+      "ready": true,
+      "text": "OVERVIEW\nDashboard\nMANAGEMENT\nClients\nAssigned Technicians\nWorkload Calendar\nOPERATIONS\nInstallations\nHardware & Inventory\nInstallation Progress\nADMINISTRATION\n"
+    },
+    {
+      "width": 1366,
+      "height": 900,
+      "state": "default",
+      "pageOverflow": false,
+      "mainOverflow": false,
+      "escaped": [],
+      "dialogs": [
+        {
+          "top": 305.5,
+          "bottom": 594.5,
+          "width": 896,
+          "fits": true,
+          "scrollable": false,
+          "scrollHeight": 287
+        },
+        {
+          "top": 305.5,
+          "bottom": 594.5,
+          "width": 896,
+          "fits": true,
+          "scrollable": false,
+          "scrollHeight": 287
+        }
+      ],
+      "popups": [],
+      "ready": true,
+      "text": "OVERVIEW\nDashboard\nMANAGEMENT\nClients\nAssigned Technicians\nWorkload Calendar\nOPERATIONS\nInstallations\nHardware & Inventory\nInstallation Progress\nADMINISTRATION\n"
+    },
+    {
+      "width": 1440,
+      "height": 900,
+      "state": "default",
+      "pageOverflow": false,
+      "mainOverflow": false,
+      "escaped": [],
+      "dialogs": [
+        {
+          "top": 305.5,
+          "bottom": 594.5,
+          "width": 896,
+          "fits": true,
+          "scrollable": false,
+          "scrollHeight": 287
+        },
+        {
+          "top": 305.5,
+          "bottom": 594.5,
+          "width": 896,
+          "fits": true,
+          "scrollable": false,
+          "scrollHeight": 287
+        }
+      ],
+      "popups": [],
+      "ready": true,
+      "text": "OVERVIEW\nDashboard\nMANAGEMENT\nClients\nAssigned Technicians\nWorkload Calendar\nOPERATIONS\nInstallations\nHardware & Inventory\nInstallation Progress\nADMINISTRATION\n"
+    },
+    {
+      "width": 1920,
+      "height": 900,
+      "state": "default",
+      "pageOverflow": false,
+      "mainOverflow": false,
+      "escaped": [],
+      "dialogs": [
+        {
+          "top": 305.5,
+          "bottom": 594.5,
+          "width": 896,
+          "fits": true,
+          "scrollable": false,
+          "scrollHeight": 287
+        },
+        {
+          "top": 305.5,
+          "bottom": 594.5,
+          "width": 896,
+          "fits": true,
+          "scrollable": false,
+          "scrollHeight": 287
+        }
+      ],
+      "popups": [],
+      "ready": true,
+      "text": "OVERVIEW\nDashboard\nMANAGEMENT\nClients\nAssigned Technicians\nWorkload Calendar\nOPERATIONS\nInstallations\nHardware & Inventory\nInstallation Progress\nADMINISTRATION\n"
+    },
+    {
+      "width": 844,
+      "height": 390,
+      "state": "landscape-short",
+      "pageOverflow": false,
+      "mainOverflow": false,
+      "escaped": [],
+      "dialogs": [
+        {
+          "top": 50.5,
+          "bottom": 339.5,
+          "width": 844,
+          "fits": true,
+          "scrollable": false,
+          "scrollHeight": 287
+        },
+        {
+          "top": 50.5,
+          "bottom": 339.5,
+          "width": 844,
+          "fits": true,
+          "scrollable": false,
+          "scrollHeight": 287
+        }
+      ],
+      "popups": [],
+      "ready": true,
+      "text": "RIANA CIMS\n\nClient Installation Management\n\nAM\n\n© 2026 RIANA Group. All rights reserved. | www.riana.co\n\nInstallation Feedback - Northside Technology Centre\n\nPl"
+    },
+    {
+      "width": 320,
+      "height": 480,
+      "state": "portrait-short",
+      "pageOverflow": false,
+      "mainOverflow": false,
+      "escaped": [],
+      "dialogs": [
+        {
+          "top": 62.25,
+          "bottom": 417.75,
+          "width": 304,
+          "fits": true,
+          "scrollable": false,
+          "scrollHeight": 354
+        },
+        {
+          "top": 62.25,
+          "bottom": 417.75,
+          "width": 304,
+          "fits": true,
+          "scrollable": false,
+          "scrollHeight": 354
+        }
+      ],
+      "popups": [],
+      "ready": true,
+      "text": "RIANA CIMS\nAM\n\n© 2026 RIANA Group. All rights reserved. | www.riana.co\n\nInstallation Feedback - Northside Technology Centre\n\nPlease share your experience with o"
+    }
+  ],
+  "errors": [],
+  "fixtureRequests": [
+    "/api/client_assignments",
+    "/api/announcements",
+    "/api/chat/missed-calls",
+    "/api/chat/recordings",
+    "/api/chat/stream",
+    "/api/feedback_questions"
+  ],
+  "interceptedWrites": []
+}

@@ -517,6 +517,7 @@ export const ClientsModule = ({ user }: ClientsModuleProps) => {
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
               <Input
                 placeholder="Search clients by name, contact, or industry..."
+                aria-label="Search clients by name, contact, or industry"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 className="pl-10"
@@ -524,7 +525,7 @@ export const ClientsModule = ({ user }: ClientsModuleProps) => {
             </div>
           </div>
 
-          <Table>
+          <Table mobileLayout="cards" aria-label="Client database">
             <TableHeader>
               <TableRow>
                 <TableHead>Client Name</TableHead>
@@ -540,7 +541,7 @@ export const ClientsModule = ({ user }: ClientsModuleProps) => {
             <TableBody>
               {filteredClients.map((client) => (
                 <TableRow key={client.id}>
-                  <TableCell>
+                  <TableCell mobileLabel="Client name">
                     <div>
                       <div className="font-medium">{client.client_name}</div>
                       {client.branch && (
@@ -548,11 +549,11 @@ export const ClientsModule = ({ user }: ClientsModuleProps) => {
                       )}
                     </div>
                   </TableCell>
-                  {canViewVendor && <TableCell>{client.current_vendor || 'N/A'}</TableCell>}
-                  <TableCell>{client.contact_person_name}</TableCell>
-                  <TableCell>
+                  {canViewVendor && <TableCell mobileLabel="Previous vendor">{client.current_vendor || 'N/A'}</TableCell>}
+                  <TableCell mobileLabel="Contact person">{client.contact_person_name}</TableCell>
+                  <TableCell mobileLabel="Phone">
                     {(client.contact_person_phone || client.contact_person_phone_masked || client.contact_phone_masked) && (
-                      <div className="flex items-center gap-2">
+                      <div className="flex flex-wrap items-center gap-2">
                         <Phone className="h-3 w-3 shrink-0" />
                         <span className="font-mono text-xs">
                           {revealedContacts[`${client.id}:contact_phone`] || client.contact_person_phone_masked || client.contact_phone_masked || 'Hidden'}
@@ -565,20 +566,20 @@ export const ClientsModule = ({ user }: ClientsModuleProps) => {
                       </div>
                     )}
                   </TableCell>
-                  <TableCell>
+                  <TableCell mobileLabel="Contract type">
                     <Badge variant="outline" className={getContractTypeColor(client.contract_type)}>
                       {client.contract_type}
                     </Badge>
                   </TableCell>
-                  <TableCell>{client.industry_classification}</TableCell>
-                  <TableCell>
+                  <TableCell mobileLabel="Industry">{client.industry_classification}</TableCell>
+                  <TableCell mobileLabel="Start date">
                     <div className="flex items-center gap-1">
                       <Calendar className="h-3 w-3" />
                       {new Date(client.start_date).toLocaleDateString()}
                     </div>
                   </TableCell>
-                  <TableCell>
-                    <div className="flex items-center gap-1.5 whitespace-nowrap">
+                  <TableCell mobileLabel="Actions">
+                    <div className="flex flex-wrap items-center gap-1.5">
                       <Button variant="outline" size="sm" onClick={() => handleViewDetails(client)}>
                         <Eye className="h-3 w-3 mr-1" />
                         View
@@ -615,7 +616,7 @@ export const ClientsModule = ({ user }: ClientsModuleProps) => {
           )}
           
           {/* Items Counter */}
-          <div className="mt-4 pt-4 border-t flex items-center justify-between text-sm text-muted-foreground">
+          <div className="mt-4 pt-4 border-t flex flex-wrap items-center justify-between gap-2 text-sm text-muted-foreground">
             <span>
               Showing {filteredClients.length} of {clients.length} clients
             </span>

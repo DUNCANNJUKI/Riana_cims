@@ -1,0 +1,48 @@
+{
+  "surface": "communication",
+  "file": "/src/components/chat/ChatModule.tsx",
+  "checks": [
+    {
+      "width": 320,
+      "height": 900,
+      "state": "default",
+      "pageOverflow": false,
+      "mainOverflow": false,
+      "escaped": [],
+      "dialogs": [],
+      "ready": true,
+      "text": "RIANA CIMS\nAM\nMessages\nLIVE\nAll 1\nUnread 0\nOnline 1\nJM\nJamie Morgan\nLast seen unavailable\nSuperAdmin\n\n© 2026 RIANA Group. All rights reserved. | www.riana.co"
+    },
+    {
+      "width": 1280,
+      "height": 900,
+      "state": "default",
+      "pageOverflow": false,
+      "mainOverflow": false,
+      "escaped": [],
+      "dialogs": [],
+      "ready": true,
+      "text": "OVERVIEW\nDashboard\nMANAGEMENT\nClients\nAssigned Technicians\nWorkload Calendar\nOPERATIONS\nInstallations\nHardware & Inventory\nInstallation Progress\nADMINISTRATION\n"
+    },
+    {
+      "width": 844,
+      "height": 390,
+      "state": "landscape-short",
+      "pageOverflow": false,
+      "mainOverflow": false,
+      "escaped": [],
+      "dialogs": [],
+      "ready": true,
+      "text": "RIANA CIMS\n\nClient Installation Management\n\nAM\nMessages\nLIVE\nAll 1\nUnread 0\nOnline 1\nJM\nJamie Morgan\nLast seen unavailable\nSuperAdmin\nRIANA Instant Messaging\n\nS"
+    }
+  ],
+  "errors": [],
+  "fixtureRequests": [
+    "/api/client_assignments",
+    "/api/announcements",
+    "/api/chat/missed-calls",
+    "/api/chat/recordings",
+    "/api/chat/stream"
+  ],
+  "interceptedWrites": []
+}

@@ -1,0 +1,416 @@
+[
+  {
+    "surface": "clients",
+    "file": "/src/components/clients/ClientsModule.tsx",
+    "checks": [
+      {
+        "width": 320,
+        "height": 900,
+        "state": "default",
+        "pageOverflow": false,
+        "mainOverflow": false,
+        "escaped": [],
+        "dialogs": [],
+        "popups": [],
+        "ready": true,
+        "text": "RIANA CIMS\nAM\nClients Management\n\nManage your client database and information\n\nAdd Client\nClient Database\n\nSearch and manage all registered clients\n\nCLIENT NAME"
+      },
+      {
+        "width": 1024,
+        "height": 900,
+        "state": "default",
+        "pageOverflow": false,
+        "mainOverflow": false,
+        "escaped": [],
+        "dialogs": [],
+        "popups": [],
+        "ready": true,
+        "text": "OVERVIEW\nDashboard\nMANAGEMENT\nClients\nAssigned Technicians\nWorkload Calendar\nOPERATIONS\nInstallations\nHardware & Inventory\nInstallation Progress\nADMINISTRATION\n"
+      },
+      {
+        "width": 844,
+        "height": 390,
+        "state": "landscape-short",
+        "pageOverflow": false,
+        "mainOverflow": false,
+        "escaped": [],
+        "dialogs": [],
+        "popups": [],
+        "ready": true,
+        "text": "RIANA CIMS\n\nClient Installation Management\n\nAM\nClients Management\n\nManage your client database and information\n\nAdd Client\nClient Database\n\nSearch and manage al"
+      },
+      {
+        "width": 320,
+        "height": 480,
+        "state": "portrait-short",
+        "pageOverflow": false,
+        "mainOverflow": false,
+        "escaped": [],
+        "dialogs": [],
+        "popups": [],
+        "ready": true,
+        "text": "RIANA CIMS\nAM\nClients Management\n\nManage your client database and information\n\nAdd Client\nClient Database\n\nSearch and manage all registered clients\n\nCLIENT NAME"
+      }
+    ],
+    "errors": [],
+    "fixtureRequests": [
+      "/api/client_assignments",
+      "/api/installations",
+      "/api/announcements",
+      "/api/chat/users",
+      "/api/chat/missed-calls",
+      "/api/chat/recordings",
+      "/api/chat/stream",
+      "/api/clients",
+      "/api/departments"
+    ],
+    "interceptedWrites": []
+  },
+  {
+    "surface": "installations",
+    "file": "/src/components/installations/InstallationsModule.tsx",
+    "checks": [
+      {
+        "width": 320,
+        "height": 900,
+        "state": "default",
+        "pageOverflow": false,
+        "mainOverflow": false,
+        "escaped": [],
+        "dialogs": [],
+        "popups": [],
+        "ready": true,
+        "text": "RIANA CIMS\nAM\nInstallations Management\n\nTrack and manage client installations and equipment\n\nEquipment Serial Requirements\nAdd Installation\n\nTotal Kiosks\n\n0\n\nDi"
+      },
+      {
+        "width": 1024,
+        "height": 900,
+        "state": "default",
+        "pageOverflow": false,
+        "mainOverflow": false,
+        "escaped": [],
+        "dialogs": [],
+        "popups": [],
+        "ready": true,
+        "text": "OVERVIEW\nDashboard\nMANAGEMENT\nClients\nAssigned Technicians\nWorkload Calendar\nOPERATIONS\nInstallations\nHardware & Inventory\nInstallation Progress\nADMINISTRATION\n"
+      },
+      {
+        "width": 844,
+        "height": 390,
+        "state": "landscape-short",
+        "pageOverflow": false,
+        "mainOverflow": false,
+        "escaped": [],
+        "dialogs": [],
+        "popups": [],
+        "ready": true,
+        "text": "RIANA CIMS\n\nClient Installation Management\n\nAM\nInstallations Management\n\nTrack and manage client installations and equipment\n\nEquipment Serial Requirements\nAdd "
+      },
+      {
+        "width": 320,
+        "height": 480,
+        "state": "portrait-short",
+        "pageOverflow": false,
+        "mainOverflow": false,
+        "escaped": [],
+        "dialogs": [],
+        "popups": [],
+        "ready": true,
+        "text": "RIANA CIMS\nAM\nInstallations Management\n\nTrack and manage client installations and equipment\n\nEquipment Serial Requirements\nAdd Installation\n\nTotal Kiosks\n\n0\n\nDi"
+      }
+    ],
+    "errors": [],
+    "fixtureRequests": [
+      "/api/client_assignments",
+      "/api/installations",
+      "/api/announcements",
+      "/api/chat/users",
+      "/api/chat/missed-calls",
+      "/api/chat/recordings",
+      "/api/chat/stream",
+      "/api/clients",
+      "/api/user_profiles"
+    ],
+    "interceptedWrites": []
+  },
+  {
+    "surface": "activity",
+    "file": "/src/components/audit/AuditLogsModule.tsx",
+    "checks": [
+      {
+        "width": 320,
+        "height": 900,
+        "state": "default",
+        "pageOverflow": false,
+        "mainOverflow": false,
+        "escaped": [],
+        "dialogs": [],
+        "popups": [],
+        "ready": true,
+        "text": "RIANA CIMS\nAM\nMy Activity\n\nYour own account usage and security activity.\n\nRefresh\nDATE\tACTION\tMODULE\tENTITY\tSTATUS\tSEVERITY\tDETAILS\nNo audit events found.\n\n© 20"
+      },
+      {
+        "width": 1024,
+        "height": 900,
+        "state": "default",
+        "pageOverflow": false,
+        "mainOverflow": false,
+        "escaped": [],
+        "dialogs": [],
+        "popups": [],
+        "ready": true,
+        "text": "OVERVIEW\nDashboard\nMANAGEMENT\nClients\nAssigned Technicians\nWorkload Calendar\nOPERATIONS\nInstallations\nHardware & Inventory\nInstallation Progress\nADMINISTRATION\n"
+      },
+      {
+        "width": 844,
+        "height": 390,
+        "state": "landscape-short",
+        "pageOverflow": false,
+        "mainOverflow": false,
+        "escaped": [],
+        "dialogs": [],
+        "popups": [],
+        "ready": true,
+        "text": "RIANA CIMS\n\nClient Installation Management\n\nAM\nMy Activity\n\nYour own account usage and security activity.\n\nRefresh\nDATE\tACTION\tMODULE\tENTITY\tSTATUS\tSEVERITY\tDET"
+      },
+      {
+        "width": 320,
+        "height": 480,
+        "state": "portrait-short",
+        "pageOverflow": false,
+        "mainOverflow": false,
+        "escaped": [],
+        "dialogs": [],
+        "popups": [],
+        "ready": true,
+        "text": "RIANA CIMS\nAM\nMy Activity\n\nYour own account usage and security activity.\n\nRefresh\nDATE\tACTION\tMODULE\tENTITY\tSTATUS\tSEVERITY\tDETAILS\nNo audit events found.\n\n© 20"
+      }
+    ],
+    "errors": [],
+    "fixtureRequests": [
+      "/api/client_assignments",
+      "/api/installations",
+      "/api/announcements",
+      "/api/chat/users",
+      "/api/chat/missed-calls",
+      "/api/chat/recordings",
+      "/api/chat/stream"
+    ],
+    "interceptedWrites": []
+  },
+  {
+    "surface": "inventory",
+    "file": "/src/components/inventory/HardwareInventoryModule.tsx",
+    "checks": [
+      {
+        "width": 320,
+        "height": 900,
+        "state": "default",
+        "pageOverflow": false,
+        "mainOverflow": false,
+        "escaped": [],
+        "dialogs": [],
+        "popups": [],
+        "ready": true,
+        "text": "RIANA CIMS\nAM\nHardware & Inventory\nModule Tour\nGenerate Serials\nRegister Legacy Hardware\nSerial issuance awaits formal serialization policy approval.\nTotal Regi"
+      },
+      {
+        "width": 1024,
+        "height": 900,
+        "state": "default",
+        "pageOverflow": false,
+        "mainOverflow": false,
+        "escaped": [],
+        "dialogs": [],
+        "popups": [],
+        "ready": true,
+        "text": "OVERVIEW\nDashboard\nMANAGEMENT\nClients\nAssigned Technicians\nWorkload Calendar\nOPERATIONS\nInstallations\nHardware & Inventory\nInstallation Progress\nADMINISTRATION\n"
+      },
+      {
+        "width": 320,
+        "height": 568,
+        "state": "tab:Registry",
+        "pageOverflow": false,
+        "mainOverflow": false,
+        "escaped": [],
+        "dialogs": [],
+        "popups": [],
+        "ready": true,
+        "text": "RIANA CIMS\nAM\nHardware & Inventory\nModule Tour\nGenerate Serials\nRegister Legacy Hardware\nSerial issuance awaits formal serialization policy approval.\nTotal Regi"
+      },
+      {
+        "width": 320,
+        "height": 568,
+        "state": "tab:Equipment Requirements",
+        "pageOverflow": false,
+        "mainOverflow": false,
+        "escaped": [],
+        "dialogs": [],
+        "popups": [],
+        "ready": true,
+        "text": "RIANA CIMS\nAM\nHardware & Inventory\nModule Tour\nGenerate Serials\nRegister Legacy Hardware\nSerial issuance awaits formal serialization policy approval.\nTotal Regi"
+      },
+      {
+        "width": 320,
+        "height": 568,
+        "state": "tab:Models",
+        "pageOverflow": false,
+        "mainOverflow": false,
+        "escaped": [],
+        "dialogs": [],
+        "popups": [],
+        "ready": true,
+        "text": "RIANA CIMS\nAM\nHardware & Inventory\nModule Tour\nGenerate Serials\nRegister Legacy Hardware\nSerial issuance awaits formal serialization policy approval.\nTotal Regi"
+      },
+      {
+        "width": 320,
+        "height": 568,
+        "state": "tab:Locations",
+        "pageOverflow": false,
+        "mainOverflow": false,
+        "escaped": [],
+        "dialogs": [],
+        "popups": [],
+        "ready": true,
+        "text": "RIANA CIMS\nAM\nHardware & Inventory\nModule Tour\nGenerate Serials\nRegister Legacy Hardware\nSerial issuance awaits formal serialization policy approval.\nTotal Regi"
+      },
+      {
+        "width": 320,
+        "height": 568,
+        "state": "tab:Stock Alerts",
+        "pageOverflow": false,
+        "mainOverflow": false,
+        "escaped": [],
+        "dialogs": [],
+        "popups": [],
+        "ready": true,
+        "text": "RIANA CIMS\nAM\nHardware & Inventory\nModule Tour\nGenerate Serials\nRegister Legacy Hardware\nSerial issuance awaits formal serialization policy approval.\nTotal Regi"
+      },
+      {
+        "width": 320,
+        "height": 568,
+        "state": "tab:Reports",
+        "pageOverflow": false,
+        "mainOverflow": false,
+        "escaped": [],
+        "dialogs": [],
+        "popups": [],
+        "ready": true,
+        "text": "RIANA CIMS\nAM\nHardware & Inventory\nModule Tour\nGenerate Serials\nRegister Legacy Hardware\nSerial issuance awaits formal serialization policy approval.\nTotal Regi"
+      },
+      {
+        "width": 320,
+        "height": 568,
+        "state": "tab:Policy",
+        "pageOverflow": false,
+        "mainOverflow": false,
+        "escaped": [],
+        "dialogs": [],
+        "popups": [],
+        "ready": true,
+        "text": "RIANA CIMS\nAM\nHardware & Inventory\nModule Tour\nGenerate Serials\nRegister Legacy Hardware\nSerial issuance awaits formal serialization policy approval.\nTotal Regi"
+      },
+      {
+        "width": 844,
+        "height": 390,
+        "state": "landscape-short",
+        "pageOverflow": false,
+        "mainOverflow": false,
+        "escaped": [],
+        "dialogs": [],
+        "popups": [],
+        "ready": true,
+        "text": "RIANA CIMS\n\nClient Installation Management\n\nAM\nHardware & Inventory\nModule Tour\nGenerate Serials\nRegister Legacy Hardware\nSerial issuance awaits formal serializ"
+      },
+      {
+        "width": 320,
+        "height": 480,
+        "state": "portrait-short",
+        "pageOverflow": false,
+        "mainOverflow": false,
+        "escaped": [],
+        "dialogs": [],
+        "popups": [],
+        "ready": true,
+        "text": "RIANA CIMS\nAM\nHardware & Inventory\nModule Tour\nGenerate Serials\nRegister Legacy Hardware\nSerial issuance awaits formal serialization policy approval.\nTotal Regi"
+      }
+    ],
+    "errors": [],
+    "fixtureRequests": [
+      "/api/client_assignments",
+      "/api/installations",
+      "/api/announcements",
+      "/api/chat/users",
+      "/api/chat/missed-calls",
+      "/api/chat/recordings",
+      "/api/chat/stream"
+    ],
+    "interceptedWrites": []
+  },
+  {
+    "surface": "developer-requests",
+    "file": "/CRMS/src/pages/RequestList.tsx",
+    "checks": [
+      {
+        "width": 320,
+        "height": 900,
+        "state": "default",
+        "pageOverflow": false,
+        "mainOverflow": false,
+        "escaped": [],
+        "dialogs": [],
+        "popups": [],
+        "ready": true,
+        "text": "RIANA CIMS\nAM\nChange Requests\n\nManage and track all system modification requests\n\nNew Request\nAll Status\nAll Priority\nTicket #\n\tCLIENT\tPRIORITY\tSTATUS\t\n\nScroll "
+      },
+      {
+        "width": 1024,
+        "height": 900,
+        "state": "default",
+        "pageOverflow": false,
+        "mainOverflow": false,
+        "escaped": [],
+        "dialogs": [],
+        "popups": [],
+        "ready": true,
+        "text": "OVERVIEW\nDashboard\nMANAGEMENT\nClients\nAssigned Technicians\nWorkload Calendar\nOPERATIONS\nInstallations\nHardware & Inventory\nInstallation Progress\nADMINISTRATION\n"
+      },
+      {
+        "width": 844,
+        "height": 390,
+        "state": "landscape-short",
+        "pageOverflow": false,
+        "mainOverflow": false,
+        "escaped": [],
+        "dialogs": [],
+        "popups": [],
+        "ready": true,
+        "text": "RIANA CIMS\n\nClient Installation Management\n\nAM\nChange Requests\n\nManage and track all system modification requests\n\nNew Request\nAll Status\nAll Priority\nTicket #\n"
+      },
+      {
+        "width": 320,
+        "height": 480,
+        "state": "portrait-short",
+        "pageOverflow": false,
+        "mainOverflow": false,
+        "escaped": [],
+        "dialogs": [],
+        "popups": [],
+        "ready": true,
+        "text": "RIANA CIMS\nAM\nChange Requests\n\nManage and track all system modification requests\n\nNew Request\nAll Status\nAll Priority\nTicket #\n\tCLIENT\tPRIORITY\tSTATUS\t\n\nScroll "
+      }
+    ],
+    "errors": [],
+    "fixtureRequests": [
+      "/api/client_assignments",
+      "/api/installations",
+      "/api/announcements",
+      "/api/chat/users",
+      "/api/chat/missed-calls",
+      "/api/chat/recordings",
+      "/api/chat/stream",
+      "/api/crms/change_requests"
+    ],
+    "interceptedWrites": []
+  }
+]

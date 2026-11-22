@@ -93,7 +93,7 @@ export default function RequestList() {
         </div>
         <div className="flex flex-wrap gap-2">
           <Select value={statusFilter} onValueChange={(value) => { setStatusFilter(value); setPage(1); }}>
-            <SelectTrigger className="w-[160px]" aria-label="Filter by status">
+            <SelectTrigger className="w-full sm:w-[160px]" aria-label="Filter by status">
               <Filter className="mr-2 h-4 w-4" />
               <SelectValue placeholder="Status" />
             </SelectTrigger>
@@ -107,7 +107,7 @@ export default function RequestList() {
             </SelectContent>
           </Select>
           <Select value={priorityFilter} onValueChange={(value) => { setPriorityFilter(value); setPage(1); }}>
-            <SelectTrigger className="w-[140px]" aria-label="Filter by priority">
+            <SelectTrigger className="w-full sm:w-[140px]" aria-label="Filter by priority">
               <SelectValue placeholder="Priority" />
             </SelectTrigger>
             <SelectContent>
@@ -120,6 +120,9 @@ export default function RequestList() {
               </SelectGroup>
             </SelectContent>
           </Select>
+          <Button variant="outline" size="sm" onClick={() => { setTicketSort(ticketSort === 'asc' ? 'desc' : 'asc'); setPage(1); }} aria-label={`Sort ticket numbers ${ticketSort === 'asc' ? 'descending' : 'ascending'}`}>
+            <ArrowUpDown className="mr-2 h-4 w-4" /> Ticket # {ticketSort === 'asc' ? '↑' : '↓'}
+          </Button>
           <Button variant="outline" size="icon" title="Export filtered requests as CSV" aria-label="Export requests" disabled={!filteredRequests.length} onClick={() => downloadRequestsCsv(filteredRequests, 'change-requests.csv')}>
             <Download className="h-4 w-4" />
           </Button>
@@ -138,7 +141,7 @@ export default function RequestList() {
 
       {/* Table */}
       <div className="rounded-xl border bg-card overflow-hidden">
-        <Table>
+        <Table mobileLayout="cards" aria-label="Change requests">
           <TableHeader>
             <TableRow className="bg-muted/50 hover:bg-muted/50">
               <TableHead className="w-[120px]" aria-sort={ticketSort === 'asc' ? 'ascending' : ticketSort === 'desc' ? 'descending' : 'none'}>
@@ -148,19 +151,19 @@ export default function RequestList() {
                 </Button>
               </TableHead>
               <TableHead>Client</TableHead>
-              <TableHead className="hidden lg:table-cell">Description</TableHead>
+              <TableHead className="">Description</TableHead>
               <TableHead>Priority</TableHead>
               <TableHead>Status</TableHead>
-              <TableHead className="hidden md:table-cell">Assigned To</TableHead>
-              <TableHead className="hidden xl:table-cell">Requested</TableHead>
-              <TableHead className="hidden xl:table-cell">Due Date</TableHead>
-              <TableHead className="w-[50px]"></TableHead>
+              <TableHead className="">Assigned To</TableHead>
+              <TableHead className="">Requested</TableHead>
+              <TableHead className="">Due Date</TableHead>
+              <TableHead className="w-[50px]">Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {visibleRequests.map((request) => (
               <TableRow key={request.id} className="table-row-interactive">
-                <TableCell className="font-medium">
+                <TableCell mobileLabel="Ticket #" className="font-medium">
                   <Link
                     to={`/developers/requests/${request.id}`}
                     className="text-primary hover:underline"
@@ -168,27 +171,27 @@ export default function RequestList() {
                     {request.ticket_number}
                   </Link>
                 </TableCell>
-                <TableCell>
+                <TableCell mobileLabel="Client">
                   <div>
                     <p className="font-medium">{request.client?.name || 'Unknown'}</p>
                     <p className="text-xs text-muted-foreground">{request.client?.branch}</p>
                   </div>
                 </TableCell>
-                <TableCell className="hidden lg:table-cell max-w-[300px]">
-                  <p className="truncate text-sm text-muted-foreground">
+                <TableCell mobileLabel="Description" className="max-w-[300px]">
+                  <p className="text-sm text-muted-foreground">
                     {request.change_description}
                   </p>
                 </TableCell>
-                <TableCell>
+                <TableCell mobileLabel="Priority">
                   <PriorityBadge priority={request.priority} />
                 </TableCell>
-                <TableCell>
+                <TableCell mobileLabel="Status">
                   <StatusBadge status={request.status} />
                 </TableCell>
-                <TableCell className="hidden md:table-cell">
+                <TableCell mobileLabel="Assigned To" className="">
                   {request.assigned_developer ? (
                     <div className="flex items-center gap-2">
-                      <div className="h-6 w-6 rounded-full bg-primary/10 flex items-center justify-center">
+                      <div className="h-6 w-6 shrink-0 rounded-full bg-primary/10 flex items-center justify-center">
                         <span className="text-xs font-medium text-primary">
                           {request.assigned_developer.name ? request.assigned_developer.name.split(' ').map(n => n[0]).join('') : 'U'}
                         </span>
@@ -199,15 +202,15 @@ export default function RequestList() {
                     <span className="text-sm text-muted-foreground">Unassigned</span>
                   )}
                 </TableCell>
-                <TableCell className="hidden xl:table-cell text-muted-foreground">
+                <TableCell mobileLabel="Requested" className="text-muted-foreground">
                   {format(new Date(request.date_requested), 'MMM d, yyyy')}
                 </TableCell>
-                <TableCell className="hidden xl:table-cell">
+                <TableCell mobileLabel="Due Date" className="">
                   <span className="text-sm">
                     {format(new Date(request.estimated_completion_date), 'MMM d, yyyy')}
                   </span>
                 </TableCell>
-                <TableCell>
+                <TableCell mobileLabel="Actions">
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
                       <Button variant="ghost" size="icon" className="h-8 w-8" title="Request actions" aria-label="Request actions">

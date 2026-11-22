@@ -304,7 +304,7 @@ export default function Reports() {
                   <Skeleton className="h-72 w-full" />
                 </div>
               ) : (
-              <Table>
+              <Table mobileLayout="cards" aria-label="Change request report">
                 <TableHeader>
                   <TableRow className="bg-muted/50">
                     <TableHead>Ticket #</TableHead>
@@ -321,34 +321,34 @@ export default function Reports() {
                 <TableBody>
                   {filteredRequests.map((request) => (
                     <TableRow key={request.id}>
-                      <TableCell className="font-medium">{request.ticket_number}</TableCell>
-                      <TableCell>
+                      <TableCell mobileLabel="Ticket #" className="font-medium">{request.ticket_number}</TableCell>
+                      <TableCell mobileLabel="Client">
                         <div>
                           <p className="font-medium">{request.client?.name || 'Unknown client'}</p>
                           <p className="text-xs text-muted-foreground">{request.client?.branch || '-'}</p>
                         </div>
                       </TableCell>
-                      <TableCell className="uppercase text-xs">
+                      <TableCell mobileLabel="Contract" className="uppercase text-xs">
                         {request.client?.contract_type || '-'}
                       </TableCell>
-                      <TableCell>
+                      <TableCell mobileLabel="Priority">
                         <PriorityBadge priority={request.priority} />
                       </TableCell>
-                      <TableCell>
+                      <TableCell mobileLabel="Status">
                         <StatusBadge status={request.status} />
                       </TableCell>
-                      <TableCell>
+                      <TableCell mobileLabel="Assigned To">
                         {request.assigned_developer?.name || '-'}
                       </TableCell>
-                      <TableCell className="text-muted-foreground">
+                      <TableCell mobileLabel="Requested" className="text-muted-foreground">
                         {format(new Date(request.date_requested || request.created_at), 'MMM d, yyyy')}
                       </TableCell>
-                      <TableCell className="text-muted-foreground">
+                      <TableCell mobileLabel="Commenced" className="text-muted-foreground">
                         {request.commencement_date 
                           ? format(new Date(request.commencement_date), 'MMM d, yyyy') 
                           : '-'}
                       </TableCell>
-                      <TableCell className="text-muted-foreground">
+                      <TableCell mobileLabel="Completed" className="text-muted-foreground">
                         {request.completion_date 
                           ? format(new Date(request.completion_date), 'MMM d, yyyy') 
                           : '-'}
@@ -379,7 +379,7 @@ export default function Reports() {
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <Table>
+              <Table mobileLayout="cards" aria-label="Change request documents">
                 <TableHeader>
                   <TableRow className="bg-muted/50">
                     <TableHead>Ticket #</TableHead>
@@ -392,12 +392,12 @@ export default function Reports() {
                 <TableBody>
                   {filteredRequests.map((request) => (
                     <TableRow key={request.id}>
-                      <TableCell className="font-medium">{request.ticket_number}</TableCell>
-                      <TableCell>{request.client?.name || 'Unknown client'}</TableCell>
-                      <TableCell>
+                      <TableCell mobileLabel="Ticket #" className="font-medium">{request.ticket_number}</TableCell>
+                      <TableCell mobileLabel="Client">{request.client?.name || 'Unknown client'}</TableCell>
+                      <TableCell mobileLabel="Status">
                         <StatusBadge status={request.status} />
                       </TableCell>
-                      <TableCell>
+                      <TableCell mobileLabel="Change Request Form">
                         <Button
                           variant="outline"
                           size="sm"
@@ -407,7 +407,7 @@ export default function Reports() {
                           Download
                         </Button>
                       </TableCell>
-                      <TableCell>
+                      <TableCell mobileLabel="Completion Report">
                         {request.status === 'completed' ? (
                           <Button
                             variant="outline"

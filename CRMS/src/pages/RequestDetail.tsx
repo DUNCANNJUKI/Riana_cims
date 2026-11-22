@@ -36,6 +36,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@crms/components/ui/select';
 import { useState, useEffect, useMemo } from 'react';
 import { getCimsUser } from '@crms/lib/cimsSession';
+import { apiRequest } from '@crms/lib/apiRequest';
 import { Label } from '@crms/components/ui/label';
 import { useChangeRequest, useProfiles, useUpdateChangeRequest, useCreateAuditLog, useAuditLogs, useClientScope } from '@crms/hooks/useSupabaseData';
 import { generateChangeRequestPDF, generateCompletionReportPDF, downloadPDF } from '@crms/lib/pdfGenerator';
@@ -86,7 +87,7 @@ export default function RequestDetail() {
   const [approvalDialogOpen, setApprovalDialogOpen] = useState(false);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
 
-  const { data: request, isLoading: requestLoading } = useChangeRequest(id!);
+  const { data: request, isLoading: requestLoading, refetch: refetchRequest } = useChangeRequest(id!);
   const { data: profiles } = useProfiles();
   const { data: allAuditLogs } = useAuditLogs();
   const { data: clientScope } = useClientScope(request?.client_id);
@@ -97,6 +98,7 @@ export default function RequestDetail() {
   const [selectedDeveloperId, setSelectedDeveloperId] = useState('');
   const [approvalComment, setApprovalComment] = useState('');
   const [reportDialogOpen, setReportDialogOpen] = useState(false);
+  const [confirmingImplementation, setConfirmingImplementation] = useState(false);
   const [closeDialogOpen, setCloseDialogOpen] = useState(false);
   const [isChargeable, setIsChargeable] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
@@ -695,13 +697,25 @@ export default function RequestDetail() {
               Mark Complete
             </Button>
           )}
-          {(request.status === 'ready_for_completion_report' || request.status === 'completed' || request.status === 'awaiting_client_acceptance') && (
-            <Button size="sm" onClick={() => setReportDialogOpen(true)} className="bg-teal-700 hover:bg-teal-800 text-white">
+          {['ready_for_completion_report', 'completed'].includes(request.status) && (isAdmin || request.account_manager_id === currentUserId) && (
+            <Button size="sm" onClick={() => { setConfirmingImplementation(Boolean(request.account_manager_id)); setReportDialogOpen(true); }} className="bg-teal-700 hover:bg-teal-800 text-white">
               <FileCheck2 className="mr-2 h-4 w-4" />
-              Prepare Completion Report
+              {request.account_manager_id ? 'Confirm Implementation' : 'Prepare Completion Report'}
             </Button>
           )}
-          {request.status === 'client_accepted' && (
+          {request.status === 'awaiting_client_acceptance' && request.latest_completion_report && (isAdmin || request.account_manager_id === currentUserId) && (
+            <Button size="sm" variant="outline" disabled={actionLoading} onClick={async () => {
+              setActionLoading(true);
+              try {
+                const response = await apiRequest(`/api/crms/completion_reports/${encodeURIComponent(request.latest_completion_report!.id)}/send`, { method: 'POST' });
+                const delivery = await response.json();
+                if (!response.ok) throw new Error(delivery.error || 'Unable to resend client confirmation.');
+                toast({ title: 'Client Confirmation Delivery', description: `SMS ${delivery.smsStatus}; email ${delivery.emailStatus}.`, variant: delivery.smsStatus === 'failed' && delivery.emailStatus === 'failed' ? 'destructive' : undefined });
+              } catch (error) { toast({ title: 'Delivery Unavailable', description: errorMessage(error), variant: 'destructive' }); }
+              finally { setActionLoading(false); }
+            }}>Resend Client Confirmation</Button>
+          )}
+          {request.status === 'client_accepted' && (isAdmin || request.account_manager_id === currentUserId) && (
             <Button size="sm" onClick={() => setCloseDialogOpen(true)} className="bg-emerald-700 hover:bg-emerald-800 text-white">
               <CheckCircle className="mr-2 h-4 w-4" />
               Verify & Close Request
@@ -710,19 +724,24 @@ export default function RequestDetail() {
         </div>
       </div>
 
+      {request.client_acceptance?.feedback_submitted_at && <Card><CardHeader><CardTitle>Client Implementation Feedback</CardTitle></CardHeader><CardContent>
+        {request.client_acceptance.feedback_rating != null && <p>Rating: {request.client_acceptance.feedback_rating} / 5</p>}
+        {request.client_acceptance.feedback_comment && <p className="whitespace-pre-wrap break-words">{request.client_acceptance.feedback_comment}</p>}
+      </CardContent></Card>}
+
       <div className="grid gap-6 lg:grid-cols-3">
         {/* Main Content */}
         <div className="lg:col-span-2 space-y-6">
           {/* Client Request Status Banners */}
           {request.status === 'ready_for_completion_report' && (
-            <div className="bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-900 rounded-lg p-4 flex items-center justify-between">
+            <div className="bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-900 rounded-lg p-4 flex flex-wrap items-center justify-between gap-3">
               <div>
                 <p className="font-semibold text-blue-900 dark:text-blue-200 text-sm">Ready for Client Completion Report</p>
                 <p className="text-xs text-blue-700 dark:text-blue-400 mt-0.5">Development and internal verification are complete. Account Manager can now prepare and dispatch the formal report.</p>
               </div>
-              <Button size="sm" onClick={() => setReportDialogOpen(true)} className="bg-blue-700 hover:bg-blue-800 text-white">
-                Prepare Report
-              </Button>
+              {(isAdmin || request.account_manager_id === currentUserId) && <Button size="sm" onClick={() => { setConfirmingImplementation(Boolean(request.account_manager_id)); setReportDialogOpen(true); }} className="bg-blue-700 hover:bg-blue-800 text-white">
+                {request.account_manager_id ? 'Confirm Implementation' : 'Prepare Report'}
+              </Button>}
             </div>
           )}
           {request.status === 'awaiting_client_acceptance' && (
@@ -734,16 +753,16 @@ export default function RequestDetail() {
             </div>
           )}
           {request.status === 'client_accepted' && (
-            <div className="bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-900 rounded-lg p-4 flex items-center justify-between">
+            <div className="bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-900 rounded-lg p-4 flex flex-wrap items-center justify-between gap-3">
               <div>
                 <p className="font-semibold text-emerald-900 dark:text-emerald-200 text-sm flex items-center gap-1.5">
                   <CheckCircle className="w-4 h-4 text-emerald-600" /> Client Formally Accepted Delivered Changes
                 </p>
                 <p className="text-xs text-emerald-700 dark:text-emerald-400 mt-0.5">Ready for Account Manager verification and formal request closure.</p>
               </div>
-              <Button size="sm" onClick={() => setCloseDialogOpen(true)} className="bg-emerald-700 hover:bg-emerald-800 text-white">
+              {(isAdmin || request.account_manager_id === currentUserId) && <Button size="sm" onClick={() => setCloseDialogOpen(true)} className="bg-emerald-700 hover:bg-emerald-800 text-white">
                 Verify & Close
-              </Button>
+              </Button>}
             </div>
           )}
           {request.status === 'closed_client_accepted' && (
@@ -1018,6 +1037,8 @@ export default function RequestDetail() {
           </Card>
         </div>
       </div>
+      <PrepareCompletionReportDialog open={reportDialogOpen} onOpenChange={setReportDialogOpen} changeRequestId={request.id} ticketNumber={request.ticket_number} requestTitle={request.request_title || request.change_description || ''} confirmImplementation={confirmingImplementation} onSuccess={() => { void refetchRequest(); }} />
+      <CloseChangeRequestDialog open={closeDialogOpen} onOpenChange={setCloseDialogOpen} changeRequestId={request.id} ticketNumber={request.ticket_number} requestTitle={request.request_title || request.change_description || ''} acceptanceRecord={request.client_acceptance} onSuccess={() => { void refetchRequest(); }} />
     </div>
   );
 }

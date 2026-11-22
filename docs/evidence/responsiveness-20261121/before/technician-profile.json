@@ -1,0 +1,49 @@
+{
+  "surface": "technician-profile",
+  "file": "/src/components/profile/TechnicianProfilePage.tsx",
+  "checks": [
+    {
+      "width": 320,
+      "height": 900,
+      "state": "default",
+      "pageOverflow": false,
+      "mainOverflow": false,
+      "escaped": [],
+      "dialogs": [],
+      "ready": true,
+      "text": "RIANA CIMS\nAM\nAlexandra Morgan\n\nSuperAdmin\n\nRole\n\nSuperAdmin\n\nActive Tasks\n\n0\n\nCompleted Tasks\n\n0\n\nAccount Details\n\nYour RIANA CIMS identity and contact informa"
+    },
+    {
+      "width": 1280,
+      "height": 900,
+      "state": "default",
+      "pageOverflow": false,
+      "mainOverflow": false,
+      "escaped": [],
+      "dialogs": [],
+      "ready": true,
+      "text": "OVERVIEW\nDashboard\nMy Tasks\nMANAGEMENT\nClients\nWorkload Calendar\nOPERATIONS\nInstallations\nDATA & REPORTS\nReports\nDEVELOPERS\nDevelopers\nEXTERNAL SYSTEMS\nRIANA OP"
+    },
+    {
+      "width": 844,
+      "height": 390,
+      "state": "landscape-short",
+      "pageOverflow": false,
+      "mainOverflow": false,
+      "escaped": [],
+      "dialogs": [],
+      "ready": true,
+      "text": "RIANA CIMS\n\nClient Installation Management\n\nAM\nAlexandra Morgan\n\nSuperAdmin\n\nRole\n\nSuperAdmin\n\nActive Tasks\n\n0\n\nCompleted Tasks\n\n0\n\nAccount Details\n\nYour RIANA "
+    }
+  ],
+  "errors": [],
+  "fixtureRequests": [
+    "/api/client_assignments",
+    "/api/announcements",
+    "/api/chat/missed-calls",
+    "/api/chat/recordings",
+    "/api/chat/stream",
+    "/api/technician_performance_scores"
+  ],
+  "interceptedWrites": []
+}

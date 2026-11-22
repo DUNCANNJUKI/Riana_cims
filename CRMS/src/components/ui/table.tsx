@@ -1,24 +1,25 @@
 import * as React from "react";
 
 import { cn } from "@crms/lib/utils";
+import { TableScrollArea } from "./table-scroll-area";
 
-const Table = React.forwardRef<HTMLTableElement, React.HTMLAttributes<HTMLTableElement>>(
-  ({ className, ...props }, ref) => (
-    <div className="relative w-full min-w-0 overflow-x-auto overflow-y-hidden overscroll-x-contain rounded-md">
-      <table ref={ref} className={cn("w-full min-w-[640px] caption-bottom text-sm", className)} {...props} />
-    </div>
+const Table = React.forwardRef<HTMLTableElement, React.HTMLAttributes<HTMLTableElement> & { mobileLayout?: "scroll" | "cards" }>(
+  ({ className, mobileLayout = "scroll", ...props }, ref) => (
+    <TableScrollArea label={props["aria-label"]} mobileLayout={mobileLayout} className="rounded-md">
+      <table ref={ref} role="table" className={cn("w-full min-w-full caption-bottom text-sm", className)} {...props} />
+    </TableScrollArea>
   ),
 );
 Table.displayName = "Table";
 
 const TableHeader = React.forwardRef<HTMLTableSectionElement, React.HTMLAttributes<HTMLTableSectionElement>>(
-  ({ className, ...props }, ref) => <thead ref={ref} className={cn("bg-muted/55 [&_tr]:border-b", className)} {...props} />,
+  ({ className, ...props }, ref) => <thead role="rowgroup" ref={ref} className={cn("bg-muted/55 [&_tr]:border-b", className)} {...props} />,
 );
 TableHeader.displayName = "TableHeader";
 
 const TableBody = React.forwardRef<HTMLTableSectionElement, React.HTMLAttributes<HTMLTableSectionElement>>(
   ({ className, ...props }, ref) => (
-    <tbody ref={ref} className={cn("[&_tr:last-child]:border-0", className)} {...props} />
+    <tbody role="rowgroup" ref={ref} className={cn("[&_tr:last-child]:border-0", className)} {...props} />
   ),
 );
 TableBody.displayName = "TableBody";
@@ -43,7 +44,7 @@ TableRow.displayName = "TableRow";
 
 const TableHead = React.forwardRef<HTMLTableCellElement, React.ThHTMLAttributes<HTMLTableCellElement>>(
   ({ className, ...props }, ref) => (
-    <th
+    <th role="columnheader" scope="col"
       ref={ref}
       className={cn(
         "h-11 whitespace-nowrap px-3 text-left align-middle text-xs font-semibold uppercase tracking-[0.04em] text-muted-foreground sm:px-4 [&:has([role=checkbox])]:pr-0",
@@ -55,9 +56,11 @@ const TableHead = React.forwardRef<HTMLTableCellElement, React.ThHTMLAttributes<
 );
 TableHead.displayName = "TableHead";
 
-const TableCell = React.forwardRef<HTMLTableCellElement, React.TdHTMLAttributes<HTMLTableCellElement>>(
-  ({ className, ...props }, ref) => (
-    <td ref={ref} className={cn("whitespace-nowrap p-3 align-middle sm:p-4 [&:has([role=checkbox])]:pr-0", className)} {...props} />
+const TableCell = React.forwardRef<HTMLTableCellElement, React.TdHTMLAttributes<HTMLTableCellElement> & { mobileLabel?: string }>(
+  ({ className, mobileLabel, children, ...props }, ref) => (
+    <td ref={ref} role="cell" className={cn("whitespace-nowrap p-3 align-middle sm:p-4 [&:has([role=checkbox])]:pr-0", className)} {...props}>
+      {mobileLabel ? <><span className="cims-table-label" aria-hidden="true">{mobileLabel}</span><div className="cims-table-value">{children}</div></> : children}
+    </td>
   ),
 );
 TableCell.displayName = "TableCell";

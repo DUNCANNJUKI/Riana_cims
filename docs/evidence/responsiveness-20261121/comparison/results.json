@@ -1,0 +1,140 @@
+[
+  {
+    "surface": "company",
+    "file": "/src/components/company/CompanySettingsModule.tsx",
+    "checks": [
+      {
+        "width": 320,
+        "height": 900,
+        "state": "default",
+        "pageOverflow": false,
+        "mainOverflow": false,
+        "escaped": [],
+        "dialogs": [],
+        "popups": [],
+        "ready": true,
+        "text": "RIANA CIMS\nAM\nCompany Settings\n\nConfigure company branding, system settings, and integrations\n\nCompany Administration\nCompany Info\nBranding\nSubsidiaries\nFeedbac"
+      },
+      {
+        "width": 320,
+        "height": 568,
+        "state": "tab:Company Info",
+        "pageOverflow": false,
+        "mainOverflow": false,
+        "escaped": [],
+        "dialogs": [],
+        "popups": [],
+        "ready": true,
+        "text": "RIANA CIMS\nAM\nCompany Settings\n\nConfigure company branding, system settings, and integrations\n\nCompany Administration\nCompany Info\nBranding\nSubsidiaries\nFeedbac"
+      },
+      {
+        "width": 320,
+        "height": 568,
+        "state": "tab:Branding",
+        "pageOverflow": false,
+        "mainOverflow": false,
+        "escaped": [],
+        "dialogs": [],
+        "popups": [],
+        "ready": true,
+        "text": "RIANA CIMS\nAM\nCompany Settings\n\nConfigure company branding, system settings, and integrations\n\nCompany Administration\nCompany Info\nBranding\nSubsidiaries\nFeedbac"
+      },
+      {
+        "width": 320,
+        "height": 568,
+        "state": "tab:Subsidiaries",
+        "pageOverflow": false,
+        "mainOverflow": false,
+        "escaped": [],
+        "dialogs": [],
+        "popups": [],
+        "ready": true,
+        "text": "RIANA CIMS\nAM\nCompany Settings\n\nConfigure company branding, system settings, and integrations\n\nCompany Administration\nCompany Info\nBranding\nSubsidiaries\nFeedbac"
+      },
+      {
+        "width": 320,
+        "height": 568,
+        "state": "tab:Feedback Survey",
+        "pageOverflow": false,
+        "mainOverflow": false,
+        "escaped": [],
+        "dialogs": [],
+        "popups": [],
+        "ready": true,
+        "text": "RIANA CIMS\nAM\nCompany Settings\n\nConfigure company branding, system settings, and integrations\n\nCompany Administration\nCompany Info\nBranding\nSubsidiaries\nFeedbac"
+      },
+      {
+        "width": 320,
+        "height": 568,
+        "state": "tab:Email",
+        "pageOverflow": false,
+        "mainOverflow": false,
+        "escaped": [],
+        "dialogs": [],
+        "popups": [],
+        "ready": true,
+        "text": "RIANA CIMS\nAM\nCompany Settings\n\nConfigure company branding, system settings, and integrations\n\nCompany Administration\nCompany Info\nBranding\nSubsidiaries\nFeedbac"
+      },
+      {
+        "width": 320,
+        "height": 568,
+        "state": "tab:Maintenance",
+        "pageOverflow": false,
+        "mainOverflow": false,
+        "escaped": [],
+        "dialogs": [],
+        "popups": [],
+        "ready": true,
+        "text": "RIANA CIMS\nAM\nCompany Settings\n\nConfigure company branding, system settings, and integrations\n\nCompany Administration\nCompany Info\nBranding\nSubsidiaries\nFeedbac"
+      },
+      {
+        "width": 320,
+        "height": 568,
+        "state": "tab:Data Management",
+        "pageOverflow": false,
+        "mainOverflow": false,
+        "escaped": [],
+        "dialogs": [],
+        "popups": [],
+        "ready": true,
+        "text": "RIANA CIMS\nAM\nCompany Settings\n\nConfigure company branding, system settings, and integrations\n\nCompany Administration\nCompany Info\nBranding\nSubsidiaries\nFeedbac"
+      },
+      {
+        "width": 844,
+        "height": 390,
+        "state": "landscape-short",
+        "pageOverflow": false,
+        "mainOverflow": false,
+        "escaped": [],
+        "dialogs": [],
+        "popups": [],
+        "ready": true,
+        "text": "RIANA CIMS\n\nClient Installation Management\n\nAM\nCompany Settings\n\nConfigure company branding, system settings, and integrations\n\nCompany Administration\nCompany I"
+      },
+      {
+        "width": 320,
+        "height": 480,
+        "state": "portrait-short",
+        "pageOverflow": false,
+        "mainOverflow": false,
+        "escaped": [],
+        "dialogs": [],
+        "popups": [],
+        "ready": true,
+        "text": "RIANA CIMS\nAM\nCompany Settings\n\nConfigure company branding, system settings, and integrations\n\nCompany Administration\nCompany Info\nBranding\nSubsidiaries\nFeedbac"
+      }
+    ],
+    "errors": [],
+    "fixtureRequests": [
+      "/api/client_assignments",
+      "/api/announcements",
+      "/api/chat/missed-calls",
+      "/api/chat/recordings",
+      "/api/chat/stream",
+      "/api/admin/feedback_questions",
+      "/api/admin/backups",
+      "/api/admin/backup-schedule"
+    ],
+    "interceptedWrites": []
+  }
+]

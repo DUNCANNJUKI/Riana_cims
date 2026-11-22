@@ -1,6 +1,6 @@
 import { errorDetails } from '@/utils/errorDetails';
 import React, { useState, useEffect } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams, Link, useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -52,6 +52,7 @@ interface AttachedFile {
 
 export const ClientChangeRequestForm: React.FC = () => {
   const { token } = useParams<{ token: string }>();
+  const navigate = useNavigate();
   const { toast } = useToast();
 
   const [loading, setLoading] = useState(true);
@@ -107,8 +108,7 @@ export const ClientChangeRequestForm: React.FC = () => {
         }
 
         if (data.is_submitted) {
-          setError('This request has already been submitted. Use your tracking link to follow its progress.');
-          setErrorCode('ALREADY_SUBMITTED');
+          navigate(`/change-request/track/${encodeURIComponent(token)}`, { replace: true });
           return;
         }
         setInvitation({ ...data, client: { client_name: data.client.name, branch_name: data.client.branch, department_name: data.client.department }, client_representative: data.representative });
@@ -120,7 +120,7 @@ export const ClientChangeRequestForm: React.FC = () => {
     };
 
     fetchInvitation();
-  }, [token]);
+  }, [token, navigate]);
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;

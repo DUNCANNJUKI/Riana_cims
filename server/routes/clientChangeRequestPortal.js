@@ -1,6 +1,7 @@
 const express = require('express');
 const path = require('node:path');
 const fs = require('node:fs');
+const { clientRequestProgress } = require('../services/clientRequestProgress');
 const { safeUpload } = require('../security/apiSecurity');
 const {
   getInvitationForClient,
@@ -164,6 +165,7 @@ module.exports = function createClientChangeRequestPortalRouter({ pool, uploadsD
         code,
         representativeName,
         designation,
+        feedback: req.body.feedback,
         req,
       });
       res.json(result);
@@ -197,6 +199,7 @@ module.exports = function createClientChangeRequestPortalRouter({ pool, uploadsD
         signaturePath: storedName,
         representativeName,
         designation,
+        feedback: req.body.feedback,
         req,
       });
       res.json(result);
@@ -210,15 +213,20 @@ module.exports = function createClientChangeRequestPortalRouter({ pool, uploadsD
   router.get('/track/:token', async (req, res) => {
     try {
       const [rows] = await pool.query(
-        `SELECT cr.id, cr.ticket_number, cr.request_title, cr.request_category, cr.date_requested,
+        `SELECT cr.id, cr.ticket_number, cr.request_title, cr.request_category, cr.date_requested, cr.is_client_request,
                 cr.status, cr.acceptance_status, cr.created_at, cr.updated_at,
                 c.client_name, COALESCE(cb.branch_name, c.branch) AS branch_name,
-                i.invitation_token
+                i.invitation_token, r.id AS report_id, r.version_number, r.status AS report_status,
+                r.acceptance_token, r.token_expires_at, r.sent_at,
+                a.feedback_rating, a.feedback_comment, a.feedback_submitted_at
          FROM crms_change_requests cr
          JOIN clients c ON c.id COLLATE utf8mb4_unicode_ci = cr.client_id COLLATE utf8mb4_unicode_ci
          LEFT JOIN client_branches cb ON cb.id COLLATE utf8mb4_unicode_ci = cr.branch_id COLLATE utf8mb4_unicode_ci
          LEFT JOIN crms_change_request_invitations i ON i.id COLLATE utf8mb4_unicode_ci = cr.invitation_id COLLATE utf8mb4_unicode_ci
-         LEFT JOIN crms_completion_reports r ON r.change_request_id COLLATE utf8mb4_unicode_ci = cr.id COLLATE utf8mb4_unicode_ci
+         LEFT JOIN crms_completion_reports r ON r.id = (SELECT rr.id FROM crms_completion_reports rr
+           WHERE rr.change_request_id COLLATE utf8mb4_unicode_ci = cr.id COLLATE utf8mb4_unicode_ci
+             AND rr.status <> 'superseded' ORDER BY rr.version_number DESC LIMIT 1)
+         LEFT JOIN crms_client_acceptances a ON a.completion_report_id COLLATE utf8mb4_unicode_ci = r.id COLLATE utf8mb4_unicode_ci
          WHERE (i.invitation_token = ? AND i.status <> 'cancelled')
             OR (r.acceptance_token = ? AND r.token_expires_at > NOW() AND r.status NOT IN ('draft','superseded')) LIMIT 1`,
         [req.params.token, req.params.token],
@@ -226,40 +234,8 @@ module.exports = function createClientChangeRequestPortalRouter({ pool, uploadsD
       if (!rows.length) return res.status(404).json({ error: 'Request not found.' });
       const row = rows[0];
 
-      // Map internal statuses to safe client-facing stages
-      const statusMap = {
-        pending_approval: { step: 1, label: 'Under Review', description: 'Your request is undergoing internal commercial and technical review.' },
-        waiting: { step: 1, label: 'Pending Clarification', description: 'Our team is reviewing the commercial scope.' },
-        approved: { step: 2, label: 'Approved', description: 'Request approved. Scheduled for developer assignment.' },
-        assigned: { step: 2, label: 'Developer Assigned', description: 'A developer has been assigned to implement the change.' },
-        in_progress: { step: 3, label: 'In Development', description: 'Implementation is actively in progress.' },
-        ready_for_completion_report: { step: 4, label: 'Testing & Verification', description: 'Implementation verified. Completion report being finalized.' },
-        awaiting_client_acceptance: { step: 5, label: 'Completion Report Sent', description: 'Delivered work is ready for your review and formal acceptance.' },
-        client_requested_corrections: { step: 3, label: 'Corrections in Progress', description: 'Our team is addressing the adjustments you requested.' },
-        client_disputed: { step: 3, label: 'Dispute Review', description: 'Your feedback is under leadership review.' },
-        client_accepted: { step: 6, label: 'Accepted by Client', description: 'Completion acknowledged. Pending administrative closure.' },
-        closed_client_accepted: { step: 7, label: 'Closed – Accepted', description: 'Change request has been completed, accepted, and closed.' },
-        completed: { step: 7, label: 'Completed', description: 'Change request completed.' },
-        rejected: { step: 0, label: 'Declined', description: 'The change request could not be approved at this time.' },
-      };
-
-      const stageInfo = statusMap[row.status] || { step: 1, label: row.status, description: '' };
-
-      res.json({
-        ticket_number: row.ticket_number,
-        title: row.request_title,
-        category: row.request_category,
-        client: {
-          name: row.client_name,
-          branch: row.branch_name,
-        },
-        date_requested: row.date_requested,
-        current_status: stageInfo.label,
-        current_step: stageInfo.step,
-        status_description: stageInfo.description,
-        is_closed: row.status === 'closed_client_accepted' || row.status === 'completed',
-        acceptance_status: row.acceptance_status,
-      });
+      res.set('Cache-Control', 'no-store');
+      res.json(clientRequestProgress(row));
     } catch (err) {
       respondWithError(res, err);
     }

@@ -10,6 +10,7 @@ notifications.sendSms = async value => { deliveredNotifications.push({ channel: 
 const {
   createInvitation, createOrUpdateCompletionReport, getCompletionReportForClient,
   handleClientAction, requestClientOtp, verifyOtpAndAccept, verifySignatureAndAccept,
+  confirmImplementation, normalizeClientFeedback,
 } = require('./clientChangeRequests');
 Object.assign(notifications, originalProviders);
 const createCrmsRouter = require('../routes/crms');
@@ -163,4 +164,46 @@ test('acceptance persistence errors roll back the OTP claim and workflow changes
   await assert.rejects(verifyOtpAndAccept(pool, { token: 'token', code: '123456' }), /database unavailable/);
   assert.equal(pool.events.includes('commit'), false);
   assert.deepEqual(pool.events.slice(-2), ['rollback', 'release']);
+});
+
+test('feedback rejects malformed ratings, types and oversized comments before database access', () => {
+  assert.deepEqual(normalizeClientFeedback(), { rating: null, comment: '' });
+  assert.deepEqual(normalizeClientFeedback({ rating: 5, comment: ' Delivered ' }), { rating: 5, comment: 'Delivered' });
+  for (const rating of [0, 6, 1.5, '5', {}, true]) assert.throws(() => normalizeClientFeedback({ rating }), { status: 400 });
+  assert.throws(() => normalizeClientFeedback({ comment: 'x'.repeat(2001) }), { status: 400 });
+  assert.throws(() => normalizeClientFeedback({ comment: {} }), { status: 400 });
+});
+
+test('OTP feedback is persisted within the acceptance transaction', async () => {
+  let feedbackValues;
+  const pool = transactionPool(activeReport(), (sql, values) => {
+    if (sql.includes('FROM crms_client_otp_verifications')) return [[{ id: 'otp-1', otp_hash: crypto.createHmac('sha256', 'salt').update('123456').digest('hex'), salt: 'salt' }]];
+    if (sql.includes('SET feedback_rating')) feedbackValues = values;
+    return [{ affectedRows: 1 }];
+  });
+  const result = await verifyOtpAndAccept(pool, { token: 'token', code: '123456', representativeName: 'Client', designation: 'Manager', feedback: { rating: 4, comment: '<script>plain text</script>' } });
+  assert.equal(result.success, true);
+  assert.deepEqual(feedbackValues.slice(0, 2), [4, '<script>plain text</script>']);
+  assert.ok(pool.events.indexOf('commit') > pool.events.findIndex(sql => sql.includes('SET feedback_rating')));
+});
+
+test('feedback storage failure rolls back signature acceptance', async () => {
+  const pool = transactionPool(activeReport(), sql => {
+    if (sql.includes('SET feedback_rating')) throw new Error('feedback write failed');
+    return [{ affectedRows: 1 }];
+  });
+  await assert.rejects(verifySignatureAndAccept(pool, { token: 'token', signaturePath: 'signature.png', representativeName: 'Client', designation: 'Manager', feedback: { rating: 5 } }), /feedback write failed/);
+  assert.equal(pool.events.includes('commit'), false);
+  assert.ok(pool.events.includes('rollback'));
+});
+
+test('implementation confirmation denies unrelated managers and incomplete work without sending', async () => {
+  for (const [owner, status, expected] of [['other-manager', 'completed', 403], ['manager-1', 'in_progress', 409]]) {
+    const events = [];
+    const connection = { beginTransaction: async () => {}, query: async sql => { assert.match(sql, /FOR UPDATE/); return [[{ account_manager_id: owner, status }]]; }, rollback: async () => events.push('rollback'), release: () => events.push('release') };
+    const before = deliveredNotifications.length;
+    await assert.rejects(confirmImplementation({ getConnection: async () => connection }, { changeRequestId: 'request-1', user: { id: 'manager-1', role: 'Sales' } }), { status: expected });
+    assert.equal(deliveredNotifications.length, before);
+    assert.deepEqual(events, ['rollback', 'release']);
+  }
 });

@@ -420,7 +420,7 @@ export const ReportsModule = ({ user }: ReportsModuleProps) => {
                 <Loader2 className="h-8 w-8 animate-spin text-primary" />
               </div>
             ) : handoverUploads.length > 0 ? (
-              <Table>
+              <Table mobileLayout="cards" aria-label="E-handover report records">
                 <TableHeader>
                   <TableRow>
                     <TableHead>Client Name</TableHead>
@@ -435,18 +435,18 @@ export const ReportsModule = ({ user }: ReportsModuleProps) => {
                 <TableBody>
                   {handoverUploads.map((upload) => (
                     <TableRow key={upload.id}>
-                      <TableCell className="font-medium">{upload.client_name}</TableCell>
-                      <TableCell>{upload.branch_label || getBranchLabel(upload)}</TableCell>
-                      <TableCell>{upload.department_label || getDepartmentLabel(upload)}</TableCell>
-                      <TableCell>{upload.file_name}</TableCell>
-                      <TableCell>{new Date(upload.upload_date).toLocaleDateString()}</TableCell>
-                      <TableCell>
+                      <TableCell mobileLabel="Client name" className="font-medium">{upload.client_name}</TableCell>
+                      <TableCell mobileLabel="Branch">{upload.branch_label || getBranchLabel(upload)}</TableCell>
+                      <TableCell mobileLabel="Department">{upload.department_label || getDepartmentLabel(upload)}</TableCell>
+                      <TableCell mobileLabel="File name">{upload.file_name}</TableCell>
+                      <TableCell mobileLabel="Upload date">{new Date(upload.upload_date).toLocaleDateString()}</TableCell>
+                      <TableCell mobileLabel="Status">
                         <Badge variant={upload.is_signed ? "default" : "secondary"}>
                           {upload.is_signed ? 'Signed' : 'Pending'}
                         </Badge>
                       </TableCell>
-                      <TableCell>
-                        <div className="flex gap-2">
+                      <TableCell mobileLabel="Actions">
+                        <div className="flex flex-wrap gap-2">
                           <Button size="sm" variant="outline" onClick={() => handlePreviewHandover(upload)}>
                             <Eye className="h-3 w-3 mr-1" /> Preview
                           </Button>

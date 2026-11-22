@@ -1,0 +1,42 @@
+{
+  "surface": "client-request-tracking",
+  "file": "/src/pages/ClientRequestTracking.tsx",
+  "checks": [
+    {
+      "width": 320,
+      "height": 900,
+      "state": "default",
+      "pageOverflow": false,
+      "mainOverflow": false,
+      "escaped": [],
+      "dialogs": [],
+      "ready": true,
+      "text": "RIANA\nLIFECYCLE TRACKER\nReview operational reporting requirements\n\nTicket: CR-2026-00123 • Category: enhancement\n\nRefresh Status\nChange Request Progression\n\nTra"
+    },
+    {
+      "width": 1280,
+      "height": 900,
+      "state": "default",
+      "pageOverflow": false,
+      "mainOverflow": false,
+      "escaped": [],
+      "dialogs": [],
+      "ready": true,
+      "text": "RIANA\nLIFECYCLE TRACKER\nReview operational reporting requirements\n\nTicket: CR-2026-00123 • Category: enhancement\n\nRefresh Status\nChange Request Progression\n\nTra"
+    },
+    {
+      "width": 844,
+      "height": 390,
+      "state": "landscape-short",
+      "pageOverflow": false,
+      "mainOverflow": false,
+      "escaped": [],
+      "dialogs": [],
+      "ready": true,
+      "text": "RIANA\nLIFECYCLE TRACKER\nReview operational reporting requirements\n\nTicket: CR-2026-00123 • Category: enhancement\n\nRefresh Status\nChange Request Progression\n\nTra"
+    }
+  ],
+  "errors": [],
+  "fixtureRequests": [],
+  "interceptedWrites": []
+}

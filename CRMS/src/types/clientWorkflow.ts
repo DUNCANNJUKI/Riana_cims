@@ -12,6 +12,9 @@ export interface ClientInvitation {
 }
 
 export interface ClientAcceptance {
+  feedback_rating?: number | null;
+  feedback_comment?: string | null;
+  feedback_submitted_at?: string | null;
   client_representative_name: string;
   client_representative_designation: string;
   sign_off_method: string;

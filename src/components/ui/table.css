@@ -1,0 +1,113 @@
+.cims-table-region {
+  container: cims-table / inline-size;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.cims-table-scroll {
+  position: relative;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scrollbar-width: thin;
+  scrollbar-color: hsl(var(--muted-foreground) / 0.55) hsl(var(--muted));
+}
+
+.cims-table-scroll:focus-visible {
+  outline: 2px solid hsl(var(--ring));
+  outline-offset: 2px;
+}
+
+.cims-table-scroll-hint {
+  margin: 0.5rem 0 0;
+  color: hsl(var(--muted-foreground));
+  font-size: 0.75rem;
+  line-height: 1.5;
+}
+
+.cims-table-label {
+  display: none;
+}
+
+.cims-table-value {
+  display: contents;
+}
+
+/* Only explicitly labeled tables use records on narrow panels; dense grids keep scrolling. */
+@container cims-table (max-width: 40rem) {
+  [data-mobile-layout="cards"] > .cims-table-scroll {
+    overflow: visible;
+    border: 0;
+    border-radius: 0;
+  }
+
+  [data-mobile-layout="cards"] > .cims-table-scroll > table {
+    display: block;
+    width: 100%;
+    min-width: 0;
+  }
+
+  [data-mobile-layout="cards"] > .cims-table-scroll > table > thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  [data-mobile-layout="cards"] > .cims-table-scroll > table > tbody {
+    display: grid;
+    gap: 0.75rem;
+  }
+
+  [data-mobile-layout="cards"] > .cims-table-scroll > table > tbody > tr {
+    display: block;
+    min-width: 0;
+    padding: 0.25rem 0.75rem;
+    border: 1px solid hsl(var(--border));
+    border-radius: var(--radius);
+    background: hsl(var(--card));
+  }
+
+  [data-mobile-layout="cards"] > .cims-table-scroll > table > tbody > tr > td {
+    display: grid;
+    grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.4fr);
+    align-items: start;
+    gap: 0.5rem;
+    width: auto;
+    max-width: none;
+    padding: 0.625rem 0;
+    white-space: normal;
+    overflow: visible;
+    overflow-wrap: anywhere;
+    text-align: left;
+  }
+
+  [data-mobile-layout="cards"] > .cims-table-scroll > table > tbody > tr > td + td {
+    border-top: 1px solid hsl(var(--border) / 0.55);
+  }
+
+  [data-mobile-layout="cards"] .cims-table-label {
+    display: block;
+    color: hsl(var(--muted-foreground));
+    font-size: 0.75rem;
+    font-weight: 500;
+    line-height: 1.5;
+  }
+
+  [data-mobile-layout="cards"] .cims-table-value {
+    display: block;
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  [data-mobile-layout="cards"] > .cims-table-scroll > table > tbody > tr > td[colspan] {
+    display: block;
+    text-align: center;
+  }
+}

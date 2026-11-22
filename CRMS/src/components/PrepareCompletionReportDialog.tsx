@@ -20,6 +20,7 @@ interface PrepareCompletionReportDialogProps {
   requestTitle: string;
   initialReport?: CompletionReport | null;
   onSuccess?: () => void;
+  confirmImplementation?: boolean;
 }
 
 export const PrepareCompletionReportDialog: React.FC<PrepareCompletionReportDialogProps> = ({
@@ -30,6 +31,7 @@ export const PrepareCompletionReportDialog: React.FC<PrepareCompletionReportDial
   requestTitle,
   initialReport,
   onSuccess,
+  confirmImplementation = false,
 }) => {
   const { toast } = useToast();
 
@@ -109,7 +111,10 @@ export const PrepareCompletionReportDialog: React.FC<PrepareCompletionReportDial
 
     try {
       setSubmitting(true);
-      const res = await apiRequest('/api/crms/completion_reports', {
+      const endpoint = confirmImplementation && sendToClient
+        ? `/api/crms/change_requests/${encodeURIComponent(changeRequestId)}/confirm-implementation`
+        : '/api/crms/completion_reports';
+      const res = await apiRequest(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -133,9 +138,10 @@ export const PrepareCompletionReportDialog: React.FC<PrepareCompletionReportDial
       if (!res.ok) throw new Error(data.error || 'Failed to save completion report.');
 
       toast({
-        title: sendToClient ? 'Completion Report Saved' : 'Report Draft Saved',
+        variant: sendToClient && data.delivery?.smsStatus === 'failed' && data.delivery?.emailStatus === 'failed' ? 'destructive' : undefined,
+        title: data.alreadyConfirmed ? 'Implementation Already Confirmed' : sendToClient ? 'Implementation Confirmed' : 'Report Draft Saved',
         description: sendToClient
-          ? `Review link delivery: SMS ${data.delivery?.smsStatus || 'unconfirmed'}, email ${data.delivery?.emailStatus || 'unconfirmed'}.`
+          ? data.message || `Review link delivery: SMS ${data.delivery?.smsStatus || 'unconfirmed'}, email ${data.delivery?.emailStatus || 'unconfirmed'}.`
           : 'Completion report saved as draft.',
       });
 
@@ -158,7 +164,7 @@ export const PrepareCompletionReportDialog: React.FC<PrepareCompletionReportDial
         <DialogHeader>
           <DialogTitle className="text-xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
             <FileCheck2 className="w-5 h-5 text-teal-600" />
-            Prepare Client Completion Report
+            {confirmImplementation ? 'Confirm Implementation' : 'Prepare Client Completion Report'}
           </DialogTitle>
           <DialogDescription>
             Formal technical completion report for Ticket <strong>{ticketNumber}</strong> ({requestTitle}).
@@ -318,7 +324,7 @@ export const PrepareCompletionReportDialog: React.FC<PrepareCompletionReportDial
             className="w-full sm:w-auto bg-teal-700 hover:bg-teal-800 text-white"
           >
             {submitting ? <RefreshCw className="w-4 h-4 mr-1.5 animate-spin" /> : <Send className="w-4 h-4 mr-1.5" />}
-            Send Report & Request Client Acceptance
+            {confirmImplementation ? 'Confirm Implementation & Notify Client' : 'Send Report & Request Client Acceptance'}
           </Button>
         </DialogFooter>
       </DialogContent>

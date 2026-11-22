@@ -1,0 +1,66 @@
+{
+  "surface": "developer-requests",
+  "file": "/CRMS/src/pages/RequestList.tsx",
+  "checks": [
+    {
+      "width": 320,
+      "height": 900,
+      "state": "default",
+      "pageOverflow": false,
+      "mainOverflow": false,
+      "escaped": [],
+      "dialogs": [],
+      "popups": [],
+      "ready": true,
+      "text": "RIANA CIMS\nAM\nChange Requests\n\nManage and track all system modification requests\n\nNew Request\nAll Status\nAll Priority\nTicket #\n\tCLIENT\tPRIORITY\tSTATUS\t\n\nScroll "
+    },
+    {
+      "width": 1024,
+      "height": 900,
+      "state": "default",
+      "pageOverflow": false,
+      "mainOverflow": false,
+      "escaped": [],
+      "dialogs": [],
+      "popups": [],
+      "ready": true,
+      "text": "OVERVIEW\nDashboard\nMANAGEMENT\nClients\nAssigned Technicians\nWorkload Calendar\nOPERATIONS\nInstallations\nHardware & Inventory\nInstallation Progress\nADMINISTRATION\n"
+    },
+    {
+      "width": 844,
+      "height": 390,
+      "state": "landscape-short",
+      "pageOverflow": false,
+      "mainOverflow": false,
+      "escaped": [],
+      "dialogs": [],
+      "popups": [],
+      "ready": true,
+      "text": "RIANA CIMS\n\nClient Installation Management\n\nAM\nChange Requests\n\nManage and track all system modification requests\n\nNew Request\nAll Status\nAll Priority\nTicket #\n"
+    },
+    {
+      "width": 320,
+      "height": 480,
+      "state": "portrait-short",
+      "pageOverflow": false,
+      "mainOverflow": false,
+      "escaped": [],
+      "dialogs": [],
+      "popups": [],
+      "ready": true,
+      "text": "RIANA CIMS\nAM\nChange Requests\n\nManage and track all system modification requests\n\nNew Request\nAll Status\nAll Priority\nTicket #\n\tCLIENT\tPRIORITY\tSTATUS\t\n\nScroll "
+    }
+  ],
+  "errors": [],
+  "fixtureRequests": [
+    "/api/client_assignments",
+    "/api/installations",
+    "/api/announcements",
+    "/api/chat/users",
+    "/api/chat/missed-calls",
+    "/api/chat/recordings",
+    "/api/chat/stream",
+    "/api/crms/change_requests"
+  ],
+  "interceptedWrites": []
+}

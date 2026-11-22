@@ -440,7 +440,7 @@ export default function Users() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <Table>
+          <Table mobileLayout="cards" aria-label="Developer users">
             <TableHeader>
               <TableRow>
                 <TableHead>User</TableHead>
@@ -454,9 +454,9 @@ export default function Users() {
             <TableBody>
               {filteredUsers.map((user) => (
                 <TableRow key={user.id}>
-                  <TableCell>
+                  <TableCell mobileLabel="User">
                     <div className="flex items-center gap-3">
-                      <Avatar className="h-9 w-9">
+                      <Avatar className="h-9 w-9 shrink-0">
                         <AvatarImage src={user.avatar_url || undefined} />
                         <AvatarFallback className="bg-primary/10 text-primary text-sm">
                           {user.name ? user.name.split(' ').map(n => n[0]).join('') : 'U'}
@@ -465,9 +465,9 @@ export default function Users() {
                       <span className="font-medium">{user.name}</span>
                     </div>
                   </TableCell>
-                  <TableCell className="text-muted-foreground">{user.email}</TableCell>
-                  <TableCell>{user.department || '-'}</TableCell>
-                  <TableCell>
+                  <TableCell mobileLabel="Email" className="text-muted-foreground">{user.email}</TableCell>
+                  <TableCell mobileLabel="Department">{user.department || '-'}</TableCell>
+                  <TableCell mobileLabel="Role">
                     <div className="flex gap-1 flex-wrap">
                       {user.roles.map((role) => (
                         <Badge
@@ -485,7 +485,7 @@ export default function Users() {
                       )}
                     </div>
                   </TableCell>
-                  <TableCell>
+                  <TableCell mobileLabel="Status">
                     <Badge
                       variant="outline"
                       className={user.status === 'suspended' ? "bg-destructive/10 text-destructive border-destructive/20" : "bg-status-approved/10 text-status-approved border-status-approved/20"}
@@ -493,10 +493,10 @@ export default function Users() {
                       {user.status === 'active' ? 'Active' : 'Suspended'}
                     </Badge>
                   </TableCell>
-                  <TableCell className="text-right">
+                  <TableCell mobileLabel="Actions" className="text-right">
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
-                        <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+                        <Button variant="ghost" size="sm" className="h-8 w-8 p-0" aria-label="User actions">
                           <MoreHorizontal className="h-4 w-4" />
                         </Button>
                       </DropdownMenuTrigger>
@@ -537,7 +537,7 @@ export default function Users() {
               ))}
               {filteredUsers.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={5} className="text-center py-8">
+                  <TableCell colSpan={6} className="text-center py-8">
                     <UsersIcon className="mx-auto h-12 w-12 text-muted-foreground/50 mb-4" />
                     <p className="text-muted-foreground">No users found</p>
                   </TableCell>

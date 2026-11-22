@@ -1,0 +1,44 @@
+{
+  "surface": "feedback-page",
+  "file": "/src/pages/FeedbackForm.tsx",
+  "checks": [
+    {
+      "width": 320,
+      "height": 900,
+      "state": "default",
+      "pageOverflow": false,
+      "mainOverflow": false,
+      "escaped": [],
+      "dialogs": [],
+      "ready": true,
+      "text": "Installation Feedback\n\nHelp us improve by sharing your experience with Northside Technology Centre - Westlands\n\nLoading your feedback survey...\nSubmit Feedback\n"
+    },
+    {
+      "width": 1280,
+      "height": 900,
+      "state": "default",
+      "pageOverflow": false,
+      "mainOverflow": false,
+      "escaped": [],
+      "dialogs": [],
+      "ready": true,
+      "text": "Installation Feedback\n\nHelp us improve by sharing your experience with Northside Technology Centre - Westlands\n\nLoading your feedback survey...\nSubmit Feedback\n"
+    },
+    {
+      "width": 844,
+      "height": 390,
+      "state": "landscape-short",
+      "pageOverflow": false,
+      "mainOverflow": false,
+      "escaped": [],
+      "dialogs": [],
+      "ready": true,
+      "text": "Installation Feedback\n\nHelp us improve by sharing your experience with Northside Technology Centre - Westlands\n\nLoading your feedback survey...\nSubmit Feedback\n"
+    }
+  ],
+  "errors": [],
+  "fixtureRequests": [
+    "/api/feedback_questions"
+  ],
+  "interceptedWrites": []
+}
