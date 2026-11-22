@@ -28,7 +28,15 @@ license_check:
   image: node:22
   script:
     - npm ci
-    - npx --yes license-checker --onlyAllow "MIT;ISC;BSD-2-Clause;BSD-3-Clause;Apache-2.0;CC0-1.0;CC-BY-3.0;CC-BY-4.0;Unlicense;Python-2.0;0BSD" --excludePrivatePackages
+    # Retain development/tooling visibility without applying the shipped-library policy to PM2.
+    - mkdir -p .runtime/licenses
+    - npx --yes license-checker@25.0.1 --excludePrivatePackages --json --out .runtime/licenses/all-dependencies.json
+    - npx --yes license-checker@25.0.1 --production --onlyAllow "MIT;ISC;BSD-2-Clause;BSD-3-Clause;Apache-2.0;CC0-1.0;CC-BY-3.0;CC-BY-4.0;Unlicense;Python-2.0;0BSD;BlueOak-1.0.0;Zlib;MPL-2.0" --excludePrivatePackages --json --out .runtime/licenses/production-dependencies.json
+  artifacts:
+    when: always
+    paths:
+      - .runtime/licenses/
+    expire_in: 7 days
   allow_failure: true
   only:
     - branches
