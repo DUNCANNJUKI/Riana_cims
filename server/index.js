@@ -5106,16 +5106,11 @@ app.get('/api/public/company-pwa-icon/:size.png', async (req, res) => {
     if (!fs.existsSync(sourcePath)) sourcePath = path.join(__dirname, '../public/Riana_mark_color_trimmed.png');
     if (!fs.existsSync(sourcePath)) return res.status(404).end();
 
-    const inset = Math.round(size * 0.76);
-    const logo = await sharp(sourcePath, { limitInputPixels: 16000000, failOn: 'none' })
-      .rotate().resize(inset, inset, { fit: 'contain', background: { r: 255, g: 255, b: 255, alpha: 0 } })
-      .png().toBuffer();
-    const metadata = await sharp(logo).metadata();
-    const left = Math.max(0, Math.round((size - (metadata.width || inset)) / 2));
-    const top = Math.max(0, Math.round((size - (metadata.height || inset)) / 2));
-    const icon = await sharp({ create: { width: size, height: size, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } } })
-      .composite([{ input: logo, left, top }]).png().toBuffer();
-    res.setHeader('Cache-Control', 'public, max-age=300, stale-while-revalidate=3600');
+    const purpose = req.query.purpose === 'maskable' ? 'maskable' : 'any';
+    const { renderCompanyPwaIcon } = require('./services/companyPwaIcon');
+    const icon = await renderCompanyPwaIcon(sourcePath, size, purpose);
+    // Revalidate branding at this URL; installed clients also receive versioned manifest URLs.
+    res.setHeader('Cache-Control', 'public, max-age=0, must-revalidate');
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.type('image/png').send(icon);
   } catch (err) {

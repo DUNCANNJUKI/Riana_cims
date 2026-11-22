@@ -16,6 +16,7 @@ const migrationIds = [
   '20261104_communication_meeting_state',
   '20261107_call_recordings',
   '20261110_client_change_requests_portal',
+  '20261122_client_implementation_feedback',
 ];
 
 const splitSqlStatements = (sql) => {
@@ -152,6 +153,7 @@ async function run() {
     call_participants: ['status', 'joined_at', 'left_at', 'hand_raised', 'hand_raised_at', 'audio_enabled', 'video_enabled', 'screen_sharing'],
     call_device_sessions: ['call_id', 'user_id', 'device_id', 'status', 'accepted_at', 'resolved_at', 'last_seen_at'],
     message_recipient_status: ['message_id', 'user_id', 'delivered_at', 'read_at'],
+    crms_client_acceptances: ['feedback_rating', 'feedback_comment', 'feedback_submitted_at'],
   };
   for (const [table, columns] of Object.entries(requiredColumns)) {
     const [rows] = await pool.query(

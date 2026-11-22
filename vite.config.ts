@@ -61,7 +61,7 @@ export default defineConfig(({ mode }) => ({
     react(),
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['Riana_logo.png', 'Riana_mark_transparent.png', 'Riana_mark_color_trimmed.png', 'marezi-letterhead.png', 'pwa-icon.svg', 'pwa-maskable.svg', 'push-handlers.js', 'letterhead.jpg', 'letterhead-full.jpg', 'letterhead-new.jpg'],
+      includeAssets: ['Riana_logo.png', 'Riana_mark_transparent.png', 'Riana_mark_color_trimmed.png', 'marezi-letterhead.png', 'pwa-icon.svg', 'pwa-maskable.svg', 'pwa/*.png', 'push-handlers.js', 'letterhead.jpg', 'letterhead-full.jpg', 'letterhead-new.jpg'],
       manifest: {
         id: '/',
         name: 'RIANA CIMS - Client Installation Management System',
@@ -77,13 +77,19 @@ export default defineConfig(({ mode }) => ({
         start_url: '/',
         icons: [
           {
-            src: '/api/public/company-pwa-icon/192.png',
+            src: '/api/public/company-pwa-icon/192.png?v=splash-20261122-2',
             sizes: '192x192',
             type: 'image/png',
             purpose: 'any'
           },
           {
-            src: '/api/public/company-pwa-icon/512.png',
+            src: '/api/public/company-pwa-icon/512.png?v=splash-20261122-2',
+            sizes: '512x512',
+            type: 'image/png',
+            purpose: 'any'
+          },
+          {
+            src: '/api/public/company-pwa-icon/512.png?purpose=maskable&v=splash-20261122-2',
             sizes: '512x512',
             type: 'image/png',
             purpose: 'maskable'
@@ -91,8 +97,8 @@ export default defineConfig(({ mode }) => ({
         ],
         categories: ['business', 'productivity'],
         shortcuts: [
-          { name: 'Dashboard', short_name: 'Dashboard', url: '/', icons: [{ src: '/api/public/company-pwa-icon/192.png', sizes: '192x192', type: 'image/png' }] },
-          { name: 'Install App', short_name: 'Install', url: '/install', icons: [{ src: '/api/public/company-pwa-icon/192.png', sizes: '192x192', type: 'image/png' }] },
+          { name: 'Dashboard', short_name: 'Dashboard', url: '/', icons: [{ src: '/api/public/company-pwa-icon/192.png?v=splash-20261122-2', sizes: '192x192', type: 'image/png' }] },
+          { name: 'Install App', short_name: 'Install', url: '/install', icons: [{ src: '/api/public/company-pwa-icon/192.png?v=splash-20261122-2', sizes: '192x192', type: 'image/png' }] },
         ],
       },
       workbox: {
@@ -106,6 +112,17 @@ export default defineConfig(({ mode }) => ({
         navigateFallback: '/index.html',
         navigateFallbackDenylist: [/^\/api\//, /^\/developers\//, /^\/uploads\//],
         runtimeCaching: [
+          {
+            // Branding is still dynamic; refresh online and retain icons for offline startup.
+            urlPattern: ({ url }) => /^\/api\/public\/company-pwa-icon\/(180|192|512)\.png$/.test(url.pathname),
+            handler: 'NetworkFirst',
+            options: {
+              cacheName: 'riana-pwa-icons-v2',
+              networkTimeoutSeconds: 3,
+              expiration: { maxEntries: 12, maxAgeSeconds: 60 * 60 * 24 * 30 },
+              cacheableResponse: { statuses: [200] },
+            },
+          },
           {
             urlPattern: ({ url }) => url.pathname.startsWith('/api/'),
             handler: 'NetworkOnly',

@@ -376,30 +376,27 @@
   min-height: 62px;
   margin-top: 2px;
   color: #087f92;
-  background: rgba(255, 255, 255, 0.94);
-  border: 1px solid rgba(8, 127, 146, 0.34);
+  background: transparent;
+  border: 1px solid transparent;
   border-radius: 13px;
   cursor: pointer;
-  box-shadow: 0 10px 24px rgba(7, 127, 146, 0.12);
-  transition: transform 160ms ease, border-color 160ms ease, background-color 160ms ease, box-shadow 160ms ease;
+  box-shadow: none;
+  transition: transform 160ms ease, color 160ms ease;
 }
 
 .riana-login-card__passkey svg {
-  width: 25px;
-  height: 25px;
+  width: 32px;
+  height: 32px;
   stroke-width: 2;
 }
 
 .riana-login-card__passkey:hover:not(:disabled) {
   color: #056d7e;
-  background: #f0fbfc;
-  border-color: rgba(8, 127, 146, 0.58);
   transform: translateY(-2px);
-  box-shadow: 0 14px 28px rgba(7, 127, 146, 0.17);
 }
 
 .riana-login-card__passkey:focus-visible {
-  outline: 4px solid rgba(20, 177, 202, 0.24);
+  outline: 2px solid #087f92;
   outline-offset: 3px;
 }
 
