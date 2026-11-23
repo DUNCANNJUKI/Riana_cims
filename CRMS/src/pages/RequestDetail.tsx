@@ -1,3 +1,4 @@
+import { AffectedModulesPicker } from '@crms/components/AffectedModulesPicker';
 import { useParams, useNavigate } from 'react-router-dom';
 import { format } from 'date-fns';
 import {
@@ -18,8 +19,6 @@ import {
   FileCheck,
   Play,
   Flag,
-  Plus,
-  X,
 } from 'lucide-react';
 import { CompanyLogoLoader, PageLoader } from '@crms/components/common/CompanyLogoLoader';
 import { Button } from '@crms/components/ui/button';
@@ -49,24 +48,6 @@ import { useLocation } from 'react-router-dom';
 import type { Database } from '@crms/integrations/supabase/types';
 import { errorMessage } from '@crms/lib/utils';
 
-const defaultModules = [
-  'Authentication',
-  'User Management',
-  'Security',
-  'Reporting',
-  'Analytics',
-  'Data Export',
-  'Payment Gateway',
-  'Transaction Processing',
-  'HR Portal',
-  'Leave Management',
-  'Timesheets',
-  'Inventory',
-  'ERP Integration',
-  'Stock Management',
-  'Dashboard',
-  'Notifications',
-];
 
 const parseModulesAffected = (value: unknown): string[] => {
   if (Array.isArray(value)) return value.filter((module): module is string => typeof module === 'string' && module.trim().length > 0);
@@ -113,8 +94,6 @@ export default function RequestDetail() {
     department: '',
     modules_affected: [] as string[],
   });
-  const [availableEditModules, setAvailableEditModules] = useState<string[]>(defaultModules);
-  const [editCustomModule, setEditCustomModule] = useState('');
 
   const developers = profiles || [];
   const auditLogs = allAuditLogs?.filter((log) => log.request_id === id) || [];
@@ -137,7 +116,6 @@ export default function RequestDetail() {
         department: request.department_scope?.name || request.department,
         modules_affected: requestModules,
       });
-      setAvailableEditModules(Array.from(new Set([...defaultModules, ...requestModules])));
 
       // Auto-open assign dialog if coming from RequestList dropdown
       const params = new URLSearchParams(location.search);
@@ -157,28 +135,6 @@ export default function RequestDetail() {
     return <PageLoader />;
   }
 
-  const handleEditModuleToggle = (module: string) => {
-    setEditForm((prev) => ({
-      ...prev,
-      modules_affected: prev.modules_affected.includes(module)
-        ? prev.modules_affected.filter((selected) => selected !== module)
-        : [...prev.modules_affected, module],
-    }));
-  };
-
-  const handleAddEditModule = () => {
-    const moduleName = editCustomModule.trim().replace(/\s+/g, ' ');
-    if (!moduleName) return;
-    const existingModule = availableEditModules.find((module) => module.toLowerCase() === moduleName.toLowerCase());
-    const resolvedModule = existingModule || moduleName;
-    if (!existingModule) setAvailableEditModules((prev) => [...prev, moduleName]);
-    setEditForm((prev) => ({
-      ...prev,
-      modules_affected: prev.modules_affected.includes(resolvedModule) ? prev.modules_affected : [...prev.modules_affected, resolvedModule],
-    }));
-    setEditCustomModule('');
-  };
-
   const handleEditBranchChange = (branchId: string) => {
     setEditForm((prev) => ({
       ...prev,
@@ -195,14 +151,6 @@ export default function RequestDetail() {
       department_id: departmentId,
       branch_id: selectedDepartment?.branch_id || prev.branch_id,
       department: selectedDepartment?.department_name || prev.department,
-    }));
-  };
-
-  const handleDeleteEditModule = (module: string) => {
-    setAvailableEditModules((prev) => prev.filter((availableModule) => availableModule !== module));
-    setEditForm((prev) => ({
-      ...prev,
-      modules_affected: prev.modules_affected.filter((selectedModule) => selectedModule !== module),
     }));
   };
 
@@ -370,7 +318,7 @@ export default function RequestDetail() {
     try {
       await updateRequest.mutateAsync({
         id: request.id,
-        ...editForm,
+        ...(isSeniorDeveloper && !isAdmin ? { priority: editForm.priority, modules_affected: editForm.modules_affected } : editForm),
       });
 
       await createAuditLog.mutateAsync({
@@ -457,13 +405,14 @@ export default function RequestDetail() {
             <DialogContent>
               <DialogHeader>
                 <DialogTitle>Edit Change Request</DialogTitle>
-                <DialogDescription>Update request details.</DialogDescription>
+                <DialogDescription>{isSeniorDeveloper && !isAdmin ? 'Update priority and affected modules. Other request details are read-only for Developer Leads.' : 'Update request details.'}</DialogDescription>
               </DialogHeader>
               <div className="space-y-4 py-4">
                 <div className="space-y-2">
                   <Label>Description</Label>
                   <Textarea
                     value={editForm.change_description}
+                    readOnly={isSeniorDeveloper && !isAdmin}
                     onChange={(e) => setEditForm(prev => ({ ...prev, change_description: e.target.value }))}
                   />
                 </div>
@@ -487,7 +436,7 @@ export default function RequestDetail() {
                 <div className="grid gap-4 md:grid-cols-2">
                   <div className="space-y-2">
                     <Label>Branch</Label>
-                    <Select value={editForm.branch_id} onValueChange={handleEditBranchChange} disabled={editBranchOptions.length === 0}>
+                    <Select value={editForm.branch_id} onValueChange={handleEditBranchChange} disabled={(isSeniorDeveloper && !isAdmin) || editBranchOptions.length === 0}>
                       <SelectTrigger>
                         <SelectValue placeholder={editBranchOptions.length ? "Select branch" : "No branches configured"} />
                       </SelectTrigger>
@@ -505,7 +454,7 @@ export default function RequestDetail() {
                     <Select
                       value={editForm.department_id}
                       onValueChange={handleEditDepartmentChange}
-                      disabled={(editBranchOptions.length > 0 && !editForm.branch_id) || editDepartmentOptions.length === 0}
+                      disabled={(isSeniorDeveloper && !isAdmin) || (editBranchOptions.length > 0 && !editForm.branch_id) || editDepartmentOptions.length === 0}
                     >
                       <SelectTrigger>
                         <SelectValue
@@ -530,64 +479,7 @@ export default function RequestDetail() {
                 </div>
                 <div className="space-y-3">
                   <Label>Modules Affected</Label>
-                  <div className="grid grid-cols-2 gap-2">
-                    {availableEditModules.map((module) => (
-                      <div key={module} className="flex min-w-0 items-center gap-2 rounded-md border border-border/60 px-2 py-1.5">
-                        <input
-                          id={`edit-module-${module}`}
-                          type="checkbox"
-                          className="h-4 w-4 accent-primary"
-                          checked={editForm.modules_affected.includes(module)}
-                          onChange={() => handleEditModuleToggle(module)}
-                        />
-                        <Label htmlFor={`edit-module-${module}`} className="min-w-0 flex-1 cursor-pointer truncate text-sm font-normal">
-                          {module}
-                        </Label>
-                        <button
-                          type="button"
-                          className="rounded p-1 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
-                          onClick={() => handleDeleteEditModule(module)}
-                          aria-label={`Delete ${module}`}
-                        >
-                          <X className="h-3.5 w-3.5" />
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                  <div className="flex gap-2">
-                    <Input
-                      value={editCustomModule}
-                      onChange={(event) => setEditCustomModule(event.target.value)}
-                      onKeyDown={(event) => {
-                        if (event.key === 'Enter') {
-                          event.preventDefault();
-                          handleAddEditModule();
-                        }
-                      }}
-                      placeholder="Add module affected"
-                    />
-                    <Button type="button" variant="outline" onClick={handleAddEditModule}>
-                      <Plus className="mr-2 h-4 w-4" />
-                      Add
-                    </Button>
-                  </div>
-                  {editForm.modules_affected.length > 0 && (
-                    <div className="flex flex-wrap gap-2">
-                      {editForm.modules_affected.map((module) => (
-                        <span key={module} className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-medium text-primary">
-                          {module}
-                          <button
-                            type="button"
-                            className="rounded-full p-0.5 hover:bg-primary/15"
-                            onClick={() => setEditForm((prev) => ({ ...prev, modules_affected: prev.modules_affected.filter((selected) => selected !== module) }))}
-                            aria-label={`Remove ${module}`}
-                          >
-                            <X className="h-3 w-3" />
-                          </button>
-                        </span>
-                      ))}
-                    </div>
-                  )}
+                  <AffectedModulesPicker value={editForm.modules_affected} historical={parseModulesAffected(request.modules_affected)} onChange={modules => setEditForm(prev => ({ ...prev, modules_affected: modules }))} />
                 </div>
               </div>
               <DialogFooter>

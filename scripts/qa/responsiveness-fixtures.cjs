@@ -48,6 +48,7 @@ function fixture(url, state = 'populated') {
   if (p.includes('/scheduling/')) return { rows: [], policy: {}, total: 0 };
   if (p.includes('/admin/email-configuration')) return { configuration: {}, status: {} };
   if (p.includes('/budgets')) return [];
+  if (p === '/crms/affected-modules') return { modules: ['Authentication', 'Reporting', 'Analytics', 'Dashboard', 'Notifications'].map((name, i) => ({ id: `qa-module-${i}`, name, is_active: true, sort_order: i * 10, version: 1 })), canManage: true };
   if (p.includes('/crms/change_requests/')) return state === 'implementation-ready' ? { ...request, status:'ready_for_completion_report', account_manager_id:user.id } : request;
   if (p === '/crms/change_requests') {
     const clientRequest = { ...request, is_client_request: true, client_name: client.client_name, client_representative_name: representative.name, client_representative_phone: representative.phone };

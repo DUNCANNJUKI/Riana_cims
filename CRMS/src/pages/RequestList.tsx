@@ -162,7 +162,7 @@ export default function RequestList() {
           </TableHeader>
           <TableBody>
             {visibleRequests.map((request) => (
-              <TableRow key={request.id} className="table-row-interactive">
+              <TableRow key={request.id} className="table-row-interactive [&_td]:align-top">
                 <TableCell mobileLabel="Ticket #" className="font-medium">
                   <Link
                     to={`/developers/requests/${request.id}`}
@@ -177,8 +177,8 @@ export default function RequestList() {
                     <p className="text-xs text-muted-foreground">{request.client?.branch}</p>
                   </div>
                 </TableCell>
-                <TableCell mobileLabel="Description" className="max-w-[300px]">
-                  <p className="text-sm text-muted-foreground">
+                <TableCell mobileLabel="Description" className="max-w-[300px] whitespace-normal align-top">
+                  <p className="w-64 max-w-full whitespace-normal [overflow-wrap:anywhere] text-sm text-muted-foreground">
                     {request.change_description}
                   </p>
                 </TableCell>

@@ -1,6 +1,7 @@
+import { AffectedModulesPicker } from '@crms/components/AffectedModulesPicker';
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Plus, Send, Save, X } from 'lucide-react';
+import { ArrowLeft, Send, Save } from 'lucide-react';
 import { Button } from '@crms/components/ui/button';
 import { Input } from '@crms/components/ui/input';
 import { PlanningDateInput } from '@crms/components/ui/planning-date-input';
@@ -14,7 +15,6 @@ import {
   SelectValue,
 } from '@crms/components/ui/select';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@crms/components/ui/card';
-import { Checkbox } from '@crms/components/ui/checkbox';
 import { useToast } from '@crms/hooks/use-toast';
 import { useClients, useProfiles, useCreateChangeRequest, useClientScope } from '@crms/hooks/useSupabaseData';
 import { Skeleton } from '@crms/components/ui/skeleton';
@@ -22,24 +22,6 @@ import { Skeleton } from '@crms/components/ui/skeleton';
 type RequestSource = 'email' | 'phone' | 'whatsapp' | 'meeting';
 type PriorityLevel = 'low' | 'medium' | 'high' | 'critical';
 
-const defaultModules = [
-  'Authentication',
-  'User Management',
-  'Security',
-  'Reporting',
-  'Analytics',
-  'Data Export',
-  'Payment Gateway',
-  'Transaction Processing',
-  'HR Portal',
-  'Leave Management',
-  'Timesheets',
-  'Inventory',
-  'ERP Integration',
-  'Stock Management',
-  'Dashboard',
-  'Notifications',
-];
 
 export default function NewRequest() {
   const navigate = useNavigate();
@@ -48,9 +30,7 @@ export default function NewRequest() {
   const { data: profiles } = useProfiles();
   const createRequest = useCreateChangeRequest();
 
-  const [availableModules, setAvailableModules] = useState<string[]>(defaultModules);
   const [selectedModules, setSelectedModules] = useState<string[]>([]);
-  const [customModule, setCustomModule] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
 
@@ -90,27 +70,6 @@ export default function NewRequest() {
     }
   }, [branchOptions, departmentOptions, formData.branchId, formData.departmentId, hasConfiguredBranches]);
 
-  const selectModule = (module: string) => {
-    setSelectedModules((prev) => prev.includes(module) ? prev : [...prev, module]);
-  };
-
-  const handleModuleToggle = (module: string) => {
-    setSelectedModules((prev) =>
-      prev.includes(module)
-        ? prev.filter((m) => m !== module)
-        : [...prev, module]
-    );
-  };
-
-  const handleAddCustomModule = () => {
-    const moduleName = customModule.trim().replace(/\s+/g, ' ');
-    if (!moduleName) return;
-    const exists = availableModules.some((module) => module.toLowerCase() === moduleName.toLowerCase());
-    if (!exists) setAvailableModules((prev) => [...prev, moduleName]);
-    selectModule(exists ? availableModules.find((module) => module.toLowerCase() === moduleName.toLowerCase()) || moduleName : moduleName);
-    setCustomModule('');
-  };
-
   const handleInputChange = (field: string, value: string) => {
     setSubmitError(null);
     setFormData(prev => ({ ...prev, [field]: value }));
@@ -146,11 +105,6 @@ export default function NewRequest() {
       branchId: selectedDepartment?.branch_id || prev.branchId,
       department: selectedDepartment?.department_name || '',
     }));
-  };
-
-  const handleDeleteAvailableModule = (module: string) => {
-    setAvailableModules((prev) => prev.filter((availableModule) => availableModule !== module));
-    setSelectedModules((prev) => prev.filter((selectedModule) => selectedModule !== module));
   };
 
   const handleSubmit = async (sendForApproval: boolean, event?: React.SyntheticEvent) => {
@@ -406,61 +360,10 @@ export default function NewRequest() {
           <Card>
             <CardHeader>
               <CardTitle>Modules Affected</CardTitle>
-              <CardDescription>Select or add all modules that will be impacted by this change</CardDescription>
+              <CardDescription>Select the shared modules impacted by this change</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
-                {availableModules.map((module) => (
-                  <div key={module} className="flex min-w-0 items-center gap-2 rounded-md border border-border/60 px-2 py-1.5">
-                    <Checkbox id={`module-${module}`} checked={selectedModules.includes(module)} onCheckedChange={() => handleModuleToggle(module)} />
-                    <Label htmlFor={`module-${module}`} className="min-w-0 flex-1 cursor-pointer truncate text-sm font-normal">{module}</Label>
-                    <button
-                      type="button"
-                      className="rounded p-1 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
-                      onClick={() => handleDeleteAvailableModule(module)}
-                      aria-label={`Delete ${module}`}
-                    >
-                      <X className="h-3.5 w-3.5" />
-                    </button>
-                  </div>
-                ))}
-              </div>
-
-              <div className="flex flex-col gap-2 sm:flex-row">
-                <Input
-                  value={customModule}
-                  onChange={(event) => setCustomModule(event.target.value)}
-                  onKeyDown={(event) => {
-                    if (event.key === 'Enter') {
-                      event.preventDefault();
-                      handleAddCustomModule();
-                    }
-                  }}
-                  placeholder="Add module affected"
-                />
-                <Button type="button" variant="outline" onClick={handleAddCustomModule}>
-                  <Plus className="mr-2 h-4 w-4" />
-                  Add Module
-                </Button>
-              </div>
-
-              {modulesAffected.length > 0 && (
-                <div className="flex flex-wrap gap-2">
-                  {modulesAffected.map((module) => (
-                    <span key={module} className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-medium text-primary">
-                      {module}
-                      <button
-                        type="button"
-                        className="rounded-full p-0.5 hover:bg-primary/15"
-                        onClick={() => setSelectedModules((prev) => prev.filter((selected) => selected !== module))}
-                        aria-label={`Remove ${module}`}
-                      >
-                        <X className="h-3 w-3" />
-                      </button>
-                    </span>
-                  ))}
-                </div>
-              )}
+              <AffectedModulesPicker value={selectedModules} onChange={setSelectedModules} />
             </CardContent>
           </Card>
 

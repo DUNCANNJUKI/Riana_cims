@@ -1,4 +1,5 @@
 const express = require('express');
+const moduleCatalog = require('../services/affectedModuleCatalog');
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
 const { v4: uuidv4 } = require('uuid');
@@ -58,7 +59,7 @@ const REQUEST_UPDATE_FIELDS = {
   Admin: new Set(['client_id','branch_id','department_id','installation_id','department','source','change_description','priority','status','modules_affected','estimated_completion_date','senior_developer_id','assigned_developer_id','approval_comment','is_chargeable','sales_remarks','commencement_date','completion_date']),
   Management: new Set(['client_id','branch_id','department_id','installation_id','department','source','change_description','priority','status','modules_affected','estimated_completion_date','senior_developer_id','assigned_developer_id','approval_comment','is_chargeable','sales_remarks','commencement_date','completion_date']),
   Sales: new Set(['status','approval_comment','is_chargeable','sales_remarks']),
-  Teamlead: new Set(['priority','status','estimated_completion_date','senior_developer_id','assigned_developer_id','commencement_date','completion_date']),
+  Teamlead: new Set(['priority','status','modules_affected','estimated_completion_date','senior_developer_id','assigned_developer_id','commencement_date','completion_date']),
   Developer: new Set(['status','commencement_date','completion_date']),
   User: new Set(['status','priority']),
 };
@@ -391,6 +392,19 @@ module.exports = function createCrmsRouter({ pool, jwtSecret, resolveSignature }
     }
   });
 
+  router.get('/affected-modules', async (req, res) => {
+    try {
+      res.set('Cache-Control', 'no-store');
+      res.json({ modules: await moduleCatalog.listModules(pool), canManage: moduleCatalog.canManage(req.user) });
+    } catch (_error) { res.status(503).json({ error: 'The affected-module catalogue is unavailable. Please retry or ask your administrator to complete the update.' }); }
+  });
+  const saveAffectedModule = async (req, res) => {
+    try { res.status(req.params.id ? 200 : 201).json(await moduleCatalog.saveModule(pool, req.user, req.params.id, req.body)); }
+    catch (error) { res.status(error.status || 500).json({ error: error.status ? error.message : 'Unable to save the affected module. Please retry.' }); }
+  };
+  router.post('/affected-modules', saveAffectedModule);
+  router.patch('/affected-modules/:id', saveAffectedModule);
+
   router.get('/profiles', async (_req, res) => {
     try {
       const [rows] = await pool.query(
@@ -619,6 +633,7 @@ module.exports = function createCrmsRouter({ pool, jwtSecret, resolveSignature }
       const id = uuidv4();
       const ticket = `CR-${Date.now().toString().slice(-8)}`;
       const r = req.body;
+      const selectedModules = await moduleCatalog.validateSelection(pool, r.modules_affected || []);
       const scope = await validateRequestScope({ clientId: r.client_id, branchId: r.branch_id, departmentId: r.department_id, installationId: r.installation_id });
       const requestColumns = await getTableColumns('crms_change_requests');
       const insertColumns = ['id','ticket_number','client_id'];
@@ -634,7 +649,7 @@ module.exports = function createCrmsRouter({ pool, jwtSecret, resolveSignature }
         }
       }
       insertColumns.push('department','date_requested','source','change_description','priority','status','modules_affected','estimated_completion_date','senior_developer_id','assigned_developer_id','is_chargeable','sales_remarks','commencement_date','completion_date');
-      insertValues.push(r.department,r.date_requested || new Date().toISOString().slice(0, 10),r.source,r.change_description,r.priority,r.status || 'pending_approval',JSON.stringify(r.modules_affected || []),r.estimated_completion_date,r.senior_developer_id,r.assigned_developer_id || null,!!r.is_chargeable,r.sales_remarks || null,r.commencement_date || null,r.completion_date || null);
+      insertValues.push(r.department,r.date_requested || new Date().toISOString().slice(0, 10),r.source,r.change_description,r.priority,r.status || 'pending_approval',JSON.stringify(selectedModules),r.estimated_completion_date,r.senior_developer_id,r.assigned_developer_id || null,!!r.is_chargeable,r.sales_remarks || null,r.commencement_date || null,r.completion_date || null);
       await pool.query(
         `INSERT INTO crms_change_requests (${insertColumns.map((column) => `\`${column}\``).join(',')}) VALUES (${insertColumns.map(() => '?').join(',')})`,
         insertValues,
@@ -648,12 +663,12 @@ module.exports = function createCrmsRouter({ pool, jwtSecret, resolveSignature }
         await notifyAssignedDeveloper(req, created);
       }
       res.status(201).json(created);
-    } catch (error) { res.status(error.status || 500).json({ error: error.message }); }
+    } catch (error) { res.status(error.status || 500).json({ error: error.status ? error.message : 'Unable to create the request. Please retry.' }); }
   });
   router.patch('/change_requests/:id', async (req, res) => {
     try {
       const [existingRows] = await pool.query(
-        'SELECT id,status,assigned_developer_id FROM crms_change_requests WHERE id = ? LIMIT 1',
+        'SELECT id,status,assigned_developer_id,modules_affected FROM crms_change_requests WHERE id = ? LIMIT 1',
         [req.params.id],
       );
       if (!existingRows.length) return res.status(404).json({ error: 'Not found' });
@@ -674,6 +689,7 @@ module.exports = function createCrmsRouter({ pool, jwtSecret, resolveSignature }
       }
       const requestColumns = await getTableColumns('crms_change_requests');
       const fields = []; const values = [];
+      if (req.body.modules_affected !== undefined) req.body.modules_affected = await moduleCatalog.validateSelection(pool, req.body.modules_affected, existingRows[0].modules_affected);
       for (const [key,value] of Object.entries(req.body)) if (allowed.has(key) && requestColumns.has(key)) {
         fields.push(`\`${key}\`=?`);
         values.push(key === 'modules_affected' ? JSON.stringify(value) : key === 'status' ? storedRequestStatus(value) : value);
@@ -693,7 +709,7 @@ module.exports = function createCrmsRouter({ pool, jwtSecret, resolveSignature }
         await notifyAssignerOnCompletion(req, updated);
       }
       res.json(updated);
-    } catch (error) { res.status(500).json({ error: error.message }); }
+    } catch (error) { res.status(error.status || 500).json({ error: error.status ? error.message : 'Unable to update the request. Please retry.' }); }
   });
 
   router.get('/audit_logs', async (req, res) => {
