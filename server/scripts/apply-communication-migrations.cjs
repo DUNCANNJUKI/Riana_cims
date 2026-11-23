@@ -19,6 +19,7 @@ const migrationIds = [
   '20261122_client_implementation_feedback',
   '20261122_verified_signoff_closure',
   '20261123_affected_module_catalog',
+  '20261123_hardware_components',
 ];
 
 const splitSqlStatements = (sql) => {
@@ -127,6 +128,13 @@ async function run() {
         }
       }
     }
+    // Keep migration history authoritative even for additive migrations that
+    // contain only schema statements. Existing self-registering migrations are
+    // intentionally idempotent with this upsert.
+    await pool.query(
+      'INSERT INTO migration_history (migration_id, description) VALUES (?, ?) ON DUPLICATE KEY UPDATE description=VALUES(description)',
+      [migrationId, `Applied migration ${migrationId}`],
+    );
     results.push({ migrationId, status: 'applied' });
   }
 
@@ -158,6 +166,8 @@ async function run() {
     crms_client_acceptances: ['feedback_rating', 'feedback_comment', 'feedback_submitted_at'],
     crms_affected_modules: ['id', 'name', 'is_active', 'sort_order', 'version'],
     crms_affected_module_events: ['id', 'module_id', 'actor_user_id', 'action', 'previous_values', 'next_values'],
+    hardware_component_stock: ['id', 'subsidiary_id', 'location_id', 'compatible_model_id', 'item_code', 'quantity'],
+    hardware_asset_components: ['id', 'parent_asset_id', 'component_asset_id', 'stock_item_id', 'quantity', 'removed_at', 'active_component_id'],
   };
   for (const [table, columns] of Object.entries(requiredColumns)) {
     const [rows] = await pool.query(

@@ -4723,13 +4723,15 @@ const financeInstallation = async (req, installationId, db = pool) => {
 
 const assignedBudgetTechnicians = async (installationId, db = pool) => {
   const [rows] = await db.query(`SELECT DISTINCT u.id,u.first_name,u.last_name,u.email FROM user_profiles u JOIN (
-    SELECT hardware_technician_id technician_id FROM client_assignments WHERE installation_id=? AND hardware_technician_id IS NOT NULL
-    UNION SELECT software_technician_id FROM client_assignments WHERE installation_id=? AND software_technician_id IS NOT NULL
+    SELECT a.hardware_technician_id technician_id FROM client_assignments a JOIN installations i ON i.id=?
+      WHERE a.hardware_technician_id IS NOT NULL AND (a.installation_id=? OR (a.installation_id IS NULL AND a.client_id=i.client_id AND (a.branch_id IS NULL OR a.branch_id=i.branch_id)))
+    UNION SELECT a.software_technician_id FROM client_assignments a JOIN installations i ON i.id=?
+      WHERE a.software_technician_id IS NOT NULL AND (a.installation_id=? OR (a.installation_id IS NULL AND a.client_id=i.client_id AND (a.branch_id IS NULL OR a.branch_id=i.branch_id)))
     UNION SELECT assigned_technician_id FROM installations WHERE id=? AND assigned_technician_id IS NOT NULL
     UNION SELECT hardware_technician_id FROM installations WHERE id=? AND hardware_technician_id IS NOT NULL
     UNION SELECT software_technician_id FROM installations WHERE id=? AND software_technician_id IS NOT NULL
   ) assigned ON ${sqlUuidEquals('assigned.technician_id', 'u.id')}
-  WHERE u.is_active=TRUE ORDER BY u.first_name,u.last_name,u.id`, [installationId, installationId, installationId, installationId, installationId]);
+  WHERE u.is_active=TRUE ORDER BY u.first_name,u.last_name,u.id`, [installationId, installationId, installationId, installationId, installationId, installationId, installationId]);
   return rows;
 };
 

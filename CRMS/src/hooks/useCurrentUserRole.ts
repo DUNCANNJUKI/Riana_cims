@@ -63,7 +63,7 @@ export function useCurrentUserRole(): UserRoleState {
       canManageUsers: false,
       canCreateRequests: isAdmin || isSeniorDeveloper || isSales,
       canAssignDevelopers: isAdmin || isSeniorDeveloper,
-      canApprove: isAdmin || isSales,
+      canApprove: isAdmin || isSales || isSeniorDeveloper,
       canViewReports: isAdmin || isSeniorDeveloper || isSales,
       canUpdateRequestStatus: isDeveloper || isAdmin || isSeniorDeveloper,
       canAddComments: isDeveloper || isAdmin || isSeniorDeveloper,

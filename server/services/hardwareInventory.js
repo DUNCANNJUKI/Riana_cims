@@ -8,6 +8,7 @@ const R = require('./equipmentRequirements');
 const { technicianAssignmentSql } = require('./installationAssignment');
 const { equipmentLabels, equipmentDefinitions, normalizeEquipmentQuantities } = require('./subsidiaryEquipment');
 const {stocktakeResult,stockSql}=require('./stocktake');
+const { createHardwareComponents } = require('./hardwareComponents');
 
 const parseJson = (value) =>
   typeof value === "string" ? JSON.parse(value) : value;
@@ -40,6 +41,7 @@ const configuration = (value = {}) => {
 const uuidEquals = (left, right) =>
   `CONVERT(${left} USING utf8mb4) COLLATE utf8mb4_unicode_ci = CONVERT(${right} USING utf8mb4) COLLATE utf8mb4_unicode_ci`;
 const ASSET_SELECT = `SELECT a.*,m.model_number,m.model_year,m.model_sequence,JSON_UNQUOTE(JSON_EXTRACT(m.specifications,'$.installation_equipment_field')) AS equipment_field,v.family,v.nickname,v.variant,
+  ac.parent_asset_id AS component_parent_id,ac.relationship AS component_relationship,pa.serial_number AS component_parent_serial,
   s.subsidiary_name,l.name AS location_name,c.client_name,c.branch,
   COALESCE(cb.branch_name COLLATE utf8mb4_unicode_ci,c.branch) AS branch_name,
   t.first_name AS technician_first_name,t.last_name AS technician_last_name,
@@ -47,12 +49,15 @@ const ASSET_SELECT = `SELECT a.*,m.model_number,m.model_year,m.model_sequence,JS
   FROM hardware_assets a JOIN hardware_models m ON ${uuidEquals('m.id','a.model_id')}
   JOIN hardware_variants v ON ${uuidEquals('v.id','m.variant_id')} JOIN subsidiaries s ON ${uuidEquals('s.id','a.subsidiary_id')}
   LEFT JOIN hardware_locations l ON ${uuidEquals('l.id','a.location_id')}
+  LEFT JOIN hardware_asset_components ac ON ac.active_component_id=a.id
+  LEFT JOIN hardware_assets pa ON pa.id=ac.parent_asset_id AND pa.subsidiary_id=a.subsidiary_id
   LEFT JOIN hardware_assignments x ON ${uuidEquals('x.asset_id','a.id')} AND x.closed_at IS NULL
   LEFT JOIN installations i ON ${uuidEquals('i.id','a.installation_id')} LEFT JOIN clients c ON ${uuidEquals('c.id','i.client_id')}
   LEFT JOIN client_branches cb ON ${uuidEquals('cb.id','i.branch_id')} LEFT JOIN user_profiles t ON ${uuidEquals('t.id','a.custodian_id')}`;
 const AVAILABLE_SQL = `a.status='Available' AND a.physical_verified=1 AND a.approval_status='Approved'
   AND a.serial_number IS NOT NULL AND a.manufacturing_year IS NOT NULL
   AND a.condition_grade IN ('New','Good','Fair') AND a.reconciliation_status='Matched'
+  AND NOT EXISTS (SELECT 1 FROM hardware_asset_components component WHERE component.active_component_id=a.id)
   AND NOT EXISTS (SELECT 1 FROM hardware_assignments ax WHERE ax.asset_id=a.id AND ax.closed_at IS NULL)`;
 
 function createHardwareInventory(pool) {
@@ -162,7 +167,8 @@ function createHardwareInventory(pool) {
       "SELECT * FROM hardware_assignments WHERE asset_id=? AND closed_at IS NULL",
       [id],
     );
-    return { ...asset, active_assignment_id: assignment?.id, assignment };
+    const [[component]] = await db.query('SELECT parent_asset_id FROM hardware_asset_components WHERE active_component_id=? FOR UPDATE', [id]);
+    return { ...asset, component_parent_id: component?.parent_asset_id, active_assignment_id: assignment?.id, assignment };
   };
   const location = async (db, id, subsidiary) => {
     if (!id) return null;
@@ -930,6 +936,12 @@ function createHardwareInventory(pool) {
       }
       const asset = await lockAsset(db, req.user, id);
       const b = req.body;
+      if (asset.component_parent_id && !['edit','print','fault','maintenance','repair'].includes(action))
+        P.fail('Detach this accessory or spare from its equipment before changing its allocation or location.', 409);
+      if (['retire','dispose','archive','delete_draft'].includes(action) || (action === 'transfer' && (b.destination_subsidiary_id || asset.subsidiary_id) !== asset.subsidiary_id)) {
+        const [[linked]] = await db.query('SELECT id FROM hardware_asset_components WHERE parent_asset_id=? AND removed_at IS NULL LIMIT 1 FOR UPDATE', [id]);
+        if (linked) P.fail('Remove or reassign the equipment accessories and spares before retirement, archival or a cross-subsidiary transfer.', 409);
+      }
       if (asset.archived_at && !["print", "delete_draft"].includes(action))
         P.fail("Archived equipment is read-only.", 409);
       const reason = text(b.reason, 2000);
@@ -2232,6 +2244,7 @@ function createHardwareInventory(pool) {
     };
   };
   return {
+    components: createHardwareComponents(pool, { scopeWhere, transaction, lockAsset, location, event }),
     catalog,
     list,
     summary,

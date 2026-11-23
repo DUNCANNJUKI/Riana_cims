@@ -58,6 +58,7 @@ test(
       await pool.query(fs.readFileSync(path.join(__dirname,'../migrations/20261014_equipment_serial_requirements.sql'),'utf8'));
       await pool.query('ALTER TABLE hardware_variants ADD COLUMN deleted_at DATETIME NULL');
       await pool.query('ALTER TABLE subsidiaries ADD COLUMN equipment_configuration JSON');
+      await pool.query(fs.readFileSync(path.join(__dirname,'../migrations/20261123_hardware_components.sql'),'utf8'));
       const service = createHardwareInventory(pool);
       await pool.query("ALTER TABLE installations ADD COLUMN media_controllers INT DEFAULT 0, ADD COLUMN ups_count INT DEFAULT 0, ADD COLUMN equipment_quantities JSON");
       await pool.query("UPDATE user_profiles SET first_name=?,last_name=? WHERE id=?", ["Inventory", "Officer", "officer"]);
@@ -751,6 +752,22 @@ test(
       await pool.query(`CREATE TABLE uploaded_files (
         id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,organization_id VARCHAR(36),branch_id VARCHAR(36),uploaded_by VARCHAR(36),original_name VARCHAR(255),stored_name VARCHAR(255),relative_path VARCHAR(500),mime_type VARCHAR(150),detected_mime_type VARCHAR(150),extension VARCHAR(20),file_size BIGINT,file_category VARCHAR(100),related_entity_type VARCHAR(100),related_entity_id VARCHAR(64),visibility VARCHAR(30),status VARCHAR(30),checksum_sha256 CHAR(64),image_width INT,image_height INT,created_at DATETIME DEFAULT CURRENT_TIMESTAMP,updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,deleted_at DATETIME);
         CREATE TABLE uploaded_file_variants (file_id BIGINT,variant_type VARCHAR(30));`);
+
+      // Both serialized and quantity-based components retain allocation and audit integrity.
+      const kit = await service.generate(req(adminUser,{model_id:model.id,subsidiary_id:'a',serial_year:2026,manufacturing_year:2026,quantity:3}));
+      for(let n=0;n<kit.assets.length;n++)await service.mutate(req(adminUser,{location_id:location.id,condition_grade:'New',manufacturer_serial:'COMP-QA-'+n,physical_confirmed:true}),kit.assets[n].id,'verify');
+      const parent=kit.assets[0].id,child=kit.assets[1].id,other=kit.assets[2].id;
+      const stock=await service.components.receiveStock(req(adminUser,{subsidiary_id:'a',location_id:location.id,item_code:'CABLE-QA',item_name:'Cable',quantity:3,reason:'QA receipt'}));
+      const linked=await service.components.attach(req(adminUser,{stock_item_id:stock.id,relationship:'accessory',quantity:2}),parent);
+      await assert.rejects(service.components.attach(req(adminUser,{stock_item_id:stock.id,relationship:'spare',quantity:2}),other),/Insufficient/);
+      await service.components.remove(req(adminUser,{reason:'Returned unused'}),parent,linked.id);
+      const serialLink=await service.components.attach(req(adminUser,{component_asset_id:child,relationship:'spare',quantity:1}),parent);
+      await assert.rejects(service.components.attach(req(adminUser,{component_asset_id:child,relationship:'spare',quantity:1}),other));
+      await assert.rejects(service.mutate(req(adminUser,{installation_id:'installation'}),child,'assign'),/Detach/);
+      await assert.rejects(service.components.list({id:'outsider',role:'InventoryOfficer',subsidiary_id:'b'},parent),/not found/);
+      assert.equal((await service.components.list(adminUser,parent)).rows.filter(x=>!x.removed_at).length,1);
+      await service.components.remove(req(adminUser,{reason:'Reallocated spare'}),parent,serialLink.id);
+      assert.equal((await service.components.listStock(adminUser,{subsidiary_id:'a'})).rows.find(x=>x.id===stock.id).available_quantity,3);
       const os=require('node:os');
       const uploadRoot=await require('node:fs/promises').mkdtemp(path.join(os.tmpdir(),'cims-handover-db-test-'));
       const {createHandoverSupportingDocuments,renderHandoverPages}=require('./handoverSupportingDocuments');

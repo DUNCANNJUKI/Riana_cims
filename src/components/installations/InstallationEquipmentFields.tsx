@@ -4,8 +4,30 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import type { HandoverEquipmentItem, Installation } from '@/types';
 import { equipmentQuantity, isCustomEquipment } from '@/utils/equipmentConfiguration';
+import { Cable, Monitor, PanelTop, Server, Speaker, Tablet, Tv } from 'lucide-react';
+import './equipment-images.css';
 
 const legacyTypeOptions = ['Interactive Touch', 'Queue Management', 'Digital Signage System', 'Self Service'];
+
+const equipmentIcon = (field: string, label: string) => {
+  const value = `${field} ${label}`.toLowerCase();
+  const imageClass = value.includes('kiosk') || value.includes('tablet') ? 'equipment-reference-kiosk'
+    : value.includes('media') || value.includes('controller') ? 'equipment-reference-controller'
+      : value.includes('speaker') || value.includes('audio') ? 'equipment-reference-speaker'
+        : value.includes('led') || value.includes('signage') ? 'equipment-reference-led'
+          : value.includes('tv') || value.includes('screen') || value.includes('display') ? 'equipment-reference-tv'
+            : '';
+  const Icon = value.includes('kiosk') || value.includes('tablet') ? Tablet
+    : value.includes('media') || value.includes('controller') ? Server
+      : value.includes('speaker') || value.includes('audio') ? Speaker
+        : value.includes('led') || value.includes('signage') ? PanelTop
+          : value.includes('tv') || value.includes('screen') || value.includes('display') ? Tv
+            : value.includes('cable') || value.includes('wire') ? Cable
+              : Monitor;
+  return <span aria-hidden="true" className={`equipment-icon-tile ${imageClass}`}>
+    {imageClass ? null : <Icon className="h-6 w-6" strokeWidth={1.8} />}
+  </span>;
+};
 
 export function InstallationEquipmentFields({ items, value, onChange }: {
   items: HandoverEquipmentItem[];
@@ -35,7 +57,10 @@ export function InstallationEquipmentFields({ items, value, onChange }: {
     const isText = isType || item.field === 'screen_with_size';
     return <Fragment key={item.field}>
       <div className="min-w-0 space-y-2" data-equipment-field={item.field}>
-        <Label htmlFor={item.field} className="break-words">{item.label}{isType ? ' *' : ''}</Label>
+        <div className="flex min-w-0 items-center gap-2">
+          {equipmentIcon(item.field, item.label)}
+          <Label htmlFor={item.field} className="min-w-0 break-words">{item.label}{isType ? ' *' : ''}</Label>
+        </div>
         {isType ? <Select value={textValue} onValueChange={(selected) => onChange({ ...value, [item.field]: selected })}>
           <SelectTrigger id={item.field}><SelectValue placeholder={item.label} /></SelectTrigger>
           <SelectContent>{Array.from(new Set([...legacyTypeOptions, ...(textValue ? [textValue] : [])])).map((option) => <SelectItem key={option} value={option}>{option}</SelectItem>)}</SelectContent>

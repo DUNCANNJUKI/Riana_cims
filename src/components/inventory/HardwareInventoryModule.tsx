@@ -1,3 +1,5 @@
+import { HardwareComponents } from './HardwareComponents';
+import './inventory-controls.css';
 import { useCallback, useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
@@ -1066,7 +1068,7 @@ export function HardwareInventoryModule({ user }: { user: User }) {
       </Alert>
     );
   return (
-    <div className="space-y-5 min-w-0">
+    <div className="hardware-inventory space-y-5 min-w-0">
       <div className="cims-page-header">
         <h1 data-tour="inventory-header" className="cims-page-title">
           Hardware & Inventory
@@ -1843,6 +1845,7 @@ export function HardwareInventoryModule({ user }: { user: User }) {
                               </button>
                               <p className="text-xs text-muted-foreground">
                                 {asset.model_number} / {asset.family}
+                              {asset.component_parent_id && <span className="block break-words">Associated with {asset.component_parent_serial || asset.component_parent_id}</span>}
                               </p>
                             </div>
                             <Button
@@ -2105,6 +2108,7 @@ export function HardwareInventoryModule({ user }: { user: User }) {
           {details.isLoading && <p>Loading asset...</p>}
           {details.data && (
             <>
+              <HardwareComponents asset={details.data} catalog={c} user={user} />
               <section className="space-y-3" aria-label="Hardware history">
                 <h3 className="text-base font-medium">Lifecycle Timeline</h3>
                 {can(user, "inventory.view_audit") ? (
@@ -2340,7 +2344,7 @@ export function HardwareInventoryModule({ user }: { user: User }) {
             </DialogTitle>
             <DialogDescription>
               {modal === "generate"
-                ? "Issued serials remain unverified until stock receipt."
+                ? "Step 1: issue serials for approved models. Step 2: Receive & Verify each physical unit. Step 3: open its profile to associate accessories and spares."
                 : "Hardware identity and history are permanently retained."}
             </DialogDescription>
           </DialogHeader>

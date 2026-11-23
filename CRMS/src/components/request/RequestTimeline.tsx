@@ -75,7 +75,7 @@ export function RequestTimeline({ requestId, className }: RequestTimelineProps) 
   useEffect(() => {
     const fetchLogs = async () => {
       try {
-        const res = await fetch(`${API_URL}/audit_logs?request_id=${requestId}`);
+        const res = await fetch(`${API_URL}/audit_logs?request_id=${encodeURIComponent(requestId)}`, { cache: 'no-store' });
         if (res.ok) {
           const data = await res.json();
           setLogs(data as AuditLog[]);
@@ -88,9 +88,8 @@ export function RequestTimeline({ requestId, className }: RequestTimelineProps) 
     };
 
     fetchLogs();
-
-    // Realtime disabled for local dev fallback
-    return () => { };
+    const timer = window.setInterval(() => { void fetchLogs(); }, 5000);
+    return () => { window.clearInterval(timer); };
   }, [requestId]);
 
   if (loading) {

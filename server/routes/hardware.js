@@ -29,6 +29,9 @@ module.exports = function createHardwareRouter(
       "asset_id",
       "client_id",
       "branch_id",
+      "stock_item_id",
+      "component_asset_id",
+      "compatible_model_id",
     ]);
     if (req.body && (typeof req.body !== "object" || Array.isArray(req.body)))
       return res.status(400).json({ error: "Supply a JSON object." });
@@ -116,6 +119,11 @@ module.exports = function createHardwareRouter(
     "/assets/:id",
     handle((req) => service.detail(req.user, req.params.id)),
   );
+  router.get('/component-stock', handle(req => service.components.listStock(req.user, req.query)));
+  router.post('/component-stock/receive', handle(req => service.components.receiveStock(req)));
+  router.get('/assets/:id/components', handle(req => service.components.list(req.user, req.params.id)));
+  router.post('/assets/:id/components', handle(req => service.components.attach(req, req.params.id)));
+  router.post('/assets/:id/components/:linkId/remove', handle(req => service.components.remove(req, req.params.id, req.params.linkId)));
   router.get(
     "/movements",
     handle((req) => service.movements(req.user, req.query)),

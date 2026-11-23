@@ -59,7 +59,7 @@ const REQUEST_UPDATE_FIELDS = {
   Admin: new Set(['client_id','branch_id','department_id','installation_id','department','source','change_description','priority','status','modules_affected','estimated_completion_date','senior_developer_id','assigned_developer_id','approval_comment','is_chargeable','sales_remarks','commencement_date','completion_date']),
   Management: new Set(['client_id','branch_id','department_id','installation_id','department','source','change_description','priority','status','modules_affected','estimated_completion_date','senior_developer_id','assigned_developer_id','approval_comment','is_chargeable','sales_remarks','commencement_date','completion_date']),
   Sales: new Set(['status','approval_comment','is_chargeable','sales_remarks']),
-  Teamlead: new Set(['priority','status','modules_affected','estimated_completion_date','senior_developer_id','assigned_developer_id','commencement_date','completion_date']),
+  Teamlead: new Set(['priority','status','modules_affected','estimated_completion_date','senior_developer_id','assigned_developer_id','approval_comment','is_chargeable','commencement_date','completion_date']),
   Developer: new Set(['status','commencement_date','completion_date']),
   User: new Set(['status','priority']),
 };
@@ -67,7 +67,7 @@ const REQUEST_UPDATE_FIELDS = {
 const REQUEST_STATUSES = {
   Sales: new Set(['pending_approval', 'approved', 'rejected', 'waiting_clarification']),
   Developer: new Set(['in_progress', 'waiting_clarification', 'completed', 'ready_for_completion_report']),
-  Teamlead: new Set(['approved', 'assigned', 'in_progress', 'waiting_clarification', 'completed', 'ready_for_completion_report', 'client_requested_corrections', 'client_disputed']),
+  Teamlead: new Set(['pending_approval', 'approved', 'assigned', 'in_progress', 'waiting_clarification', 'completed', 'ready_for_completion_report', 'client_requested_corrections', 'client_disputed']),
   User: new Set(['ready_for_completion_report', 'awaiting_client_acceptance', 'closed_client_accepted']),
 };
 const storedRequestStatus = (status) => status === 'waiting_clarification' ? 'waiting' : status;
@@ -75,6 +75,31 @@ const storedRequestStatus = (status) => status === 'waiting_clarification' ? 'wa
 module.exports = function createCrmsRouter({ pool, jwtSecret, resolveSignature }) {
   const router = express.Router();
   const tableColumnCache = new Map();
+  let lastStatusReconciliation = 0;
+  const reconcileRequestStatuses = async () => {
+    if (Date.now() - lastStatusReconciliation < 30000) return;
+    lastStatusReconciliation = Date.now();
+    // Repair only states with durable completion/closure evidence. This never
+    // approves an unreviewed request or changes an in-progress request.
+    await pool.query(`UPDATE crms_change_requests cr
+      SET cr.status='closed_client_accepted', cr.acceptance_status='closed', cr.completion_date=COALESCE(cr.completion_date, CURDATE())
+      WHERE cr.status NOT IN ('closed_client_accepted','closed')
+        AND EXISTS (SELECT 1 FROM crms_request_closures c WHERE c.change_request_id=cr.id)`);
+    await pool.query(`UPDATE crms_change_requests cr
+      SET cr.status='client_accepted', cr.acceptance_status='accepted'
+      WHERE cr.status IN ('completed','ready_for_completion_report','pending_approval','submitted','awaiting_client_acceptance')
+        AND EXISTS (SELECT 1 FROM crms_client_acceptances a WHERE a.change_request_id=cr.id)
+        AND NOT EXISTS (SELECT 1 FROM crms_request_closures c WHERE c.change_request_id=cr.id)`);
+    await pool.query(`UPDATE crms_change_requests cr
+      SET cr.status='awaiting_client_acceptance'
+      WHERE cr.status IN ('completed','ready_for_completion_report','pending_approval','submitted')
+        AND EXISTS (SELECT 1 FROM crms_completion_reports r WHERE r.change_request_id=cr.id AND r.status='sent')
+        AND NOT EXISTS (SELECT 1 FROM crms_client_acceptances a WHERE a.change_request_id=cr.id)
+        AND NOT EXISTS (SELECT 1 FROM crms_request_closures c WHERE c.change_request_id=cr.id)`);
+    await pool.query(`UPDATE crms_change_requests
+      SET status='pending_approval'
+      WHERE status='submitted' AND is_client_request=TRUE`);
+  };
   const assertPortalRecordAccess = async (tableName, recordId, user, { readOnly = false } = {}) => {
     const tables = new Set(['crms_change_request_invitations', 'crms_change_requests', 'crms_completion_reports']);
     if (!tables.has(tableName)) throw new Error('Invalid portal access target.');
@@ -199,11 +224,11 @@ module.exports = function createCrmsRouter({ pool, jwtSecret, resolveSignature }
   const notifySalesApprovalNeeded = async (req, request) => {
     if (request.status !== 'pending_approval') return;
     const [salesUsers] = await pool.query(
-      `SELECT u.id
+      `SELECT DISTINCT u.id
        FROM user_profiles u
        LEFT JOIN user_module_roles umr ON umr.user_id = u.id AND umr.module_id = 'crms'
        LEFT JOIN roles r ON r.id = umr.role_id
-       WHERE u.is_active = TRUE AND COALESCE(r.code,u.role) = 'Sales'`,
+       WHERE u.is_active = TRUE AND COALESCE(r.code,u.role) IN ('Sales','Teamlead','SuperAdmin')`,
     );
     const userIds = salesUsers.map((user) => user.id);
     if (!userIds.length) return;
@@ -213,13 +238,13 @@ module.exports = function createCrmsRouter({ pool, jwtSecret, resolveSignature }
       pool,
       userIds,
       title: 'Change request awaiting approval',
-      message: `${request.ticket_number} for ${request.client?.name || 'Unknown Client'} is awaiting Sales approval. Open RIANA CIMS to review it: ${actionUrl}`,
+      message: `${request.ticket_number} for ${request.client?.name || 'Unknown Client'} is awaiting commercial approval. Open RIANA CIMS to review it: ${actionUrl}`,
       type: 'warning',
       actionUrl,
       requestId: request.id,
       notificationType: 'approval_needed',
       ...delivery,
-      smsMessage: `${request.ticket_number} is awaiting Sales approval. Review: ${actionUrl}`,
+      smsMessage: `${request.ticket_number} is awaiting approval. Review: ${actionUrl}`,
       details: requestSummary(request),
     });
   };
@@ -562,7 +587,6 @@ module.exports = function createCrmsRouter({ pool, jwtSecret, resolveSignature }
     IF(ad.id IS NULL,NULL,JSON_OBJECT('id',ad.id,'name',CONCAT_WS(' ',ad.first_name,ad.last_name))) assigned_developer,
     IF(sd.id IS NULL,NULL,JSON_OBJECT('id',sd.id,'name',CONCAT_WS(' ',sd.first_name,sd.last_name))) senior_developer,
     IF(am.id IS NULL,NULL,JSON_OBJECT('id',am.id,'name',CONCAT_WS(' ',am.first_name,am.last_name),'email',am.email,'phone',am.phone_number)) account_manager,
-    IF(am.id IS NULL,NULL,JSON_OBJECT('id',am.id,'name',CONCAT_WS(' ',am.first_name,am.last_name),'email',am.email,'phone',am.phone_number)) account_manager,
     ${branchScope},
     ${departmentScope}
     FROM crms_change_requests cr
@@ -588,6 +612,7 @@ module.exports = function createCrmsRouter({ pool, jwtSecret, resolveSignature }
   });
   router.get('/change_requests', async (req, res) => {
     try {
+      await reconcileRequestStatuses();
       const developerOnly = req.user.role === 'Developer';
       const requestJoins = await getRequestJoins();
       const [rows] = await pool.query(
@@ -600,6 +625,7 @@ module.exports = function createCrmsRouter({ pool, jwtSecret, resolveSignature }
   });
   router.get('/change_requests/:id', async (req, res) => {
     try {
+      await reconcileRequestStatuses();
       const developerOnly = req.user.role === 'Developer';
       const requestJoins = await getRequestJoins();
       const [rows] = await pool.query(
@@ -619,6 +645,7 @@ module.exports = function createCrmsRouter({ pool, jwtSecret, resolveSignature }
   });
   router.get('/assigned_requests/:developerId', async (req, res) => {
     try {
+      await reconcileRequestStatuses();
       if (req.user.role === 'Developer' && req.params.developerId !== req.user.id) {
         return res.status(403).json({ error: 'Developers may only view their own assignments.' });
       }

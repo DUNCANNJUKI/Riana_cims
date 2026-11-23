@@ -289,6 +289,7 @@ export function useChangeRequests() {
     queryFn: () => fetchJson<ChangeRequestWithRelations[]>(`${API_URL}/change_requests`, 'Failed to fetch change requests'),
     staleTime: DEFAULT_STALE_TIME,
     gcTime: DEFAULT_GC_TIME,
+    refetchInterval: 15000,
   });
 }
 
@@ -301,6 +302,7 @@ export function useChangeRequest(id: string) {
       return res.json() as Promise<ChangeRequestWithRelations | null>;
     },
     enabled: !!id,
+    refetchInterval: 10000,
   });
 }
 

@@ -14,6 +14,8 @@ export const hardwareActorKey = (user: User) =>
 export type HardwareAsset = {
   id: string;
   serial_number: string | null;
+  component_parent_id?: string | null;
+  component_parent_serial?: string | null;
   model_id: string;
   model_number: string;
   equipment_field?: string | null;

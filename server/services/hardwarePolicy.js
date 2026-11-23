@@ -56,7 +56,8 @@ const eligible = (asset) =>
   asset.reconciliation_status === "Matched" &&
   !asset.archived_at &&
   !asset.deleted_at &&
-  !asset.active_assignment_id;
+  !asset.active_assignment_id &&
+  !asset.component_parent_id;
 const scopedSubsidiary = (user, requested) => {
   if (
     requested !== undefined &&
