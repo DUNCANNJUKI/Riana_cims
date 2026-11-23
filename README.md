@@ -1,6 +1,6 @@
 # RIANA CIMS
 
-RIANA CIMS provides Client Installation Management and the Developers change-request workspace through one Express API, MySQL database, session model and permission system. This README is the repository's maintained documentation.
+RIANA CIMS provides Client Installation Management and the Developers change-request workspace through one Express API, MySQL database, session model and permission system. This README is the repository's single maintained documentation source; the former `docs/` tree has been retired so operational guidance stays versioned here.
 
 ## Applications and access
 
