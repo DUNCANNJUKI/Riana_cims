@@ -14,6 +14,8 @@ The earlier feedback migration is also made portable: conditional information-sc
 
 ## Reports and application behavior
 
+Report layout and the client feedback guide are maintained in [Report branding and implementation feedback](report-branding-and-client-feedback.md). Signed completion now shares the e-handover branding primitives, including subsidiary identity, continuation headers, watermarks and page-numbered footers.
+
 - The API generates a signed completion PDF after successful sign-off and returns it as an additive base64 response field. The client automatically downloads it and retains a Download Signed Completion Report button. Rendering failure does not reverse or disguise an already committed acceptance; the client can retry the download.
 - E-signature reports embed the actual uploaded image, client name/designation, timestamp, declaration and verification reference. OTP reports explicitly identify verified OTP attestation and timestamp; they do not invent handwriting. Feedback, implementation details and report version are included.
 - `GET /api/public/change-requests/review/:token/completion.pdf` requires the scoped, unexpired review token and an eligible accepted latest version. `GET /api/crms/change_requests/:id/completion.pdf` uses the existing authenticated request access checks. Responses are attachment PDFs with no-store caching. Missing signature evidence fails visibly rather than silently omitting it. Drafts, incomplete verification, newer unaccepted versions and unresolved disputes cannot produce a verified report.

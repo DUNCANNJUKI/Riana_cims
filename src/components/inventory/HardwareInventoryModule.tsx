@@ -848,25 +848,16 @@ export function HardwareInventoryModule({ user }: { user: User }) {
             ),
           ).toFile("hardware-history.xlsx");
         } else {
-          const [{ jsPDF }, { default: autoTable }] = await Promise.all([
-            import("jspdf"),
-            import("jspdf-autotable"),
-          ]);
-          const doc = new jsPDF({ orientation: "landscape" });
-          doc.text("MAREZI | Hardware History", 14, 16);
-          autoTable(doc, {
-            startY: 22,
-            head: [
-              [
+          const { brandedTableReport } = await import('@/utils/brandedTableReport');
+          const doc = await brandedTableReport({
+            title: 'Hardware History', subsidiaryName: user.subsidiary_name, landscape: true,
+            columns: [
                 "Serial",
                 "Event",
                 "Performed By",
                 "Date / Time (EAT)",
                 "Details",
-              ],
-            ],
-            body: data,
-            styles: { fontSize: 8 },
+              ], rows: data,
           });
           doc.save("hardware-history.pdf");
         }
@@ -934,25 +925,17 @@ export function HardwareInventoryModule({ user }: { user: User }) {
           ),
         ]).toFile("hardware-inventory.xlsx");
       } else {
-        const [{ jsPDF }, { default: autoTable }] = await Promise.all([
-          import("jspdf"),
-          import("jspdf-autotable"),
-        ]);
-        const doc = new jsPDF({ orientation: "landscape" });
-        doc.text("MAREZI | Hardware Inventory", 14, 16);
-        autoTable(doc, {
-          startY: 22,
-          head: [
-            [
+        const { brandedTableReport } = await import('@/utils/brandedTableReport');
+        const doc = await brandedTableReport({
+          title: 'Hardware Inventory', subsidiaryName: user.subsidiary_name, landscape: true,
+          columns: [
               "Serial",
               "Model",
               "Subsidiary",
               "Location",
               "Status",
               "Condition",
-            ],
-          ],
-          body: all.map((a) => [
+            ], rows: all.map((a) => [
             a.serial_number || "Unknown",
             a.model_number,
             a.subsidiary_name,
@@ -960,7 +943,7 @@ export function HardwareInventoryModule({ user }: { user: User }) {
             a.status,
             a.condition_grade,
           ]),
-          styles: { fontSize: 8 },
+
         });
         doc.save("hardware-inventory.pdf");
       }

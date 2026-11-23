@@ -1,15 +1,20 @@
 const fs = require('node:fs/promises');
 const { jsPDF } = require('jspdf');
 const sharp = require('sharp');
+const { completionDocumentBranding } = require('./completionDocumentBranding');
 
 async function signedCompletionReport(pool, { requestId, token, resolveSignature }) {
   const [rows] = await pool.query(`SELECT r.*, cr.ticket_number, cr.request_title, c.client_name,
       a.id AS acceptance_id, a.client_representative_name, a.client_representative_designation,
       a.sign_off_method, a.accepted_at, a.otp_verified_at, a.signature_image_path,
-      a.declaration_text, a.feedback_rating, a.feedback_comment
+      a.declaration_text, a.feedback_rating, a.feedback_comment,
+      cs.subsidiary_name AS client_subsidiary, ms.subsidiary_name AS manager_subsidiary
     FROM crms_completion_reports r
     JOIN crms_change_requests cr ON cr.id COLLATE utf8mb4_unicode_ci = r.change_request_id COLLATE utf8mb4_unicode_ci
     JOIN clients c ON c.id COLLATE utf8mb4_unicode_ci = cr.client_id COLLATE utf8mb4_unicode_ci
+    LEFT JOIN subsidiaries cs ON cs.id COLLATE utf8mb4_unicode_ci = c.subsidiary_id COLLATE utf8mb4_unicode_ci
+    LEFT JOIN user_profiles manager ON manager.id COLLATE utf8mb4_unicode_ci = r.account_manager_id COLLATE utf8mb4_unicode_ci
+    LEFT JOIN subsidiaries ms ON ms.id COLLATE utf8mb4_unicode_ci = manager.subsidiary_id COLLATE utf8mb4_unicode_ci
     JOIN crms_client_acceptances a ON a.completion_report_id COLLATE utf8mb4_unicode_ci = r.id COLLATE utf8mb4_unicode_ci
     WHERE ${token ? 'r.acceptance_token = ? AND r.token_expires_at > NOW()' : 'cr.id = ?'}
       AND r.status = 'accepted' AND cr.status IN ('client_accepted','closed_client_accepted')
@@ -22,24 +27,26 @@ async function signedCompletionReport(pool, { requestId, token, resolveSignature
   if (!rows.length) throw Object.assign(new Error('A verified client sign-off is required for this report.'), { status: 404 });
   const row = rows[0];
   const doc = new jsPDF();
-  let y = 20;
+  const branding = await completionDocumentBranding(doc, row);
+  const { layout } = branding;
+  let y = layout.firstPageContentTop;
+  const nextPage = () => { doc.addPage(); y = layout.continuationContentTop; };
   const text = (heading, value) => {
     if (value == null || value === '') return;
-    if (y > 250) { doc.addPage(); y = 20; }
-    doc.setFont('helvetica', 'bold'); doc.setFontSize(11); doc.setTextColor(8, 111, 118);
+    if (y + 17 > layout.contentBottom) nextPage();
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(11); doc.setTextColor(...branding.primary);
     doc.text(heading, 15, y); y += 7;
     doc.setFont('helvetica', 'normal'); doc.setFontSize(10); doc.setTextColor(30, 41, 59);
     for (const line of doc.splitTextToSize(String(value), 180)) {
-      if (y > 275) { doc.addPage(); y = 20; }
+      if (y + 5 > layout.contentBottom) nextPage();
       doc.text(line, 15, y); y += 5;
     }
     y += 5;
   };
-  text('RIANA CIMS | CLIENT COMPLETION REPORT', `${row.ticket_number} | Version ${row.version_number}`);
   text('Client', row.client_name);
   text('Change requested', row.request_title);
-  for (const [label, key] of [['Summary', 'summary_of_change'], ['Implemented solution', 'implemented_solution'], ['Deliverables', 'deliverables'], ['Issues resolved', 'issues_resolved'], ['Testing performed', 'testing_performed'], ['Known limitations', 'known_limitations'], ['Recommendations', 'client_recommendations']]) text(label, row[key]);
-  doc.addPage(); y = 20;
+  for (const [label, key] of [['Summary', 'summary_of_change'], ['Implemented solution', 'implemented_solution'], ['Deliverables', 'deliverables'], ['Issues resolved', 'issues_resolved'], ['Testing performed', 'testing_performed'], ['Implementation date', 'implementation_date'], ['Deployment date', 'deployment_date'], ['Outstanding items', 'outstanding_items'], ['Known limitations', 'known_limitations'], ['Recommendations', 'client_recommendations'], ['Additional comments', 'additional_comments']]) text(label, row[key] instanceof Date ? row[key].toISOString().slice(0, 10) : row[key]);
+  nextPage();
   text('VERIFIED CLIENT SIGN-OFF', `${row.client_representative_name}\n${row.client_representative_designation}\nAccepted: ${new Date(row.accepted_at).toISOString()}\nVerification: ${row.sign_off_method === 'signature' ? 'Electronic signature' : 'One-time password (OTP)'}`);
   text('Declaration', row.declaration_text);
   if (row.sign_off_method === 'signature') {
@@ -48,10 +55,12 @@ async function signedCompletionReport(pool, { requestId, token, resolveSignature
     const image = await sharp(await fs.readFile(source), { limitInputPixels: 16000000 }).rotate().resize(1000, 400, { fit: 'inside', withoutEnlargement: true }).png().toBuffer();
     const meta = await sharp(image).metadata();
     const w = Math.min(90, 35 * meta.width / meta.height), h = w * meta.height / meta.width;
+    if (y + h + 10 > layout.contentBottom) nextPage();
     doc.addImage(new Uint8Array(image), 'PNG', 15, y, w, h); y += h + 10;
   } else text('OTP attestation', `Confirmed by ${row.client_representative_name} using a verified one-time password at ${new Date(row.otp_verified_at).toISOString()}. No handwritten signature was supplied for this method.`);
   text('Feedback', [row.feedback_rating != null ? `${row.feedback_rating} / 5` : '', row.feedback_comment].filter(Boolean).join('\n'));
   text('Verification reference', row.acceptance_id);
+  branding.finish();
   return { buffer: Buffer.from(doc.output('arraybuffer')), filename: `${String(row.ticket_number).replace(/[^a-zA-Z0-9_-]/g, '_')}-signed-completion.pdf` };
 }
 

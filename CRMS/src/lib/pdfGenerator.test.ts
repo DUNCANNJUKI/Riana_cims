@@ -140,4 +140,23 @@ describe('professional PDF branding', () => {
     expect(document.output('arraybuffer').byteLength).toBeGreaterThan(5_000);
     expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining('/marezi-letterhead.png'));
   });
+
+  it('paginates long descriptions, module lists and approval notes without dropping content', async () => {
+    const request = {
+      ...sampleRequest,
+      change_description: 'Description content retained. '.repeat(650) + 'DESCRIPTION-END',
+      modules_affected: Array.from({ length: 40 }, (_, i) => `Affected module ${i}`),
+      approval_comment: 'Approval content retained. '.repeat(250) + 'APPROVAL-END',
+    };
+    for (const generate of [generateChangeRequestPDF, generateCompletionReportPDF]) {
+      const document = await generate(request);
+      const pdf = document.output();
+      expect(document.getNumberOfPages()).toBeGreaterThan(3);
+      expect(pdf).toContain('DESCRIPTION-END');
+      expect(pdf).toContain('Affected module 39');
+      expect(pdf).toContain('Client Representative');
+      if (generate === generateCompletionReportPDF) expect(pdf).toContain('APPROVAL-END');
+      expect(pdf).toContain(`Page ${document.getNumberOfPages()} of ${document.getNumberOfPages()}`);
+    }
+  });
 });

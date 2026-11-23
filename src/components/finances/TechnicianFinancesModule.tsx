@@ -16,14 +16,14 @@ import { apiClient } from "@/integrations/apiClient";
 import { Client, Installation, User } from "@/types";
 import { can } from "@/security/accessControl";
 import writeXlsxFile from "write-excel-file/browser";
-import jsPDF from "jspdf";
-import autoTable from "jspdf-autotable";
+import { brandedTableReport } from "@/utils/brandedTableReport";
+import { resolveDocumentSubsidiaryName } from "@/utils/brandIdentity";
 
 interface FinancesModuleProps { user: User }
 interface Technician { id: string; first_name: string; last_name: string; email: string }
 interface TechnicianExpense { technician_id: string; technician_name_snapshot?: string; accommodation_cost: string; transport_cost: string; meals_cost: string; other_expenses: string; expense_notes: string; technician_total?: string }
 interface Budget {
-  id: string; installation_id: string; client_name: string; branch_name?: string; branch?: string;
+  id: string; installation_id: string; client_name: string; branch_name?: string; branch?: string; subsidiary_name?: string;
   total_budget: string | number; currency?: string; notes?: string; created_at: string;
   budget_model?: "legacy" | "technician"; revision_number?: number; is_current?: boolean;
   labor_cost?: number; equipment_cost?: number; transport_cost?: number; miscellaneous_cost?: number;
@@ -142,14 +142,18 @@ export const FinancesModule = ({ user }: FinancesModuleProps) => {
     ];
     await writeXlsxFile(data, { sheet: "Budget" }).toFile(exportFileName(budget, "xlsx"));
   };
-  const exportPdf = (budget: Budget) => {
-    const doc = new jsPDF();
-    doc.setFontSize(16); doc.setTextColor(11, 108, 117); doc.text("RIANA CIMS Installation Budget", 14, 18);
-    doc.setFontSize(10); doc.setTextColor(45, 55, 72);
-    doc.text(`Client: ${budget.client_name}`, 14, 27); doc.text(`Branch: ${budget.branch_name || budget.branch || "No branch"}`, 14, 33);
-    doc.text(`Installation: ${budget.installation_id}`, 14, 39); doc.text(`Currency: ${budget.currency || "KES"} · Revision: ${budget.revision_number || 1}`, 14, 45);
-    autoTable(doc, { startY: 51, head: [reportHeaders(budget)], body: reportRows(budget), foot: [["TOTAL INSTALLATION BUDGET", "", "", "", "", `${budget.currency || "KES"} ${Number(budget.total_budget || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}`, ""]], styles: { fontSize: 8 }, headStyles: { fillColor: [11, 108, 117] }, footStyles: { fillColor: [11, 108, 117], fontStyle: "bold" } });
-    doc.save(exportFileName(budget, "pdf"));
+  const exportPdf = async (budget: Budget) => {
+    try {
+      const installation = installations.find(item => item.id === budget.installation_id);
+      const client = clients.find(item => item.id === installation?.client_id);
+      const doc = await brandedTableReport({
+        title: 'Installation Budget Report', subsidiaryName: resolveDocumentSubsidiaryName(budget.subsidiary_name, client?.subsidiary_name, user.subsidiary_name),
+        metadata: [['Client', budget.client_name], ['Branch', budget.branch_name || budget.branch || 'No branch'], ['Installation', budget.installation_id], ['Currency / Revision', `${budget.currency || 'KES'} / ${budget.revision_number || 1}`]],
+        columns: reportHeaders(budget), rows: reportRows(budget),
+        totals: [["TOTAL INSTALLATION BUDGET", "", "", "", "", `${budget.currency || "KES"} ${Number(budget.total_budget || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}`, ""]],
+      });
+      doc.save(exportFileName(budget, "pdf"));
+    } catch { toast({ title: 'Unable to generate budget report', description: 'Please try again.', variant: 'destructive' }); }
   };
 
   return <div className="space-y-6">

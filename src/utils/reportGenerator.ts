@@ -52,7 +52,7 @@ export const generatePDFReport = async (
   });
 
   // The report name is already rendered in the branded header.
-  let yPosition = 55;
+  let yPosition = DOCUMENT_LAYOUT.firstPageContentTop;
 
   // Date range and metadata
   doc.setFontSize(9);

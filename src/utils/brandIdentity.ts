@@ -1,3 +1,5 @@
+import { DOCUMENT_BRANDS } from '../../server/services/documentBranding.mjs';
+
 export type BrandId = 'riana' | 'marezi';
 
 export interface BrandIdentity {
@@ -10,25 +12,7 @@ export interface BrandIdentity {
   letterheadPath?: string;
 }
 
-export const BRAND_IDENTITIES: Record<BrandId, BrandIdentity> = {
-  riana: {
-    id: 'riana',
-    name: 'RIANA Group',
-    systemName: 'RIANA CIMS',
-    website: 'www.riana.co',
-    primary: [29, 130, 151],
-    accent: [29, 130, 151],
-  },
-  marezi: {
-    id: 'marezi',
-    name: 'MAREZI',
-    systemName: 'RIANA CIMS',
-    website: 'www.marezi.co',
-    primary: [15, 106, 129],
-    accent: [217, 37, 45],
-    letterheadPath: '/marezi-letterhead.png',
-  },
-};
+export const BRAND_IDENTITIES = DOCUMENT_BRANDS as Record<BrandId, BrandIdentity>;
 
 export const isMareziSubsidiary = (subsidiaryName?: string | null): boolean => (
   /(^|[^a-z])marezi([^a-z]|$)/i.test(String(subsidiaryName || '').trim())

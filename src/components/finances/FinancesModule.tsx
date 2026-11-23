@@ -387,12 +387,13 @@ export const FinancesModule = ({ user }: FinancesModuleProps) => {
     
     // Add notes if present
     if (budget.notes) {
-      doc.setFont('helvetica', 'bold');
-      doc.text('Notes:', 20, doc.lastAutoTable.finalY + 15);
-      doc.setFont('helvetica', 'normal');
-      doc.setFontSize(10);
-      const splitNotes = doc.splitTextToSize(budget.notes, 170);
-      doc.text(splitNotes, 20, doc.lastAutoTable.finalY + 25);
+      autoTable(doc, {
+        startY: doc.lastAutoTable.finalY + 10,
+        body: [['Notes', budget.notes]], theme: 'plain',
+        styles: { fontSize: 10, cellPadding: 3, overflow: 'linebreak' },
+        columnStyles: { 0: { fontStyle: 'bold', cellWidth: 25 } },
+        margin: { left: 20, right: 20, top: DOCUMENT_LAYOUT.continuationContentTop, bottom: DOCUMENT_LAYOUT.autoTableBottomMargin },
+      });
     }
     
     // Add letterhead with watermark and footer

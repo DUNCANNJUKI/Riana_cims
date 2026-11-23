@@ -1,4 +1,6 @@
 import { GState } from 'jspdf';
+import { DOCUMENT_LAYOUT, drawDocumentHeader, drawBrandedFooter, drawMareziFooter, watermarkBox, drawContinuationHeader as drawRianaContinuationHeader } from '../../server/services/documentBranding.mjs';
+export { DOCUMENT_LAYOUT };
 import jsPDF from "jspdf";
 import { BrandIdentity, isMareziSubsidiary, resolveBrandIdentity } from './brandIdentity';
 
@@ -40,13 +42,6 @@ export interface DocumentBrandingOptions {
   documentTitle?: string;
   generatedAt?: Date;
 }
-
-export const DOCUMENT_LAYOUT = {
-  firstPageContentTop: 55,
-  continuationContentTop: 40,
-  contentBottom: 252,
-  autoTableBottomMargin: 45,
-} as const;
 
 export { isMareziSubsidiary };
 export const resolveDocumentBrand = (
@@ -95,101 +90,12 @@ export const addCimsDocumentHeader = async (
     subsidiaryName?: string | null;
   } = {},
 ): Promise<number> => {
-  const pageWidth = doc.internal.pageSize.getWidth();
-  const pageHeight = doc.internal.pageSize.getHeight();
   const brand = resolveDocumentBrand(options.subsidiaryName);
-  const headerHeight = options.headerHeight ?? (brand.id === 'marezi' ? 52 : 45);
-  const primaryColor = options.primaryColor ?? brand.primary;
-  const accentColor = options.accentColor ?? brand.accent;
-  const margin = 14;
-
-  if (brand.id === 'marezi') {
-    const letterhead = await fetchImageAsBase64(brand.letterheadPath!);
-    if (letterhead) {
-      doc.addImage(letterhead, 'PNG', 0, 0, pageWidth, pageHeight);
-    } else {
-      doc.setDrawColor(...brand.primary);
-      doc.setLineWidth(0.6);
-      doc.line(8, 27.5, pageWidth - 47, 27.5);
-      doc.setDrawColor(...brand.accent);
-      doc.line(pageWidth - 47, 27.5, pageWidth - 8, 27.5);
-    }
-
-    doc.setTextColor(...brand.primary);
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(8);
-    if (options.metaLeft) doc.text(options.metaLeft, margin, 32);
-    if (options.metaRight) doc.text(options.metaRight, pageWidth - margin, 32, { align: 'right' });
-
-    doc.setFontSize(14);
-    doc.text(options.title || 'RIANA CIMS', pageWidth / 2, 38, { align: 'center' });
-    if (options.subtitle) {
-      doc.setFont('helvetica', 'normal');
-      doc.setFontSize(9.5);
-      doc.text(options.subtitle, pageWidth / 2, 44, { align: 'center' });
-    }
-    if (options.documentTitle) {
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(10.5);
-      doc.text(options.documentTitle, pageWidth / 2, 50, { align: 'center' });
-    }
-    return headerHeight + 3;
-  }
-
-  doc.setFillColor(...primaryColor);
-  doc.rect(0, 0, pageWidth, headerHeight, 'F');
-
-  // 10 mm is approximately 38 CSS pixels. The transparent mark is 18% taller
-  // than the previous logo while its narrow slot avoids invisible side whitespace.
-  const logoSlot = {
-    x: 10,
-    y: (headerHeight - 26) / 2,
-    width: 20,
-    height: 26,
-  };
-
-  doc.setTextColor(255, 255, 255);
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(8.5);
-  if (options.metaLeft) doc.text(options.metaLeft, margin, 7.5);
-  if (options.metaRight) doc.text(options.metaRight, pageWidth - margin, 7.5, { align: 'right' });
-
-  const headerLogoPath = resolveRianaHeaderLogoPath(options.logoPath);
-  const logoBase64 = await fetchImageAsBase64(headerLogoPath, RIANA_TRANSPARENT_HEADER_LOGO);
-  if (logoBase64) {
-    try {
-      addImageContained(doc, logoBase64, logoSlot.x, logoSlot.y, logoSlot.width, logoSlot.height);
-    } catch {
-      // The centered text identity remains the deterministic fallback.
-    }
-  }
-
-  // The logo owns the left branding zone; the title block remains at the true
-  // page center so its visual alignment is stable across A4 and Letter sizes.
-  const textCenter = pageWidth / 2;
-
-  doc.setTextColor(255, 255, 255);
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(21);
-  doc.text(options.title || 'RIANA CIMS', textCenter, 17, { align: 'center' });
-
-  if (options.subtitle) {
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(11.5);
-    doc.text(options.subtitle, textCenter, 28, { align: 'center' });
-  }
-
-  if (options.documentTitle) {
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(13);
-    doc.text(options.documentTitle, textCenter, 38, { align: 'center' });
-  }
-
-  doc.setDrawColor(...accentColor);
-  doc.setLineWidth(1.5);
-  doc.line(0, headerHeight, pageWidth, headerHeight);
-
-  return headerHeight + 10;
+  const letterhead = brand.id === 'marezi' ? await fetchImageAsBase64(brand.letterheadPath!) : null;
+  const logo = brand.id === 'riana'
+    ? await fetchImageAsBase64(resolveRianaHeaderLogoPath(options.logoPath), RIANA_TRANSPARENT_HEADER_LOGO)
+    : null;
+  return drawDocumentHeader(doc, { ...options, brand, logo, letterhead });
 };
 
 /**
@@ -358,13 +264,10 @@ export const addLetterheadToDocument = async (
       doc.saveGraphicsState();
       doc.setGState(new GState({ opacity: 0.12 }));
       
-      const imgWidth = pageWidth - 40;
-      const imgHeight = (imgWidth / 210) * 297 * 0.4; // Maintain aspect ratio approx
-      const centerX = (pageWidth - imgWidth) / 2;
-      const centerY = (pageHeight - imgHeight) / 2;
+      const box = watermarkBox(pageWidth, pageHeight);
       
       try {
-        doc.addImage(watermarkBase64, 'PNG', centerX, centerY, imgWidth, imgHeight);
+        doc.addImage(watermarkBase64, 'PNG', box.x, box.y, box.width, box.height);
       } catch (e) {
         addTextWatermark(doc, pageWidth, pageHeight);
       }
@@ -420,22 +323,7 @@ const addRianaContinuationHeader = (
   pageWidth: number,
   documentTitle?: string,
 ): void => {
-  doc.setFillColor(...RIANA_DOCUMENT_TEAL);
-  doc.rect(0, 0, pageWidth, 22, 'F');
-  if (logoBase64) {
-    try {
-      addImageContained(doc, logoBase64, 10, 2, 14, 18);
-    } catch {
-      // Text identity below remains the deterministic fallback.
-    }
-  }
-  doc.setTextColor(255, 255, 255);
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(10);
-  doc.text('RIANA CIMS', pageWidth / 2, 9, { align: 'center' });
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(8);
-  doc.text(documentTitle || 'Official System Document', pageWidth / 2, 15, { align: 'center' });
+  drawRianaContinuationHeader(doc, logoBase64, documentTitle);
 };
 
 const addMareziFooterMetadata = (
@@ -446,19 +334,7 @@ const addMareziFooterMetadata = (
   totalPages: number,
   generatedAt: Date,
 ): void => {
-  doc.setFillColor(255, 255, 255);
-  doc.rect(10, pageHeight - 23, pageWidth - 20, 6.5, 'F');
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(6.5);
-  doc.setTextColor(70, 70, 70);
-  doc.text('MAREZI | Official & Confidential', 14, pageHeight - 19);
-  doc.text(
-    `Generated ${generatedAt.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}`,
-    pageWidth / 2,
-    pageHeight - 19,
-    { align: 'center' },
-  );
-  doc.text(`Page ${currentPage} of ${totalPages}`, pageWidth - 14, pageHeight - 19, { align: 'right' });
+  drawMareziFooter(doc, currentPage, totalPages, generatedAt);
 };
 
 /**
@@ -562,19 +438,9 @@ export const addBrandedFooter = (
   currentPage: number,
   totalPages: number
 ): void => {
-  const footerWidth = pageWidth - 20;
-  const footerHeight = (footerWidth / 800) * 100; // Estimated aspect ratio
-  const x = (pageWidth - footerWidth) / 2;
-  const y = pageHeight - footerHeight - 12;
-
   try {
-    doc.addImage(footerBase64, 'PNG', x, y, footerWidth, footerHeight);
-    
-    // Page number still added for clarity
-    doc.setFontSize(7);
-    doc.setTextColor(120, 120, 120);
-    doc.text(`Page ${currentPage} of ${totalPages}`, pageWidth - 15, pageHeight - 10, { align: 'right' });
-  } catch (e) {
+    drawBrandedFooter(doc, footerBase64, currentPage, totalPages);
+  } catch {
     addProfessionalFooter(doc, pageWidth, pageHeight, currentPage, totalPages);
   }
 };

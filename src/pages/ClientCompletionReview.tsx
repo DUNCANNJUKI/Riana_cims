@@ -576,6 +576,10 @@ export const ClientCompletionReview: React.FC = () => {
             </div>
           )}
           {/* Action Bar */}
+          {canRespond && <div className="border-t px-6 pt-5 text-sm text-muted-foreground">
+            <p className="font-semibold text-foreground">Review implementation and share feedback</p>
+            <p className="mt-1">Select Accept &amp; Confirm Completion to add an optional satisfaction rating and comments, then sign off by OTP or e-signature. Your feedback appears in the signed report and request tracking. If work needs attention, request corrections or raise a concern below.</p>
+          </div>}
           {canRespond && (
             <CardFooter className="flex flex-col sm:flex-row justify-between gap-3 pt-6 border-t border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50">
               <div className="flex flex-col sm:flex-row items-center gap-2 w-full sm:w-auto">
@@ -624,7 +628,7 @@ export const ClientCompletionReview: React.FC = () => {
               Confirm Client Acceptance
             </DialogTitle>
             <DialogDescription>
-              Select your preferred authentication method to provide formal sign-off for Ticket {report.change_request.ticket_number}.
+              Share optional feedback, then confirm implementation by OTP or e-signature for Ticket {report.change_request.ticket_number}. Your confirmation closes the request and generates the signed report.
             </DialogDescription>
           </DialogHeader>
 
@@ -633,11 +637,11 @@ export const ClientCompletionReview: React.FC = () => {
               <Label htmlFor="implementation-feedback-rating">Implementation feedback (optional)</Label>
               <select id="implementation-feedback-rating" className="h-10 w-full min-w-0 rounded-md border border-input bg-background px-3 text-sm" value={feedbackRating} onChange={event => setFeedbackRating(event.target.value)}>
                 <option value="">Select a rating</option>
-                {[1, 2, 3, 4, 5].map(rating => <option key={rating} value={rating}>{rating} / 5</option>)}
+                {['Very dissatisfied', 'Dissatisfied', 'Neutral', 'Satisfied', 'Very satisfied'].map((label, index) => <option key={label} value={index + 1}>{index + 1} / 5 - {label}</option>)}
               </select>
-              <Label htmlFor="implementation-feedback-comment">Feedback and comments</Label>
-              <Textarea id="implementation-feedback-comment" value={feedbackComment} onChange={event => setFeedbackComment(event.target.value)} maxLength={2000} placeholder="Share your feedback about the implemented change" />
-              <p className="text-xs text-muted-foreground">Feedback is saved together with your verified OTP or signature confirmation.</p>
+              <Label htmlFor="implementation-feedback-comment">Feedback and comments (optional)</Label>
+              <Textarea id="implementation-feedback-comment" aria-describedby="implementation-feedback-help" value={feedbackComment} onChange={event => setFeedbackComment(event.target.value)} maxLength={2000} placeholder="Share your feedback about the implemented change" />
+              <p id="implementation-feedback-help" className="text-xs text-muted-foreground">{feedbackComment.length} / 2000 characters. Feedback is saved with your verified confirmation and included in the signed completion report. If work is incomplete, close this dialog and choose Request Further Changes or Raise Concern.</p>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-1.5">
@@ -664,11 +668,11 @@ export const ClientCompletionReview: React.FC = () => {
 
             <Tabs value={acceptMethod} onValueChange={(val) => setAcceptMethod(val as 'otp' | 'signature')}>
               <TabsList className="grid grid-cols-2 w-full">
-                <TabsTrigger value="otp" className="flex items-center gap-2">
-                  <KeyRound className="w-4 h-4" /> Method 1: OTP Code
+                <TabsTrigger value="otp" aria-label="Method 1: OTP Code" className="flex min-w-0 items-center gap-1 px-2 text-xs sm:gap-2 sm:text-sm">
+                  <KeyRound className="h-4 w-4 shrink-0" /> OTP code
                 </TabsTrigger>
-                <TabsTrigger value="signature" className="flex items-center gap-2">
-                  <PenTool className="w-4 h-4" /> Method 2: Signature
+                <TabsTrigger value="signature" aria-label="Method 2: Signature" className="flex min-w-0 items-center gap-1 px-2 text-xs sm:gap-2 sm:text-sm">
+                  <PenTool className="h-4 w-4 shrink-0" /> E-signature
                 </TabsTrigger>
               </TabsList>
 
