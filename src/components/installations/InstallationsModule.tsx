@@ -654,49 +654,49 @@ export const InstallationsModule = ({ user }: InstallationsModuleProps) => {
         </Dialog>}</div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+      <div className="mb-6 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <Card className="shadow-riana">
-          <CardContent className="p-4">
-            <div className="flex items-center gap-2">
-              <Package className="h-8 w-8 text-primary" />
-              <div>
-                <p className="text-sm text-muted-foreground">Total Kiosks</p>
-                <p className="text-2xl font-bold">{installations.reduce((sum, inst) => sum + inst.kiosk_count, 0)}</p>
-              </div>
+          <CardContent className="flex min-h-[68px] items-center gap-3 p-4">
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary" aria-hidden="true">
+              <Package className="h-5 w-5" />
+            </span>
+            <div className="min-w-0">
+              <p className="truncate text-xs font-medium text-muted-foreground">Total Kiosks</p>
+              <p className="text-2xl font-bold leading-none">{installations.reduce((sum, inst) => sum + inst.kiosk_count, 0)}</p>
             </div>
           </CardContent>
         </Card>
         <Card className="shadow-riana">
-          <CardContent className="p-4">
-            <div className="flex items-center gap-2">
-              <Monitor className="h-8 w-8 text-success" />
-              <div>
-                <p className="text-sm text-muted-foreground">Displays</p>
-                <p className="text-2xl font-bold">{installations.reduce((sum, inst) => sum + inst.led_count, 0)}</p>
-              </div>
+          <CardContent className="flex min-h-[68px] items-center gap-3 p-4">
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-success/10 text-success" aria-hidden="true">
+              <Monitor className="h-5 w-5" />
+            </span>
+            <div className="min-w-0">
+              <p className="truncate text-xs font-medium text-muted-foreground">Displays</p>
+              <p className="text-2xl font-bold leading-none">{installations.reduce((sum, inst) => sum + inst.led_count, 0)}</p>
             </div>
           </CardContent>
         </Card>
         <Card className="shadow-riana">
-          <CardContent className="p-4">
-            <div className="flex items-center gap-2">
-              <Smartphone className="h-8 w-8 text-primary" />
-              <div>
-                <p className="text-sm text-muted-foreground">Service Points</p>
-                <p className="text-2xl font-bold">{installations.reduce((sum, inst) => sum + inst.service_points, 0)}</p>
-              </div>
+          <CardContent className="flex min-h-[68px] items-center gap-3 p-4">
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary" aria-hidden="true">
+              <Smartphone className="h-5 w-5" />
+            </span>
+            <div className="min-w-0">
+              <p className="truncate text-xs font-medium text-muted-foreground">Service Points</p>
+              <p className="text-2xl font-bold leading-none">{installations.reduce((sum, inst) => sum + inst.service_points, 0)}</p>
             </div>
           </CardContent>
         </Card>
         <Card className="shadow-riana">
-          <CardContent className="p-4">
-            <div className="flex items-center gap-2">
-              <Wifi className="h-8 w-8 text-warning" />
-              <div>
-                <p className="text-sm text-muted-foreground">Media Controllers</p>
-                <p className="text-2xl font-bold">{installations.reduce((sum, inst) => sum + inst.media_controllers, 0)}</p>
+          <CardContent className="flex min-h-[68px] items-center gap-3 p-4">
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-warning/10 text-warning" aria-hidden="true">
+              <Wifi className="h-5 w-5" />
+            </span>
+            <div className="min-w-0">
+              <p className="truncate text-xs font-medium text-muted-foreground">Media Controllers</p>
+              <p className="text-2xl font-bold leading-none">{installations.reduce((sum, inst) => sum + inst.media_controllers, 0)}</p>
               </div>
-            </div>
           </CardContent>
         </Card>
       </div>

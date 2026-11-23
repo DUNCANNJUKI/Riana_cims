@@ -7,22 +7,19 @@
   align-items: center;
   justify-content: center;
   overflow: hidden;
-  border: 1px solid hsl(var(--primary) / 0.15);
-  border-radius: 0.375rem;
-  background-color: hsl(var(--primary) / 0.04);
-  background-image: url('/equipment-reference.png');
+  border-radius: 0.25rem;
+  background-color: #fff;
   background-repeat: no-repeat;
   background-position: center;
-  background-size: 0 0;
+  background-size: contain;
 }
 
-/* The source reference is a five-row equipment sheet. Each rule crops only
-   the product column into a consistent, responsive icon tile. */
-.equipment-reference-kiosk { background-size: 157px 188px; background-position: -69px 0; }
-.equipment-reference-controller { background-size: 219px 263px; background-position: -97px -67px; }
-.equipment-reference-tv { background-size: 164px 196px; background-position: -72px -86px; }
-.equipment-reference-speaker { background-size: 273px 327px; background-position: -120px -224px; }
-.equipment-reference-led { background-size: 237px 284px; background-position: -104px -236px; }
+/* Each image is a tightly cropped product from the supplied reference sheet. */
+.equipment-reference-kiosk { background-image: url('/equipment/kiosk.png'); }
+.equipment-reference-controller { background-image: url('/equipment/media-controller.png'); }
+.equipment-reference-tv { background-image: url('/equipment/tv.png'); }
+.equipment-reference-speaker { background-image: url('/equipment/speaker.png'); }
+.equipment-reference-led { background-image: url('/equipment/led-signage.png'); }
 
 @media (min-width: 640px) {
   .equipment-icon-tile { height: 3rem; width: 3.5rem; }
