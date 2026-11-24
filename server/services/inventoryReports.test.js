@@ -22,7 +22,7 @@ test('inventory report totals distinguish recorded stock from assignable stock a
   assert.deepEqual(statement.args,['a','warehouse']);
   assert.match(statement.sql,/a.archived_at IS NULL/);
   await assert.rejects(service.summary(officer,{subsidiary_id:'b'}),/restricted to your subsidiary/);
-  await assert.rejects(service.summary({id:'tech',role:'User',subsidiary_id:'a'}),/permissions/);
+  await assert.rejects(service.summary({id:'tech',role:'Developer',subsidiary_id:'a'}),/permissions/);
 });
 
 test('in-stock and issued drill-down reports filter the same lifecycle groups as totals', async () => {
