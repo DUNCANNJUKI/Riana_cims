@@ -587,6 +587,7 @@ module.exports = function createCrmsRouter({ pool, jwtSecret, resolveSignature }
     IF(ad.id IS NULL,NULL,JSON_OBJECT('id',ad.id,'name',CONCAT_WS(' ',ad.first_name,ad.last_name))) assigned_developer,
     IF(sd.id IS NULL,NULL,JSON_OBJECT('id',sd.id,'name',CONCAT_WS(' ',sd.first_name,sd.last_name))) senior_developer,
     IF(am.id IS NULL,NULL,JSON_OBJECT('id',am.id,'name',CONCAT_WS(' ',am.first_name,am.last_name),'email',am.email,'phone',am.phone_number)) account_manager,
+    i.invitation_token AS tracking_token,
     ${branchScope},
     ${departmentScope}
     FROM crms_change_requests cr
@@ -596,7 +597,8 @@ module.exports = function createCrmsRouter({ pool, jwtSecret, resolveSignature }
     ${departmentJoin}
     LEFT JOIN user_profiles ad ON ad.id COLLATE utf8mb4_general_ci=cr.assigned_developer_id
     LEFT JOIN user_profiles sd ON sd.id COLLATE utf8mb4_general_ci=cr.senior_developer_id
-    LEFT JOIN user_profiles am ON am.id COLLATE utf8mb4_general_ci=cr.account_manager_id`;
+    LEFT JOIN user_profiles am ON am.id COLLATE utf8mb4_general_ci=cr.account_manager_id
+    LEFT JOIN crms_change_request_invitations i ON i.id COLLATE utf8mb4_general_ci=cr.invitation_id`;
   };
   const formatRequest = (row) => ({
     ...row,

@@ -37,6 +37,7 @@ export const ClientRequests: React.FC = () => {
   const [selectedRequest, setSelectedRequest] = useState<ChangeRequestWithRelations | null>(null);
 
   const [copiedToken, setCopiedToken] = useState<string | null>(null);
+  const [copiedTrackingToken, setCopiedTrackingToken] = useState<string | null>(null);
 
   const fetchData = useCallback(async () => {
     try {
@@ -94,6 +95,18 @@ export const ClientRequests: React.FC = () => {
       setTimeout(() => setCopiedToken(null), 2500);
     } catch {
       toast({ title: 'Copy Failed', description: 'Your browser could not copy the invitation link.', variant: 'destructive' });
+    }
+  };
+
+  const handleCopyTrackingLink = async (token: string) => {
+    const fullUrl = `${window.location.origin}/change-request/track/${encodeURIComponent(token)}`;
+    try {
+      await navigator.clipboard.writeText(fullUrl);
+      setCopiedTrackingToken(token);
+      toast({ title: 'Client link copied', description: 'The client can use this URL to track the request through completion and sign-off.' });
+      setTimeout(() => setCopiedTrackingToken(null), 2500);
+    } catch {
+      toast({ title: 'Copy Failed', description: 'Your browser could not copy the client tracking link.', variant: 'destructive' });
     }
   };
 
@@ -314,6 +327,18 @@ export const ClientRequests: React.FC = () => {
                               </Link>
                             </Button>
 
+                            {r.tracking_token && (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => handleCopyTrackingLink(r.tracking_token as string)}
+                                className="h-8 px-2"
+                              >
+                                {copiedTrackingToken === r.tracking_token ? <Check className="w-3.5 h-3.5 mr-1 text-emerald-600" /> : <Copy className="w-3.5 h-3.5 mr-1" />}
+                                Share Link
+                              </Button>
+                            )}
+
                             {/* Prepare Completion Report Action */}
                             {(r.status === 'ready_for_completion_report' || r.status === 'completed' || r.status === 'awaiting_client_acceptance') && (
                               <Button
@@ -414,6 +439,17 @@ export const ClientRequests: React.FC = () => {
                               )}
                               Copy Link
                             </Button>
+                            {inv.status === 'submitted' && (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => handleCopyTrackingLink(inv.invitation_token)}
+                                className="h-8 px-2"
+                              >
+                                {copiedTrackingToken === inv.invitation_token ? <Check className="w-3.5 h-3.5 mr-1 text-emerald-600" /> : <Copy className="w-3.5 h-3.5 mr-1" />}
+                                Track Link
+                              </Button>
+                            )}
                             {inv.status === 'draft' && (
                               <Button
                                 size="sm"

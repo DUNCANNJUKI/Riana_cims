@@ -92,6 +92,8 @@ export interface ChangeRequestWithRelations extends ChangeRequest {
   branch_id?: string | null;
   department_id?: string | null;
   installation_id?: string | null;
+  /** Token used by the client-facing submission/tracking link. */
+  tracking_token?: string | null;
   client?: Client & { subsidiary_id?: string | null; subsidiary_name?: string | null };
   assigned_developer?: Profile;
   senior_developer?: Profile;
