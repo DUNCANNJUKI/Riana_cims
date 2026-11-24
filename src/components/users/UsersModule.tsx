@@ -269,6 +269,12 @@ export const UsersModule = ({ user }: UsersModuleProps) => {
       setEditingUser(null);
     } catch (error: unknown) {
       console.error('Error updating user:', error);
+      const details = errorDetails(error);
+      toast({
+        title: "User update failed",
+        description: details.message || details.response?.data?.error || "The account changes could not be saved. Refresh and try again.",
+        variant: "destructive",
+      });
     }
   };
 

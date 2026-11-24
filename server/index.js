@@ -903,9 +903,20 @@ const initDb = async () => {
 
     await pool.query(`
       INSERT INTO roles (id,module_id,code,name) VALUES
+        ('cims:SuperAdmin','cims','SuperAdmin','Super Administrator'),
+        ('cims:Admin','cims','Admin','Administrator'),
+        ('cims:Teamlead','cims','Teamlead','Team Lead'),
+        ('cims:Developer','cims','Developer','Developer'),
+        ('cims:Sales','cims','Sales','Sales'),
+        ('cims:User','cims','User','User'),
         ('cims:InventoryOfficer','cims','InventoryOfficer','Inventory Officer'),
         ('cims:Management','cims','Management','Management'),
         ('cims:Finance','cims','Finance','Finance'),
+        ('crms:SuperAdmin','crms','SuperAdmin','Super Administrator'),
+        ('crms:Admin','crms','Admin','Administrator'),
+        ('crms:Teamlead','crms','Teamlead','Team Lead'),
+        ('crms:Developer','crms','Developer','Developer'),
+        ('crms:Sales','crms','Sales','Sales'),
         ('crms:Management','crms','Management','Management')
       ON DUPLICATE KEY UPDATE name=VALUES(name)
     `);
@@ -3909,6 +3920,9 @@ app.post('/api/user_profiles', authMiddleware, async (req, res) => {
     res.status(201).json({ id, ...data, email, phone_number: phoneNumber, first_login: true, welcome_delivery: welcomeDelivery, in_app_notification: inAppDelivery });
   } catch (err) {
     if (err.code === 'ER_DUP_ENTRY') return res.status(409).json({ error: 'A user with this email already exists.' });
+    if (err.code === 'ER_NO_REFERENCED_ROW_2' || err.code === 'ER_NO_REFERENCED_ROW') {
+      return res.status(400).json({ error: 'The selected module role is not available. Refresh roles and try again.' });
+    }
     res.status(500).json({ error: err.message });
   }
 });
@@ -3980,6 +3994,9 @@ app.put('/api/user_profiles/:id', authMiddleware, async (req, res) => {
     res.json({ success: true });
   } catch (err) {
     if (err.code === 'ER_DUP_ENTRY') return res.status(409).json({ error: 'A user with this email already exists.' });
+    if (err.code === 'ER_NO_REFERENCED_ROW_2' || err.code === 'ER_NO_REFERENCED_ROW') {
+      return res.status(400).json({ error: 'The selected module role is not available. Refresh roles and try again.' });
+    }
     res.status(500).json({ error: err.message });
   }
 });
@@ -4022,6 +4039,9 @@ app.put('/api/user_profiles/:id/permissions', requireRole('SuperAdmin'), async (
     if (connection) {
       await connection.rollback().catch(() => {});
       connection.release();
+    }
+    if (err.code === 'ER_NO_REFERENCED_ROW_2' || err.code === 'ER_NO_REFERENCED_ROW') {
+      return res.status(400).json({ error: 'One or more selected permissions are not available. Refresh permissions and try again.' });
     }
     res.status(500).json({ error: 'Unable to update user permissions.' });
   }

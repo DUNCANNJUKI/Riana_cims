@@ -43,6 +43,15 @@ const ALL_CAPABILITIES = new Set(CAPABILITY_DEFINITIONS.map(({ code }) => code))
 const VIEW_ONLY = new Set([
   'clients.view', 'installations.view', 'assignments.view', 'progress.view', 'reports.view',
 ]);
+// Field users can perform the actions needed to identify, allocate and confirm
+// equipment on site. Higher-risk inventory governance remains restricted.
+const FIELD_OPERATIONS_CAPABILITIES = new Set([
+  'inventory.view',
+  'inventory.assign',
+  'inventory.print_qr',
+  'inventory.field_register',
+  'inventory.install',
+]);
 const ADMIN_CAPABILITIES = new Set([
   'clients.view', 'clients.manage', 'installations.view', 'installations.manage',
   'assignments.view', 'assignments.manage', 'progress.view', 'progress.manage',
@@ -66,7 +75,7 @@ const ROLE_CAPABILITIES = {
   Finance: VIEW_ONLY,
   Sales: new Set(['reports.view']),
   Developer: new Set(),
-  User: new Set(['clients.view', 'installations.view', 'installations.manage', 'reports.view', 'files.upload', 'files.view', 'files.download']),
+  User: new Set(['clients.view', 'installations.view', 'installations.manage', 'reports.view', 'files.upload', 'files.view', 'files.download', ...FIELD_OPERATIONS_CAPABILITIES]),
   InventoryOfficer: new Set(['files.upload','files.view','files.download', ...CAPABILITY_DEFINITIONS.map(d=>d.code).filter(code=>code.startsWith('inventory.') && ![
     'inventory.policy','inventory.approve_models','inventory.cross_subsidiary','inventory.retire_approve',
     'inventory.modify_identity','inventory.import','inventory.approve_import','inventory.field_register',
@@ -110,6 +119,7 @@ module.exports = {
   ALL_CAPABILITIES,
   CAPABILITY_DEFINITIONS,
   ROLE_CAPABILITIES,
+  FIELD_OPERATIONS_CAPABILITIES,
   getEffectiveCapabilities,
   hasCapability,
   normalizePermissions,

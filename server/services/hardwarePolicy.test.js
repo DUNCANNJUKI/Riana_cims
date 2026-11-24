@@ -116,8 +116,11 @@ test("Inventory Officer is scoped and sensitive privileges require separate gran
   );
   assert.equal(
     hasCapability({ role: "User" }, "inventory.field_register"),
-    false,
+    true,
   );
+  assert.equal(hasCapability({ role: "User" }, "inventory.assign"), true);
+  assert.equal(hasCapability({ role: "User" }, "inventory.print_qr"), true);
+  assert.equal(hasCapability({ role: "User" }, "inventory.install"), true);
   assert.equal(
     hasCapability(
       { role: "User", extra_permissions: ["inventory.field_register"] },

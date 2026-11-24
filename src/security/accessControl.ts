@@ -49,6 +49,13 @@ export const CAPABILITY_DEFINITIONS: Array<{ code: Capability; group: string; la
 ];
 
 const all = CAPABILITY_DEFINITIONS.map(({ code }) => code);
+const fieldOperations: Capability[] = [
+  'inventory.view',
+  'inventory.assign',
+  'inventory.print_qr',
+  'inventory.field_register',
+  'inventory.install',
+];
 const roleCapabilities: Record<User['role'], Capability[]> = {
   SuperAdmin: all,
   Management: all.filter((code) => !['installations.manage', 'progress.manage'].includes(code)
@@ -58,7 +65,7 @@ const roleCapabilities: Record<User['role'], Capability[]> = {
   Finance: ['clients.view','installations.view','assignments.view','progress.view','reports.view'],
   Sales: ['reports.view'],
   Developer: [],
-  User: ['clients.view','installations.view','installations.manage','reports.view'],
+  User: ['clients.view','installations.view','installations.manage','reports.view', ...fieldOperations],
   InventoryOfficer: [...all.filter(code=>code.startsWith('inventory.') && ![
     'inventory.policy','inventory.approve_models','inventory.cross_subsidiary','inventory.retire_approve',
     'inventory.modify_identity','inventory.import','inventory.approve_import','inventory.field_register',
