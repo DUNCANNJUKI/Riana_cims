@@ -1,7 +1,9 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import path from "path";
+import { readFileSync } from "node:fs";
 import { prepareCallBackgroundAssets } from "./scripts/call-background-assets.cjs";
+import appleStartupSizes from "./scripts/pwa-startup-sizes.json" with { type: "json" };
 
 import { VitePWA } from "vite-plugin-pwa";
 
@@ -59,16 +61,32 @@ export default defineConfig(({ mode }) => ({
   },
   plugins: [
     react(),
+    {
+      name: 'riana-startup-document',
+      transformIndexHtml(html: string) {
+        const css = readFileSync(new URL('./src/components/common/SiteLoader.css', import.meta.url), 'utf8');
+        const mark = readFileSync(new URL('./public/pwa/startup-mark-v3.png', import.meta.url)).toString('base64');
+        const splashLinks = appleStartupSizes.flatMap(([width, height, scale]) =>
+          ['light', 'dark'].map(theme =>
+            `<link rel="apple-touch-startup-image" href="/pwa/ios-${width}x${height}-${scale}x-${theme}-v3.png" media="(device-width: ${width}px) and (device-height: ${height}px) and (-webkit-device-pixel-ratio: ${scale}) and (orientation: portrait) and (prefers-color-scheme: ${theme})" />`
+          )
+        ).join('\n    ');
+        return html
+          .replace('<!-- riana-startup-styles -->', `<style>${css}</style>`)
+          .replace('src="/pwa/startup-mark-v3.png"', `src="data:image/png;base64,${mark}"`)
+          .replace('<!-- riana-apple-startup-images -->', splashLinks);
+      },
+    },
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['Riana_logo.png', 'Riana_mark_transparent.png', 'Riana_mark_color_trimmed.png', 'marezi-letterhead.png', 'pwa-icon.svg', 'pwa-maskable.svg', 'pwa/*.png', 'push-handlers.js', 'letterhead.jpg', 'letterhead-full.jpg', 'letterhead-new.jpg'],
+      includeAssets: ['Riana_logo.png', 'Riana_mark_transparent.png', 'Riana_mark_color_trimmed.png', 'marezi-letterhead.png', 'pwa/startup-*.png', 'pwa/startup.js', 'push-handlers.js', 'letterhead.jpg', 'letterhead-full.jpg', 'letterhead-new.jpg'],
       manifest: {
         id: '/',
         name: 'RIANA CIMS - Client Installation Management System',
         short_name: 'RIANA CIMS',
         description: 'A comprehensive system for managing client installations, equipment tracking, and technician assignments',
-        theme_color: '#086f76',
-        background_color: '#086f76',
+        theme_color: '#eff7fa',
+        background_color: '#eff7fa',
         display: 'standalone',
         display_override: ['window-controls-overlay', 'standalone', 'minimal-ui'],
         orientation: 'portrait',
@@ -77,19 +95,19 @@ export default defineConfig(({ mode }) => ({
         start_url: '/',
         icons: [
           {
-            src: '/api/public/company-pwa-icon/192.png?v=splash-20261122-2',
+            src: '/pwa/startup-any-192-v3.png',
             sizes: '192x192',
             type: 'image/png',
             purpose: 'any'
           },
           {
-            src: '/api/public/company-pwa-icon/512.png?v=splash-20261122-2',
+            src: '/pwa/startup-any-512-v3.png',
             sizes: '512x512',
             type: 'image/png',
             purpose: 'any'
           },
           {
-            src: '/api/public/company-pwa-icon/512.png?purpose=maskable&v=splash-20261122-2',
+            src: '/pwa/startup-maskable-512-v3.png',
             sizes: '512x512',
             type: 'image/png',
             purpose: 'maskable'
@@ -97,15 +115,16 @@ export default defineConfig(({ mode }) => ({
         ],
         categories: ['business', 'productivity'],
         shortcuts: [
-          { name: 'Dashboard', short_name: 'Dashboard', url: '/', icons: [{ src: '/api/public/company-pwa-icon/192.png?v=splash-20261122-2', sizes: '192x192', type: 'image/png' }] },
-          { name: 'Install App', short_name: 'Install', url: '/install', icons: [{ src: '/api/public/company-pwa-icon/192.png?v=splash-20261122-2', sizes: '192x192', type: 'image/png' }] },
+          { name: 'Dashboard', short_name: 'Dashboard', url: '/', icons: [{ src: '/pwa/startup-any-192-v3.png', sizes: '192x192', type: 'image/png' }] },
+          { name: 'Install App', short_name: 'Install', url: '/install', icons: [{ src: '/pwa/startup-any-192-v3.png', sizes: '192x192', type: 'image/png' }] },
         ],
       },
       workbox: {
         importScripts: ['push-handlers.js'],
         maximumFileSizeToCacheInBytes: 10 * 1024 * 1024, // 10 MB limit
-        globPatterns: ['**/*.{js,css,html,ico,png,svg,jpg,jpeg,webp}'],
-        globIgnores: ['call-backgrounds/**/*'],
+        globPatterns: ['**/*.{js,css,html,ico,png,svg,jpg,jpeg,webp,webmanifest}'],
+        // iOS selects its native launch image; other clients only need the shared shell.
+        globIgnores: ['call-backgrounds/**/*', 'pwa/ios-*.png'],
         cleanupOutdatedCaches: true,
         clientsClaim: true,
         skipWaiting: true,

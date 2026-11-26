@@ -2,13 +2,15 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>RIANA CLIENT-INSTALLATION-MANAGEMENT-SYSTEM</title>
     <meta name="description" content="Riana CIMS is a system developed to keep records of installation equipments, client installations progress, Technicians tracking and installation management. Basically system automates whole installation process.">
     <meta name="author" content="RIANA Group" />
 
     <!-- PWA Meta Tags -->
-    <meta name="theme-color" content="#086f76" />
+    <meta name="theme-color" content="#eff7fa" />
+    <script src="/pwa/startup.js"></script>
+    <!-- riana-startup-styles -->
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="RIANA CIMS" />
@@ -16,7 +18,8 @@
     <meta name="format-detection" content="telephone=no" />
     
     <!-- Apple Touch Icons -->
-    <link rel="apple-touch-icon" href="/api/public/company-pwa-icon/180.png?purpose=maskable&amp;v=splash-20261122-2" />
+    <link rel="apple-touch-icon" href="/pwa/startup-touch-180-v3.png" />
+    <!-- riana-apple-startup-images -->
     
     <!-- Open Graph Meta -->
     <meta property="og:type" content="website" />
@@ -31,11 +34,22 @@
     <meta name="twitter:description" content="Riana CIMS is a system developed to keep records of installation equipments, client installations progress, Technicians tracking and installation management. Basically system automates whole installation process.">
     
     <!-- Favicon -->
-    <link rel="icon" type="image/png" href="/api/public/company-pwa-icon/192.png">
+    <link rel="icon" type="image/png" href="/pwa/startup-any-192-v3.png">
   </head>
 
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <div class="riana-loader" id="riana-startup">
+        <img class="riana-loader__logo" src="/pwa/startup-mark-v3.png" alt="" />
+        <div class="riana-loader__details">
+          <div class="riana-loader__title">RIANA CIMS</div>
+          <div class="riana-loader__progress" role="progressbar" aria-label="Initializing application"></div>
+          <p class="riana-loader__status" role="status">Starting application…</p>
+          <button type="button" class="riana-loader__retry" hidden>Retry startup</button>
+          <noscript>Enable JavaScript to start RIANA CIMS.</noscript>
+        </div>
+      </div>
+    </div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

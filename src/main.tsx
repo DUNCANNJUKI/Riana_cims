@@ -1,14 +1,11 @@
 import { createRoot } from 'react-dom/client'
 import App from './App.tsx'
 import './index.css'
-import { refreshReleaseCaches } from './utils/releaseCache';
 
 const preventStaleLocalShell = () => {
   if (!('serviceWorker' in navigator)) return;
 
-  const isLocalHost = ['localhost', '127.0.0.1', '::1'].includes(window.location.hostname);
-
-  if (import.meta.env.DEV || isLocalHost) {
+  if (import.meta.env.DEV) {
     window.addEventListener('load', async () => {
       try {
         const registrations = await navigator.serviceWorker.getRegistrations();
@@ -38,8 +35,13 @@ const preventStaleLocalShell = () => {
     return;
   }
 
+  let hasController = Boolean(navigator.serviceWorker.controller);
   let refreshed = false;
   navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (!hasController) {
+      hasController = Boolean(navigator.serviceWorker.controller);
+      return;
+    }
     if (refreshed) return;
     refreshed = true;
     window.location.reload();
@@ -63,6 +65,7 @@ const recoverFromStaleChunkFailure = () => {
   };
 
   const recover = () => {
+    if (!navigator.onLine) return;
     if (sessionStorage.getItem(reloadFlag) === '1') return;
     sessionStorage.setItem(reloadFlag, '1');
     clearBrowserAppCache()
@@ -83,7 +86,6 @@ const recoverFromStaleChunkFailure = () => {
 };
 
 preventStaleLocalShell();
-refreshReleaseCaches();
 recoverFromStaleChunkFailure();
 
 createRoot(document.getElementById("root")!).render(<App />);

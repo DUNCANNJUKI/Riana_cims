@@ -54,6 +54,12 @@ The default tests skip two opt-in database integrations; `test:isolated-db` runs
 
 Builds, local tests, Git pushes, hosted CI and production deployment are separate outcomes. Match public health's release SHA to the deployed commit before claiming release success.
 
+## PWA startup verification
+
+Run `node scripts/generate-pwa-icons.cjs` after changing the official startup artwork or iOS size list. The Android splash uses the installed manifest's light background and centered icon. iOS portrait launch images use the operating system color preference for the sizes in `scripts/pwa-startup-sizes.json`. Once the document opens, it restores the saved CIMS theme. Native splash appearance and installed icon refresh timing are controlled by the platform.
+
+With Vite dev and a local preview of the production build running, pass their URLs to `node scripts/qa/pwa-startup-browser.cjs <dev-url> <preview-url>`. It checks Chrome startup, retry, theme, reduced motion, installability and offline launch using a fresh test profile. Verify native launch visuals separately on physical iOS and Android devices.
+
 ## GitLab CI and deployment
 
 GitLab `main` runs dependency audits, security scanning, tests, type checks, lint, browser background QA and both frontend builds before the production deploy stage. Production remains serialized by its resource group. The current main-branch deployment runs automatically after required checks, following the existing GitLab deployment policy.

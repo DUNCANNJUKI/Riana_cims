@@ -1,4 +1,3 @@
-import { useEffect, useState } from 'react';
 import { SiteLoaderArtwork } from '../../../../src/components/common/SiteLoaderArtwork';
 
 const bundledLogo = new URL('../../../../public/Riana_mark_color_trimmed.png', import.meta.url).href;
@@ -9,14 +8,5 @@ export function CompanyLogoLoader({ className = '', size = 'md' }: { className?:
 }
 
 export function PageLoader() {
-  const [brand, setBrand] = useState({ companyName: 'RIANA CIMS', companyLogo: bundledLogo });
-  useEffect(() => {
-    const controller = new AbortController();
-    fetch('/api/public/company-branding', { signal: controller.signal, credentials: 'same-origin' })
-      .then(r => r.ok ? r.json() : null).then(b => {
-        if (b && !controller.signal.aborted) setBrand({ companyName: b.name || 'RIANA CIMS', companyLogo: b.logo_path || bundledLogo });
-      }).catch(() => {});
-    return () => controller.abort();
-  }, []);
-  return <SiteLoaderArtwork {...brand} status="Loading Developer workspace..." />;
+  return <SiteLoaderArtwork status="Loading Developer workspace…" />;
 }

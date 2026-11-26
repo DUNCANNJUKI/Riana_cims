@@ -1,59 +1,24 @@
+import logo from "../../../public/pwa/startup-mark-v3.png?inline";
 import "./SiteLoader.css";
 
-const NETWORK_NODES = [
-  { cx: 20, cy: 74, delay: 0 }, { cx: 76, cy: 52, delay: 1 },
-  { cx: 116, cy: 78, delay: 2 }, { cx: 180, cy: 45, delay: 3 },
-  { cx: 224, cy: 66, delay: 4 }, { cx: 270, cy: 88, delay: 5 },
-  { cx: 330, cy: 60, delay: 6 }, { cx: 260, cy: 126, delay: 7 },
-  { cx: 310, cy: 108, delay: 8 }, { cx: 18, cy: 128, delay: 9 },
-  { cx: 72, cy: 108, delay: 10 },
-];
-
-type AnimationStyle = { animationDelay?: string; "--animation-order": number };
-
-export function SiteLoaderArtwork({ companyName = "RIANA CIMS", companyLogo = "/Riana_mark_color_trimmed.png", status = "Loading workspace..." }: { companyName?: string; companyLogo?: string; status?: string }) {
+export function SiteLoaderArtwork({ status = "Initializing workspace…" }: { status?: string }) {
   return (
-    <div className="riana-loader" role="status" aria-live="polite" aria-busy="true">
-      <div className="riana-loader__content">
-        <div className="riana-loader__network" aria-hidden="true">
-          <svg viewBox="0 0 350 150" focusable="false">
-            <g className="riana-loader__links">
-              <path id="riana-signal-path-left" d="M20 74 L76 52 L116 78" />
-              <path id="riana-signal-path-main" d="M116 78 L180 45 L224 66 L270 88 L330 60" />
-              <path d="M18 128 L72 108" />
-              <path id="riana-signal-path-right" d="M260 126 L310 108 L344 134" />
-            </g>
-            <g className="riana-loader__signals">
-              <circle r="2.2"><animateMotion dur="3.2s" repeatCount="indefinite"><mpath href="#riana-signal-path-left" /></animateMotion></circle>
-              <circle r="2.2"><animateMotion dur="3.8s" repeatCount="indefinite"><mpath href="#riana-signal-path-main" /></animateMotion></circle>
-              <circle r="1.9"><animateMotion dur="3s" repeatCount="indefinite"><mpath href="#riana-signal-path-right" /></animateMotion></circle>
-            </g>
-            <circle className="riana-loader__orbit" cx="180" cy="88" r="56" />
-            {NETWORK_NODES.map(({ cx, cy, delay }) => (
-              <circle key={`${cx}-${cy}`} className="riana-loader__node" cx={cx} cy={cy}
-                r={delay % 3 === 0 ? 4 : 2.75}
-                style={{ "--animation-order": delay } as AnimationStyle} />
-            ))}
-          </svg>
-          <span className="riana-loader__logo" aria-hidden="true">
-            <img
-              src={companyLogo}
-              alt=""
-              onError={(event) => {
-                if (event.currentTarget.src.endsWith("/Riana_mark_color_trimmed.png")) return;
-                event.currentTarget.src = "/Riana_mark_color_trimmed.png";
-              }}
-            />
-          </span>
-        </div>
-
-        <div className="riana-loader__title" aria-label={companyName}>{companyName}</div>
-
-        <p className="riana-loader__message" aria-atomic="true">{status}</p>
-        <div className="riana-loader__progress" role="progressbar" aria-label="Loading application">
-          <span className="riana-loader__progress-value" />
-        </div>
-        <p className="riana-loader__hint">Please wait a moment</p>
+    <div className="riana-loader">
+      <svg className="riana-loader__network" viewBox="0 0 320 110" aria-hidden="true">
+        <path d="M16 42 52 27 90 49 115 34 M35 81 75 66 90 49 M205 72 233 55 273 37 304 58 M233 55 267 82 295 76" />
+        <g>
+          <circle cx="16" cy="42" r="2" /><circle cx="52" cy="27" r="2.5" />
+          <circle cx="90" cy="49" r="3" /><circle cx="35" cy="81" r="2" />
+          <circle cx="75" cy="66" r="2" /><circle cx="233" cy="55" r="3" />
+          <circle cx="273" cy="37" r="2.5" /><circle cx="304" cy="58" r="2" />
+          <circle cx="267" cy="82" r="2" /><circle cx="295" cy="76" r="2" />
+        </g>
+      </svg>
+      <img className="riana-loader__logo" src={logo} alt="" />
+      <div className="riana-loader__details">
+        <div className="riana-loader__title">RIANA CIMS</div>
+        <div className="riana-loader__progress" role="progressbar" aria-label="Initializing application" />
+        <p className="riana-loader__status" role="status">{status}</p>
       </div>
     </div>
   );
