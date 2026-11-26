@@ -90,7 +90,7 @@ Run the read-only public check after deployment:
 node server/scripts/verify-communication-runtime.cjs --origin https://rianacims.marezi.co --release FULL_COMMIT_SHA
 ```
 
-It checks every enforced document CSP, the release, current runtime manifest, asset hashes, lengths, MIME types and binary/model signatures. GitLab's independent production diagnostic is advisory before deployment; the final deployment check is required. Do not remove CSP or enable global JavaScript eval. The [CSP specification](https://www.w3.org/TR/CSP3/) explains the narrower WebAssembly permission.
+It checks every enforced document CSP, the release, current runtime manifest, asset hashes, lengths, MIME types and binary/model signatures. GitLab runs this required check after deployment, when the new release is expected to be live. Do not remove CSP or enable global JavaScript eval. The [CSP specification](https://www.w3.org/TR/CSP3/) explains the narrower WebAssembly permission.
 
 Local synthetic QA verified blur, preset/custom/Off, rotation, simulated camera replacement, decoded receiver frames, audio continuity and blocked-policy recovery at desktop/mobile harness sizes. Physical devices, human segmentation quality, installed-PWA upgrade behavior and real multi-device calls still need acceptance. MediaPipe's optional telemetry remains blocked by `connect-src 'self'`; do not expand network permissions to silence it.
 

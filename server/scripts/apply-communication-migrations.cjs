@@ -20,6 +20,8 @@ const migrationIds = [
   '20261122_verified_signoff_closure',
   '20261123_affected_module_catalog',
   '20261123_hardware_components',
+  '20261124_role_defaults_and_module_roles',
+  '20261126_crms_user_role',
 ];
 
 const splitSqlStatements = (sql) => {
@@ -145,6 +147,12 @@ async function run() {
   const verifiedHistory = new Set(verifiedHistoryRows.map(({ migration_id }) => migration_id));
   const missingHistory = migrationIds.filter((migrationId) => !verifiedHistory.has(migrationId));
   if (missingHistory.length) throw new Error(`Communication migration history is incomplete: ${missingHistory.join(', ')}.`);
+
+  const [[crmsUserRole]] = await pool.query(
+    'SELECT id FROM roles WHERE id = ? AND module_id = ? AND code = ? LIMIT 1',
+    ['crms:User', 'crms', 'User'],
+  );
+  if (!crmsUserRole) throw new Error('The Developers User role is missing from the role catalogue.');
 
   const requiredTables = ['call_device_sessions', 'call_meeting_state', 'call_recordings', 'message_reactions', 'message_recipient_status', ...Object.keys(passkeySchema)];
   const [tableRowsAfter] = await pool.query(

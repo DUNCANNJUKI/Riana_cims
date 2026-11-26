@@ -917,6 +917,7 @@ const initDb = async () => {
         ('crms:Teamlead','crms','Teamlead','Team Lead'),
         ('crms:Developer','crms','Developer','Developer'),
         ('crms:Sales','crms','Sales','Sales'),
+        ('crms:User','crms','User','User'),
         ('crms:Management','crms','Management','Management')
       ON DUPLICATE KEY UPDATE name=VALUES(name)
     `);

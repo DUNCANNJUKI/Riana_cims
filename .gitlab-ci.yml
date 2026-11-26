@@ -93,19 +93,6 @@ call_background_browser_qa:
   only:
     - branches
 
-production_communication_check:
-  stage: deploy
-  image: node:22
-  needs:
-    - job: build
-      artifacts: true
-  script:
-    - node server/scripts/verify-communication-runtime.cjs --origin https://rianacims.marezi.co --release "$CI_COMMIT_SHA"
-  # Read-only diagnostic against the current release; it may precede deployment.
-  allow_failure: true
-  only:
-    - main
-
 deploy:
   stage: deploy
   image: alpine:latest
