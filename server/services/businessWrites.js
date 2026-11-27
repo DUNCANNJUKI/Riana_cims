@@ -70,24 +70,30 @@ async function runBusinessWrite(pool, subsidiaryId, work) {
 }
 
 async function decideBusinessRequest(pool, { subsidiaryId, actorId, requestId, status, comment }) {
-  if (!subsidiaryId || !actorId || !requestId || !['approved', 'rejected'].includes(status)) {
+  if (!subsidiaryId || !actorId || !requestId || !['approved', 'rejected', 'waiting_clarification'].includes(status) ||
+      typeof comment !== 'string' || comment.length > 1000 || (status !== 'approved' && !comment.trim())) {
     throw Object.assign(new Error('Invalid commercial approval decision.'), { status: 400 });
   }
   return runBusinessWrite(pool, subsidiaryId, async db => {
     const [[request]] = await db.query(
-      `SELECT cr.id,cr.status,cr.ticket_number,cr.senior_developer_id,c.client_name
+      `SELECT cr.id,cr.status,cr.ticket_number,cr.senior_developer_id,c.client_name,
+         EXISTS (SELECT 1 FROM crms_audit_logs a WHERE a.request_id=cr.id AND a.action='created' AND a.user_id=?) AS submitted_by_actor
        FROM crms_change_requests cr JOIN clients c
          ON CONVERT(cr.client_id USING utf8mb4) COLLATE utf8mb4_unicode_ci = CONVERT(c.id USING utf8mb4) COLLATE utf8mb4_unicode_ci
        WHERE cr.id=? AND c.subsidiary_id=? FOR UPDATE`,
-      [requestId, subsidiaryId],
+      [actorId, requestId, subsidiaryId],
     );
     if (!request) throw missing();
+    if (request.submitted_by_actor) throw Object.assign(new Error('A request submitter cannot authorize their own request.'), { status: 403 });
     if (request.status !== 'pending_approval') throw Object.assign(new Error('This request is no longer awaiting commercial approval.'), { status: 409 });
-    await db.query('UPDATE crms_change_requests SET status=?,approval_comment=? WHERE id=?', [status, comment || null, request.id]);
+    const clarification = status === 'waiting_clarification';
+    await db.query('UPDATE crms_change_requests SET status=?,approval_comment=? WHERE id=?', [clarification ? 'waiting' : status, comment || null, request.id]);
     await db.query(
       `INSERT INTO crms_audit_logs (id,request_id,action,action_label,details,previous_value,new_value,user_id)
        VALUES (?,?,?,?,?,?,?,?)`,
-      [randomUUID(), request.id, status, status === 'approved' ? 'Commercial approval' : 'Commercial rejection', comment || null, request.status, status, actorId],
+      [randomUUID(), request.id, clarification ? 'status_changed' : status,
+        clarification ? 'Commercial clarification requested' : status === 'approved' ? 'Commercial approval' : 'Commercial rejection',
+        comment || null, request.status, status, actorId],
     );
     return { id: request.id, ticket_number: request.ticket_number, senior_developer_id: request.senior_developer_id, status, client: { name: request.client_name } };
   });

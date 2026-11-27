@@ -75,7 +75,13 @@ async function mount() {
     user, currentUser: user, userId: user.id, role: user.role, client: fixtures.client, installation: fixtures.installation,
     isOpen: true, open: true, onClose: noop, onOpenChange: noop, onSave: noop, onNavigate: noop, onProfileUpdate: noop,
     departments: [], subsidiaries: [], status: { enabled: true, message: "Scheduled maintenance is in progress." },
-    chat: blankChat, ...definition.props,
+    chat: definition.chat && fixtures.meetingChat
+      ? { ...blankChat, ...fixtures.meetingChat as object, inviteCallParticipants: async (_callId: string, ids: string[]) => {
+          window.dispatchEvent(new CustomEvent('qa-meeting-invite', { detail: ids }));
+          return { invited_user_ids: ids };
+        } }
+      : blankChat,
+    ...definition.props,
   };
   let view = <View {...props} />;
   if (definition.name === "__probe") {

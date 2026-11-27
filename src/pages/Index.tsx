@@ -6,6 +6,7 @@ import { Header } from "@/components/layout/Header";
 import { MeetingSummary } from "@/components/chat/MeetingSummary";
 import type { ChatMessage } from "@/hooks/useChat";
 import { BusinessOverview } from "@/components/dashboard/BusinessOverview";
+import { BusinessActivity, BusinessRequests } from "@/components/business/BusinessRequests";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { HelpModule } from "@/components/help/HelpModule";
 import { ChatbotWidget } from "@/components/chatbot/ChatbotWidget";
@@ -17,7 +18,7 @@ import { requestAppLock } from "@/utils/appLock";
 import { MaintenanceBanner } from "@/components/maintenance/MaintenanceBanner";
 import { MaintenancePage } from "@/components/maintenance/MaintenancePage";
 import { useMaintenanceStatus } from "@/hooks/useMaintenanceStatus";
-import { Navigate, useLocation } from "react-router-dom";
+import { Navigate, useLocation, useNavigate } from "react-router-dom";
 import { can } from '@/security/accessControl';
 import { apiClient } from '@/integrations/apiClient';
 
@@ -49,14 +50,32 @@ const TechnicianProfilePage = lazyNamed(() => import("@/components/profile/Techn
 const DevelopersWorkspace = lazyNamed(() => import("@/components/developers/DevelopersWorkspace"), "DevelopersWorkspace");
 const AuditLogsModule = lazyNamed(() => import("@/components/audit/AuditLogsModule"), "AuditLogsModule");
 const MyActivityModule = lazyNamed(() => import("@/components/audit/AuditLogsModule"), "MyActivityModule");
+const businessModules = new Set([
+  'dashboard', 'clients', 'installations', 'inventory', 'progress', 'finances', 'reports', 'analytics', 'handover',
+  'assignments', 'calendar', 'announcements-management', 'help', 'business-requests', 'business-approvals',
+  'business-development', 'business-overdue', 'business-escalations', 'business-activity',
+]);
 
 const Index = () => {
   const { user, isAuthenticated, isLoading, logout, refreshUserProfile } = useAuth();
   const location = useLocation();
+  const navigate = useNavigate();
   const { maintenance } = useMaintenanceStatus({ pollMs: 60_000 });
   const scannedAssetId = new URLSearchParams(location.search).get('hardware');
 
   const [activeModule, setActiveModule] = useState('dashboard');
+  const businessLink = new URLSearchParams(location.search);
+  const businessModule = businessLink.get('businessModule');
+  const businessRecord = businessLink.get('record');
+  const onBusinessNavigate = (key: string, recordId?: string) => {
+    if (!businessModules.has(key)) return;
+    if (recordId) {
+      navigate({ pathname: '/', search: new URLSearchParams({ businessModule: key, record: recordId }).toString() });
+    } else if (businessModule) {
+      navigate('/', { replace: true });
+    }
+    setActiveModule(key);
+  };
   const [meeting, setMeeting] = useState<{ call: ChatMessage; joined: boolean } | null>(null);
   const [meetingRequest, setMeetingRequest] = useState<{ id: string } | null>(null);
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
@@ -73,10 +92,15 @@ const Index = () => {
   const { isOnline } = useOfflineSync();
 
   useEffect(() => {
-    if (isAuthenticated && (user?.role === 'Developer' || location.pathname.startsWith('/developers'))) {
+    if (isAuthenticated && user?.role !== 'HeadOfBusiness' && (user?.role === 'Developer' || location.pathname.startsWith('/developers'))) {
       setActiveModule('developers');
     }
   }, [isAuthenticated, user?.role, location.pathname]);
+  useEffect(() => {
+    if (user?.role === 'HeadOfBusiness' && (businessModule === 'installations' || businessModule === 'business-requests')) {
+      setActiveModule(businessModule);
+    }
+  }, [user?.role, businessModule]);
   useEffect(()=>{if(isAuthenticated && user?.role==='InventoryOfficer')setActiveModule('inventory');},[isAuthenticated,user?.role]);
   useEffect(()=>{
     if(isAuthenticated && user && new URLSearchParams(location.search).has('hardware') && can(user,'inventory.view'))setActiveModule('inventory');
@@ -131,11 +155,23 @@ const Index = () => {
 
   const renderContent = () => {
     const developerWorkspaceRole = user.role === 'SuperAdmin' ? 'SuperAdmin' : user.module_roles?.crms || user.role;
+    if (user.role === 'HeadOfBusiness' && !businessModules.has(activeModule)) {
+      return <BusinessOverview user={user} onNavigate={onBusinessNavigate} />;
+    }
     switch (activeModule) {
       case 'dashboard':
         if(user.role==='InventoryOfficer')return <HardwareInventoryModule user={user}/>;
-        if(user.role==='HeadOfBusiness')return <BusinessOverview/>;
+        if(user.role==='HeadOfBusiness')return <BusinessOverview user={user} onNavigate={onBusinessNavigate}/>;
         return <Dashboard user={user} onNavigate={setActiveModule} />;
+      case 'business-requests':
+      case 'business-approvals':
+      case 'business-development':
+      case 'business-overdue':
+        return user.role === 'HeadOfBusiness' && <BusinessRequests key={`${activeModule}:${businessRecord || ''}`} user={user} category={activeModule} recordId={businessModule === activeModule ? businessRecord : null} />;
+      case 'business-escalations':
+        return user.role === 'HeadOfBusiness' && <BusinessOverview user={user} section="business-escalations" onNavigate={onBusinessNavigate} />;
+      case 'business-activity':
+        return user.role === 'HeadOfBusiness' && <BusinessActivity user={user} />;
       case 'technician-dashboard':
         return <TechnicianMobileDashboard user={user} />;
       case 'technician-profile':
@@ -143,7 +179,7 @@ const Index = () => {
       case 'clients':
         return <ClientsModule user={user} />;
       case 'installations':
-        return <InstallationsModule user={user} />;
+        return <InstallationsModule user={user} focusInstallationId={user.role === 'HeadOfBusiness' && businessModule === activeModule ? businessRecord : null} />;
       case 'inventory':
         return <HardwareInventoryModule user={user} />;
       case 'progress':
@@ -159,13 +195,15 @@ const Index = () => {
       case 'reports':
         return <ReportsModule user={user} />;
       case 'analytics':
-        return <AnalyticsModule user={user} />;
+        return user.role === 'HeadOfBusiness'
+          ? <BusinessOverview user={user} section="performance" onNavigate={onBusinessNavigate} />
+          : <AnalyticsModule user={user} />;
       case 'audit-logs':
         return user.role === 'SuperAdmin' ? <AuditLogsModule user={user} /> : <Dashboard user={user} onNavigate={setActiveModule} />;
       case 'my-activity':
         return <MyActivityModule />;
       case 'handover':
-        return <HandoverUploadModule user={user} />;
+        return user.role === 'HeadOfBusiness' ? <ReportsModule user={user} /> : <HandoverUploadModule user={user} />;
       case 'assignments':
         return <AssignmentModule user={user} />;
       case 'calendar':
@@ -193,7 +231,7 @@ const Index = () => {
         <Sidebar 
           user={user} 
           activeModule={activeModule} 
-          setActiveModule={setActiveModule}
+          setActiveModule={user.role === 'HeadOfBusiness' ? onBusinessNavigate : setActiveModule}
           isMobileOpen={isMobileSidebarOpen}
           tourMode={systemTourActive}
           onMobileClose={() => setIsMobileSidebarOpen(false)}
@@ -202,7 +240,7 @@ const Index = () => {
           <Header
             user={user}
             className="sticky top-0 z-40 shrink-0"
-            setActiveModule={setActiveModule}
+            setActiveModule={user.role === 'HeadOfBusiness' ? onBusinessNavigate : setActiveModule}
             onOpenMobileMenu={() => setIsMobileSidebarOpen(true)}
             onProfileUpdate={refreshUserProfile}
             onTourNavigationPreview={previewTourNavigation}

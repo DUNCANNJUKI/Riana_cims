@@ -76,7 +76,7 @@ export const Header = ({ user, className, setActiveModule, onOpenMobileMenu, onP
   const meetingPanelRef = useRef<HTMLDivElement>(null);
   const meetingDrag = useRef<{ offsetX: number; offsetY: number } | null>(null);
   const consumedMeetingRequest = useRef<typeof meetingRequest>(null);
-  const canUseCommunication = user.role !== 'HeadOfBusiness';
+  const canUseCommunication = user.role !== 'HeadOfBusiness' || Boolean(user.subsidiary_id);
   const chat = useChat(canUseCommunication ? user : null, isChatOpen);
   const avatarSrc = resolveAvatarUrl(user.avatar_url);
   const [isDarkMode, setIsDarkMode] = useState(() => {

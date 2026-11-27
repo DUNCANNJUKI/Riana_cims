@@ -12,7 +12,7 @@ import { Badge } from "@/components/ui/badge";
 import { FileText, Download, Calendar, Filter, BarChart3, PieChart, TrendingUp, Loader2, Eye, FileDown } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { User, HandoverUpload } from "@/types";
-import { generatePDFReport, generateCSVReport } from "@/utils/reportGenerator";
+import { generatePDFReport, generateCSVReport, generateExcelReport } from "@/utils/reportGenerator";
 import { PDFPreviewModal } from "@/components/common/PDFPreviewModal";
 import { apiClient, downloadAuthenticatedFile, previewAuthenticatedFile } from "@/integrations/apiClient";
 import { useDatabase } from "@/hooks/useDatabase";
@@ -98,6 +98,7 @@ const reportTemplates: ReportTemplate[] = [
 ];
 
 export const ReportsModule = ({ user }: ReportsModuleProps) => {
+  const visibleTemplates = user.role === 'HeadOfBusiness' ? reportTemplates.filter(report => report.id !== 'user-activity') : reportTemplates;
   const [selectedCategory, setSelectedCategory] = useState<string>('');
   const [dateFrom, setDateFrom] = useState<string>('');
   const [dateTo, setDateTo] = useState<string>('');
@@ -162,7 +163,7 @@ export const ReportsModule = ({ user }: ReportsModuleProps) => {
     }
   };
 
-  const handleGenerateReport = async (reportId: string, format: 'pdf' | 'csv') => {
+  const handleGenerateReport = async (reportId: string, format: 'pdf' | 'csv' | 'xlsx') => {
     setIsGenerating(reportId);
     
     try {
@@ -170,6 +171,8 @@ export const ReportsModule = ({ user }: ReportsModuleProps) => {
       
       if (format === 'pdf') {
         await generatePDFReport(reportId, dateRangeFilter, { subsidiaryName: user.subsidiary_name });
+      } else if (format === 'xlsx') {
+        await generateExcelReport(reportId, dateRangeFilter);
       } else {
         await generateCSVReport(reportId, dateRangeFilter);
       }
@@ -256,7 +259,7 @@ export const ReportsModule = ({ user }: ReportsModuleProps) => {
     }
   };
 
-  const categories = Array.from(new Set(reportTemplates.map(report => report.category)));
+  const categories = Array.from(new Set(visibleTemplates.map(report => report.category)));
 
   const getIconColor = (category: string) => {
     switch (category) {
@@ -348,7 +351,7 @@ export const ReportsModule = ({ user }: ReportsModuleProps) => {
       </Card>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {(selectedCategory ? reportTemplates.filter(r => r.category === selectedCategory) : reportTemplates).map((report) => {
+        {(selectedCategory ? visibleTemplates.filter(r => r.category === selectedCategory) : visibleTemplates).map((report) => {
           const Icon = report.icon;
           return (
             <Card key={report.id} className="shadow-riana hover:shadow-lg transition-shadow">
@@ -398,6 +401,12 @@ export const ReportsModule = ({ user }: ReportsModuleProps) => {
                   >
                     <Download className="h-3 w-3 mr-1" />
                     CSV
+                  </Button>
+                  <Button size="sm" variant="outline" className="flex-1"
+                    disabled={isGenerating === report.id || isPreviewing === report.id}
+                    onClick={() => handleGenerateReport(report.id, 'xlsx')}>
+                    <Download className="h-3 w-3 mr-1" />
+                    Excel
                   </Button>
                 </div>
               </CardContent>

@@ -6,8 +6,10 @@ import { Package, Calendar } from "lucide-react";
 import { Installation, Client, User, HandoverEquipmentItem } from "@/types";
 import { normalizeHandoverEquipmentConfiguration, equipmentQuantity } from '@/utils/equipmentConfiguration';
 import { InstallationHardware } from '@/components/inventory/InstallationHardware';
+import { useQuery } from '@tanstack/react-query';
+import { apiClient } from '@/integrations/apiClient';
 import { EquipmentIcon } from '@/components/inventory/EquipmentIcon';
-import { equipmentIconKind } from '@/utils/equipmentImages';
+import { installationEquipmentIconKind } from '@/utils/equipmentImages';
 
 interface InstallationDetailsDialogProps {
   installation: Installation | null;
@@ -26,6 +28,11 @@ export const InstallationDetailsDialog = ({
   user,
   equipmentConfiguration,
 }: InstallationDetailsDialogProps) => {
+  const feedback = useQuery<{ overall_satisfaction: number | null; client_comments: string | null; client_improvement_suggestions: string | null } | null>({
+    queryKey: ['business', 'installation-feedback', user.id, user.subsidiary_id, installation?.id],
+    queryFn: () => apiClient.get(`/installation_feedback/latest?${new URLSearchParams({ client_id: installation?.client_id || '', installation_id: installation?.id || '' })}`),
+    enabled: user.role === 'HeadOfBusiness' && isOpen && Boolean(installation?.id),
+  });
   if (!installation) return null;
 
   const getStatusColor = (status: string) => {
@@ -40,7 +47,11 @@ export const InstallationDetailsDialog = ({
 
   const equipmentList = normalizeHandoverEquipmentConfiguration(equipmentConfiguration)
     .filter((item)=>!['kiosk_type','screen_with_size','staff_trained'].includes(item.field))
-    .map((item)=>({ ...item, value: equipmentQuantity(installation, item.field), kind: equipmentIconKind(item.field) }));
+    .map((item) => ({
+      ...item,
+      value: equipmentQuantity(installation, item.field),
+      kind: installationEquipmentIconKind(item.field, installation.kiosk_type),
+    }));
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
@@ -118,6 +129,16 @@ export const InstallationDetailsDialog = ({
             </CardContent>
           </Card>
 
+          {user.role === 'HeadOfBusiness' && <Card>
+            <CardHeader><CardTitle className="text-lg">Client Feedback</CardTitle></CardHeader>
+            <CardContent className="space-y-2 text-sm">
+              {feedback.isPending ? <p>Loading feedback</p> : feedback.isError ? <p role="alert">Unable to load feedback.</p> : feedback.data ? <>
+                {feedback.data.overall_satisfaction != null && <p>Overall satisfaction · {feedback.data.overall_satisfaction}</p>}
+                {feedback.data.client_comments && <p className="whitespace-pre-wrap break-words">{feedback.data.client_comments}</p>}
+                {feedback.data.client_improvement_suggestions && <p className="whitespace-pre-wrap break-words">{feedback.data.client_improvement_suggestions}</p>}
+              </> : <p className="text-muted-foreground">No feedback recorded for this installation.</p>}
+            </CardContent>
+          </Card>}
           {/* Training & Handover */}
           <Card>
             <CardHeader>

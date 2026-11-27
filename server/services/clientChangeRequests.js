@@ -419,7 +419,7 @@ const sendInvitation = async (pool, invitationId, req) => {
   await pool.query(
     `UPDATE crms_change_request_invitations
      SET status = 'sent', delivery_sms_status = ?, delivery_email_status = ?, last_notification_sent_at = NOW()
-     WHERE id = ?`,
+     WHERE id = ? AND status NOT IN ('submitted','cancelled')`,
     [smsStatus, emailStatus, invitation.id],
   );
 
@@ -440,10 +440,11 @@ const cancelInvitation = async (pool, invitationId, userId) => {
   if (!rows.length) throw Object.assign(new Error('Invitation not found.'), { status: 404 });
   if (rows[0].status === 'submitted') throw Object.assign(new Error('Cannot cancel a submitted request.'), { status: 400 });
 
-  await pool.query(
-    "UPDATE crms_change_request_invitations SET status = 'cancelled', cancelled_at = NOW() WHERE id = ?",
+  const [cancelled] = await pool.query(
+    "UPDATE crms_change_request_invitations SET status = 'cancelled', cancelled_at = NOW() WHERE id = ? AND status <> 'submitted'",
     [invitationId],
   );
+  if (!cancelled.affectedRows) throw Object.assign(new Error('Cannot cancel a submitted request.'), { status: 409 });
 
   return { success: true, message: `Invitation ${rows[0].request_reference} cancelled.` };
 };
@@ -484,10 +485,11 @@ const getInvitationForClient = async (pool, token) => {
 
   // Mark opened if it was sent
   if (inv.status === 'sent') {
-    await pool.query(
-      "UPDATE crms_change_request_invitations SET status = 'opened', opened_at = COALESCE(opened_at, NOW()) WHERE id = ?",
+    const [opened] = await pool.query(
+      "UPDATE crms_change_request_invitations SET status = 'opened', opened_at = COALESCE(opened_at, NOW()) WHERE id = ? AND status = 'sent'",
       [inv.id],
     );
+    if (!opened.affectedRows) return getInvitationForClient(pool, token);
   }
 
   return {
@@ -519,6 +521,7 @@ const getInvitationForClient = async (pool, token) => {
 
 const submitClientChangeRequest = async (pool, { token, data, attachments = [], req }) => {
   const applicationUrl = canonicalAppUrl(req).replace(/\/+$/, '');
+  const requestUrl = `${applicationUrl}/change-request/submit/${encodeURIComponent(token)}`;
   const connection = await pool.getConnection();
   try {
     await connection.beginTransaction();
@@ -743,7 +746,7 @@ const submitClientChangeRequest = async (pool, { token, data, attachments = [], 
         notificationType: 'client_change_request_received',
         clientName: invitation.client_name,
         requestDescription: `Change Request Submission Confirmation (${ticketNumber})`,
-        text: `Hello ${invitation.client_representative_name},\n\nThank you for submitting your Change Request for ${invitation.client_name}.\n\nOfficial Reference: ${ticketNumber}\nSubmission Date: ${new Date().toLocaleDateString('en-GB')}\n\nYour request has been received and entered our internal technical and commercial assessment workflow. Track progress through implementation, confirmation and feedback: ${applicationUrl}/change-request/track/${encodeURIComponent(token)}. You will receive a formal completion report once implemented.\n\nRIANA Technologies`,
+        text: `Hello ${invitation.client_representative_name},\n\nWe received Change Request ${ticketNumber} for ${invitation.client_name}. Use the same link you submitted it through to track progress, review completion, and download the signed report.\n${requestUrl}\n\nRIANA Technologies`,
         html: html`
           <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 600px; margin: 0 auto; background-color: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden;">
             <div style="background-color: #0f766e; padding: 24px; text-align: center; color: #ffffff;">
@@ -760,7 +763,7 @@ const submitClientChangeRequest = async (pool, { token, data, attachments = [], 
                 <p style="margin: 0; font-size: 13px; color: #64748b;">Client Scope</p>
                 <p style="margin: 2px 0 0; font-size: 14px; color: #1e293b;">${invitation.client_name} (${invitation.branch_name})</p>
               </div>
-              <p>Your request is now undergoing review by our technical team. You will be notified when development is complete and ready for your formal review.</p>
+              <p>Your request is now undergoing technical review. <a href="${requestUrl}">Open your original request link</a> to track progress and review completion.</p>
             </div>
             <div style="background-color: #f1f5f9; padding: 16px; text-align: center; font-size: 12px; color: #64748b;">
               &copy; ${new Date().getFullYear()} RIANA Group. All rights reserved.
@@ -784,7 +787,7 @@ const submitClientChangeRequest = async (pool, { token, data, attachments = [], 
       success: true,
       ticket_number: ticketNumber,
       request_id: requestId,
-      tracking_url: `${applicationUrl}/change-request/track/${encodeURIComponent(token)}`,
+      tracking_url: requestUrl,
       message: 'Your change request has been submitted successfully.',
     };
   } catch (error) {
@@ -949,6 +952,7 @@ const sendCompletionReport = async (pool, reportId, req) => {
      JOIN clients c ON c.id COLLATE utf8mb4_unicode_ci = cr.client_id COLLATE utf8mb4_unicode_ci
      LEFT JOIN client_branches cb ON cb.id COLLATE utf8mb4_unicode_ci = cr.branch_id COLLATE utf8mb4_unicode_ci
      LEFT JOIN crms_change_request_invitations i ON i.id COLLATE utf8mb4_unicode_ci = cr.invitation_id COLLATE utf8mb4_unicode_ci
+      AND i.status = 'submitted' AND i.change_request_id COLLATE utf8mb4_unicode_ci = cr.id COLLATE utf8mb4_unicode_ci
      JOIN user_profiles u ON u.id COLLATE utf8mb4_unicode_ci = r.account_manager_id COLLATE utf8mb4_unicode_ci
      WHERE r.id = ? LIMIT 1`,
     [reportId],
@@ -970,12 +974,14 @@ const sendCompletionReport = async (pool, reportId, req) => {
 
   const reviewUrl = `${canonicalAppUrl(req).replace(/\/+$/, '')}/change-request/review/${encodeURIComponent(report.acceptance_token)}`;
 
-  const trackingUrl = `${canonicalAppUrl(req).replace(/\/+$/, '')}/change-request/track/${encodeURIComponent(report.tracking_token || report.acceptance_token)}`;
+  const trackingUrl = report.tracking_token
+    ? `${canonicalAppUrl(req).replace(/\/+$/, '')}/change-request/submit/${encodeURIComponent(report.tracking_token)}`
+    : reviewUrl;
 
   // 1. Send SMS
   let smsStatus = 'failed';
   try {
-    const smsMessage = `Hello ${clientName}, Change Request ${report.ticket_number} is complete and implemented. Confirm by OTP or e-signature and share feedback: ${reviewUrl} Track progress: ${trackingUrl}`;
+    const smsMessage = `Hello ${clientName}, Change Request ${report.ticket_number} has been implemented. Open your request to confirm by OTP or e-signature and share feedback: ${trackingUrl}`;
     await sendSms({ phoneNumber: clientPhone, message: smsMessage });
     smsStatus = 'sent';
     await recordDeliveryLog(pool, {
@@ -1000,9 +1006,9 @@ const sendCompletionReport = async (pool, reportId, req) => {
       notificationType: 'change_request_completion_report',
       clientName: report.client_name,
       requestDescription: `Change Request Completion Report (${report.ticket_number})`,
-      actionUrl: reviewUrl,
+      actionUrl: trackingUrl,
       actionText: 'Review and Accept Delivered Work',
-      text: `Hello ${clientName},\n\nThe implementation for your Change Request (${report.ticket_number}: ${report.request_title}) is complete.\n\nAccount Manager: ${amName}\nClient: ${report.client_name} (${report.branch_name})\n\nPlease access the Completion Review Portal to review the delivered solution and confirm implementation using OTP or e-signature, share feedback/comments, or request adjustments:\n${reviewUrl}\n\nTrack progress and feedback status: ${trackingUrl}\n\nRIANA Technologies`,
+      text: `Hello ${clientName},\n\nChange Request ${report.ticket_number} (${report.request_title}) has been implemented. Open your request to review the work, confirm by OTP or e-signature, and share feedback.\n${trackingUrl}\n\nAccount Manager: ${amName}\nRIANA Technologies`,
       html: html`
         <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 600px; margin: 0 auto; background-color: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden;">
           <div style="background-color: #0f766e; padding: 24px; text-align: center; color: #ffffff;">
@@ -1017,9 +1023,9 @@ const sendCompletionReport = async (pool, reportId, req) => {
               <p style="margin: 0; font-size: 13px; color: #64748b;">Account Manager</p>
               <p style="margin: 4px 0 0; font-size: 14px; color: #1e293b;">${amName}</p>
             </div>
-            <p>Please confirm implementation with OTP or your e-signature, share your feedback and comments, or request adjustments.</p><p>Track progress through confirmation and feedback: <a href="${trackingUrl}">View request progress</a></p>
+            <p>Please confirm implementation with OTP or your e-signature, share your feedback and comments, or request adjustments.</p>
             <div style="text-align: center; margin: 28px 0;">
-              <a href="${reviewUrl}" style="background-color: #0f766e; color: #ffffff; text-decoration: none; padding: 12px 28px; border-radius: 6px; font-weight: 600; display: inline-block;">Review & Accept Completion</a>
+              <a href="${trackingUrl}" style="background-color: #0f766e; color: #ffffff; text-decoration: none; padding: 12px 28px; border-radius: 6px; font-weight: 600; display: inline-block;">Open Request to Review Completion</a>
             </div>
           </div>
           <div style="background-color: #f1f5f9; padding: 16px; text-align: center; font-size: 12px; color: #64748b;">

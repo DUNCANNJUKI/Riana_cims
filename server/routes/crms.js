@@ -394,7 +394,8 @@ module.exports = function createCrmsRouter({ pool, jwtSecret, resolveSignature }
 
   router.use(async (req, res, next) => {
     if (req.currentUser && req.user?.role === BUSINESS_ROLE && req.businessSubsidiaryId &&
-        req.method === 'PATCH' && /^\/change_requests\/[^/]+$/.test(req.path)) return next();
+        ((req.method === 'PATCH' && /^\/change_requests\/[^/]+$/.test(req.path)) ||
+         (['GET', 'HEAD'].includes(req.method) && /^\/change_requests\/[^/]+\/completion\.pdf$/.test(req.path)))) return next();
     const token = req.headers.authorization?.split(' ')[1];
     if (!token) return res.status(401).json({ error: 'Authentication required.' });
     try {
@@ -703,10 +704,10 @@ module.exports = function createCrmsRouter({ pool, jwtSecret, resolveSignature }
       if (req.user.role === BUSINESS_ROLE) {
         const { status, approval_comment: rawComment } = req.body;
         const comment = typeof rawComment === 'string' ? rawComment.trim() : '';
-        if (!req.businessSubsidiaryId || !['approved', 'rejected'].includes(status) ||
+        if (!req.businessSubsidiaryId || !['approved', 'rejected', 'waiting_clarification'].includes(status) ||
             Object.keys(req.body).some(key => !['status', 'approval_comment'].includes(key)) || comment.length > 1000 ||
-            (status === 'rejected' && !comment)) {
-          return res.status(400).json({ error: 'Choose Approve or Reject. Rejection requires a reason of up to 1,000 characters.' });
+            (status !== 'approved' && !comment)) {
+          return res.status(400).json({ error: 'Choose Approve, Reject, or Request clarification. A reason is required for rejection or clarification.' });
         }
         const updated = await decideBusinessRequest(pool, {
           subsidiaryId: req.businessSubsidiaryId, actorId: req.user.id, requestId: req.params.id, status, comment,
@@ -1066,9 +1067,11 @@ module.exports = function createCrmsRouter({ pool, jwtSecret, resolveSignature }
 
   router.get('/change_requests/:id/completion.pdf', async (req, res) => {
     try {
-      await assertPortalRecordAccess('crms_change_requests', req.params.id, req.user);
+      const subsidiaryId = req.user.role === BUSINESS_ROLE ? req.businessSubsidiaryId : undefined;
+      if (req.user.role === BUSINESS_ROLE && !subsidiaryId) return res.status(403).json({ error: 'An assigned business scope is required.' });
+      if (!subsidiaryId) await assertPortalRecordAccess('crms_change_requests', req.params.id, req.user);
       const { signedCompletionReport } = require('../services/signedCompletionReport');
-      const pdf = await signedCompletionReport(pool, { requestId: req.params.id, resolveSignature });
+      const pdf = await signedCompletionReport(pool, { requestId: req.params.id, resolveSignature, subsidiaryId });
       res.set('Cache-Control', 'no-store');
       res.set('Content-Disposition', `attachment; filename="${pdf.filename}"`);
       res.type('application/pdf').send(pdf.buffer);

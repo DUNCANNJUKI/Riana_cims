@@ -1,5 +1,4 @@
 import type { Department, Subsidiary } from '@/types';
-import { BusinessDelegation } from "./BusinessDelegation";
 import { errorDetails } from '@/utils/errorDetails';
 import { useState, useEffect } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -730,9 +729,6 @@ export const UsersModule = ({ user }: UsersModuleProps) => {
                   </Select>
                 </div>
               </div>
-              {isSuperAdmin && editingUser.role === 'HeadOfBusiness' && users.some(account => account.id === editingUser.id && account.role === 'HeadOfBusiness') && (
-                <BusinessDelegation key={editingUser.id} userId={editingUser.id} primaryId={users.find(account => account.id === editingUser.id)?.subsidiary_id} subsidiaries={subsidiaries} />
-              )}
               {isSuperAdmin && editingUser.role !== 'HeadOfBusiness' && (
                 <div className="space-y-2">
                   <Label htmlFor="edit_crms_role">Extra Developers Workspace Role</Label>

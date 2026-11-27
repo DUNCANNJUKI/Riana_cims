@@ -15,13 +15,29 @@ Modules include clients, installations, technician assignments, inventory, sched
 
 ### Business and inventory roles
 
-Super Admin can create and assign **Head of Business** and **Inventory Officer** accounts. Head of Business requires a primary subsidiary. To grant access to more subsidiaries, open the saved Head of Business account in **Users**, select the additional subsidiaries under **Delegated subsidiaries**, and save. Head of Business can switch between their authorized subsidiaries on **Business overview**. The API checks every delegated request against the current grants.
+Super Admin creates, assigns, reassigns, and revokes **Head of Business** and **Inventory Officer** accounts in **Users**. Head of Business requires one assigned subsidiary and keeps the existing `HeadOfBusiness` role code for compatibility. The API derives the scope from the authenticated account. Former delegation and staff suspension records remain stored for audit. Existing Admin, Finance, Account Manager, Developer, and Technician roles retain their own authority.
 
-Head of Business can maintain clients, branches, departments, installations, and technician assignments in the selected subsidiary. Installation and assignment writes validate the client, branch, department and staff references in the same transaction. Commercial decisions are available for pending change requests and retain the existing approval audit and notification path. Staff status controls apply to standard User accounts in the selected subsidiary. Reactivation can reverse only a suspension recorded through the business dashboard. Platform settings, staff role grants, client deletion, technical approvals, inventory selection, and signed-handover workflows use their existing authorized roles.
+| Business area | Head of Business access in the assigned subsidiary |
+| --- | --- |
+| Executive Dashboard and Business Performance | Installation status, deadlines, handover readiness, equipment totals, recorded budget revisions, workload, and change-request decisions |
+| Clients and installations | View and maintain client profiles, branches, departments, and operational installation records. Review feedback and handovers through their existing protected paths |
+| Assignments and Workload Calendar | Review workload and maintain scoped technician allocations. The technical workflow records completion |
+| Finance and inventory | Read current and historical budgets with technician rows, inspect equipment and lifecycle records, and export authorized reports. Finance and Inventory Officers keep their existing execution and administration roles |
+| Change requests and development | Review scope, status, deadlines, assigned developers, decision history, and verified client-signed completion PDFs |
+| Approvals Centre | Act on existing, pending commercial change-request decisions |
+| Reports and business activity | PDF, Excel, and CSV reports for authorized records and a read-only operational activity view |
+| Messages, meetings, and notice board | Communicate with colleagues in the assigned subsidiary and Inventory Officers. Publish, edit, or deactivate subsidiary announcements |
+| Platform and account administration | Reserved for existing authorized administration roles |
+
+The Approvals Centre presents the existing pending commercial queue. Open a request to review its details and choose **Approve**, **Reject**, or **Request clarification**. Rejection and clarification require a reason. The API locks the scoped record, checks that the decision is still pending, rejects recorded self-approval, and writes the previous status, new status, actor, remarks, and timestamp before the existing notification is sent. Technical completion and client acceptance retain the existing account manager, OTP, and signature workflows.
+
+The budget ledger records planned technician amounts and revisions. It has no approval state, actual expenditure ledger, or policy limits. Finance approval thresholds, amendments, additional expenditure, equipment approval categories, administrative closure, and escalation ownership need recorded workflow and policy decisions before their actions can be enabled. The executive dashboard labels unsupported financial figures as unavailable. The escalations view shows recorded overdue work and approaching deadlines.
 
 An Inventory Officer can use **All subsidiaries** or filter the inventory to a specific subsidiary. The user account can have no subsidiary. Registration and other stock operations still require the owning or destination subsidiary where applicable. Cross-subsidiary transfers require an approval reference and a location in the destination subsidiary. Inventory documents follow equipment access; unrelated files are scoped separately.
 
-Before staging deployment, create and verify a backup and apply `20261127_business_inventory_roles.sql` and `20261127_business_delegation.sql` with the ordered migration runner. Verify the role catalogue and sign in with scoped test accounts before assigning either role. The migrations add the role enum value, permission catalogue entries, delegation and suspension records without changing existing profile assignments. For rollback, keep the additive schema and use a build that understands the new enum. An older build that narrows the enum requires a reviewed account migration or verified database restore before startup if any Head of Business profiles exist.
+For staging, create and verify a backup, then use the ordered runner to apply `20261127_business_module_access.sql` and any unapplied prerequisites. Check the role catalogue and sign in as Super Admin, Head of Business in two different subsidiaries, and Inventory Officer. Verify direct access and exports with the same sample clients before rollout. `npm.cmd run test:isolated-db` exercises the scoped overview and approval records against disposable MySQL.
+
+For rollback, restore a matching frontend and API build that understands the existing role enum and retain the additive schema. A build from before this access correction restores the earlier delegation and account-status behavior. Review or disable affected Head of Business accounts before using that build. Preserve historical delegation, suspension, budget, and approval records.
 
 ## Local setup
 
@@ -60,7 +76,7 @@ npm.cmd run test:call-background:browser
 npm.cmd run test:passkeys:browser
 ```
 
-The default tests skip two opt-in database integrations; `test:isolated-db` runs them in uniquely named guarded local fixture databases. Browser background QA uses real MediaPipe processing and native WebRTC loopback with synthetic video/silent audio. Passkey browser QA uses a virtual authenticator and an isolated database. Neither certifies a physical sensor, real human foreground segmentation, actual multi-device/TURN transport or production account sign-in. Fixture databases remain available for inspection.
+The default tests skip three opt-in database integrations. `test:isolated-db` runs them in uniquely named guarded local fixture databases. Browser background QA uses real MediaPipe processing and native WebRTC loopback with synthetic video/silent audio. Passkey browser QA uses a virtual authenticator and an isolated database. Neither certifies a physical sensor, real human foreground segmentation, actual multi-device/TURN transport or production account sign-in. Fixture databases remain available for inspection.
 
 Builds, local tests, Git pushes, hosted CI and production deployment are separate outcomes. Match public health's release SHA to the deployed commit before claiming release success.
 
@@ -91,6 +107,8 @@ A list request returning 404 must produce a persistent error and Retry control, 
 For production 404s, inspect the authenticated failing Network request, deployed API working directory and full release SHA. Missing-schema failures usually return 5xx rather than a route 404; do not change schema based only on the toast. The public health marker `features.clientRequestPortal` identifies the route-module version loaded by the API. Production verification requires the expected release and that marker. A general HTTP 200 health response does not certify the authenticated request workflow.
 
 The client portal migration is `server/migrations/20261110_client_change_requests_portal.sql`, included in the ordered production runner. Back up first. Preserve invitations, representative contacts, tokens, reports, acceptance records and audit history. Public token/OTP workflows, signed acceptance declarations and attachment access checks remain enforced.
+
+Clients reuse the original submission URL to track progress, open the completion review, give feedback, and download the verified completion PDF. Invitation expiry prevents new submissions. A submitted invitation can still read its linked request and current verified PDF after the separate review token expires. The PDF requires the latest verified OTP or e-signature and remains unavailable while a dispute is unresolved. Earlier tracking and review URLs remain supported under their existing token rules.
 
 ## Communication and virtual backgrounds
 
@@ -151,6 +169,7 @@ Apply migrations against the intended existing database only after a verified ba
 Inventory allocation uses model/equipment mappings and atomic transactions. Subsidiary serial requirements, feature flags and storage policy govern issuance; missing policy must not silently enable allocation. Retain issued serials, assignment history, references, counters and uploaded evidence. QR labels use the correct HTTPS deployment origin and expose only their intended public redacted view.
 
 Equipment previews use the original kiosk, TV, LED service point and media controller images extracted from the Lifecare Kikuyu survey. The transparent WebP assets are in `public/equipment`, and the display mapping is in `src/utils/equipmentImages.ts`. The PWA build precaches all four images for installed clients after the new service worker activates.
+The Self Service Kiosk thumbnail is based on the supplied Q-SYS reference. The PWA also precaches this thumbnail for SSK inventory and Self Service installation records.
 
 Enable hardware/scheduling features only after their required migrations and policy are configured. Verify scoped calendar access, time zones, `/api/time`, overlapping-booking rejection, recurrence and reminder transactions. Keep host/database clocks synchronized. Current scheduling reminders are in-app; do not claim live SMS/email delivery from mocked provider tests.
 

@@ -318,8 +318,8 @@ const ensureTableColumns = async (tableName, columns) => {
 const ensureCompanyMaintenanceColumns = async () => {
   await ensureTableColumns('company_settings', COMPANY_MAINTENANCE_COLUMNS);
 };
-const { BUSINESS_ROLE, businessScope, createBusinessBoundary, listBusinessScopes } = require('./security/businessBoundary');
-const { queryBusinessOverview } = require('./services/businessOverview');
+const { BUSINESS_ROLE, businessScope, businessBoundary, listBusinessScopes, canShareBusinessConversation, canShareBusinessMeeting } = require('./security/businessBoundary');
+const { queryBusinessOverview, queryBusinessRequests, queryBusinessRequest, queryBusinessActivity } = require('./services/businessOverview');
 const { assertBusinessClient, lockBusinessWrite, runBusinessWrite } = require('./services/businessWrites');
 const SYSTEM_ROLES = new Set(['SuperAdmin', 'Admin', 'Management', 'Finance', 'Developer', 'Teamlead', 'Sales', 'User', 'InventoryOfficer', BUSINESS_ROLE]);
 const PRIVILEGED_ROLES = new Set(['SuperAdmin', 'Admin', 'Management', 'InventoryOfficer', BUSINESS_ROLE]);
@@ -673,6 +673,7 @@ const authorizeStoredFile = async (req, res, next) => {
     }
     req.storedFile = { filename, resolved };
     req.url = `/${encodeURIComponent(filename)}`;
+    res.setHeader('Cache-Control', 'private, no-store');
     next();
   } catch {
     res.status(500).json({ error: 'Unable to authorize file access.' });
@@ -690,7 +691,7 @@ app.use(createSensitiveRateLimiter({ limit: Number(process.env.SENSITIVE_RATE_LI
 app.use('/api', createGlobalApiPolicy(authMiddleware));
 app.get('/api/time',require('./routes/scheduling').createTimeEndpoint(pool));
 app.use('/api',inventoryBoundary);
-app.use('/api',createBusinessBoundary(pool));
+app.use('/api',businessBoundary);
 app.use('/api',require('./services/planningDates').planningDateMiddleware(pool));
 app.use('/api',require('./services/schedulingReferences').schedulingReferenceBoundary(pool));
 app.use('/api/hardware', createHardwareRouter(hardwareInventory, { enabled: hardwareInventoryEnabled }));
@@ -703,7 +704,7 @@ app.use('/uploads', authMiddleware, authorizeStoredFile,(req,res,next)=>{
   res.sendFile(req.storedFile.resolved,(error)=>{if(error)next(error);});
 });
 app.use('/api/crms', createCrmsRouter({ pool, jwtSecret: JWT_SECRET, resolveSignature: resolveExistingUpload }));
-app.use('/api/public/change-requests', createClientChangeRequestPortalRouter({ pool, uploadsDir }));
+app.use('/api/public/change-requests', createClientChangeRequestPortalRouter({ pool, uploadsDir, resolveSignature: resolveExistingUpload }));
 app.use('/api/files', createFilesRouter({ pool, config: privateFileConfig }));
 
 // File Upload & Handover Metadata
@@ -2207,11 +2208,25 @@ app.put('/api/admin/maintenance-mode', requireRole('SuperAdmin'), async (req, re
 });
 
 // Persistent notifications shared by CIMS and CRMS.
+const notificationScope = user => user.role !== BUSINESS_ROLE ? { sql: '', values: [] } : {
+  sql: ` AND (
+    (request_id IS NULL AND notification_type IN ('maintenance','security_alert','password_changed','password_reset','welcome'))
+    OR (request_id IS NOT NULL AND (
+      EXISTS (SELECT 1 FROM crms_change_requests cr JOIN clients c ON ${sqlUuidEquals('c.id','cr.client_id')}
+        WHERE ${sqlUuidEquals('cr.id','crms_notifications.request_id')} AND c.subsidiary_id=?)
+      OR EXISTS (SELECT 1 FROM client_assignments a JOIN clients c ON ${sqlUuidEquals('c.id','a.client_id')}
+        WHERE ${sqlUuidEquals('a.id','crms_notifications.request_id')} AND c.subsidiary_id=?)
+    ))
+  )`,
+  values: [user.subsidiary_id, user.subsidiary_id],
+};
+
 app.get('/api/notifications', authMiddleware, async (req, res) => {
   try {
+    const scope = notificationScope(req.user);
     const [rows] = await pool.query(
-      'SELECT * FROM crms_notifications WHERE user_id = ? ORDER BY created_at DESC LIMIT 50',
-      [req.user.id],
+      `SELECT * FROM crms_notifications WHERE user_id=?${scope.sql} ORDER BY created_at DESC LIMIT 50`,
+      [req.user.id, ...scope.values],
     );
     res.json(rows);
   } catch (err) { res.status(500).json({ error: err.message }); }
@@ -2219,13 +2234,14 @@ app.get('/api/notifications', authMiddleware, async (req, res) => {
 
 app.get('/api/notifications/summary', authMiddleware, async (req, res) => {
   try {
+    const scope = notificationScope(req.user);
     const [rows] = await pool.query(
-      'SELECT * FROM crms_notifications WHERE user_id=? ORDER BY created_at DESC LIMIT 50',
-      [req.user.id],
+      `SELECT * FROM crms_notifications WHERE user_id=?${scope.sql} ORDER BY created_at DESC LIMIT 50`,
+      [req.user.id, ...scope.values],
     );
     const [[count]] = await pool.query(
-      'SELECT COUNT(*) AS unread_count FROM crms_notifications WHERE user_id=? AND `read`=FALSE',
-      [req.user.id],
+      `SELECT COUNT(*) AS unread_count FROM crms_notifications WHERE user_id=? AND \`read\`=FALSE${scope.sql}`,
+      [req.user.id, ...scope.values],
     );
     res.json({ notifications: rows, unread_count: Number(count.unread_count || 0) });
   } catch (err) { res.status(500).json({ error: 'Unable to load notifications.' }); }
@@ -2233,9 +2249,10 @@ app.get('/api/notifications/summary', authMiddleware, async (req, res) => {
 
 app.patch('/api/notifications/:id/read', authMiddleware, async (req, res) => {
   try {
+    const scope = notificationScope(req.user);
     await pool.query(
-      'UPDATE crms_notifications SET `read` = TRUE WHERE id = ? AND user_id = ?',
-      [req.params.id, req.user.id],
+      `UPDATE crms_notifications SET \`read\`=TRUE WHERE id=? AND user_id=?${scope.sql}`,
+      [req.params.id, req.user.id, ...scope.values],
     );
     res.json({ success: true });
   } catch (err) { res.status(500).json({ error: err.message }); }
@@ -2243,7 +2260,8 @@ app.patch('/api/notifications/:id/read', authMiddleware, async (req, res) => {
 
 app.post('/api/notifications/read-all', authMiddleware, async (req, res) => {
   try {
-    await pool.query('UPDATE crms_notifications SET `read` = TRUE WHERE user_id = ?', [req.user.id]);
+    const scope = notificationScope(req.user);
+    await pool.query(`UPDATE crms_notifications SET \`read\`=TRUE WHERE user_id=?${scope.sql}`, [req.user.id, ...scope.values]);
     res.json({ success: true });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
@@ -2478,7 +2496,7 @@ app.get('/api/dashboard/stats', async (req, res) => {
 app.get('/api/business/overview', async (req, res) => {
   if (!req.businessSubsidiaryId) return res.status(403).json({ error: 'An assigned business scope is required.' });
   try {
-    const overview = await queryBusinessOverview(pool, req.businessSubsidiaryId);
+    const overview = await queryBusinessOverview(pool, req.businessSubsidiaryId, { inventoryEnabled: hardwareInventoryEnabled });
     if (!overview.business) return res.status(404).json({ error: 'The assigned subsidiary is unavailable.' });
     res.setHeader('Cache-Control', 'no-store');
     res.json(overview);
@@ -2488,106 +2506,54 @@ app.get('/api/business/overview', async (req, res) => {
   }
 });
 
+app.get('/api/business/requests', async (req, res) => {
+  if (!req.businessSubsidiaryId) return res.status(403).json({ error: 'An assigned business scope is required.' });
+  const { category = 'all', search = '', after = '', before = '', offset = '0' } = req.query;
+  const validDate = value => typeof value === 'string' && (!value || /^\d{4}-\d{2}-\d{2}$/.test(value));
+  if (!['all','approvals','development','overdue'].includes(category) || typeof search !== 'string' || search.length > 120 ||
+      !validDate(after) || !validDate(before) || (after && before && after > before) ||
+      typeof offset !== 'string' || !/^\d{1,5}$/.test(offset)) {
+    return res.status(400).json({ error: 'Invalid business request filters.' });
+  }
+  try {
+    return res.json(await queryBusinessRequests(pool, req.businessSubsidiaryId, {
+      category, search: search.trim(), after, before, offset: Number(offset),
+    }));
+  } catch (error) {
+    console.error('Business request list failed:', error.code || error.name);
+    return res.status(500).json({ error: 'Unable to load business requests.' });
+  }
+});
+
+app.get('/api/business/requests/:id', async (req, res) => {
+  if (!req.businessSubsidiaryId) return res.status(403).json({ error: 'An assigned business scope is required.' });
+  try {
+    const request = await queryBusinessRequest(pool, req.businessSubsidiaryId, req.params.id);
+    return request ? res.json(request) : res.status(404).json({ error: 'Change request not found.' });
+  } catch (error) {
+    console.error('Business request detail failed:', error.code || error.name);
+    return res.status(500).json({ error: 'Unable to load the change request.' });
+  }
+});
+
+app.get('/api/business/activity', async (req, res) => {
+  if (!req.businessSubsidiaryId) return res.status(403).json({ error: 'An assigned business scope is required.' });
+  try {
+    return res.json(await queryBusinessActivity(pool, req.businessSubsidiaryId));
+  } catch (error) {
+    console.error('Business activity failed:', error.code || error.name);
+    return res.status(500).json({ error: 'Unable to load business activity.' });
+  }
+});
+
 app.get('/api/business/scopes', async (req, res) => {
   if (!req.businessSubsidiaryId) return res.status(403).json({ error: 'An assigned business scope is required.' });
   try {
-    const scopes = await listBusinessScopes(pool, req.user.id, req.user.subsidiary_id);
+    const scopes = await listBusinessScopes(pool, req.businessSubsidiaryId);
     res.setHeader('Cache-Control', 'no-store');
     res.json({ primary_subsidiary_id: req.user.subsidiary_id, scopes });
   } catch {
     res.status(500).json({ error: 'Unable to load assigned subsidiaries.' });
-  }
-});
-
-app.get('/api/business/delegations/:id', requireRole('SuperAdmin'), async (req, res) => {
-  try {
-    const [rows] = await pool.query('SELECT subsidiary_id FROM business_subsidiary_grants WHERE user_id=? ORDER BY subsidiary_id', [req.params.id]);
-    res.setHeader('Cache-Control', 'no-store');
-    res.json({ subsidiary_ids: rows.map(row => row.subsidiary_id) });
-  } catch {
-    res.status(500).json({ error: 'Unable to load delegated subsidiaries.' });
-  }
-});
-
-app.put('/api/business/delegations/:id', requireRole('SuperAdmin'), async (req, res) => {
-  const ids = req.body?.subsidiary_ids;
-  if (!Array.isArray(ids) || ids.length > 50 || ids.some(id => typeof id !== 'string' || !/^[a-z0-9-]{1,36}$/i.test(id))) {
-    return res.status(400).json({ error: 'Select valid subsidiaries.' });
-  }
-  const connection = await pool.getConnection();
-  try {
-    await connection.beginTransaction();
-    const [[target]] = await connection.query('SELECT role,subsidiary_id FROM user_profiles WHERE id=? FOR UPDATE', [req.params.id]);
-    if (target?.role !== BUSINESS_ROLE || !target.subsidiary_id) {
-      await connection.rollback();
-      return res.status(404).json({ error: 'Select a Head of Business with a primary subsidiary.' });
-    }
-    const subsidiaryIds = [...new Set(ids)].filter(id => id !== target.subsidiary_id);
-    if (subsidiaryIds.length) {
-      const [selected] = await connection.query('SELECT id FROM subsidiaries WHERE id IN (?)', [subsidiaryIds]);
-      if (selected.length !== subsidiaryIds.length) {
-        await connection.rollback();
-        return res.status(400).json({ error: 'One of the selected subsidiaries is unavailable.' });
-      }
-    }
-    await connection.query('DELETE FROM business_subsidiary_grants WHERE user_id=?', [req.params.id]);
-    if (subsidiaryIds.length) await connection.query('INSERT INTO business_subsidiary_grants (user_id,subsidiary_id,granted_by) VALUES ?', [subsidiaryIds.map(id => [req.params.id, id, req.user.id])]);
-    await logSuccess(connection, req, { action: 'business_subsidiaries_delegated', category: 'administration', module: 'Users', entity_type: 'user', entity_id: req.params.id, description: 'Head of Business subsidiary delegation updated.', metadata: { subsidiary_ids: subsidiaryIds } });
-    await connection.commit();
-    res.json({ subsidiary_ids: subsidiaryIds });
-  } catch {
-    await connection.rollback().catch(() => undefined);
-    res.status(500).json({ error: 'Unable to save delegated subsidiaries.' });
-  } finally {
-    connection.release();
-  }
-});
-
-app.patch('/api/business/staff/:id', async (req, res) => {
-  if (!req.businessSubsidiaryId) return res.status(403).json({ error: 'An assigned business scope is required.' });
-  if (typeof req.body?.is_active !== 'boolean') return res.status(400).json({ error: 'Choose an account status.' });
-  const connection = await pool.getConnection();
-  try {
-    await connection.beginTransaction();
-    const [[staff]] = await connection.query(
-      `SELECT u.id,u.session_version FROM user_profiles u WHERE u.id=? AND u.subsidiary_id=? AND u.role='User' AND u.is_active<>?
-       AND NOT EXISTS (SELECT 1 FROM user_permissions p WHERE p.user_id=u.id)
-       AND NOT EXISTS (SELECT 1 FROM user_module_roles umr JOIN roles r ON r.id=umr.role_id WHERE umr.user_id=u.id AND r.code<>'User')
-       FOR UPDATE`,
-      [req.params.id, req.businessSubsidiaryId, req.body.is_active],
-    );
-    const [[suspension]] = staff && req.body.is_active ? await connection.query(
-      'SELECT session_version FROM business_staff_suspensions WHERE user_id=? AND subsidiary_id=? FOR UPDATE',
-      [staff.id, req.businessSubsidiaryId],
-    ) : [[]];
-    if (!staff || (req.body.is_active && String(suspension?.session_version) !== String(staff.session_version))) {
-      await connection.rollback();
-      return res.status(404).json({ error: 'The staff account or requested status change is unavailable.' });
-    }
-    const [result] = await connection.query(
-      "UPDATE user_profiles SET is_active=?,session_version=session_version+1 WHERE id=? AND subsidiary_id=? AND role='User' AND is_active<>?",
-      [req.body.is_active, req.params.id, req.businessSubsidiaryId, req.body.is_active],
-    );
-    if (!result.affectedRows) {
-      await connection.rollback();
-      return res.status(404).json({ error: 'The staff account or requested status change is unavailable.' });
-    }
-    if (req.body.is_active) await connection.query('DELETE FROM business_staff_suspensions WHERE user_id=?', [staff.id]);
-    else await connection.query(
-      `INSERT INTO business_staff_suspensions (user_id,subsidiary_id,session_version)
-       SELECT id,subsidiary_id,session_version FROM user_profiles WHERE id=?
-       ON DUPLICATE KEY UPDATE subsidiary_id=VALUES(subsidiary_id),session_version=VALUES(session_version)`,
-      [staff.id],
-    );
-    await revokeUserSessions(connection, req.params.id, 'ACCOUNT_STATUS_CHANGED');
-    await logSuccess(connection, req, { action: 'business_staff_status_changed', category: 'administration', module: 'Users', entity_type: 'user', entity_id: req.params.id, description: 'Staff account status updated within the selected subsidiary.', metadata: { is_active: req.body.is_active, subsidiary_id: req.businessSubsidiaryId } });
-    await connection.commit();
-    res.json({ success: true });
-  } catch {
-    await connection.rollback().catch(() => undefined);
-    res.status(500).json({ error: 'Unable to update the staff account.' });
-  } finally {
-    connection.release();
   }
 });
 
@@ -3595,12 +3561,16 @@ app.get('/api/installations/:id', async (req, res) => {
 app.post('/api/installations', requireCapability('installations.manage'), async (req, res) => {
   try {
     const businessId = req.businessSubsidiaryId;
+    if (businessId && (req.body.status === 'completed' || req.body.completion_date)) {
+      return res.status(403).json({ error: 'Installation completion requires the existing technical and handover workflow.' });
+    }
     if (businessId && ['hardware_selection','handover_file_path','handover_status'].some(field => Object.hasOwn(req.body, field))) {
       return res.status(403).json({ error: 'Hardware selection and signed handovers use their existing authorized workflows.' });
     }
     const id = uuidv4();
     await assertBusinessClient(pool, businessId, req.body.client_id);
-    const updates = allowedEntries(req.body, INSTALLATION_FIELDS);
+    const updates = allowedEntries(req.body, INSTALLATION_FIELDS)
+      .filter(([key]) => !businessId || key !== 'completion_date');
     const quantities = updates.find(([key])=>key==='equipment_quantities');
     if(quantities) quantities[1]=await normalizeEquipmentQuantities(pool,req.body.client_id,quantities[1],req.user);
     const matrixUpdate = updates.find(([key]) => key === 'escalation_matrix');
@@ -3695,11 +3665,15 @@ app.patch('/api/installations/:id', requireCapability('installations.manage'), a
         const [[previous]] = await db.query('SELECT * FROM installations WHERE id=? FOR UPDATE', [id]);
         if (!previous) throw Object.assign(new Error('Installation not found.'), { status: 404 });
         await lockBusinessWrite(db, businessId, { ...previous, ...Object.fromEntries(updates) }, previous);
+        if (req.body.status !== undefined && req.body.status !== previous.status &&
+            (previous.status === 'completed' || req.body.status === 'completed')) {
+          throw Object.assign(new Error('Installation closure requires the existing technical and handover workflow.'), { status: 403 });
+        }
       }
       return db.query(`UPDATE installations SET ${fields} WHERE id = ?`, [...values, id]);
     };
     if (hardwareInventoryEnabled) {
-      const complete = req.body.status === 'completed' || ['signed','uploaded'].includes(req.body.handover_status);
+      const complete = !businessId && (req.body.status === 'completed' || ['signed','uploaded'].includes(req.body.handover_status));
       const scopedRequest = businessId ? Object.assign(Object.create(req), { user: { ...req.user, subsidiary_id: businessId } }) : req;
       await hardwareInventory.installationWrite(scopedRequest,id,{complete,snapshot:complete,selection:req.body.hardware_selection,scopeChanged:updates.some(([key])=>['client_id','branch_id','department_id'].includes(key))},write);
     } else await runBusinessWrite(pool, businessId, write);
@@ -3792,6 +3766,7 @@ app.get('/api/client_assignments/:id', async (req, res) => {
 app.post('/api/client_assignments', requireCapability('assignments.manage'), async (req, res) => {
   try {
     const businessId = req.businessSubsidiaryId;
+    if (businessId && req.body.status === 'completed') return res.status(403).json({ error: 'Technicians confirm completion through the existing workflow.' });
     const id = uuidv4();
     const data = { ...req.body, assigned_by_user_id: req.user.id };
     await assertBusinessClient(pool, businessId, data.client_id);
@@ -3931,6 +3906,10 @@ app.patch('/api/client_assignments/:id', async (req, res) => {
         const [[previous]] = await db.query('SELECT * FROM client_assignments WHERE id=? FOR UPDATE', [req.params.id]);
         if (!previous) throw Object.assign(new Error('Assignment not found.'), { status: 404 });
         await lockBusinessWrite(db, businessId, { ...previous, ...Object.fromEntries(updates) }, previous);
+        if (statusUpdate && statusUpdate[1] !== previous.status &&
+            (previous.status === 'completed' || statusUpdate[1] === 'completed')) {
+          throw Object.assign(new Error('Technicians confirm completion through the existing workflow.'), { status: 403 });
+        }
       }
       return db.query(`UPDATE client_assignments SET ${fields} WHERE id = ?`, [...updates.map(([, value]) => sqlValue(value)), req.params.id]);
     };
@@ -4202,7 +4181,12 @@ app.put('/api/user_profiles/:id', authMiddleware, async (req, res) => {
       const revokesSessions = updates.some(([key]) => key === 'role' || key === 'is_active' || (nextRole === BUSINESS_ROLE && key === 'subsidiary_id'));
       const fields = `${updates.map(([key]) => `${key} = ?`).join(', ')}${revokesSessions ? ', session_version = session_version + 1' : ''}`;
       await pool.query(`UPDATE user_profiles SET ${fields} WHERE id = ?`, [...updates.map(([, value]) => value), req.params.id]);
-      if (revokesSessions) await revokeUserSessions(pool, req.params.id, updates.some(([key, value]) => key === 'is_active' && !value) ? 'ACCOUNT_DISABLED' : 'ROLE_CHANGED');
+      if (revokesSessions) {
+        await revokeUserSessions(pool, req.params.id, updates.some(([key, value]) => key === 'is_active' && !value) ? 'ACCOUNT_DISABLED' : 'ROLE_CHANGED');
+        if (targetRole === BUSINESS_ROLE || nextRole === BUSINESS_ROLE) {
+          chatClients.get(String(req.params.id))?.forEach(connection => connection.end());
+        }
+      }
     }
     if (roleUpdate) {
       if (targetRole === BUSINESS_ROLE && nextRole !== BUSINESS_ROLE) {
@@ -4713,10 +4697,16 @@ app.get('/api/announcements', authMiddleware, async (req, res) => {
       WHERE 1=1
     `;
     const params = [req.user.id];
+    if (req.businessSubsidiaryId) {
+      query += scope === 'active'
+        ? ` AND (a.subsidiary_id IS NULL OR ${sqlUuidParamEquals('a.subsidiary_id')})`
+        : ` AND ${sqlUuidParamEquals('a.subsidiary_id')}`;
+      params.push(req.businessSubsidiaryId);
+    }
 
     if (scope === 'active' || !canManageAnnouncements) {
       query += ' AND a.is_active = TRUE AND (a.expires_at IS NULL OR a.expires_at > NOW())';
-      if (!canManageAnnouncements) {
+      if (!canManageAnnouncements || req.businessSubsidiaryId) {
         query += ` AND (
           a.target_audience IS NULL
           OR a.target_audience = 'all'
@@ -4770,7 +4760,10 @@ app.post('/api/announcements', authMiddleware, requireCapability('announcements.
     const { title, content, priority, target_audience, subsidiary_id, expires_at } = req.body;
     const id = uuidv4();
     const safePriority = ['low', 'normal', 'high', 'urgent'].includes(priority) ? priority : 'normal';
-    const safeSubsidiaryId = !subsidiary_id || subsidiary_id === 'all' ? null : subsidiary_id;
+    if (req.businessSubsidiaryId && subsidiary_id && subsidiary_id !== req.businessSubsidiaryId) {
+      return res.status(403).json({ error: 'Announcements must target the assigned subsidiary.' });
+    }
+    const safeSubsidiaryId = req.businessSubsidiaryId || (!subsidiary_id || subsidiary_id === 'all' ? null : subsidiary_id);
     const safeAudience = target_audience || (safeSubsidiaryId ? 'subsidiary' : 'all');
     await pool.query(
       'INSERT INTO announcements (id, title, content, priority, target_audience, subsidiary_id, created_by_user_id, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
@@ -4782,6 +4775,15 @@ app.post('/api/announcements', authMiddleware, requireCapability('announcements.
 
 app.post('/api/announcements/:id/read', authMiddleware, async (req, res) => {
   try {
+    if (req.businessSubsidiaryId) {
+      const [[announcement]] = await pool.query(
+        `SELECT id FROM announcements WHERE id=? AND (subsidiary_id IS NULL OR ${sqlUuidParamEquals('subsidiary_id')})
+         AND is_active=TRUE AND (expires_at IS NULL OR expires_at>NOW())
+         AND (target_audience IS NULL OR target_audience IN ('all','subsidiary') OR target_audience=?)`,
+        [req.params.id, req.businessSubsidiaryId, req.user.role],
+      );
+      if (!announcement) return res.status(404).json({ error: 'Announcement not found.' });
+    }
     await pool.query(
       'INSERT IGNORE INTO announcement_reads (id,announcement_id,user_id) VALUES (?,?,?)',
       [uuidv4(), req.params.id, req.user.id],
@@ -4794,19 +4796,20 @@ app.put('/api/announcements/:id', authMiddleware, requireCapability('announcemen
   try {
     const { title, content, priority, target_audience, subsidiary_id, expires_at, is_active } = req.body;
     const safePriority = ['low', 'normal', 'high', 'urgent'].includes(priority) ? priority : 'normal';
-    const safeSubsidiaryId = !subsidiary_id || subsidiary_id === 'all' ? null : subsidiary_id;
-    const safeAudience = target_audience || (safeSubsidiaryId ? 'subsidiary' : 'all');
-    if (typeof is_active === 'boolean') {
-      await pool.query(
-        'UPDATE announcements SET title = ?, content = ?, priority = ?, target_audience = ?, subsidiary_id = ?, expires_at = ?, is_active = ? WHERE id = ?',
-        [title, content, safePriority, safeAudience, safeSubsidiaryId, normalizeMysqlDateTime(expires_at), is_active, req.params.id]
-      );
-    } else {
-      await pool.query(
-        'UPDATE announcements SET title = ?, content = ?, priority = ?, target_audience = ?, subsidiary_id = ?, expires_at = ? WHERE id = ?',
-        [title, content, safePriority, safeAudience, safeSubsidiaryId, normalizeMysqlDateTime(expires_at), req.params.id]
-      );
+    if (req.businessSubsidiaryId && subsidiary_id && subsidiary_id !== req.businessSubsidiaryId) {
+      return res.status(403).json({ error: 'Announcements must target the assigned subsidiary.' });
     }
+    const safeSubsidiaryId = req.businessSubsidiaryId || (!subsidiary_id || subsidiary_id === 'all' ? null : subsidiary_id);
+    const safeAudience = target_audience || (safeSubsidiaryId ? 'subsidiary' : 'all');
+    const scope = businessScope(req, 'subsidiary_id', 'AND');
+    const updateActive = typeof is_active === 'boolean';
+    const [result] = await pool.query(
+      `UPDATE announcements SET title=?,content=?,priority=?,target_audience=?,subsidiary_id=?,expires_at=?${updateActive ? ',is_active=?' : ''}
+       WHERE id=?${scope.sql}`,
+      [title, content, safePriority, safeAudience, safeSubsidiaryId, normalizeMysqlDateTime(expires_at),
+        ...(updateActive ? [is_active] : []), req.params.id, ...scope.values],
+    );
+    if (req.businessSubsidiaryId && !result.affectedRows) return res.status(404).json({ error: 'Announcement not found.' });
     res.json({ success: true });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
@@ -4818,7 +4821,9 @@ app.patch('/api/announcements/:id', authMiddleware, requireCapability('announcem
       return res.status(400).json({ error: 'is_active must be a boolean.' });
     }
     const nextActive = Boolean(rawActive);
-    await pool.query('UPDATE announcements SET is_active = ? WHERE id = ?', [nextActive, req.params.id]);
+    const scope = businessScope(req, 'subsidiary_id', 'AND');
+    const [result] = await pool.query(`UPDATE announcements SET is_active=? WHERE id=?${scope.sql}`, [nextActive, req.params.id, ...scope.values]);
+    if (req.businessSubsidiaryId && !result.affectedRows) return res.status(404).json({ error: 'Announcement not found.' });
     res.json({ success: true, is_active: nextActive });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
@@ -4832,13 +4837,18 @@ app.delete('/api/announcements/:id', authMiddleware, requireCapability('announce
 
 app.get('/api/announcement_reads/:id', authMiddleware, requireCapability('announcements.manage'), async (req, res) => {
   try {
+    if (req.businessSubsidiaryId) {
+      const [[announcement]] = await pool.query('SELECT id FROM announcements WHERE id=? AND subsidiary_id=?', [req.params.id, req.businessSubsidiaryId]);
+      if (!announcement) return res.status(404).json({ error: 'Announcement not found.' });
+    }
+    const readScope = businessScope(req, 'u.subsidiary_id', 'AND');
     const [rows] = await pool.query(
       `SELECT r.*, u.first_name, u.last_name, u.email, u.role
        FROM announcement_reads r
        JOIN user_profiles u ON ${sqlUuidEquals('r.user_id', 'u.id')}
-       WHERE ${sqlUuidParamEquals('r.announcement_id')}
+       WHERE ${sqlUuidParamEquals('r.announcement_id')}${readScope.sql}
        ORDER BY r.read_at DESC`,
-      [req.params.id]
+      [req.params.id, ...readScope.values]
     );
     const reads = rows.map(row => ({
       ...row,
@@ -5223,6 +5233,18 @@ app.put('/api/companies', requireCapability('company.manage'), async (req, res) 
 app.get('/api/installation_feedback/latest', async (req, res) => {
   try {
     const { client_id, installation_id } = req.query;
+    if (req.businessSubsidiaryId) {
+      const [rows] = await pool.query(
+        `SELECT f.overall_satisfaction,f.positive_feedback AS client_comments,
+                f.improvement_suggestions AS client_improvement_suggestions,f.created_at
+         FROM installation_feedback f JOIN installations i ON ${sqlUuidEquals('i.id','f.installation_id')}
+         JOIN clients c ON ${sqlUuidEquals('c.id','i.client_id')}
+         WHERE f.client_id=? AND f.installation_id=? AND ${sqlUuidEquals('f.client_id','c.id')}
+           AND c.subsidiary_id=? ORDER BY f.created_at DESC LIMIT 1`,
+        [client_id, installation_id, req.businessSubsidiaryId],
+      );
+      return res.json(rows[0] || null);
+    }
     const [rows] = await pool.query(
       'SELECT *, positive_feedback AS client_comments, improvement_suggestions AS client_improvement_suggestions FROM installation_feedback WHERE client_id = ? AND installation_id = ? ORDER BY created_at DESC LIMIT 1',
       [client_id, installation_id]
@@ -5936,8 +5958,15 @@ function notifyChatClients(userId, data) {
   connections.forEach((response) => response.write(`data: ${JSON.stringify(data)}\n\n`));
 }
 
-function notifyAllChatClients(data) {
-  chatClients.forEach((_connections, userId) => notifyChatClients(userId, data));
+function notifyChatPresence(data, actor) {
+  const payload = JSON.stringify(data);
+  chatClients.forEach(connections => connections.forEach(connection => {
+    if (canShareBusinessConversation(connection.chatActor, actor)) {
+      const visiblePayload = connection.chatActor.role === BUSINESS_ROLE
+        ? JSON.stringify({ ...data, onlineUserCount: undefined }) : payload;
+      connection.write(`data: ${visiblePayload}\n\n`);
+    }
+  }));
 }
 
 const getOnlineChatUserCount = () => chatClients.size;
@@ -5965,9 +5994,10 @@ app.get('/api/chat/stream', (req, res) => {
   res.write(': connected\n\n');
   const userKey = String(userId);
   const userConnections = chatClients.get(userKey) || new Map();
+  res.chatActor = req.user;
   userConnections.set(clientId, res);
   chatClients.set(userKey, userConnections);
-  notifyAllChatClients({ type: 'presence', userId: userKey, online: true, onlineUserCount: getOnlineChatUserCount() });
+  notifyChatPresence({ type: 'presence', userId: userKey, online: true, onlineUserCount: getOnlineChatUserCount() }, req.user);
 
   // Set up heartbeat to keep connection alive
   const heartbeat = setInterval(() => {
@@ -5983,7 +6013,7 @@ app.get('/api/chat/stream', (req, res) => {
       const lastSeenAt = new Date().toISOString();
       pool.query('UPDATE user_profiles SET last_seen_at = CURRENT_TIMESTAMP WHERE id = ?', [userKey])
         .catch((error) => console.warn('[SSE] Unable to update last seen:', error.message));
-      notifyAllChatClients({ type: 'presence', userId: userKey, online: false, lastSeenAt, onlineUserCount: getOnlineChatUserCount() });
+      notifyChatPresence({ type: 'presence', userId: userKey, online: false, lastSeenAt, onlineUserCount: getOnlineChatUserCount() }, req.user);
     }
   });
 });
@@ -5992,13 +6022,14 @@ app.get('/api/chat/users', authMiddleware, async (req, res) => {
   try {
     await markExpiredRingingCalls(req.user.id);
     const [rows] = await pool.query(`
-      SELECT u.id, u.email, u.first_name, u.last_name, u.role, u.designation, u.avatar_url, u.last_seen_at,
+      SELECT u.id, u.email, u.first_name, u.last_name, u.role, u.subsidiary_id, u.designation, u.avatar_url, u.last_seen_at,
              (SELECT COUNT(*) FROM messages m WHERE m.sender_id = u.id AND m.receiver_id = ? AND m.is_read = FALSE) as unread_count
       FROM user_profiles u
       WHERE u.id != ? AND COALESCE(u.is_active, 1) = 1
       ORDER BY COALESCE(u.first_name, u.email), COALESCE(u.last_name, '')
     `, [req.user.id, req.user.id]);
-    res.json(rows.map((row) => ({ ...row, online: chatClients.has(String(row.id)) })));
+    res.json(rows.filter(row => canShareBusinessConversation(req.user, row))
+      .map(({ subsidiary_id, ...row }) => ({ ...row, online: chatClients.has(String(row.id)) })));
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
@@ -6006,8 +6037,8 @@ app.post('/api/chat/typing', authMiddleware, async (req, res) => {
   try {
     const receiverId = String(req.body?.receiver_id || '').trim();
     if (!receiverId || receiverId === String(req.user.id)) return res.status(400).json({ error: 'Select another active user.' });
-    const [recipients] = await pool.query('SELECT id FROM user_profiles WHERE id = ? AND is_active = 1 LIMIT 1', [receiverId]);
-    if (!recipients.length) return res.status(404).json({ error: 'Active chat recipient not found.' });
+    const [[recipient]] = await pool.query('SELECT id,role,subsidiary_id FROM user_profiles WHERE id = ? AND is_active = 1 LIMIT 1', [receiverId]);
+    if (!recipient || !canShareBusinessConversation(req.user, recipient)) return res.status(404).json({ error: 'Active chat recipient not found.' });
     notifyChatClients(receiverId, {
       type: 'typing',
       userId: String(req.user.id),
@@ -6378,8 +6409,8 @@ app.get('/api/chat/messages/:otherUserId', authMiddleware, async (req, res) => {
   try {
     await markExpiredRingingCalls(req.user.id);
     const otherUserId = String(req.params.otherUserId || '').trim();
-    const [recipients] = await pool.query('SELECT id FROM user_profiles WHERE id = ? AND is_active = 1 LIMIT 1', [otherUserId]);
-    if (!recipients.length || otherUserId === req.user.id) return res.status(404).json({ error: 'Active chat recipient not found.' });
+    const [[recipient]] = await pool.query('SELECT id,role,subsidiary_id FROM user_profiles WHERE id = ? AND is_active = 1 LIMIT 1', [otherUserId]);
+    if (!recipient || otherUserId === req.user.id || !canShareBusinessConversation(req.user, recipient)) return res.status(404).json({ error: 'Active chat recipient not found.' });
     const [rows] = await pool.query(`${selectChatMessageSql}
       WHERE (
           (m.sender_id = ? AND m.receiver_id = ?)
@@ -6500,8 +6531,8 @@ app.post('/api/chat/messages', authMiddleware, async (req, res) => {
     if (!receiverId || receiverId === req.user.id) return res.status(400).json({ error: 'Select another active user.' });
     if (content.length > 4000) return res.status(400).json({ error: 'Message cannot exceed 4000 characters.' });
     if (!content && !attachmentPayload) return res.status(400).json({ error: 'Type a message or attach a file.' });
-    const [recipients] = await pool.query('SELECT id FROM user_profiles WHERE id = ? AND is_active = 1 LIMIT 1', [receiverId]);
-    if (!recipients.length) return res.status(404).json({ error: 'Active chat recipient not found.' });
+    const [[recipient]] = await pool.query('SELECT id,role,subsidiary_id FROM user_profiles WHERE id = ? AND is_active = 1 LIMIT 1', [receiverId]);
+    if (!recipient || !canShareBusinessConversation(req.user, recipient)) return res.status(404).json({ error: 'Active chat recipient not found.' });
 
     if (replyToMessageId) {
       const replyMessage = await userCanAccessMessage(replyToMessageId, req.user.id);
@@ -6966,10 +6997,10 @@ app.post('/api/chat/scheduled-meetings', authMiddleware, async (req, res) => {
   try {
     await connection.beginTransaction();
     const [recipients] = await connection.query(
-      `SELECT id FROM user_profiles WHERE id IN (${attendees.map(() => '?').join(',')}) AND COALESCE(is_active,1)=1`,
+      `SELECT id,role,subsidiary_id FROM user_profiles WHERE id IN (${attendees.map(() => '?').join(',')}) AND COALESCE(is_active,1)=1`,
       attendees,
     );
-    if (recipients.length !== attendees.length) {
+    if (recipients.length !== attendees.length || !canShareBusinessMeeting([req.user, ...recipients])) {
       await connection.rollback();
       return res.status(404).json({ error: 'One or more attendees are no longer available.' });
     }
@@ -7042,9 +7073,9 @@ app.post('/api/chat/calls', authMiddleware, async (req, res) => {
       return res.status(400).json({ error: 'Select at least one active user.' });
     }
     const placeholders = receiverIds.map(() => '?').join(',');
-    const [recipients] = await connection.query(`SELECT id FROM user_profiles WHERE id IN (${placeholders}) AND COALESCE(is_active,1) = 1`, receiverIds);
+    const [recipients] = await connection.query(`SELECT id,role,subsidiary_id FROM user_profiles WHERE id IN (${placeholders}) AND COALESCE(is_active,1) = 1`, receiverIds);
     const activeRecipientIds = recipients.map(row => String(row.id));
-    if (activeRecipientIds.length !== receiverIds.length) {
+    if (activeRecipientIds.length !== receiverIds.length || !canShareBusinessMeeting([req.user, ...recipients])) {
       await connection.rollback();
       return res.status(404).json({ error: 'One or more selected call participants are no longer active.' });
     }
@@ -7404,7 +7435,15 @@ app.post('/api/chat/calls/:callId/participants', authMiddleware, async (req, res
       return res.status(403).json({ error: 'Only the meeting organizer can invite colleagues.' });
     }
     const placeholders = receiverIds.map(() => '?').join(',');
-    const [authorizedUsers] = await connection.query(`SELECT id,first_name FROM user_profiles WHERE id IN (${placeholders}) AND is_active=1`, receiverIds);
+    const [authorizedUsers] = await connection.query(`SELECT id,first_name,role,subsidiary_id FROM user_profiles WHERE id IN (${placeholders}) AND is_active=1`, receiverIds);
+    const [existingAudience] = await connection.query(
+      `SELECT u.id,u.role,u.subsidiary_id FROM call_participants p JOIN user_profiles u ON ${sqlUuidEquals('u.id','p.user_id')}
+       WHERE p.call_id=? AND p.status IN ('accepted','ringing','invited')`, [callId],
+    );
+    if (!canShareBusinessMeeting([...existingAudience, req.user, ...authorizedUsers])) {
+      await connection.rollback();
+      return res.status(403).json({ error: 'One or more selected colleagues are outside the authorized meeting audience.' });
+    }
     const authorizedIds = authorizedUsers.map(row => String(row.id));
     if (!authorizedIds.length) {
       await connection.rollback();

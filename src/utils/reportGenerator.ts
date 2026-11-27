@@ -192,8 +192,9 @@ export const generateCSVReport = async (reportType: string, dateRange?: { from: 
   formattedData.forEach(row => {
     const rowData = row.map((cell: unknown) => {
       // Escape quotes and wrap in quotes if contains comma
-      const cellStr = String(cell || '');
-      if (cellStr.includes(',') || cellStr.includes('"') || cellStr.includes('\n')) {
+      const value = String(cell ?? '');
+      const cellStr = typeof cell === 'string' && /^(?:\s*[=+@-]|[\t\r\n])/.test(value) ? "'" + value : value;
+      if (cellStr.includes(',') || cellStr.includes('"') || /[\r\n]/.test(cellStr)) {
         return '"' + cellStr.replace(/"/g, '""') + '"';
       }
       return cellStr;
@@ -213,6 +214,17 @@ export const generateCSVReport = async (reportType: string, dateRange?: { from: 
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+};
+
+export const generateExcelReport = async (reportType: string, dateRange?: { from: string; to: string }) => {
+  const reportData = await fetchReportData(reportType, dateRange);
+  if (!reportData.length) throw new Error('No data available for this report.');
+
+  const { default: writeXlsxFile } = await import('write-excel-file/browser');
+  const headers = getTableHeaders(reportType).map(value => ({ value, fontWeight: 'bold' as const }));
+  const rows = formatTableData(reportType, reportData).map(row => row.map(value => ({ value })));
+  await writeXlsxFile([headers, ...rows], { sheet: 'Report' }).toFile(`${reportType}.xlsx`);
 };
 
 const getReportTitle = (reportType: string): string => {

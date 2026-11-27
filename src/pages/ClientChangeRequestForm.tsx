@@ -1,6 +1,7 @@
 import { errorDetails } from '@/utils/errorDetails';
 import React, { useState, useEffect } from 'react';
-import { useParams, Link, useNavigate } from 'react-router-dom';
+import { useParams } from 'react-router-dom';
+import { ClientRequestTracking } from './ClientRequestTracking';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -52,7 +53,6 @@ interface AttachedFile {
 
 export const ClientChangeRequestForm: React.FC = () => {
   const { token } = useParams<{ token: string }>();
-  const navigate = useNavigate();
   const { toast } = useToast();
 
   const [loading, setLoading] = useState(true);
@@ -61,10 +61,10 @@ export const ClientChangeRequestForm: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [errorCode, setErrorCode] = useState<string | null>(null);
   const [showPreview, setShowPreview] = useState(false);
+  const [showTracking, setShowTracking] = useState(false);
   const [submittedResult, setSubmittedResult] = useState<{
     ticket_number: string;
     title: string;
-    tracking_url?: string;
   } | null>(null);
 
   // Form State
@@ -82,6 +82,11 @@ export const ClientChangeRequestForm: React.FC = () => {
   const [attachments, setAttachments] = useState<AttachedFile[]>([]);
 
   useEffect(() => {
+    const controller = new AbortController();
+    setShowTracking(false);
+    setSubmittedResult(null);
+    setError(null);
+    setErrorCode(null);
     if (!token) {
       setError('A valid change request token is required.');
       setLoading(false);
@@ -91,36 +96,34 @@ export const ClientChangeRequestForm: React.FC = () => {
     const fetchInvitation = async () => {
       try {
         setLoading(true);
-        const res = await fetch(`${API_URL}/public/change-requests/invitation/${token}`);
+        const res = await fetch(`${API_URL}/public/change-requests/invitation/${encodeURIComponent(token)}`, {
+          cache: 'no-store', signal: controller.signal,
+        });
         const data = await res.json();
+        if (controller.signal.aborted) return;
 
         if (!res.ok) {
           setError(data.error || 'Unable to load change request invitation.');
           setErrorCode(data.code || 'UNKNOWN_ERROR');
-          if (data.submitted_request) {
-            setSubmittedResult({
-              ticket_number: data.submitted_request.ticket_number,
-              title: 'Change Request',
-              tracking_url: `/change-request/track/${token}`,
-            });
-          }
+          if (data.code === 'ALREADY_SUBMITTED' || data.submitted_request) setShowTracking(true);
           return;
         }
 
         if (data.is_submitted) {
-          navigate(`/change-request/track/${encodeURIComponent(token)}`, { replace: true });
+          setShowTracking(true);
           return;
         }
         setInvitation({ ...data, client: { client_name: data.client.name, branch_name: data.client.branch, department_name: data.client.department }, client_representative: data.representative });
       } catch (err: unknown) {
-        setError(errorDetails(err).message || 'Unable to connect to Riana CIMS servers.');
+        if (!controller.signal.aborted) setError(errorDetails(err).message || 'Unable to connect to Riana CIMS servers.');
       } finally {
-        setLoading(false);
+        if (!controller.signal.aborted) setLoading(false);
       }
     };
 
-    fetchInvitation();
-  }, [token, navigate]);
+    void fetchInvitation();
+    return () => controller.abort();
+  }, [token]);
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
@@ -225,13 +228,16 @@ export const ClientChangeRequestForm: React.FC = () => {
 
       const data = await res.json();
       if (!res.ok) {
+        if (res.status === 409 && data.code === 'ALREADY_SUBMITTED') {
+          setShowTracking(true);
+          return;
+        }
         throw new Error(data.error || 'Failed to submit change request.');
       }
 
       setSubmittedResult({
         ticket_number: data.ticket_number,
         title: title.trim(),
-        tracking_url: data.tracking_url,
       });
 
       toast({
@@ -248,6 +254,8 @@ export const ClientChangeRequestForm: React.FC = () => {
       setSubmitting(false);
     }
   };
+
+  if (showTracking) return <ClientRequestTracking />;
 
   if (loading) {
     return (
@@ -295,15 +303,13 @@ export const ClientChangeRequestForm: React.FC = () => {
               </div>
               <div className="flex items-center gap-2">
                 <CheckCircle2 className="w-4 h-4 text-teal-600 flex-shrink-0" />
-                <span>You can track development progress using the secure link below anytime.</span>
+                <span>Reopen this same link to track progress, confirm implementation, and download the signed report.</span>
               </div>
             </div>
           </CardContent>
           <CardFooter className="flex flex-col sm:flex-row gap-3 pt-2">
-            <Button asChild className="w-full bg-teal-700 hover:bg-teal-800 text-white font-medium">
-              <Link to={`/change-request/track/${token}`}>
-                Track Request Status <ArrowRight className="w-4 h-4 ml-2" />
-              </Link>
+            <Button onClick={() => setShowTracking(true)} className="w-full bg-teal-700 hover:bg-teal-800 text-white font-medium">
+              Track Request Status <ArrowRight className="w-4 h-4 ml-2" />
             </Button>
           </CardFooter>
         </Card>

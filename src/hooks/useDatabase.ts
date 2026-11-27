@@ -37,13 +37,12 @@ export const useDatabase = () => {
     }
   };
 
-  const addClient = async (clientData: Partial<Client> & Record<string, unknown>) => {
+  const addClient = async (clientData: Partial<Client> & Record<string, unknown>, { auditedByServer = false } = {}) => {
     try {
       setLoading(true);
       const data = await apiClient.post('/clients', clientData);
 
-      // Log the action (Express backend might handle this, but let's follow the hook's original intent)
-      await apiClient.post('/system_logs', {
+      if (!auditedByServer) await apiClient.post('/system_logs', {
         user_id: clientData.added_by_user_id,
         action: 'Client Added',
         details: `Added client: ${clientData.client_name}`

@@ -71,7 +71,7 @@ const ROLE_CAPABILITIES = {
   Management: new Set([...ALL_CAPABILITIES].filter((code) => !['installations.manage', 'progress.manage'].includes(code)
     && (!code.startsWith('inventory.') || ['inventory.view','inventory.view_reports','inventory.export'].includes(code)))),
   Admin: ADMIN_CAPABILITIES,
-  HeadOfBusiness: new Set(['clients.view', 'clients.manage', 'installations.view', 'installations.manage', 'assignments.view', 'assignments.manage', 'reports.view', 'analytics.view']),
+  HeadOfBusiness: new Set(['clients.view', 'clients.manage', 'installations.view', 'installations.manage', 'assignments.view', 'assignments.manage', 'progress.view', 'reports.view', 'analytics.view', 'finances.view', 'inventory.view', 'inventory.view_reports', 'inventory.export', 'announcements.manage']),
   Teamlead: TEAMLEAD_CAPABILITIES,
   Finance: VIEW_ONLY,
   Sales: new Set(['reports.view']),

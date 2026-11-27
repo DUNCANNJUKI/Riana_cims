@@ -3,7 +3,7 @@ import { User } from "@/types";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
-import { Building2, Package, Users, UserCheck, HardDrive, Settings, ShieldCheck, Upload, FileText, BarChart3, HelpCircle, Home, History, TrendingUp, DollarSign, CalendarDays, Wrench, Megaphone, ChevronRight, Globe, Code2, PanelLeftClose, PanelLeftOpen } from "lucide-react";
+import { Building2, Package, Users, UserCheck, HardDrive, Settings, ShieldCheck, Upload, FileText, BarChart3, HelpCircle, Home, History, TrendingUp, DollarSign, CalendarDays, Wrench, Megaphone, ChevronRight, Globe, Code2, PanelLeftClose, PanelLeftOpen, ClipboardCheck, MessageSquare, TriangleAlert } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useDatabase } from "@/hooks/useDatabase";
@@ -82,13 +82,40 @@ export const Sidebar = ({ user, activeModule, setActiveModule, isMobileOpen, onM
     { key: 'help', label: 'Help & Support', icon: HelpCircle, roles: ['SuperAdmin', 'Admin', 'Management', 'Finance', 'Teamlead', 'Developer', 'Sales', 'User'], category: 'support' },
   ];
 
-  const filteredMenuItems = menuItems.filter(item => 
+  const businessRole = user.role === 'HeadOfBusiness';
+  const businessMenuItems = [
+    { key: 'dashboard', label: 'Executive Dashboard', icon: Home, category: 'main' },
+    { key: 'business-approvals', label: 'Approvals Centre', icon: ClipboardCheck, category: 'main' },
+    { key: 'analytics', label: 'Business Performance', icon: BarChart3, category: 'main' },
+    { key: 'clients', label: 'Clients', icon: Building2, category: 'operations' },
+    { key: 'installations', label: 'Installations', icon: HardDrive, category: 'operations' },
+    { key: 'progress', label: 'Installation Progress', icon: TrendingUp, category: 'operations' },
+    { key: 'assignments', label: 'Team Performance & Assignments', icon: UserCheck, category: 'operations' },
+    { key: 'calendar', label: 'Workload Calendar', icon: CalendarDays, category: 'operations' },
+    { key: 'inventory', label: 'Inventory Overview', icon: Package, category: 'operations' },
+    { key: 'handover', label: 'Handovers', icon: FileText, category: 'operations' },
+    { key: 'finances', label: 'Finance & Budgets', icon: DollarSign, category: 'business-management' },
+    { key: 'business-requests', label: 'Client Change Requests', icon: FileText, category: 'business-management' },
+    { key: 'business-development', label: 'Development Progress', icon: Code2, category: 'business-management' },
+    { key: 'business-escalations', label: 'Escalations', icon: TriangleAlert, category: 'business-management' },
+    { key: 'reports', label: 'Reports & Exports', icon: BarChart3, category: 'business-management' },
+    { key: 'business-activity', label: 'Business Activity', icon: History, category: 'business-management' },
+    { key: 'messages', label: 'Messages & Meetings', icon: MessageSquare, category: 'communication' },
+    { key: 'announcements-management', label: 'Notice Board', icon: Megaphone, category: 'communication' },
+    { key: 'help', label: 'Help & Support', icon: HelpCircle, category: 'communication' },
+  ].map(item => ({ ...item, roles: [user.role], mobileOnly: false }));
+  const filteredMenuItems = businessRole ? businessMenuItems : menuItems.filter(item =>
     item.roles.includes(user.role)
       || ('capability' in item && item.capability && can(user, item.capability))
       || (item.key === 'developers' && canAccessDevelopers)
   );
 
   const handleModuleClick = (key: string) => {
+    if (key === 'messages') {
+      window.dispatchEvent(new Event('open-chat'));
+      onMobileClose?.();
+      return;
+    }
     if (key === 'developers' && user.role === 'Developer') {
       toast({
         title: "You're now a Developer!!",
@@ -120,6 +147,8 @@ export const Sidebar = ({ user, activeModule, setActiveModule, isMobileOpen, onM
     { key: 'main', label: 'Overview' },
     { key: 'management', label: 'Management' },
     { key: 'operations', label: 'Operations' },
+    { key: 'business-management', label: 'Business Management' },
+    { key: 'communication', label: 'Communication' },
     { key: 'admin', label: 'Administration' },
     { key: 'data', label: 'Data & Reports' },
     { key: 'developers', label: 'Developers' },

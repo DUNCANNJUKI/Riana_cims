@@ -59,12 +59,12 @@ export const InstallationActionsMenu = ({
         
         <DropdownMenuSeparator />
         
-        {canManageInstallations && <DropdownMenuItem onClick={() => onFeedback(installation)}>
+        {canManageInstallations && user.role !== 'HeadOfBusiness' && <DropdownMenuItem onClick={() => onFeedback(installation)}>
           <MessageSquarePlus className="mr-2 h-4 w-4" />
           Generate Feedback
         </DropdownMenuItem>}
         
-        {canManageInstallations && <DropdownMenuItem onClick={() => onUpload(installation)}>
+        {canManageInstallations && user.role !== 'HeadOfBusiness' && <DropdownMenuItem onClick={() => onUpload(installation)}>
           <Upload className="mr-2 h-4 w-4" />
           Upload Handover
         </DropdownMenuItem>}

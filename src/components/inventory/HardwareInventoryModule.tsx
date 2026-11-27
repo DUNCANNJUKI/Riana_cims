@@ -1111,7 +1111,7 @@ export function HardwareInventoryModule({ user }: { user: User }) {
           <AlertDescription>{catalog.error.message}</AlertDescription>
         </Alert>
       )}
-      {catalog.data && catalog.data.policy_available === false && (
+      {user.role !== 'HeadOfBusiness' && catalog.data && catalog.data.policy_available === false && (
         <Alert variant="destructive">
           <AlertDescription>
             Inventory policy data is unavailable. Asset browsing remains
@@ -1128,7 +1128,7 @@ export function HardwareInventoryModule({ user }: { user: User }) {
       )}
       {c && (
         <>
-          {!c.policy.issuance_approved && (
+          {user.role !== 'HeadOfBusiness' && !c.policy.issuance_approved && (
             <Alert>
               <AlertDescription>
                 Serial issuance awaits formal serialization policy approval.
@@ -1195,7 +1195,7 @@ export function HardwareInventoryModule({ user }: { user: User }) {
           <Tabs value={tab} onValueChange={setTab}>
             <TabsList className="max-w-full overflow-x-auto h-auto justify-start flex-nowrap">
               <TabsTrigger value="registry">Registry</TabsTrigger>
-              {['InventoryOfficer','SuperAdmin','Admin','Teamlead'].includes(user.role) && <TabsTrigger value="equipment-requirements">Equipment Requirements</TabsTrigger>}
+              {['InventoryOfficer','SuperAdmin','Admin','Teamlead','HeadOfBusiness'].includes(user.role) && <TabsTrigger value="equipment-requirements">Equipment Requirements</TabsTrigger>}
               <TabsTrigger data-tour="inventory-models" value="models">
                 Models
               </TabsTrigger>

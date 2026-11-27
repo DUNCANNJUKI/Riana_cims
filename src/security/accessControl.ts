@@ -61,7 +61,7 @@ const roleCapabilities: Record<User['role'], Capability[]> = {
   Management: all.filter((code) => !['installations.manage', 'progress.manage'].includes(code)
     && (!code.startsWith('inventory.') || ['inventory.view','inventory.view_reports','inventory.export'].includes(code))),
   Admin: ['clients.view','clients.manage','installations.view','installations.manage','assignments.view','assignments.manage','progress.view','progress.manage','reports.view','finances.view','finances.manage','analytics.view','announcements.manage','import.manage','users.manage'],
-  HeadOfBusiness: ['clients.view','clients.manage','installations.view','installations.manage','assignments.view','assignments.manage','reports.view','analytics.view'],
+  HeadOfBusiness: ['clients.view','clients.manage','installations.view','installations.manage','assignments.view','assignments.manage','progress.view','reports.view','analytics.view','finances.view','inventory.view','inventory.view_reports','inventory.export','announcements.manage'],
   Teamlead: ['clients.view','clients.manage','installations.view','installations.manage','assignments.view','assignments.manage','progress.view','progress.manage','reports.view','finances.view','finances.manage','analytics.view','announcements.manage','import.manage'],
   Finance: ['clients.view','installations.view','assignments.view','progress.view','reports.view'],
   Sales: ['reports.view'],

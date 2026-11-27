@@ -34,9 +34,10 @@ import { apiClient } from "@/integrations/apiClient";
 
 interface InstallationsModuleProps {
   user: User;
+  focusInstallationId?: string | null;
 }
 
-export const InstallationsModule = ({ user }: InstallationsModuleProps) => {
+export const InstallationsModule = ({ user, focusInstallationId }: InstallationsModuleProps) => {
   const queryClient = useQueryClient();
   const canManageInstallations = can(user, 'installations.manage');
   const [installations, setInstallations] = useState<Installation[]>([]);
@@ -55,6 +56,14 @@ export const InstallationsModule = ({ user }: InstallationsModuleProps) => {
   const [isHierarchyLoading, setIsHierarchyLoading] = useState(false);
   const [selectedInstallation, setSelectedInstallation] = useState<Installation | null>(null);
   const [isDetailsDialogOpen, setIsDetailsDialogOpen] = useState(false);
+  useEffect(() => {
+    if (!focusInstallationId) return;
+    const record = installations.find(item => item.id === focusInstallationId);
+    if (record) {
+      setSelectedInstallation(record);
+      setIsDetailsDialogOpen(true);
+    }
+  }, [focusInstallationId, installations]);
   const [isEscalationDialogOpen, setIsEscalationDialogOpen] = useState(false);
   const [isFeedbackDialogOpen, setIsFeedbackDialogOpen] = useState(false);
   const [selectedFeedbackInstallation, setSelectedFeedbackInstallation] = useState<Installation | null>(null);
@@ -318,7 +327,7 @@ export const InstallationsModule = ({ user }: InstallationsModuleProps) => {
         amplifiers: newInstallation.amplifiers || 0,
         hdmis: newInstallation.hdmis || 0,
         splitters: newInstallation.splitters || 0,
-        account_manager_id: user.id,
+        ...(user.role === 'HeadOfBusiness' ? {} : { account_manager_id: user.id }),
         status: newInstallation.id ? newInstallation.status || 'pending' : 'pending',
         remarks: newInstallation.remarks || '',
         scheduled_end_date: newInstallation.scheduled_end_date || null,

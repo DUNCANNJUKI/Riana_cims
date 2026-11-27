@@ -2,12 +2,13 @@ const { chromium } = require('playwright');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const fixtures = require('./responsiveness-fixtures.cjs');
-const origin = 'http://127.0.0.1:8090';
+const origin = process.env.CLIENT_QA_ORIGIN || 'http://127.0.0.1:8090';
+if (!['127.0.0.1', 'localhost'].includes(new URL(origin).hostname)) throw new Error('Client QA requires localhost.');
 const html = '<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>Client implementation QA</title></head><body><div id="root"></div><script type="module">import R from "/@react-refresh";R.injectIntoGlobalHook(window);window.$RefreshReg$=()=>{};window.$RefreshSig$=()=>t=>t;window.__vite_plugin_react_preamble_installed__=true;</script><script type="module" src="/scripts/qa/responsiveness-harness.tsx"></script></body></html>';
 const checks=[];
 const fixturePdf=Buffer.from(new (require('jspdf').jsPDF)().output('arraybuffer')).toString('base64');
 (async()=>{
- const browser=await chromium.launch({headless:true,args:['--disable-features=LocalNetworkAccessChecks,LocalNetworkAccessChecksWebSockets']});
+ const browser=await chromium.launch({headless:true,channel:process.env.CLIENT_QA_CHROME_CHANNEL || undefined,args:['--disable-features=LocalNetworkAccessChecks,LocalNetworkAccessChecksWebSockets']});
  try{
   const context=await browser.newContext({viewport:{width:390,height:844},reducedMotion:'reduce'});const page=await context.newPage();page.setDefaultTimeout(15000);
   page.on('console',m=>{if(m.type()==='error')console.error('CONSOLE',m.text())});await page.addInitScript(data=>{window.__responsiveFixtures=data;},{user:fixtures.user,client:fixtures.client,installation:fixtures.installation});
@@ -16,6 +17,7 @@ const fixturePdf=Buffer.from(new (require('jspdf').jsPDF)().output('arraybuffer'
   page.on('pageerror',e=>{errors.push(e.message);console.error('BROWSER ERROR',e.stack)});
   await page.route('**/api/**',r=>{
    const u=new URL(r.request().url()),p=u.pathname;let body=fixtures.fixture(u.href);
+   if(p.endsWith('/completion.pdf'))return r.fulfill({headers:{'Content-Type':'application/pdf','Content-Disposition':'attachment; filename="QA-CLIENT-signed-completion.pdf"'},body:Buffer.from(fixturePdf,'base64')});
    if(p==='/api/auth/me'){const role=new URL(page.url()).searchParams.get('role')||'SuperAdmin';body={user:{...fixtures.user,role,module_roles:{cims:role,crms:role}}};}
    if(p==='/api/crms/change_requests/qa-request')body={...fixtures.request,status,account_manager_id:owner,latest_completion_report:status==='awaiting_client_acceptance'?{id:'qa-report',status:'sent',version_number:1}:null};
    if(r.request().method()==='POST'){
@@ -26,7 +28,7 @@ const fixturePdf=Buffer.from(new (require('jspdf').jsPDF)().output('arraybuffer'
     if(p==='/api/crms/completion_reports'){status=data.send_to_client?'awaiting_client_acceptance':'completed';body={id:'qa-legacy-report',delivery:{smsStatus:'sent',emailStatus:'sent'}};}
    }
    if(p==='/api/public/change-requests/review/qa-token')body={...body,change_request:{...fixtures.request,status:accepted?'closed_client_accepted':'awaiting_client_acceptance'},report_status:accepted?'accepted':'sent',request_status:accepted?'closed_client_accepted':'awaiting_client_acceptance',ticket_number:'QA-CLIENT',request_title:'Implemented reporting',attachments:[],acceptance:accepted?{client_representative_name:'Client',client_representative_designation:'Manager',sign_off_method:'otp',accepted_at:new Date().toISOString(),feedback_rating:5,feedback_comment:'Delivered successfully',feedback_submitted_at:new Date().toISOString()}:null};
-   if(p.includes('/track/')){trackingReads++;console.log('Tracking poll',trackingReads);if(transientFailure)return r.fulfill({status:503,contentType:'application/json',body:JSON.stringify({error:'Temporarily unavailable'})});body={...body,client:{name:'Synthetic client',branch:'Main'},title:trackingReads>1?'Implementation confirmed by client':'Implementation in progress',status:trackingReads>1?'client_accepted':'in_progress',current_status:'Client implementation confirmed',stages:[{key:'client_review',label:'Client confirmation',description:'Review completed implementation',completed:trackingReads>1,current:trackingReads===1}],latest_completion_report:{id:'qa-report',version_number:1,status:'sent',acceptance_token:'qa-token'},feedback:trackingReads>1?{rating:5,comment:'Delivered successfully',submitted_at:new Date().toISOString()}:null};}
+   if(p.includes('/track/')){trackingReads++;console.log('Tracking poll',trackingReads);if(transientFailure)return r.fulfill({status:503,contentType:'application/json',body:JSON.stringify({error:'Temporarily unavailable'})});body={...body,client:{name:'Synthetic client',branch:'Main'},title:trackingReads>1?'Implementation confirmed by client':'Implementation in progress',status:trackingReads>1?'client_accepted':'in_progress',current_status:'Client implementation confirmed',stages:[{key:'client_review',label:'Client confirmation',description:'Review completed implementation',completed:trackingReads>1,current:trackingReads===1}],signed_report_available:trackingReads>1,latest_completion_report:{id:'qa-report',version_number:1,status:'sent',acceptance_token:'qa-token'},feedback:trackingReads>1?{rating:5,comment:'Delivered successfully',submitted_at:new Date().toISOString()}:null};}
    if(p.includes('/invitation/')&&new URL(page.url()).searchParams.get('submitted')==='1')body={is_submitted:true};
    return r.fulfill({contentType:r.request().url().includes('/stream')?'text/event-stream':'application/json',body:r.request().url().includes('/stream')?': fixture\n\n':JSON.stringify(body)});
   });
@@ -43,10 +45,21 @@ const fixturePdf=Buffer.from(new (require('jspdf').jsPDF)().output('arraybuffer'
   accepted=false;await page.goto(origin+'/__responsive-audit?surface=client-request-review');await page.getByRole('button',{name:'Accept & Confirm Completion',exact:true}).click();await page.getByRole('tab',{name:/Method 2: Signature/}).click();await page.locator('#repName').fill('Client');await page.locator('#repDesignation').fill('Manager');await page.locator('#implementation-feedback-rating').selectOption('4');
   await page.locator('input[type=file]').setInputFiles({name:'signature.png',mimeType:'image/png',buffer:Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+j7i8AAAAASUVORK5CYII=','base64')});await page.locator('#authDecl').click();await page.getByRole('button',{name:'Confirm Signature Acceptance',exact:true}).click();await page.getByText('Implementation Confirmed & Request Closed',{exact:true}).waitFor();assert.ok(posted.some(p=>p.path.endsWith('/sign')&&p.data.feedback.rating===4));checks.push('Client signature confirmation includes feedback.');
   assert.equal(downloads.filter(n=>n==='signed-completion-report.pdf').length,2);checks.push('Both verified sign-off methods automatically download a signed completion PDF and display the closed request state.');
+  const reviewDownload=page.waitForEvent('download');
+  await page.getByRole('link',{name:'Download Signed Completion Report'}).click();
+  assert.equal((await reviewDownload).suggestedFilename(),'QA-CLIENT-signed-completion.pdf');
   trackingReads=0;await page.goto(origin+'/__responsive-audit?surface=client-request-tracking');await page.getByRole('heading',{name:/Implementation (in progress|confirmed by client)/}).waitFor();await page.getByRole('heading',{name:'Implementation confirmed by client',exact:true}).waitFor({timeout:12000});await page.getByText('Implementation feedback recorded',{exact:true}).waitFor();assert.ok(trackingReads>=2);
   transientFailure=true;await page.getByRole('button',{name:'Refresh Status',exact:true}).click();await page.getByText(/Your last update is still displayed/).waitFor();assert.ok(await page.getByRole('heading',{name:'Implementation confirmed by client',exact:true}).isVisible());checks.push('Tracking refreshes automatically, displays sign-off/feedback, and retains the last good state on refresh failure.');
-  fs.mkdirSync('docs/evidence/client-implementation',{recursive:true});await page.screenshot({path:'docs/evidence/client-implementation/tracking-mobile.png',fullPage:false});
-  transientFailure=false;await page.goto(origin+'/__responsive-audit?surface=client-request-submit&submitted=1');await page.getByRole('heading',{name:'Implementation confirmed by client',exact:true}).waitFor();checks.push('The original submitted request link opens its lifecycle tracking view.');
-  assert.deepEqual(errors,[]);fs.writeFileSync('docs/evidence/client-implementation/browser.json',JSON.stringify({passed:true,checks},null,2));console.log(checks.join('\n'));await context.close();
+  fs.mkdirSync('.runtime/client-implementation',{recursive:true});await page.screenshot({path:'.runtime/client-implementation/tracking-mobile.png',fullPage:false});
+  transientFailure=false;
+  const originalUrl=origin+'/change-request/submit/qa-token?submitted=1';
+  await page.goto(originalUrl);
+  await page.getByRole('heading',{name:'Implementation confirmed by client',exact:true}).waitFor();
+  assert.equal(page.url(),originalUrl);
+  const trackingDownload=page.waitForEvent('download');
+  await page.getByRole('link',{name:'Download Signed Completion Report'}).click();
+  assert.equal((await trackingDownload).suggestedFilename(),'QA-CLIENT-signed-completion.pdf');
+  checks.push('The original URL stays in place and downloads the same signed PDF as the review page.');
+  assert.deepEqual(errors,[]);fs.writeFileSync('.runtime/client-implementation/browser.json',JSON.stringify({passed:true,checks},null,2));console.log(checks.join('\n'));await context.close();
  }finally{await browser.close()}
 })().catch(e=>{console.error(e);process.exitCode=1;});

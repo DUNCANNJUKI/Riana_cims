@@ -1,16 +1,17 @@
 import { errorDetails } from '@/utils/errorDetails';
 import React, { useState, useEffect, useRef } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useLocation, useParams, Link } from 'react-router-dom';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import {
   Clock, CheckCircle2, AlertTriangle, FileText, FileCheck2, ArrowRight,
-  Building2, User, Phone, Mail, ShieldCheck, RefreshCw, ChevronRight
+  Building2, User, Phone, Mail, ShieldCheck, RefreshCw, ChevronRight, Download
 } from 'lucide-react';
 import { API_URL } from '@/integrations/apiClient';
 
 interface TrackingData {
+  signed_report_available?: boolean;
   feedback?: { rating: number | null; comment: string | null; submitted_at: string } | null;
   ticket_number: string;
   title: string;
@@ -58,6 +59,7 @@ interface TrackingData {
 
 export const ClientRequestTracking: React.FC = () => {
   const { token } = useParams<{ token: string }>();
+  const { pathname } = useLocation();
 
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState<TrackingData | null>(null);
@@ -166,7 +168,7 @@ export const ClientRequestTracking: React.FC = () => {
         </CardContent></Card>}
 
         {/* Completion Report Action Callout */}
-        {data.latest_completion_report && data.latest_completion_report.acceptance_token && (
+        {(data.signed_report_available || data.latest_completion_report?.acceptance_token) && (
           <div className="bg-teal-50 dark:bg-teal-950/40 border-2 border-teal-600 rounded-lg p-5 flex flex-col sm:flex-row items-center justify-between gap-4 shadow-sm">
             <div className="flex items-center gap-3">
               <div className="w-12 h-12 bg-teal-100 dark:bg-teal-900 text-teal-700 dark:text-teal-300 rounded-full flex items-center justify-center flex-shrink-0">
@@ -174,18 +176,32 @@ export const ClientRequestTracking: React.FC = () => {
               </div>
               <div>
                 <p className="font-bold text-slate-900 dark:text-white text-base">
-                  Formal Completion Report Available
+                  {data.signed_report_available ? 'Client Sign-off Recorded' : 'Formal Completion Report Available'}
                 </p>
                 <p className="text-sm text-slate-600 dark:text-slate-300">
-                  Version {data.latest_completion_report.version_number} has been issued for client review and acceptance sign-off.
+                  {data.signed_report_available
+                    ? 'Download the completion report with verified client sign-off.'
+                    : `Version ${data.latest_completion_report?.version_number} is available for review.`}
                 </p>
               </div>
             </div>
-            <Button asChild className="bg-teal-700 hover:bg-teal-800 text-white font-medium flex-shrink-0">
-              <Link to={`/change-request/review/${data.latest_completion_report.acceptance_token}`}>
-                Review & Sign Off <ArrowRight className="w-4 h-4 ml-1.5" />
-              </Link>
-            </Button>
+            {data.signed_report_available ? (
+              <Button asChild className="bg-teal-700 hover:bg-teal-800 text-white font-medium">
+                <a href={`${API_URL}/public/change-requests/track/${encodeURIComponent(token || '')}/completion.pdf`} referrerPolicy="no-referrer">
+                  <Download className="mr-2 h-4 w-4" /> Download Signed Completion Report
+                </a>
+              </Button>
+            ) : data.latest_completion_report?.acceptance_token && (
+              <Button asChild className="bg-teal-700 hover:bg-teal-800 text-white font-medium">
+                <Link
+                  to={`/change-request/review/${encodeURIComponent(data.latest_completion_report.acceptance_token)}`}
+                  state={{ requestPath: pathname }}
+                >
+                  {data.latest_completion_report.status === 'sent' ? 'Review & Sign Off' : 'View Completion Report'}
+                  <ArrowRight className="w-4 h-4 ml-1.5" />
+                </Link>
+              </Button>
+            )}
           </div>
         )}
 

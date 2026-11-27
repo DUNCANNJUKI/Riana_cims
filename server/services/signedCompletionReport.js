@@ -3,7 +3,25 @@ const { jsPDF } = require('jspdf');
 const sharp = require('sharp');
 const { completionDocumentBranding } = require('./completionDocumentBranding');
 
-async function signedCompletionReport(pool, { requestId, token, resolveSignature }) {
+const submittedInvitationMatches = `i.status = 'submitted'
+  AND CONVERT(i.change_request_id USING utf8mb4) COLLATE utf8mb4_unicode_ci = CONVERT(cr.id USING utf8mb4) COLLATE utf8mb4_unicode_ci`;
+const verifiedCompletion = `r.status = 'accepted' AND cr.status IN ('client_accepted','closed_client_accepted')
+  AND a.declaration_confirmed = TRUE
+  AND ((a.sign_off_method = 'otp' AND a.otp_verified_at IS NOT NULL)
+    OR (a.sign_off_method = 'signature' AND a.signature_image_path IS NOT NULL))
+  AND NOT EXISTS (SELECT 1 FROM crms_completion_reports newer WHERE newer.change_request_id COLLATE utf8mb4_unicode_ci = cr.id COLLATE utf8mb4_unicode_ci AND newer.version_number > r.version_number)
+  AND NOT EXISTS (SELECT 1 FROM crms_client_action_responses response WHERE response.change_request_id COLLATE utf8mb4_unicode_ci = cr.id COLLATE utf8mb4_unicode_ci AND response.resolved = FALSE)`;
+
+async function signedCompletionReport(pool, { requestId, token, trackingToken, resolveSignature, subsidiaryId }) {
+  const reviewAccess = 'r.acceptance_token = ? AND r.token_expires_at > NOW()';
+  const access = trackingToken !== undefined
+    ? `(${reviewAccess}) OR EXISTS (
+        SELECT 1 FROM crms_change_request_invitations i
+        WHERE i.invitation_token = ? AND ${submittedInvitationMatches}
+          AND CONVERT(i.id USING utf8mb4) COLLATE utf8mb4_unicode_ci = CONVERT(cr.invitation_id USING utf8mb4) COLLATE utf8mb4_unicode_ci
+      )`
+    : token !== undefined ? reviewAccess : 'cr.id = ?';
+  const values = trackingToken !== undefined ? [trackingToken, trackingToken] : [token ?? requestId];
   const [rows] = await pool.query(`SELECT r.*, cr.ticket_number, cr.request_title, c.client_name,
       a.id AS acceptance_id, a.client_representative_name, a.client_representative_designation,
       a.sign_off_method, a.accepted_at, a.otp_verified_at, a.signature_image_path,
@@ -16,14 +34,10 @@ async function signedCompletionReport(pool, { requestId, token, resolveSignature
     LEFT JOIN user_profiles manager ON manager.id COLLATE utf8mb4_unicode_ci = r.account_manager_id COLLATE utf8mb4_unicode_ci
     LEFT JOIN subsidiaries ms ON ms.id COLLATE utf8mb4_unicode_ci = manager.subsidiary_id COLLATE utf8mb4_unicode_ci
     JOIN crms_client_acceptances a ON a.completion_report_id COLLATE utf8mb4_unicode_ci = r.id COLLATE utf8mb4_unicode_ci
-    WHERE ${token ? 'r.acceptance_token = ? AND r.token_expires_at > NOW()' : 'cr.id = ?'}
-      AND r.status = 'accepted' AND cr.status IN ('client_accepted','closed_client_accepted')
-      AND a.declaration_confirmed = TRUE
-      AND ((a.sign_off_method = 'otp' AND a.otp_verified_at IS NOT NULL)
-        OR (a.sign_off_method = 'signature' AND a.signature_image_path IS NOT NULL))
-      AND NOT EXISTS (SELECT 1 FROM crms_completion_reports newer WHERE newer.change_request_id COLLATE utf8mb4_unicode_ci = cr.id COLLATE utf8mb4_unicode_ci AND newer.version_number > r.version_number)
-      AND NOT EXISTS (SELECT 1 FROM crms_client_action_responses response WHERE response.change_request_id COLLATE utf8mb4_unicode_ci = cr.id COLLATE utf8mb4_unicode_ci AND response.resolved = FALSE)
-    ORDER BY r.version_number DESC LIMIT 1`, [token || requestId]);
+    WHERE (${access})
+      ${subsidiaryId ? 'AND c.subsidiary_id = ?' : ''}
+      AND ${verifiedCompletion}
+    ORDER BY r.version_number DESC LIMIT 1`, [...values, ...(subsidiaryId ? [subsidiaryId] : [])]);
   if (!rows.length) throw Object.assign(new Error('A verified client sign-off is required for this report.'), { status: 404 });
   const row = rows[0];
   const doc = new jsPDF();
@@ -64,4 +78,4 @@ async function signedCompletionReport(pool, { requestId, token, resolveSignature
   return { buffer: Buffer.from(doc.output('arraybuffer')), filename: `${String(row.ticket_number).replace(/[^a-zA-Z0-9_-]/g, '_')}-signed-completion.pdf` };
 }
 
-module.exports = { signedCompletionReport };
+module.exports = { signedCompletionReport, submittedInvitationMatches, verifiedCompletion };

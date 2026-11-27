@@ -25,6 +25,7 @@ const migrationIds = [
   '20261127_meeting_coordination',
   '20261127_business_inventory_roles',
   '20261127_business_delegation',
+  '20261127_business_module_access',
 ];
 
 const splitSqlStatements = (sql) => {

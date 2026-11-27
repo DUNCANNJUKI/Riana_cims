@@ -188,7 +188,7 @@ export const ClientsModule = ({ user }: ClientsModuleProps) => {
         added_by_user_id: user.id
       };
 
-      const createdClient = await addClient(clientData);
+      const createdClient = await addClient(clientData, { auditedByServer: user.role === 'HeadOfBusiness' });
       if (branchName && createdClient?.id) {
         await apiClient.post(`/clients/${createdClient.id}/branches`, { branch_name: branchName });
       }

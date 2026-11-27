@@ -103,6 +103,7 @@ const isAnnouncementExpired = (announcement: Pick<Announcement, 'expires_at' | '
 };
 
 export const AnnouncementsManagementModule = ({ user }: AnnouncementsManagementModuleProps) => {
+  const businessRole = user.role === 'HeadOfBusiness';
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive' | 'expired'>('all');
   const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -235,7 +236,7 @@ export const AnnouncementsManagementModule = ({ user }: AnnouncementsManagementM
           content: content.trim(),
           priority,
           target_audience: targetAudience,
-          subsidiary_id: selectedSubsidiary === 'all' ? null : selectedSubsidiary,
+          subsidiary_id: businessRole ? user.subsidiary_id : selectedSubsidiary === 'all' ? null : selectedSubsidiary,
           expires_at: expiresAt || null,
         });
 
@@ -249,7 +250,7 @@ export const AnnouncementsManagementModule = ({ user }: AnnouncementsManagementM
           content: content.trim(),
           priority,
           target_audience: targetAudience,
-          subsidiary_id: selectedSubsidiary === 'all' ? null : selectedSubsidiary,
+          subsidiary_id: businessRole ? user.subsidiary_id : selectedSubsidiary === 'all' ? null : selectedSubsidiary,
           created_by_user_id: user.id,
           expires_at: expiresAt || null,
         });
@@ -466,7 +467,7 @@ export const AnnouncementsManagementModule = ({ user }: AnnouncementsManagementM
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="all">Everyone</SelectItem>
+                      <SelectItem value="all">{businessRole ? 'Everyone in the assigned subsidiary' : 'Everyone'}</SelectItem>
                       <SelectItem value="admins">Admins Only</SelectItem>
                       <SelectItem value="teamleads">Team Leads</SelectItem>
                       <SelectItem value="technicians">Technicians</SelectItem>
@@ -477,7 +478,10 @@ export const AnnouncementsManagementModule = ({ user }: AnnouncementsManagementM
               </div>
 
               <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-2">
+                {businessRole ? <div className="space-y-2">
+                  <Label>Subsidiary</Label>
+                  <p className="text-sm text-muted-foreground">{subsidiaries.find(item => item.id === user.subsidiary_id)?.subsidiary_name || 'Assigned subsidiary'}</p>
+                </div> : <div className="space-y-2">
                   <Label>Subsidiary (Optional)</Label>
                   <Select value={selectedSubsidiary} onValueChange={setSelectedSubsidiary}>
                     <SelectTrigger>
@@ -490,7 +494,7 @@ export const AnnouncementsManagementModule = ({ user }: AnnouncementsManagementM
                       ))}
                     </SelectContent>
                   </Select>
-                </div>
+                </div>}
 
                 <div className="space-y-2">
                   <Label>Expires (Optional)</Label>
@@ -726,7 +730,7 @@ export const AnnouncementsManagementModule = ({ user }: AnnouncementsManagementM
                                 <ToggleLeft className="h-4 w-4 text-muted-foreground" />
                               )}
                             </Button>
-                            <Button
+                            {!businessRole && <Button
                               variant="ghost"
                               size="icon"
                               onClick={() => handleDelete(announcement.id)}
@@ -735,7 +739,7 @@ export const AnnouncementsManagementModule = ({ user }: AnnouncementsManagementM
                               className="h-8 w-8 text-destructive hover:text-destructive"
                             >
                               <Trash2 className="h-4 w-4" />
-                            </Button>
+                            </Button>}
                           </div>
                         </TableCell>
                       </TableRow>

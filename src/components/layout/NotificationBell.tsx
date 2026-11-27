@@ -84,7 +84,7 @@ export const NotificationBell = ({ user, onNavigate, triggerClassName, meetingCo
       const [assignments, installations, announcements, persistentSummary] = await Promise.all([
         loadOperations ? apiClient.get('/client_assignments') : Promise.resolve([]),
         loadOperations ? apiClient.get('/installations') : Promise.resolve([]),
-        user.role === 'HeadOfBusiness' ? Promise.resolve([]) : apiClient.get(`/announcements?scope=active&user_id=${encodeURIComponent(user.id)}`),
+        apiClient.get('/announcements?scope=active').catch(() => []),
         apiClient.get('/notifications/summary').catch(() => ({ notifications: [], unread_count: 0 })),
       ]);
       const persistentNotifications = persistentSummary.notifications || [];
@@ -273,6 +273,15 @@ export const NotificationBell = ({ user, onNavigate, triggerClassName, meetingCo
       try {
         const destination = new URL(notification.actionUrl, window.location.origin);
         if (destination.origin === window.location.origin && destination.pathname.startsWith('/developers')) {
+          if (user.role === 'HeadOfBusiness') {
+            if (notification.requestId && /^[A-Za-z0-9-]{1,36}$/.test(notification.requestId)) {
+              navigate({ pathname: '/', search: new URLSearchParams({ businessModule: 'business-requests', record: notification.requestId }).toString() });
+            } else {
+              onNavigate?.('business-requests');
+            }
+            setIsOpen(false);
+            return;
+          }
           onNavigate?.('developers');
           navigate(destination.pathname + destination.search + destination.hash);
           setIsOpen(false);

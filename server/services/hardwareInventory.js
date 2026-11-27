@@ -528,7 +528,7 @@ function createHardwareInventory(pool) {
         subsidiary.id, equipmentLabels(subsidiary.equipment_configuration, E.EQUIPMENT_FIELDS),
       ])),
       equipment_fields: Object.entries(E.EQUIPMENT_FIELDS).map(([field,label]) => ({field,label})),
-      policy,
+      policy: user.role === 'HeadOfBusiness' ? undefined : policy,
       clients,
       branches,
       technicians,

@@ -2,6 +2,7 @@ const express = require('express');
 const path = require('node:path');
 const fs = require('node:fs');
 const { clientRequestProgress } = require('../services/clientRequestProgress');
+const { signedCompletionReport, submittedInvitationMatches, verifiedCompletion } = require('../services/signedCompletionReport');
 const { safeUpload, resolveStoredFile } = require('../security/apiSecurity');
 const {
   getInvitationForClient,
@@ -29,12 +30,16 @@ const removeUnclaimedFiles = (uploadsDir, files) => {
   }
 };
 
-module.exports = function createClientChangeRequestPortalRouter({ pool, uploadsDir }) {
+module.exports = function createClientChangeRequestPortalRouter({ pool, uploadsDir, resolveSignature = filename => resolveStoredFile(uploadsDir, filename) }) {
   const router = express.Router();
+  router.use((_req, res, next) => {
+    res.set('Cache-Control', 'private, no-store');
+    res.set('Referrer-Policy', 'no-referrer');
+    next();
+  });
   const withCompletionDocument = async (token, result) => {
     try {
-      const { signedCompletionReport } = require('../services/signedCompletionReport');
-      const pdf = await signedCompletionReport(pool, { token, resolveSignature: filename => resolveStoredFile(uploadsDir, filename) });
+      const pdf = await signedCompletionReport(pool, { token, resolveSignature });
       return { ...result, request_status: 'closed_client_accepted', report_pdf_base64: pdf.buffer.toString('base64'), report_filename: pdf.filename };
     } catch (error) {
       // A retryable rendering failure must never undo or disguise a verified sign-off.
@@ -43,15 +48,15 @@ module.exports = function createClientChangeRequestPortalRouter({ pool, uploadsD
     }
   };
 
-  router.get('/review/:token/completion.pdf', async (req, res) => {
+  const downloadCompletion = tokenType => async (req, res) => {
     try {
-      const { signedCompletionReport } = require('../services/signedCompletionReport');
-      const pdf = await signedCompletionReport(pool, { token: req.params.token, resolveSignature: filename => resolveStoredFile(uploadsDir, filename) });
-      res.set('Cache-Control', 'no-store');
+      const pdf = await signedCompletionReport(pool, { [tokenType]: req.params.token, resolveSignature });
       res.set('Content-Disposition', `attachment; filename="${pdf.filename}"`);
       res.type('application/pdf').send(pdf.buffer);
     } catch (error) { respondWithError(res, error); }
-  });
+  };
+  router.get('/review/:token/completion.pdf', downloadCompletion('token'));
+  router.get('/track/:token/completion.pdf', downloadCompletion('trackingToken'));
 
   // 1. Get Invitation by Token
   router.get('/invitation/:token', async (req, res) => {
@@ -239,7 +244,8 @@ module.exports = function createClientChangeRequestPortalRouter({ pool, uploadsD
                 c.client_name, COALESCE(cb.branch_name, c.branch) AS branch_name,
                 i.invitation_token, r.id AS report_id, r.version_number, r.status AS report_status,
                 r.acceptance_token, r.token_expires_at, r.sent_at,
-                a.feedback_rating, a.feedback_comment, a.feedback_submitted_at
+                a.feedback_rating, a.feedback_comment, a.feedback_submitted_at,
+                (${verifiedCompletion}) AS signed_report_available
          FROM crms_change_requests cr
          JOIN clients c ON c.id COLLATE utf8mb4_unicode_ci = cr.client_id COLLATE utf8mb4_unicode_ci
          LEFT JOIN client_branches cb ON cb.id COLLATE utf8mb4_unicode_ci = cr.branch_id COLLATE utf8mb4_unicode_ci
@@ -248,14 +254,13 @@ module.exports = function createClientChangeRequestPortalRouter({ pool, uploadsD
            WHERE rr.change_request_id COLLATE utf8mb4_unicode_ci = cr.id COLLATE utf8mb4_unicode_ci
              AND rr.status <> 'superseded' ORDER BY rr.version_number DESC LIMIT 1)
          LEFT JOIN crms_client_acceptances a ON a.completion_report_id COLLATE utf8mb4_unicode_ci = r.id COLLATE utf8mb4_unicode_ci
-         WHERE (i.invitation_token = ? AND i.status <> 'cancelled')
+         WHERE (i.invitation_token = ? AND ${submittedInvitationMatches})
             OR (r.acceptance_token = ? AND r.token_expires_at > NOW() AND r.status NOT IN ('draft','superseded')) LIMIT 1`,
         [req.params.token, req.params.token],
       );
       if (!rows.length) return res.status(404).json({ error: 'Request not found.' });
       const row = rows[0];
 
-      res.set('Cache-Control', 'no-store');
       res.json(clientRequestProgress(row));
     } catch (err) {
       respondWithError(res, err);

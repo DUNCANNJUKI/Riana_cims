@@ -1,5 +1,4 @@
 import { errorDetails } from '../utils/errorDetails';
-import { applyBusinessScope } from '../utils/businessScope';
 import { friendlyRequestError, connectionErrorMessage } from '../utils/requestErrors';
 
 const configuredDevelopmentApiUrl = import.meta.env.DEV
@@ -95,7 +94,6 @@ export const apiFetch = async (endpoint: string, options: RequestInit = {}, retr
   headers.set('Content-Type', 'application/json');
   if (token) {
     headers.set('Authorization', `Bearer ${token}`);
-    applyBusinessScope(headers);
   }
 
   try {
@@ -137,7 +135,6 @@ export const fetchAuthenticatedBlob = async (endpoint: string): Promise<Blob> =>
   const headers = new Headers();
   if (token) {
     headers.set('Authorization', `Bearer ${token}`);
-    applyBusinessScope(headers);
   }
 
   const response = await fetch(resolveApiEndpointUrl(endpoint), {

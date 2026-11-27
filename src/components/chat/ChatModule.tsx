@@ -338,6 +338,12 @@ export const ChatModule = ({ currentUser, chat, onClose, onMinimize, onToggleFul
       : [activeCall.sender_id, activeCall.receiver_id, ...(activeCall.call_participant_ids || [])].filter(Boolean)))
     : [];
   const activeCallPendingInviteIds = activeCall?.call_participants?.filter(participant => ["invited", "ringing"].includes(String(participant.status))).map(participant => participant.user_id) || [];
+  const inviteSearch = meetingInviteSearchTerm.trim().toLowerCase();
+  const eligibleMeetingInviteUsers = showInvitePanel ? visibleUsers.filter(user =>
+    !activeCallParticipantIds.includes(user.id) &&
+    !activeCallPendingInviteIds.includes(user.id) &&
+    `${formatUserName(user)} ${user.email || ""}`.toLowerCase().includes(inviteSearch)
+  ) : [];
   const activeCallOtherParticipants = activeCallParticipantIds.filter(id => id !== currentUser.id);
   const activeCallUsers = activeCallOtherParticipants.map(id => users.find(user => user.id === id)).filter(Boolean) as User[];
   const orderedCallParticipantIds = [...activeCallOtherParticipants].sort((left, right) => {
@@ -2398,15 +2404,29 @@ export const ChatModule = ({ currentUser, chat, onClose, onMinimize, onToggleFul
                     )}
                   </section>
                 )}
-                {showInvitePanel && <section id="meeting-invite-panel" className="max-h-[48dvh] w-full shrink-0 overflow-y-auto rounded-xl border border-[hsl(var(--comm-border))] bg-background/95 p-3.5 shadow-md sm:max-h-[54dvh] lg:max-h-full lg:w-[320px] xl:w-[340px]" aria-label="Invite meeting participants"><div className="mb-2.5 flex items-center justify-between"><h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Invite people</h4><Button type="button" size="icon" variant="ghost" className="h-7 w-7 rounded-lg" onClick={() => setShowInvitePanel(false)} title="Close invite panel" aria-label="Close invite panel"><X className="h-3.5 w-3.5" /></Button></div>
-                  <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
-                    <label className="grid min-w-0 flex-1 gap-1 text-xs font-semibold text-muted-foreground">Find colleagues<Input value={meetingInviteSearchTerm} onChange={event => setMeetingInviteSearchTerm(event.target.value)} placeholder="Search by name or email" className="h-10" aria-label="Search colleagues to invite" /></label>
-                    <Button type="button" onClick={() => void inviteSelectedParticipants()} disabled={!meetingInviteSelection.length || isInvitingParticipants} className="h-10 rounded-full">{isInvitingParticipants ? "Inviting…" : `Invite ${meetingInviteSelection.length || "selected"}`}</Button>
+                {showInvitePanel && <section id="meeting-invite-panel" className="flex max-h-[48dvh] w-full min-w-0 shrink-0 flex-col gap-2 overflow-hidden rounded-xl border border-border bg-card p-3 text-card-foreground shadow-md sm:max-h-[54dvh] lg:max-h-full lg:w-[320px] xl:w-[340px]" aria-label="Invite meeting participants">
+                  <div className="flex shrink-0 items-center justify-between gap-2">
+                    <h4 className="text-sm font-semibold text-card-foreground">Invite people</h4>
+                    <Button type="button" size="icon" variant="ghost" className="size-9 shrink-0 rounded-lg text-card-foreground" onClick={() => setShowInvitePanel(false)} title="Close invite panel" aria-label="Close invite panel"><X className="size-4" /></Button>
                   </div>
-                  <div className="mt-3 grid max-h-40 gap-1 overflow-y-auto sm:grid-cols-2">
-                    {visibleUsers.filter(user => !activeCallParticipantIds.includes(user.id) && !activeCallPendingInviteIds.includes(user.id) && `${user.first_name || ""} ${user.last_name || ""} ${user.email || ""}`.toLowerCase().includes(meetingInviteSearchTerm.toLowerCase())).map(user => <label key={user.id} className="flex cursor-pointer items-center gap-2 rounded-lg px-2 py-2 hover:bg-muted"><input type="checkbox" checked={meetingInviteSelection.includes(user.id)} onChange={event => setMeetingInviteSelection(current => event.target.checked ? [...new Set([...current, user.id])] : current.filter(id => id !== user.id))} aria-label={`Invite ${formatUserName(user)}`} /><Avatar className="h-8 w-8"><AvatarImage src={resolveAvatarUrl(user.avatar_url)} alt="" /><AvatarFallback>{(user.first_name?.[0] || user.email?.[0] || "?").toUpperCase()}</AvatarFallback></Avatar><span className="min-w-0 truncate text-sm">{formatUserName(user)}</span><span className="ml-auto text-xs text-muted-foreground">{user.online ? "Online" : "Offline"}</span></label>)}
-                    {visibleUsers.filter(user => !activeCallParticipantIds.includes(user.id) && !activeCallPendingInviteIds.includes(user.id) && `${user.first_name || ""} ${user.last_name || ""} ${user.email || ""}`.toLowerCase().includes(meetingInviteSearchTerm.toLowerCase())).length === 0 && <p className="py-3 text-sm text-muted-foreground">No eligible colleagues found.</p>}
-                  </div>
+                  <label className="grid min-w-0 shrink-0 gap-1 text-xs font-semibold text-card-foreground">
+                    Find colleagues
+                    <Input value={meetingInviteSearchTerm} onChange={event => setMeetingInviteSearchTerm(event.target.value)} placeholder="Search by name or email" className="h-10 bg-background text-foreground" aria-label="Search colleagues to invite" />
+                  </label>
+                  <ul className="min-h-0 flex-1 space-y-0.5 overflow-y-auto overscroll-contain" aria-label="Eligible colleagues">
+                    {eligibleMeetingInviteUsers.map(user => <li key={user.id}>
+                      <label className="grid min-w-0 cursor-pointer grid-cols-[auto_auto_minmax(0,1fr)] items-center gap-2 rounded-lg border border-transparent px-2 py-1.5 hover:bg-muted has-[:checked]:border-primary/40 has-[:checked]:bg-primary/10">
+                        <input type="checkbox" className="size-4 accent-primary" checked={meetingInviteSelection.includes(user.id)} onChange={event => setMeetingInviteSelection(current => event.target.checked ? [...new Set([...current, user.id])] : current.filter(id => id !== user.id))} aria-label={`Invite ${formatUserName(user)}`} />
+                        <Avatar className="size-8"><AvatarImage src={resolveAvatarUrl(user.avatar_url)} alt="" /><AvatarFallback className="bg-muted text-xs font-semibold text-foreground">{(user.first_name?.[0] || user.email?.[0] || "?").toUpperCase()}</AvatarFallback></Avatar>
+                        <span className="min-w-0">
+                          <span className="block break-words text-sm font-medium leading-snug text-card-foreground">{formatUserName(user)}</span>
+                          <span className="block text-xs text-muted-foreground">{user.online ? "Online" : "Offline"}</span>
+                        </span>
+                      </label>
+                    </li>)}
+                    {!eligibleMeetingInviteUsers.length && <li className="px-2 py-3 text-sm text-muted-foreground">No eligible colleagues found.</li>}
+                  </ul>
+                  <Button type="button" onClick={() => void inviteSelectedParticipants()} disabled={!meetingInviteSelection.length || isInvitingParticipants} className="h-10 shrink-0 self-end">{isInvitingParticipants ? "Inviting…" : `Invite ${meetingInviteSelection.length || "selected"}`}</Button>
                 </section>}
                 {(mobileMeetingView === "participants" || isDesktopParticipantsOpen) && <section className="max-h-[52dvh] w-full shrink-0 overflow-y-auto rounded-xl border border-[hsl(var(--comm-border))] bg-background/95 p-3.5 shadow-md lg:max-h-full lg:w-[320px] xl:w-[340px]" aria-label="Meeting participants">
                   <div className="mb-2.5 flex items-center justify-between"><h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Participants ({activeCallParticipantIds.length})</h4><Button type="button" size="icon" variant="ghost" className="h-7 w-7 rounded-lg" onClick={() => { setMobileMeetingView("gallery"); setIsDesktopParticipantsOpen(false); }} title="Close participants panel" aria-label="Close participants panel"><X className="h-3.5 w-3.5" /></Button></div>

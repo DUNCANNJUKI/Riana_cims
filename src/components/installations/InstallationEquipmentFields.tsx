@@ -5,14 +5,14 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import type { HandoverEquipmentItem, Installation } from '@/types';
 import { equipmentQuantity, isCustomEquipment } from '@/utils/equipmentConfiguration';
 import { EquipmentIcon } from '@/components/inventory/EquipmentIcon';
-import { equipmentIconKind } from '@/utils/equipmentImages';
+import { installationEquipmentIconKind } from '@/utils/equipmentImages';
 import { Cable, Monitor, Tablet } from 'lucide-react';
 import './equipment-images.css';
 
 const legacyTypeOptions = ['Interactive Touch', 'Queue Management', 'Digital Signage System', 'Self Service'];
 
-const equipmentIcon = (field: string, label: string) => {
-  const kind = equipmentIconKind(field);
+const equipmentIcon = (field: string, label: string, kioskType?: string | null) => {
+  const kind = installationEquipmentIconKind(field, kioskType);
   if (kind) return <EquipmentIcon kind={kind} />;
 
   const value = `${field} ${label}`.toLowerCase();
@@ -52,7 +52,7 @@ export function InstallationEquipmentFields({ items, value, onChange }: {
     return <Fragment key={item.field}>
       <div className="min-w-0 space-y-2" data-equipment-field={item.field}>
         <div className="flex min-w-0 items-center gap-2">
-          {equipmentIcon(item.field, item.label)}
+          {equipmentIcon(item.field, item.label, value.kiosk_type)}
           <Label htmlFor={item.field} className="min-w-0 break-words">{item.label}{isType ? ' *' : ''}</Label>
         </div>
         {isType ? <Select value={textValue} onValueChange={(selected) => onChange({ ...value, [item.field]: selected })}>

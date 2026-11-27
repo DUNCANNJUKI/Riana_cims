@@ -15,6 +15,15 @@ test('signed report refuses a token without an eligible acceptance', async () =>
   await assert.rejects(signedCompletionReport(pool, { token: 'unknown-token' }), { status: 404 });
 });
 
+test('business signed reports include the assigned subsidiary in the same query as verification', async () => {
+  const pool = { query: async (sql, params) => {
+    assert.match(sql, /AND c\.subsidiary_id = \?/);
+    assert.deepEqual(params, ['outside-request', 'assigned-subsidiary']);
+    return [[]];
+  } };
+  await assert.rejects(signedCompletionReport(pool, { requestId: 'outside-request', subsidiaryId: 'assigned-subsidiary' }), { status: 404 });
+});
+
 test('OTP report records the client and verified method without inventing handwriting', async () => {
   const result = await signedCompletionReport({ query: async () => [[accepted]] }, { requestId: 'test-request' });
   assert.equal(result.buffer.subarray(0, 5).toString(), '%PDF-');

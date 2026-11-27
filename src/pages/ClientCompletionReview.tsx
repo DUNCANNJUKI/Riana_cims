@@ -1,6 +1,6 @@
 import { errorDetails } from '@/utils/errorDetails';
 import React, { useState, useEffect } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useLocation, useParams, Link } from 'react-router-dom';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -68,6 +68,10 @@ interface ReportDetails {
 
 export const ClientCompletionReview: React.FC = () => {
   const { token } = useParams<{ token: string }>();
+  const requestPath = useLocation().state?.requestPath;
+  const trackingPath = typeof requestPath === 'string' && /^\/(?:change-request\/(?:submit|track)|client-request)\/[A-Za-z0-9_-]+$/.test(requestPath)
+    ? requestPath
+    : `/change-request/track/${encodeURIComponent(token || '')}`;
   const { toast } = useToast();
 
   const [loading, setLoading] = useState(true);
@@ -94,19 +98,18 @@ export const ClientCompletionReview: React.FC = () => {
   const [signatureFile, setSignatureFile] = useState<{ base64: string; name: string } | null>(null);
   const [submittingSignature, setSubmittingSignature] = useState(false);
 
-  const downloadCompletion = async (base64?: string) => {
+  const downloadCompletion = (base64?: string, filename?: string) => {
+    if (!base64) return;
     try {
-      let blob: Blob;
-      if (base64) blob = new Blob([Uint8Array.from(atob(base64), character => character.charCodeAt(0))], { type: 'application/pdf' });
-      else {
-        const response = await fetch(`${API_URL}/public/change-requests/review/${encodeURIComponent(token || '')}/completion.pdf`);
-        if (!response.ok || !response.headers.get('content-type')?.includes('application/pdf')) throw new Error('Your sign-off is saved. The signed report is temporarily unavailable; please try Download again.');
-        blob = await response.blob();
-      }
+      const blob = new Blob([Uint8Array.from(atob(base64), character => character.charCodeAt(0))], { type: 'application/pdf' });
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
-      link.href = url; link.download = 'signed-completion-report.pdf'; link.click();
-      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+      link.href = url;
+      link.download = filename || 'signed-completion-report.pdf';
+      document.body.append(link);
+      link.click();
+      link.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
     } catch (error) { toast({ title: 'Report download unavailable', description: error instanceof Error ? error.message : 'Please try again.', variant: 'destructive' }); }
   };
 
@@ -216,7 +219,7 @@ export const ClientCompletionReview: React.FC = () => {
       });
       setAcceptModalOpen(false);
       await fetchReport();
-      void downloadCompletion(data.report_pdf_base64);
+      downloadCompletion(data.report_pdf_base64, data.report_filename);
     } catch (err: unknown) {
       toast({
         title: 'Verification Failed',
@@ -283,7 +286,7 @@ export const ClientCompletionReview: React.FC = () => {
       });
       setAcceptModalOpen(false);
       await fetchReport();
-      void downloadCompletion(data.report_pdf_base64);
+      downloadCompletion(data.report_pdf_base64, data.report_filename);
     } catch (err: unknown) {
       toast({
         title: 'Submission Failed',
@@ -424,11 +427,15 @@ export const ClientCompletionReview: React.FC = () => {
                   {report.acceptance.feedback_rating != null && <p>Feedback rating: {report.acceptance.feedback_rating} / 5</p>}
                   {report.acceptance.feedback_comment && <p className="whitespace-pre-wrap break-words">{report.acceptance.feedback_comment}</p>}
                 </div>}
-                  <Button variant="outline" className="mt-3" onClick={() => void downloadCompletion()}><Download className="mr-2 h-4 w-4" />Download Signed Completion Report</Button>
+                  <Button asChild variant="outline" className="mt-3">
+                    <a href={`${API_URL}/public/change-requests/review/${encodeURIComponent(token || '')}/completion.pdf`} referrerPolicy="no-referrer">
+                      <Download className="mr-2 h-4 w-4" />Download Signed Completion Report
+                    </a>
+                  </Button>
               </div>
             </div>
             <Button asChild variant="outline" className="border-emerald-600 text-emerald-700 dark:text-emerald-300">
-              <Link to={`/change-request/track/${token}`}>
+              <Link to={trackingPath}>
                 View Lifecycle Tracking <ArrowRight className="w-4 h-4 ml-1.5" />
               </Link>
             </Button>

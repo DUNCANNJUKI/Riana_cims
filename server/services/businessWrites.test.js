@@ -33,10 +33,17 @@ test('commercial approval can only transition a pending scoped request and recor
   const fixture = transaction(sql => sql.includes('SELECT') ? [{ id: 'request-a', status: 'pending_approval' }] : []);
   const result = await decideBusinessRequest(fixture.pool, payload);
   assert.equal(result.status, 'approved');
-  assert.deepEqual(fixture.operations[1].params, ['request-a', 'a']);
+  assert.deepEqual(fixture.operations[1].params, ['head', 'request-a', 'a']);
   assert.ok(fixture.operations.some(entry => entry.sql?.includes('INSERT INTO crms_audit_logs')));
   const reviewed = transaction(() => [{ id: 'request-a', status: 'approved' }]);
   await assert.rejects(decideBusinessRequest(reviewed.pool, payload), { status: 409 });
   const outside = transaction(() => []);
   await assert.rejects(decideBusinessRequest(outside.pool, payload), { status: 404 });
+  const own = transaction(() => [{ id: 'request-a', status: 'pending_approval', submitted_by_actor: 1 }]);
+  await assert.rejects(decideBusinessRequest(own.pool, payload), { status: 403 });
+  const clarification = transaction(sql => sql.startsWith('SELECT') ? [{ id: 'request-a', status: 'pending_approval' }] : []);
+  await assert.rejects(decideBusinessRequest(clarification.pool, { ...payload, status: 'waiting_clarification' }), { status: 400 });
+  await decideBusinessRequest(clarification.pool, { ...payload, status: 'waiting_clarification', comment: 'Confirm the scope.' });
+  assert.deepEqual(clarification.operations[2].params, ['waiting', 'Confirm the scope.', 'request-a']);
+  assert.equal(clarification.operations[3].params[2], 'status_changed');
 });
