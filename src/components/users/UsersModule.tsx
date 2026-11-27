@@ -1,4 +1,5 @@
 import type { Department, Subsidiary } from '@/types';
+import { BusinessDelegation } from "./BusinessDelegation";
 import { errorDetails } from '@/utils/errorDetails';
 import { useState, useEffect } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -48,12 +49,12 @@ export const UsersModule = ({ user }: UsersModuleProps) => {
   } = useDatabase();
   const isSuperAdmin = user.role === 'SuperAdmin';
   const canManageUsers = can(user, 'users.manage');
-  const privilegedRoles = new Set<User['role']>(['SuperAdmin', 'Admin', 'Management']);
+  const privilegedRoles = new Set<User['role']>(['SuperAdmin', 'Admin', 'Management', 'InventoryOfficer', 'HeadOfBusiness']);
   const canManageTarget = (targetUser: User) => isSuperAdmin || !privilegedRoles.has(targetUser.role);
   const canDeleteTarget = (targetUser: User) => isSuperAdmin && targetUser.id !== user.id;
   const assignableRoles: User['role'][] = isSuperAdmin
-    ? ['SuperAdmin', 'Admin', 'Management', 'Finance', 'Developer', 'Sales', 'Teamlead', 'User', 'InventoryOfficer']
-    : ['Finance', 'Developer', 'Sales', 'Teamlead', 'User', 'InventoryOfficer'];
+    ? ['SuperAdmin', 'Admin', 'Management', 'Finance', 'Developer', 'Sales', 'Teamlead', 'User', 'InventoryOfficer', 'HeadOfBusiness']
+    : ['Finance', 'Developer', 'Sales', 'Teamlead', 'User'];
   const crmsAssignableRoles: Array<'SuperAdmin' | 'Admin' | 'Management' | 'Developer' | 'Sales' | 'Teamlead'> = ['SuperAdmin', 'Admin', 'Management', 'Developer', 'Sales', 'Teamlead'];
 
   const generalDesignations: NonNullable<User['designation']>[] = [
@@ -131,9 +132,13 @@ export const UsersModule = ({ user }: UsersModuleProps) => {
     if (!assignableRoles.includes(newUser.role as User['role'])) {
       toast({
         title: "Role not allowed",
-        description: "Only SuperAdmin can create SuperAdmin/Admin accounts.",
+        description: "Only Super Admin can create users with privileged roles.",
         variant: "destructive",
       });
+      return;
+    }
+    if (newUser.role === 'HeadOfBusiness' && !newUser.subsidiary_id) {
+      toast({ title: "Select a subsidiary", description: "Head of Business requires a subsidiary.", variant: "destructive" });
       return;
     }
 
@@ -255,10 +260,10 @@ export const UsersModule = ({ user }: UsersModuleProps) => {
         department_id: editingUser.department_id || null,
         subsidiary_id: editingUser.subsidiary_id || null,
         ...(isSuperAdmin ? { role: editingUser.role } : {}),
-        ...(isSuperAdmin ? { module_roles: editingUser.module_roles || {} } : {}),
+        ...(isSuperAdmin && editingUser.role !== 'HeadOfBusiness' ? { module_roles: editingUser.module_roles || {} } : {}),
       });
 
-      if (isSuperAdmin) {
+      if (isSuperAdmin && editingUser.role !== 'HeadOfBusiness') {
         await apiClient.put(`/user_profiles/${editingUser.id}/permissions`, {
           permissions: editingUser.extra_permissions || [],
         });
@@ -402,12 +407,13 @@ export const UsersModule = ({ user }: UsersModuleProps) => {
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="subsidiary_id">Subsidiary</Label>
-                  <Select value={newUser.subsidiary_id || ''} onValueChange={(value) => setNewUser({...newUser, subsidiary_id: value})}>
+                  <Label htmlFor="subsidiary_id">Subsidiary {newUser.role === 'InventoryOfficer' && '(optional)'}</Label>
+                  <Select value={newUser.subsidiary_id || ''} onValueChange={(value) => setNewUser({...newUser, subsidiary_id: value === 'none' ? null : value})}>
                     <SelectTrigger>
                       <SelectValue placeholder="Select subsidiary" />
                     </SelectTrigger>
                     <SelectContent>
+                      {newUser.role === 'InventoryOfficer' && <SelectItem value="none">No subsidiary</SelectItem>}
                       {subsidiaries.map((sub) => (
                         <SelectItem key={sub.id} value={sub.id}>{sub.subsidiary_name}</SelectItem>
                       ))}
@@ -714,17 +720,20 @@ export const UsersModule = ({ user }: UsersModuleProps) => {
                   </Select>
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="edit_subsidiary">Subsidiary</Label>
+                  <Label htmlFor="edit_subsidiary">Subsidiary {editingUser.role === 'InventoryOfficer' && '(optional)'}</Label>
                   <Select value={editingUser.subsidiary_id || 'none'} onValueChange={(value) => setEditingUser({ ...editingUser, subsidiary_id: value === 'none' ? null : value })}>
                     <SelectTrigger id="edit_subsidiary"><SelectValue placeholder="Select subsidiary" /></SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="none">No subsidiary</SelectItem>
+                      {editingUser.role !== 'HeadOfBusiness' && <SelectItem value="none">No subsidiary</SelectItem>}
                       {subsidiaries.map((subsidiary) => <SelectItem key={subsidiary.id} value={subsidiary.id}>{subsidiary.subsidiary_name}</SelectItem>)}
                     </SelectContent>
                   </Select>
                 </div>
               </div>
-              {isSuperAdmin && (
+              {isSuperAdmin && editingUser.role === 'HeadOfBusiness' && users.some(account => account.id === editingUser.id && account.role === 'HeadOfBusiness') && (
+                <BusinessDelegation key={editingUser.id} userId={editingUser.id} primaryId={users.find(account => account.id === editingUser.id)?.subsidiary_id} subsidiaries={subsidiaries} />
+              )}
+              {isSuperAdmin && editingUser.role !== 'HeadOfBusiness' && (
                 <div className="space-y-2">
                   <Label htmlFor="edit_crms_role">Extra Developers Workspace Role</Label>
                   <Select
@@ -754,7 +763,7 @@ export const UsersModule = ({ user }: UsersModuleProps) => {
                   </p>
                 </div>
               )}
-              {isSuperAdmin && (
+              {isSuperAdmin && editingUser.role !== 'HeadOfBusiness' && (
                 <div className="space-y-3 rounded-lg border p-4">
                   <div>
                     <Label>Individual Extra Privileges</Label>

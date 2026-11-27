@@ -14,12 +14,7 @@
   background-size: contain;
 }
 
-/* Each image is a tightly cropped product from the supplied reference sheet. */
-.equipment-reference-kiosk { background-image: url('/equipment/kiosk.png'); }
-.equipment-reference-controller { background-image: url('/equipment/media-controller.png'); }
-.equipment-reference-tv { background-image: url('/equipment/tv.png'); }
 .equipment-reference-speaker { background-image: url('/equipment/speaker.png'); }
-.equipment-reference-led { background-image: url('/equipment/led-signage.png'); }
 
 @media (min-width: 640px) {
   .equipment-icon-tile { height: 3rem; width: 3.5rem; }

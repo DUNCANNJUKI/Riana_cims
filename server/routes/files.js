@@ -70,6 +70,9 @@ const canDownloadFile = (user,row) => canDownload(user) || canViewHardwareDocume
 const scopedFileWhere = (user, alias = '') => {
   const prefix = alias ? `${alias}.` : '';
   if (isAdmin(user) || hasCapability(user, 'files.manage_all')) return { clause: '1=1', values: [] };
+  if (user.role === 'InventoryOfficer') {
+    return { clause: `(${prefix}uploaded_by = ? OR ${prefix}related_entity_type = 'hardware_asset')`, values: [user.id] };
+  }
   return {
     clause: `(${prefix}uploaded_by = ? OR (${prefix}organization_id IS NOT NULL AND ${prefix}organization_id = ?))`,
     values: [user.id, user.subsidiary_id || null],
@@ -182,6 +185,9 @@ const parseMultipart = async (req, { maxBytes }) => new Promise((resolve, reject
 const resolveRelatedEntity = async (pool, req, { entityType, entityId, category }) => {
   const type = String(entityType || '').trim() || (category === 'profile_image' ? 'user' : 'general');
   const id = String(entityId || '').trim() || (type === 'user' ? req.user.id : '');
+  if (req.user.role === 'InventoryOfficer' && !['hardware_asset', 'user'].includes(type)) {
+    throw Object.assign(new Error('This file is outside your inventory permissions.'), { status: 403 });
+  }
   if (type === 'general') return { type, id: id || null, organizationId: req.user.subsidiary_id || null, branchId: null };
   if (type === 'hardware_asset') {
     const {requirePermission,scopedSubsidiary}=require('../services/hardwarePolicy');

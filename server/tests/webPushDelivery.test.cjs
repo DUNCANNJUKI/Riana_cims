@@ -3,6 +3,48 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { createPushDeliveryService, isWithinQuietHours, notificationAllowed, readVapidConfiguration, safePayload } = require('../services/webPushDelivery');
+const { readFileSync } = require('node:fs');
+const { join } = require('node:path');
+const { runInNewContext } = require('node:vm');
+
+test('incoming Web Push focuses a running window without reloading the meeting', async () => {
+  const handlers = new Map();
+  let shown;
+  let focused = false;
+  let opened;
+  let message;
+  const origin = 'https://cims.example';
+  const id = 'f8d8a82d-bb6f-41b8-bf66-4f9ec11a4a6f';
+  const client = {
+    url: origin + '/',
+    focus: async () => { focused = true; },
+    postMessage: value => { message = value; },
+    navigate: async () => assert.fail('An open workspace should not reload'),
+  };
+  let windows = [client];
+  runInNewContext(readFileSync(join(__dirname, '../../public/push-handlers.js'), 'utf8'), { URL, self: {
+    location: { origin },
+    addEventListener: (event, handler) => handlers.set(event, handler),
+    registration: { showNotification: async (_title, options) => { shown = options; } },
+    clients: { matchAll: async () => windows, openWindow: async url => { opened = url; } },
+  } });
+  let completion;
+  const waitUntil = promise => { completion = promise; };
+  handlers.get('push')({ data: { json: () => ({ type: 'incoming_call', entityId: id, url: '//unrelated.example' }) }, waitUntil });
+  await completion;
+  assert.equal(shown.data.url, origin + '/?incomingCall=' + id);
+  assert.equal(shown.silent, undefined);
+  const click = { notification: { close() {}, data: shown.data }, waitUntil };
+  handlers.get('notificationclick')(click);
+  await completion;
+  assert.equal(focused, true);
+  assert.equal(message.type, 'riana-incoming-call-notification');
+  assert.equal(message.callId, id);
+  windows = [];
+  handlers.get('notificationclick')(click);
+  await completion;
+  assert.equal(opened, shown.data.url);
+});
 
 test('VAPID validation fails closed', () => assert.equal(readVapidConfiguration({}).configured, false));
 test('DND and category preferences suppress delivery', () => {

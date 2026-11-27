@@ -65,4 +65,16 @@ const isValidCallSignalPayload = (signalType, payload) => {
   }
 };
 
-module.exports = { createIceServers, isValidCallSignalPayload, canManageCallRecording };
+const endsMeetingOnDeparture = ({ participantCount, remainingJoined, endForEveryone }) =>
+  endForEveryone || participantCount <= 2 || remainingJoined === 0;
+
+const getMeetingRejoinGraceSeconds = (value) => {
+  if (value === undefined || value === '') return 300;
+  const seconds = Number(value);
+  return Number.isInteger(seconds) && seconds >= 0 && seconds <= 3600 ? seconds : 300;
+};
+
+const canRejoinMeeting = ({ status, participantCount, recentDeparture }) =>
+  status === 'accepted' && participantCount > 2 && Boolean(Number(recentDeparture));
+
+module.exports = { createIceServers, isValidCallSignalPayload, canManageCallRecording, endsMeetingOnDeparture, getMeetingRejoinGraceSeconds, canRejoinMeeting };

@@ -2,9 +2,11 @@ import { useState, useEffect } from 'react';
 import { User, AuthState } from '@/types';
 import { apiClient, setAuthToken, clearAuthToken, getAuthToken } from '@/integrations/apiClient';
 import { startAuthentication } from '@simplewebauthn/browser';
+import { setBusinessScope } from '@/utils/businessScope';
 
 const clearStoredAuth = () => {
   clearAuthToken();
+  setBusinessScope('');
   localStorage.removeItem('riana_user');
   localStorage.removeItem('crms-user-session');
   localStorage.removeItem('crms-user-id');

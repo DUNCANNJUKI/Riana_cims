@@ -148,8 +148,8 @@ test(
       await pool.query("DELETE FROM installations WHERE id IN ('scoped-installation','other-branch','other-department','legacy-installation')");
       assert.equal(catalog.variants.length, 10);
       assert.deepEqual(
-        catalog.subsidiaries.map((s) => s.id),
-        ["a"],
+        catalog.subsidiaries.map((s) => s.id).sort(),
+        ["a", "b"],
       );
       assert.equal(catalog.installations.length, 1);
       assert.equal(catalog.installations[0].branch_name, "Legacy branch");
@@ -422,7 +422,7 @@ test(
       );
       await assert.rejects(
         service.detail(
-          { id: "outsider", role: "InventoryOfficer", subsidiary_id: "b" },
+          { id: "limited", role: "User", subsidiary_id: "b" },
           asset.id,
         ),
         /not found/,
@@ -528,7 +528,7 @@ test(
       assert.ok(inStockReport.rows.every((row)=>['Available','Reserved','Returned'].includes(row.status)));
       const issuedReport=await service.list(officer,{report:'out',limit:100});
       assert.ok(issuedReport.rows.every((row)=>['Assigned','Installed','In Transit'].includes(row.status)));
-      await assert.rejects(service.summary(officer,{subsidiary_id:'b'}),/restricted to your subsidiary/);
+      assert.equal((await service.summary(officer,{subsidiary_id:'b'})).counts.Available || 0, 0);
       await service.reconcile(
         req(officer, {
           subsidiary_id: "a",
@@ -552,10 +552,10 @@ test(
           asset.id,
           "transfer",
         ),
-        /restricted|permissions/,
+        /approval reference/,
       );
       await service.mutate(
-        req(adminUser, {
+          req(officer, {
           destination_subsidiary_id: "b",
           destination_location_id: locationB.id,
           reason: "Approved transfer",
@@ -564,7 +564,7 @@ test(
         asset.id,
         "transfer",
       );
-      await assert.rejects(service.detail(officer, asset.id), /not found/);
+      assert.equal((await service.detail({ ...officer, subsidiary_id: null }, asset.id)).subsidiary_id, 'b');
       const receiver = {
         id: "outsider",
         role: "InventoryOfficer",
@@ -764,7 +764,7 @@ test(
       const serialLink=await service.components.attach(req(adminUser,{component_asset_id:child,relationship:'spare',quantity:1}),parent);
       await assert.rejects(service.components.attach(req(adminUser,{component_asset_id:child,relationship:'spare',quantity:1}),other));
       await assert.rejects(service.mutate(req(adminUser,{installation_id:'installation'}),child,'assign'),/Detach/);
-      await assert.rejects(service.components.list({id:'outsider',role:'InventoryOfficer',subsidiary_id:'b'},parent),/not found/);
+      await assert.rejects(service.components.list({id:'limited',role:'User',subsidiary_id:'b'},parent),/not found/);
       assert.equal((await service.components.list(adminUser,parent)).rows.filter(x=>!x.removed_at).length,1);
       await service.components.remove(req(adminUser,{reason:'Reallocated spare'}),parent,serialLink.id);
       assert.equal((await service.components.listStock(adminUser,{subsidiary_id:'a'})).rows.find(x=>x.id===stock.id).available_quantity,3);
@@ -785,13 +785,14 @@ test(
         SELECT organization_id,uploaded_by,original_name,'duplicate-preserved',relative_path,mime_type,file_category,related_entity_type,related_entity_id,visibility,status,checksum_sha256 FROM uploaded_files WHERE id=?`,[files[0].id]);
       const express=require('express');const filesRouter=require('../routes/files');
       const app=express();
-      app.use((request,_response,next)=>{request.user=request.headers['x-test-scope']==='b'?{id:'outsider',role:'InventoryOfficer',subsidiary_id:'b'}:request.headers['x-test-scope']==='denied'?{id:'denied',role:'User',subsidiary_id:'a'}:officer;next();});
+      app.use((request,_response,next)=>{request.user=request.headers['x-test-scope']==='b'?{id:'outsider',role:'InventoryOfficer',subsidiary_id:'b'}:request.headers['x-test-scope']==='denied'?{id:'denied',role:'User',subsidiary_id:'b'}:officer;next();});
       app.use('/files',filesRouter({pool,config:{uploadRoot}}));
       const http=await new Promise((resolve)=>{const listener=app.listen(0,'127.0.0.1',()=>resolve(listener));});
       try {
         const base=`http://127.0.0.1:${http.address().port}/files`;
         const response=await fetch(`${base}/${files[0].id}/view`);assert.equal(response.status,200);assert.match(response.headers.get('content-type'),/image\/png/);await response.arrayBuffer();
-        for(const scope of ['b','denied']){const denied=await fetch(`${base}/${files[0].id}/view`,{headers:{'x-test-scope':scope}});assert.equal(denied.status,404);await denied.text();}
+        const otherOfficer=await fetch(`${base}/${files[0].id}/view`,{headers:{'x-test-scope':'b'}});assert.equal(otherOfficer.status,200);await otherOfficer.arrayBuffer();
+        const denied=await fetch(`${base}/${files[0].id}/view`,{headers:{'x-test-scope':'denied'}});assert.equal(denied.status,404);await denied.text();
         const listing=await fetch(`${base}?relatedEntityType=hardware_asset&relatedEntityId=${serialized.assets[0].id}`);assert.equal(listing.status,200);const payload=await listing.json();assert.equal(payload.data.length,2);assert.equal(payload.data[0].permissions.canView,true);
         const secure=await fetch(`http://127.0.0.1:${http.address().port}${payload.data[0].viewUrl.replace('/api/files','/files')}`);assert.equal(secure.status,200);await secure.arrayBuffer();
       }finally{await new Promise((resolve)=>http.close(resolve));await supporting.cleanup();}

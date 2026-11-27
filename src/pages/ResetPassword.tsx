@@ -7,6 +7,7 @@ import { Lock, Eye, EyeOff } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiClient } from "@/integrations/apiClient";
 import { useNavigate, useSearchParams } from "react-router-dom";
+import { AuthNetworkBackground } from "@/components/auth/AuthNetworkBackground";
 
 export const ResetPassword = () => {
   const [password, setPassword] = useState("");
@@ -75,8 +76,9 @@ export const ResetPassword = () => {
 
 
   return (
-    <div className="min-h-screen flex items-center justify-center p-4 bg-gradient-to-br from-primary/20 via-background to-secondary/20">
-      <Card className="w-full max-w-md shadow-xl border-0 bg-card/95 backdrop-blur">
+    <div className="riana-login-page auth-network-surface">
+      <AuthNetworkBackground />
+      <Card className="w-full max-w-[360px] rounded-lg border-border bg-card shadow-sm">
         <CardHeader className="space-y-4 text-center">
           <div className="mx-auto flex justify-center">
             <img 

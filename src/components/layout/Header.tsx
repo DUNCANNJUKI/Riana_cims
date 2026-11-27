@@ -1,11 +1,11 @@
-import { useState, useEffect, useRef } from "react";
+import { lazy, Suspense, useState, useEffect, useRef, type PointerEvent } from "react";
 import type { Driver } from "driver.js";
 import { HelpCircle } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
-import { User, LogOut, Settings, Sun, Moon, MessageSquare, Menu, Phone, PhoneOff, Video, Mic, X } from "lucide-react";
+import { User, LogOut, Settings, Sun, Moon, MessageSquare, Menu, Phone, PhoneOff, Video, Mic, X, BellOff } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -19,8 +19,8 @@ import { cn } from "@/lib/utils";
 import { ProfileSettingsDialog } from "@/components/profile/ProfileSettingsDialog";
 import { NotificationBell } from "@/components/layout/NotificationBell";
 import { useDatabase } from "@/hooks/useDatabase";
-import { useChat } from "@/hooks/useChat";
-import { ChatModule } from "@/components/chat/ChatModule";
+import { useChat, type ChatMessage } from "@/hooks/useChat";
+import { MeetingSummary } from "@/components/chat/MeetingSummary";
 import { getCompanyBrandingEventDetail, resolveCompanyLogoUrl } from "@/utils/logoUrl";
 import { formatRoleLabel } from "@/utils/roleLabel";
 import { resolveAvatarUrl } from "@/utils/avatar";
@@ -29,6 +29,7 @@ import { DEFAULT_TIME_ZONE, getGreeting, resolveTimeZone, TIME_ZONE_PREFERENCE_C
 import { refreshServerClock, serverClockSnapshot, subscribeServerClock } from "@/utils/serverClock";
 
 const TRANSPARENT_RIANA_LOGO = "/Riana_mark_transparent.png";
+const ChatModule = lazy(() => import("@/components/chat/ChatModule").then(module => ({ default: module.ChatModule })));
 
 const resolveHeaderLogoUrl = (logoPath?: string | null, version?: string | number | null) => {
   if (!logoPath || /(?:^|\/)Riana_logo\.png(?:$|\?)/i.test(logoPath)) {
@@ -44,9 +45,11 @@ interface HeaderProps {
   onOpenMobileMenu?: () => void;
   onProfileUpdate?: () => void | Promise<void>;
   onTourNavigationPreview?: (active: boolean) => void;
+  onMeetingChange?: (meeting: { call: ChatMessage; joined: boolean } | null) => void;
+  meetingRequest?: { id: string } | null;
 }
 
-export const Header = ({ user, className, setActiveModule, onOpenMobileMenu, onProfileUpdate, onTourNavigationPreview }: HeaderProps) => {
+export const Header = ({ user, className, setActiveModule, onOpenMobileMenu, onProfileUpdate, onTourNavigationPreview, onMeetingChange, meetingRequest }: HeaderProps) => {
   const systemTour = useRef<Driver>();
   const { toast } = useToast();
   useEffect(() => () => systemTour.current?.destroy(), []);
@@ -62,13 +65,19 @@ export const Header = ({ user, className, setActiveModule, onOpenMobileMenu, onP
   const [accountDialogView, setAccountDialogView] = useState<"profile" | "settings">("profile");
   const [isChatOpen, setIsChatOpen] = useState(false);
   const [isChatFullscreen, setIsChatFullscreen] = useState(false);
+  const [pushCallId, setPushCallId] = useState<string | null>(null);
   const [currentTime, setCurrentTime] = useState(() => {
     const clock = serverClockSnapshot();
     return new Date(clock.ready ? clock.now : Date.now());
   });
   const [userTimeZone, setUserTimeZone] = useState(DEFAULT_TIME_ZONE);
   const [callElapsedSeconds, setCallElapsedSeconds] = useState(0);
-  const chat = useChat(user);
+  const [meetingPosition, setMeetingPosition] = useState<{ x: number; y: number } | null>(null);
+  const meetingPanelRef = useRef<HTMLDivElement>(null);
+  const meetingDrag = useRef<{ offsetX: number; offsetY: number } | null>(null);
+  const consumedMeetingRequest = useRef<typeof meetingRequest>(null);
+  const canUseCommunication = user.role !== 'HeadOfBusiness';
+  const chat = useChat(canUseCommunication ? user : null, isChatOpen);
   const avatarSrc = resolveAvatarUrl(user.avatar_url);
   const [isDarkMode, setIsDarkMode] = useState(() => {
     if (typeof window !== 'undefined') {
@@ -252,6 +261,44 @@ export const Header = ({ user, className, setActiveModule, onOpenMobileMenu, onP
 
   const incomingCall = chat.incomingCall;
   const activeCall = chat.activeCall;
+  const relevantMeeting = activeCall || incomingCall;
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    const requestedCall = url.searchParams.get("incomingCall");
+    if (requestedCall && /^[a-f0-9-]{36}$/i.test(requestedCall)) {
+      setPushCallId(requestedCall);
+      url.searchParams.delete("incomingCall");
+      window.history.replaceState(window.history.state, "", url);
+    }
+    if (!("serviceWorker" in navigator)) return;
+    const openPushCall = (event: MessageEvent) => {
+      if (event.data?.type !== "riana-incoming-call-notification" || !/^[a-f0-9-]{36}$/i.test(event.data.callId)) return;
+      setPushCallId(event.data.callId);
+      void chat.loadActiveCall();
+    };
+    navigator.serviceWorker.addEventListener("message", openPushCall);
+    return () => navigator.serviceWorker.removeEventListener("message", openPushCall);
+  }, [chat.loadActiveCall]);
+  useEffect(() => {
+    if (!pushCallId || pushCallId !== relevantMeeting?.id) return;
+    const peerId = relevantMeeting.sender_id === user.id ? relevantMeeting.receiver_id : relevantMeeting.sender_id;
+    if (peerId) chat.setActiveChatUserId(peerId);
+    setIsChatOpen(true);
+    setPushCallId(null);
+  }, [pushCallId, relevantMeeting, user.id, chat.setActiveChatUserId]);
+  useEffect(() => {
+    onMeetingChange?.(relevantMeeting ? { call: relevantMeeting, joined: Boolean(activeCall) } : null);
+  }, [activeCall, relevantMeeting, onMeetingChange]);
+  useEffect(() => () => onMeetingChange?.(null), [onMeetingChange]);
+  useEffect(() => {
+    if (!meetingRequest || meetingRequest === consumedMeetingRequest.current || meetingRequest.id !== relevantMeeting?.id) return;
+    consumedMeetingRequest.current = meetingRequest;
+    const peerId = relevantMeeting.sender_id === user.id ? relevantMeeting.receiver_id : relevantMeeting.sender_id;
+    if (peerId) chat.setActiveChatUserId(peerId);
+    setIsChatOpen(true);
+  }, [meetingRequest, relevantMeeting, user.id, chat.setActiveChatUserId]);
+  const activeCallExitLabel = (activeCall?.call_participant_count ?? activeCall?.call_participants?.length ?? 0) > 2
+    ? "Leave meeting" : "End call";
   const missedCall = chat.missedCalls[0];
   const messageBadgeCount = chat.totalUnread + (incomingCall ? 1 : 0) + chat.missedCalls.length;
   useEffect(() => {
@@ -264,10 +311,29 @@ export const Header = ({ user, className, setActiveModule, onOpenMobileMenu, onP
   }, [activeCall]);
   const dispatchCallControl = (action: "microphone" | "camera" | "hangup") => window.dispatchEvent(new CustomEvent("riana-call-control", { detail: { action } }));
   const callDuration = `${String(Math.floor(callElapsedSeconds / 60)).padStart(2, "0")}:${String(callElapsedSeconds % 60).padStart(2, "0")}`;
+  const moveMeetingPanel = (x: number, y: number) => {
+    const panel = meetingPanelRef.current?.getBoundingClientRect();
+    if (!panel) return;
+    setMeetingPosition({
+      x: Math.min(Math.max(8, x), Math.max(8, window.innerWidth - panel.width - 8)),
+      y: Math.min(Math.max(8, y), Math.max(8, window.innerHeight - panel.height - 8)),
+    });
+  };
+  const startMeetingDrag = (event: PointerEvent<HTMLButtonElement>) => {
+    const panel = meetingPanelRef.current?.getBoundingClientRect();
+    if (!panel || event.button !== 0) return;
+    meetingDrag.current = { offsetX: event.clientX - panel.left, offsetY: event.clientY - panel.top };
+    event.currentTarget.setPointerCapture(event.pointerId);
+  };
+  useEffect(() => {
+    const reset = () => setMeetingPosition(null);
+    window.addEventListener("resize", reset);
+    return () => window.removeEventListener("resize", reset);
+  }, []);
 
   return (
-    <header data-tour="system-header" className={cn("enterprise-header text-white", className)}>
-      <div className="flex h-14 w-full min-w-0 items-center justify-between px-2 sm:h-16 sm:px-4 xl:px-6">
+    <header data-tour="system-header" className={cn("enterprise-header text-white [--cims-header-height:3.25rem] sm:[--cims-header-height:3.5rem]", className)}>
+      <div className="flex h-[var(--cims-header-height)] w-full min-w-0 items-center justify-between px-2 sm:px-4 xl:px-6">
         <div className="flex min-w-0 w-full items-center justify-between gap-2 sm:gap-3">
           {/* Logo and Title - Responsive */}
           <div className="flex min-w-0 flex-1 items-center gap-2 sm:gap-4">
@@ -305,11 +371,13 @@ export const Header = ({ user, className, setActiveModule, onOpenMobileMenu, onP
             <div data-tour="system-notifications"><NotificationBell
               user={user}
               onNavigate={setActiveModule}
+              meetingContent={relevantMeeting && <MeetingSummary call={relevantMeeting} joined={Boolean(activeCall)}
+                onOpen={() => openChatForCall(relevantMeeting.sender_id === user.id ? relevantMeeting.receiver_id : relevantMeeting.sender_id)} />}
               triggerClassName="h-9 w-9 rounded-lg text-white hover:bg-white/10 hover:text-white focus-visible:ring-white dark:text-white"
             /></div>
 
             {/* Chat Button */}
-            <Button
+            {canUseCommunication && <Button
               variant="ghost"
               size="icon"
               onClick={() => isChatOpen ? minimizeChat() : setIsChatOpen(true)}
@@ -320,11 +388,11 @@ export const Header = ({ user, className, setActiveModule, onOpenMobileMenu, onP
             >
               <MessageSquare className="h-4 w-4" />
               {messageBadgeCount > 0 && (
-                <Badge className="absolute -top-1 -right-1 flex h-4 min-w-4 items-center justify-center rounded-full border border-white bg-red-500 px-1 text-[10px] animate-pulse">
+                <Badge variant="destructive" className="absolute -right-1 -top-1 flex h-4 min-w-4 justify-center px-1 text-[10px]">
                   {messageBadgeCount > 9 ? "9+" : messageBadgeCount}
                 </Badge>
               )}
-            </Button>
+            </Button>}
             
             {/* Dark Mode Toggle */}
             <Button
@@ -401,7 +469,7 @@ export const Header = ({ user, className, setActiveModule, onOpenMobileMenu, onP
         view={accountDialogView}
       />
 
-      {!isChatOpen && incomingCall && (
+      {!isChatOpen && !activeCall && incomingCall && (
         <div className="fixed inset-x-3 bottom-4 z-40 animate-in slide-in-from-bottom-4 sm:left-auto sm:right-4 sm:w-[min(92vw,420px)]">
           <div className="overflow-hidden rounded-2xl border border-[hsl(var(--comm-border-strong))] bg-background/95 text-foreground shadow-2xl backdrop-blur-xl dark:border-white/20">
             <div className="flex items-center gap-3 border-b border-primary/10 bg-primary/10 px-4 py-3">
@@ -409,26 +477,31 @@ export const Header = ({ user, className, setActiveModule, onOpenMobileMenu, onP
                 {incomingCall.call_type === "video" ? <Video className="h-5 w-5" /> : <Phone className="h-5 w-5" />}
               </div>
               <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-bold">Incoming {incomingCall.call_type === "video" ? "video" : "phone"} call</p>
-                <p className="truncate text-xs text-muted-foreground">{getChatDisplayName(incomingCall.sender_first_name, incomingCall.sender_last_name)} is calling</p>
+                <p className="truncate text-sm font-bold">{incomingCall.can_rejoin ? "Meeting available to rejoin" : incomingCall.call_status === "accepted" ? "Meeting in progress" : "Incoming call"}</p>
+                <p className="truncate text-xs text-muted-foreground">{getChatDisplayName(incomingCall.sender_first_name, incomingCall.sender_last_name)} · {incomingCall.content || "Meeting"}</p>
               </div>
+              {incomingCall.call_status === "ringing" && (
+                <Button variant="ghost" size="icon" className="size-9 shrink-0" onClick={chat.silenceIncomingCall} title="Silence ringtone" aria-label="Silence ringtone">
+                  <BellOff className="size-4" />
+                </Button>
+              )}
               <Button variant="ghost" size="icon" className="h-8 w-8 rounded-full" onClick={() => chat.clearCallState()} title="Hide call notification" aria-label="Hide call notification">
                 <X className="h-4 w-4" />
               </Button>
             </div>
             <div className="flex flex-wrap gap-2 p-3">
-              <Button size="sm" className="flex-1 rounded-full" onClick={() => openChatForCall(incomingCall.sender_id)}>
-                <Phone className="mr-2 h-4 w-4" />Open call
+              <Button size="sm" className="flex-1" onClick={() => openChatForCall(incomingCall.sender_id === user.id ? incomingCall.receiver_id : incomingCall.sender_id)}>
+                <Phone className="mr-2 h-4 w-4" />{incomingCall.can_rejoin ? "Rejoin" : "Open pre-join"}
               </Button>
-              <Button size="sm" variant="destructive" className="flex-1 rounded-full" onClick={() => void chat.updateCallStatus(incomingCall.id, "declined")}>
+              {!incomingCall.can_rejoin && <Button size="sm" variant="destructive" className="flex-1 rounded-full" onClick={() => void chat.updateCallStatus(incomingCall.id, "declined")}>
                 <PhoneOff className="mr-2 h-4 w-4" />Decline
-              </Button>
+              </Button>}
             </div>
           </div>
         </div>
       )}
 
-      {!isChatOpen && !incomingCall && missedCall && (
+      {!isChatOpen && !activeCall && !incomingCall && missedCall && (
         <div className="fixed inset-x-3 bottom-4 z-40 animate-in slide-in-from-bottom-4 sm:left-auto sm:right-4 sm:w-[min(92vw,390px)]">
           <div className="rounded-2xl border border-primary/15 bg-background/95 p-4 text-foreground shadow-2xl backdrop-blur-xl">
             <div className="flex items-start gap-3">
@@ -460,7 +533,24 @@ export const Header = ({ user, className, setActiveModule, onOpenMobileMenu, onP
       )}
 
       {!isChatOpen && activeCall && (
-        <div className="fixed bottom-4 left-1/2 z-50 w-[min(94vw,560px)] -translate-x-1/2 rounded-2xl border border-primary/20 bg-background/95 p-3 text-foreground shadow-2xl backdrop-blur-xl sm:left-auto sm:right-4 sm:translate-x-0" aria-label="Active call controls">
+        <div ref={meetingPanelRef} className={cn("fixed z-50 w-[min(94vw,560px)] rounded-xl border border-border bg-background p-3 text-foreground shadow-lg",
+          !meetingPosition && "bottom-4 left-1/2 -translate-x-1/2 sm:left-auto sm:right-4 sm:translate-x-0")}
+          style={meetingPosition ? { left: meetingPosition.x, top: meetingPosition.y } : undefined} aria-label="Active call controls">
+          <button type="button" aria-label="Move meeting window with arrow keys" title="Drag to move" className="mb-2 block h-5 w-full touch-none cursor-grab rounded bg-muted text-xs text-muted-foreground focus-visible:outline focus-visible:outline-2"
+            onPointerDown={startMeetingDrag}
+            onLostPointerCapture={() => { meetingDrag.current = null; }}
+            onPointerMove={event => {
+              const drag = meetingDrag.current;
+              if (drag) moveMeetingPanel(event.clientX - drag.offsetX, event.clientY - drag.offsetY);
+            }}
+            onKeyDown={event => {
+              if (!["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(event.key)) return;
+              const panel = meetingPanelRef.current?.getBoundingClientRect();
+              if (!panel) return;
+              event.preventDefault();
+              moveMeetingPanel(panel.x + (event.key === "ArrowLeft" ? -24 : event.key === "ArrowRight" ? 24 : 0),
+                panel.y + (event.key === "ArrowUp" ? -24 : event.key === "ArrowDown" ? 24 : 0));
+            }}>⠿</button>
           <div className="flex flex-wrap items-center gap-3">
             <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">{activeCall.call_type === "video" ? <Video className="h-5 w-5" /> : <Phone className="h-5 w-5" />}</div>
             <div className="min-w-0 flex-1">
@@ -470,7 +560,7 @@ export const Header = ({ user, className, setActiveModule, onOpenMobileMenu, onP
             <Button size="icon" variant="outline" className="rounded-full" onClick={() => dispatchCallControl("microphone")} title="Toggle microphone" aria-label="Toggle microphone"><Mic className="h-4 w-4" /></Button>
             {activeCall.call_type === "video" && <Button size="icon" variant="outline" className="rounded-full" onClick={() => dispatchCallControl("camera")} title="Toggle camera" aria-label="Toggle camera"><Video className="h-4 w-4" /></Button>}
             <Button size="sm" variant="outline" className="rounded-full" onClick={() => setIsChatOpen(true)}>Return to call</Button>
-            <Button size="icon" variant="destructive" className="rounded-full" onClick={() => dispatchCallControl("hangup")} title="End call" aria-label="End call"><PhoneOff className="h-4 w-4" /></Button>
+            <Button size="icon" variant="destructive" className="rounded-full" onClick={() => dispatchCallControl("hangup")} title={activeCallExitLabel} aria-label={activeCallExitLabel}><PhoneOff data-icon="inline-start" /></Button>
           </div>
         </div>
       )}
@@ -479,7 +569,7 @@ export const Header = ({ user, className, setActiveModule, onOpenMobileMenu, onP
         <div
           className={cn(
             isChatOpen
-              ? "fixed inset-x-0 bottom-0 top-[calc(3.75rem+env(safe-area-inset-top))] z-40 bg-black/30 p-0 backdrop-blur-[2px] animate-in fade-in sm:inset-0 sm:z-50 sm:flex sm:items-end sm:justify-end sm:bg-black/40 sm:p-2.5 md:p-4"
+              ? "fixed inset-x-0 bottom-0 top-[calc(var(--cims-header-height)+env(safe-area-inset-top))] z-40 bg-black/30 p-0 backdrop-blur-[2px] animate-in fade-in sm:inset-0 sm:z-50 sm:flex sm:items-end sm:justify-end sm:bg-black/40 sm:p-2.5 md:p-4"
               : "pointer-events-none fixed -left-[10000px] top-0 h-px w-px overflow-hidden opacity-0",
             isChatOpen && isChatFullscreen && "inset-0 top-0 z-[100] bg-background p-0 sm:p-0 md:p-0",
           )}
@@ -495,7 +585,9 @@ export const Header = ({ user, className, setActiveModule, onOpenMobileMenu, onP
             )}
             onMouseDown={(event) => event.stopPropagation()}
           >
-            <ChatModule currentUser={user} chat={chat} onClose={closeChat} onMinimize={minimizeChat} onToggleFullscreen={() => setIsChatFullscreen(value => !value)} isFullscreen={isChatFullscreen} />
+            <Suspense fallback={<p className="p-4 text-sm text-muted-foreground" role="status">Loading Communication…</p>}>
+              <ChatModule currentUser={user} chat={chat} onClose={closeChat} onMinimize={minimizeChat} onToggleFullscreen={() => setIsChatFullscreen(value => !value)} isFullscreen={isChatFullscreen} />
+            </Suspense>
           </div>
         </div>
       )}

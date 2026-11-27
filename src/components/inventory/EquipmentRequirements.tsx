@@ -1,4 +1,6 @@
 import { useState } from "react";
+import { EquipmentIcon } from './EquipmentIcon';
+import { equipmentIconKind } from '@/utils/equipmentImages';
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -101,7 +103,12 @@ export function EquipmentRequirements({ user }: { user: User }) {
               subsidiary.equipment.map((item) => (
                 <TableRow key={`${subsidiary.id}:${item.field}`}>
                   <TableCell>{subsidiary.subsidiary_name}</TableCell>
-                  <TableCell>{item.label}</TableCell>
+                  <TableCell>
+                    <div className="flex items-center gap-2">
+                      <EquipmentIcon kind={equipmentIconKind(item.field)} />
+                      {item.label}
+                    </div>
+                  </TableCell>
                   <TableCell className="max-w-64 whitespace-normal break-words">
                     {item.model_numbers.join(", ") || "No model mapped"}
                   </TableCell>

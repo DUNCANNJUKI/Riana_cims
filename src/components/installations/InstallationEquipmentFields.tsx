@@ -4,26 +4,20 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import type { HandoverEquipmentItem, Installation } from '@/types';
 import { equipmentQuantity, isCustomEquipment } from '@/utils/equipmentConfiguration';
-import { Cable, Monitor, PanelTop, Server, Speaker, Tablet, Tv } from 'lucide-react';
+import { EquipmentIcon } from '@/components/inventory/EquipmentIcon';
+import { equipmentIconKind } from '@/utils/equipmentImages';
+import { Cable, Monitor, Tablet } from 'lucide-react';
 import './equipment-images.css';
 
 const legacyTypeOptions = ['Interactive Touch', 'Queue Management', 'Digital Signage System', 'Self Service'];
 
 const equipmentIcon = (field: string, label: string) => {
+  const kind = equipmentIconKind(field);
+  if (kind) return <EquipmentIcon kind={kind} />;
+
   const value = `${field} ${label}`.toLowerCase();
-  const imageClass = value.includes('kiosk') || value.includes('tablet') ? 'equipment-reference-kiosk'
-    : value.includes('media') || value.includes('controller') ? 'equipment-reference-controller'
-      : value.includes('speaker') || value.includes('audio') ? 'equipment-reference-speaker'
-        : value.includes('led') || value.includes('signage') ? 'equipment-reference-led'
-          : value.includes('tv') || value.includes('screen') || value.includes('display') ? 'equipment-reference-tv'
-            : '';
-  const Icon = value.includes('kiosk') || value.includes('tablet') ? Tablet
-    : value.includes('media') || value.includes('controller') ? Server
-      : value.includes('speaker') || value.includes('audio') ? Speaker
-        : value.includes('led') || value.includes('signage') ? PanelTop
-          : value.includes('tv') || value.includes('screen') || value.includes('display') ? Tv
-            : value.includes('cable') || value.includes('wire') ? Cable
-              : Monitor;
+  const imageClass = /speaker|audio/.test(value) ? 'equipment-reference-speaker' : '';
+  const Icon = value.includes('tablet') ? Tablet : /cable|wire/.test(value) ? Cable : Monitor;
   return <span aria-hidden="true" className={`equipment-icon-tile ${imageClass}`}>
     {imageClass ? null : <Icon className="h-6 w-6" strokeWidth={1.8} />}
   </span>;

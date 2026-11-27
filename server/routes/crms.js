@@ -10,6 +10,8 @@ const { canonicalAppUrl } = require('../security/apiSecurity');
 const { createSingleActiveSession, validateAuthenticatedSession } = require('../security/sessionStore');
 const { normalizeNotificationType } = require('../services/notificationTypes');
 const { deliveryForCrmsEvent, resolveCompletionRecipientId } = require('./crmsNotificationPolicy');
+const { BUSINESS_ROLE } = require('../security/businessBoundary');
+const { decideBusinessRequest } = require('../services/businessWrites');
 const {
   createInvitation,
   sendInvitation,
@@ -391,6 +393,8 @@ module.exports = function createCrmsRouter({ pool, jwtSecret, resolveSignature }
   });
 
   router.use(async (req, res, next) => {
+    if (req.currentUser && req.user?.role === BUSINESS_ROLE && req.businessSubsidiaryId &&
+        req.method === 'PATCH' && /^\/change_requests\/[^/]+$/.test(req.path)) return next();
     const token = req.headers.authorization?.split(' ')[1];
     if (!token) return res.status(401).json({ error: 'Authentication required.' });
     try {
@@ -696,6 +700,20 @@ module.exports = function createCrmsRouter({ pool, jwtSecret, resolveSignature }
   });
   router.patch('/change_requests/:id', async (req, res) => {
     try {
+      if (req.user.role === BUSINESS_ROLE) {
+        const { status, approval_comment: rawComment } = req.body;
+        const comment = typeof rawComment === 'string' ? rawComment.trim() : '';
+        if (!req.businessSubsidiaryId || !['approved', 'rejected'].includes(status) ||
+            Object.keys(req.body).some(key => !['status', 'approval_comment'].includes(key)) || comment.length > 1000 ||
+            (status === 'rejected' && !comment)) {
+          return res.status(400).json({ error: 'Choose Approve or Reject. Rejection requires a reason of up to 1,000 characters.' });
+        }
+        const updated = await decideBusinessRequest(pool, {
+          subsidiaryId: req.businessSubsidiaryId, actorId: req.user.id, requestId: req.params.id, status, comment,
+        });
+        await notifySeniorDeveloperStatus(req, updated, 'pending_approval').catch(error => console.error('Commercial approval notification failed:', error.code || error.name));
+        return res.json(updated);
+      }
       const [existingRows] = await pool.query(
         'SELECT id,status,assigned_developer_id,modules_affected FROM crms_change_requests WHERE id = ? LIMIT 1',
         [req.params.id],
@@ -723,7 +741,11 @@ module.exports = function createCrmsRouter({ pool, jwtSecret, resolveSignature }
         fields.push(`\`${key}\`=?`);
         values.push(key === 'modules_affected' ? JSON.stringify(value) : key === 'status' ? storedRequestStatus(value) : value);
       }
-      if (fields.length) await pool.query(`UPDATE crms_change_requests SET ${fields.join(',')} WHERE id=?`, [...values,req.params.id]);
+      if (fields.length) {
+        const deciding = existingRows[0].status === 'pending_approval' && ['approved', 'rejected'].includes(req.body.status);
+        const [result] = await pool.query(`UPDATE crms_change_requests SET ${fields.join(',')} WHERE id=?${deciding ? " AND status='pending_approval'" : ''}`, [...values,req.params.id]);
+        if (deciding && !result.affectedRows) return res.status(409).json({ error: 'The commercial approval was already reviewed.' });
+      }
       const requestJoins = await getRequestJoins();
       const [rows] = await pool.query(`${requestJoins} WHERE cr.id=?`, [req.params.id]);
       const updated = formatRequest(rows[0]);

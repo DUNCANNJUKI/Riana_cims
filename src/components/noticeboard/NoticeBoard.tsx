@@ -25,6 +25,7 @@ import { format } from "date-fns";
 
 interface NoticeBoardProps {
   onNavigate?: (module: string) => void;
+  compact?: boolean;
 }
 
 const formatLocalDateTimeInput = (isoValue: string | null | undefined) => {
@@ -40,7 +41,7 @@ const isAnnouncementExpired = (announcement: AnnouncementRecord) => {
   return new Date(announcement.expires_at).getTime() <= Date.now();
 };
 
-export const NoticeBoard = ({ onNavigate }: NoticeBoardProps) => {
+export const NoticeBoard = ({ onNavigate, compact = false }: NoticeBoardProps) => {
   const [announcements, setAnnouncements] = useState<AnnouncementRecord[]>([]);
   const [subsidiaries, setSubsidiaries] = useState<Subsidiary[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -297,7 +298,7 @@ export const NoticeBoard = ({ onNavigate }: NoticeBoardProps) => {
           </div>
           <div>
             <h2 className="text-xl font-bold text-primary sm:text-2xl">Notice Board</h2>
-            <p className="text-sm text-muted-foreground">Internal announcements, events, and audience reach</p>
+            {!compact && <p className="text-sm text-muted-foreground">Internal announcements, events, and audience reach</p>}
           </div>
         </div>
 
@@ -469,7 +470,7 @@ export const NoticeBoard = ({ onNavigate }: NoticeBoardProps) => {
             return (
               <Card
                 key={announcement.id}
-                className={`shadow-elegant overflow-hidden group hover:border-primary/50 transition-all ${!announcement.is_active ? 'opacity-75' : ''}`}
+                className={`overflow-hidden transition-colors hover:border-primary/50 ${compact ? "shadow-none" : "shadow-elegant"} ${!announcement.is_active ? "opacity-75" : ""}`}
               >
                 <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between pb-3 border-b bg-muted/30">
                   <div className="space-y-1.5 min-w-0">
@@ -574,7 +575,14 @@ export const NoticeBoard = ({ onNavigate }: NoticeBoardProps) => {
                   </div>
                 </CardHeader>
                 <CardContent className="pt-4">
-                  <p className="text-sm whitespace-pre-wrap leading-relaxed">{announcement.content}</p>
+                  {compact && (announcement.content.length > 160 || announcement.content.split("\n").length > 3) ? (
+                    <details className="group">
+                      <summary className="cursor-pointer text-sm font-medium text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring">
+                        Read announcement<span className="sr-only"> {announcement.title}</span>
+                      </summary>
+                      <p className="mt-2 whitespace-pre-wrap break-words text-sm leading-relaxed">{announcement.content}</p>
+                    </details>
+                  ) : <p className="whitespace-pre-wrap break-words text-sm leading-relaxed">{announcement.content}</p>}
                 </CardContent>
               </Card>
             );

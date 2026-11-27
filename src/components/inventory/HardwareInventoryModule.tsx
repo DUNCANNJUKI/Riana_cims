@@ -65,6 +65,8 @@ import { EquipmentRequirements } from './EquipmentRequirements';
 import { VariantManager } from './VariantManager';
 import { InventoryReportSummary, type InventorySummary } from './InventoryReportSummary';
 import {HardwareSelect} from './HardwareSelect';
+import { EquipmentIcon } from './EquipmentIcon';
+import { equipmentIconKind } from '@/utils/equipmentImages';
 import {StocktakeDialog,StocktakeSummary,type StocktakeResult} from './StocktakeDialog';
 import {
   FileList,
@@ -486,11 +488,14 @@ export function HardwareInventoryModule({ user }: { user: User }) {
       name?: string;
       model_number?: string;
       subsidiary_name?: string;
+      equipment_field?: string | null;
+      family?: string;
     }>,
   ) =>
     items.map((x) => ({
       value: x.id,
       label: x.name || x.model_number || x.subsidiary_name || x.id,
+      icon: equipmentIconKind(x.equipment_field, x.family),
     }));
   const input = (key: string, label: string, type = "text") => (
     <div className="space-y-1.5">
@@ -1460,7 +1465,7 @@ export function HardwareInventoryModule({ user }: { user: User }) {
                     value={filters.subsidiary_id || ""}
                     onChange={(v) => filter("subsidiary_id", v)}
                     options={options(c.subsidiaries)}
-                    empty="All Authorized"
+                    empty={can(user, "inventory.cross_subsidiary") ? "All subsidiaries" : "All authorized"}
                   />
                   <HardwareSelect
                     label="Status Filter"
@@ -1836,6 +1841,7 @@ export function HardwareInventoryModule({ user }: { user: User }) {
                                 )
                               }
                             />
+                            <EquipmentIcon kind={equipmentIconKind(asset.equipment_field, asset.family)} />
                             <div className="min-w-0 flex-1">
                               <button
                                 className="text-primary font-mono text-xs font-medium text-left break-words"
@@ -1942,15 +1948,18 @@ export function HardwareInventoryModule({ user }: { user: User }) {
                                 />
                               </TableCell>
                               <TableCell>
-                                <button
-                                  className="text-primary hover:underline text-left font-medium font-mono text-xs whitespace-nowrap focus-visible:outline focus-visible:outline-2"
-                                  title={serialLabel(a)}
-                                  onClick={() => setProfile(a.id)}
-                                >
-                                  {serialLabel(a)}
-                                </button>
-                                <div className="text-xs text-muted-foreground">
-                                  {a.model_number}
+                                <div className="flex items-center gap-2">
+                                  <EquipmentIcon kind={equipmentIconKind(a.equipment_field, a.family)} />
+                                  <div>
+                                    <button
+                                      className="text-primary hover:underline text-left font-medium font-mono text-xs whitespace-nowrap focus-visible:outline focus-visible:outline-2"
+                                      title={serialLabel(a)}
+                                      onClick={() => setProfile(a.id)}
+                                    >
+                                      {serialLabel(a)}
+                                    </button>
+                                    <div className="text-xs text-muted-foreground">{a.model_number}</div>
+                                  </div>
                                 </div>
                               </TableCell>
                               <TableCell>{a.family}</TableCell>
@@ -2366,7 +2375,7 @@ export function HardwareInventoryModule({ user }: { user: User }) {
             {["generate", "legacy", "draft", "alert_rule"].includes(modal) &&
               model}
             {modal === "equipment_map" && <HardwareSelect label="Hardware Model" value={form.model_id || ''} onChange={(v)=>{set('model_id',v);set('equipment_field',c?.models.find((m)=>m.id===v)?.equipment_field || '');}} options={options(c?.models || [])} required/>}
-            {["generate","equipment_map"].includes(modal) && can(user,"inventory.register") && !!c?.equipment_fields?.length && <HardwareSelect label="Installation Equipment Item" value={form.equipment_field || ""} onChange={(v)=>set("equipment_field",v)} options={(c.equipment_fields_by_subsidiary?.[form.subsidiary_id || user.subsidiary_id || ""] || c.equipment_fields).map((item)=>({value:item.field,label:item.label}))} required/>}
+            {["generate","equipment_map"].includes(modal) && can(user,"inventory.register") && !!c?.equipment_fields?.length && <HardwareSelect label="Installation Equipment Item" value={form.equipment_field || ""} onChange={(v)=>set("equipment_field",v)} options={(c.equipment_fields_by_subsidiary?.[form.subsidiary_id || user.subsidiary_id || ""] || c.equipment_fields).map((item)=>({value:item.field,label:item.label,icon:equipmentIconKind(item.field)}))} required/>}
             {[
               "generate",
               "legacy",

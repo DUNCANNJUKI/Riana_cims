@@ -13,7 +13,8 @@ import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Plus, Search, Package, Monitor, Smartphone, Wifi, Loader2, Upload } from "lucide-react";
+import { Plus, Search, Package, Loader2, Upload } from "lucide-react";
+import { EquipmentIcon } from '@/components/inventory/EquipmentIcon';
 import { useToast } from "@/hooks/use-toast";
 import { useDatabase } from "@/hooks/useDatabase";
 import { Installation, Client, User, EscalationMatrix, Subsidiary, ClientBranch, ClientDepartment } from "@/types";
@@ -357,10 +358,10 @@ export const InstallationsModule = ({ user }: InstallationsModuleProps) => {
   };
 
   const handleStatusChange = async (installationId: string, newStatus: string, waitingReason?: string) => {
-    if (user.role !== 'SuperAdmin' && user.role !== 'Teamlead' && user.role !== 'Admin') {
+    if (!['SuperAdmin', 'Teamlead', 'Admin', 'HeadOfBusiness'].includes(user.role)) {
       toast({
         title: "Access Denied",
-        description: "Only team leads and admins can change installation status",
+        description: "You do not have permission to change installation status.",
         variant: "destructive",
       });
       return;
@@ -551,7 +552,7 @@ export const InstallationsModule = ({ user }: InstallationsModuleProps) => {
                       const availableClients = clients;
                       
                       // For non-Admin/Teamlead users, only show assigned clients
-                      const isRegularUser = user.role !== 'SuperAdmin' && user.role !== 'Admin' && user.role !== 'Teamlead';
+                      const isRegularUser = !['SuperAdmin', 'Admin', 'Teamlead', 'HeadOfBusiness'].includes(user.role);
                       const filteredClients = isRegularUser
                         ? availableClients.filter(c => 
                             assignments.some(a => 
@@ -656,10 +657,8 @@ export const InstallationsModule = ({ user }: InstallationsModuleProps) => {
 
       <div className="mb-6 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <Card className="shadow-riana">
-          <CardContent className="flex min-h-[68px] items-center gap-3 p-4">
-            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary" aria-hidden="true">
-              <Package className="h-5 w-5" />
-            </span>
+          <CardContent className="flex min-h-[68px] items-center gap-2 p-4">
+            <EquipmentIcon kind="kiosk" />
             <div className="min-w-0">
               <p className="truncate text-xs font-medium text-muted-foreground">Total Kiosks</p>
               <p className="text-2xl font-bold leading-none">{installations.reduce((sum, inst) => sum + inst.kiosk_count, 0)}</p>
@@ -667,10 +666,8 @@ export const InstallationsModule = ({ user }: InstallationsModuleProps) => {
           </CardContent>
         </Card>
         <Card className="shadow-riana">
-          <CardContent className="flex min-h-[68px] items-center gap-3 p-4">
-            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-success/10 text-success" aria-hidden="true">
-              <Monitor className="h-5 w-5" />
-            </span>
+          <CardContent className="flex min-h-[68px] items-center gap-2 p-4">
+            <EquipmentIcon kind="display" />
             <div className="min-w-0">
               <p className="truncate text-xs font-medium text-muted-foreground">Displays</p>
               <p className="text-2xl font-bold leading-none">{installations.reduce((sum, inst) => sum + inst.led_count, 0)}</p>
@@ -678,10 +675,8 @@ export const InstallationsModule = ({ user }: InstallationsModuleProps) => {
           </CardContent>
         </Card>
         <Card className="shadow-riana">
-          <CardContent className="flex min-h-[68px] items-center gap-3 p-4">
-            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary" aria-hidden="true">
-              <Smartphone className="h-5 w-5" />
-            </span>
+          <CardContent className="flex min-h-[68px] items-center gap-2 p-4">
+            <EquipmentIcon kind="service-point" />
             <div className="min-w-0">
               <p className="truncate text-xs font-medium text-muted-foreground">Service Points</p>
               <p className="text-2xl font-bold leading-none">{installations.reduce((sum, inst) => sum + inst.service_points, 0)}</p>
@@ -689,10 +684,8 @@ export const InstallationsModule = ({ user }: InstallationsModuleProps) => {
           </CardContent>
         </Card>
         <Card className="shadow-riana">
-          <CardContent className="flex min-h-[68px] items-center gap-3 p-4">
-            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-warning/10 text-warning" aria-hidden="true">
-              <Wifi className="h-5 w-5" />
-            </span>
+          <CardContent className="flex min-h-[68px] items-center gap-2 p-4">
+            <EquipmentIcon kind="media-controller" />
             <div className="min-w-0">
               <p className="truncate text-xs font-medium text-muted-foreground">Media Controllers</p>
               <p className="text-2xl font-bold leading-none">{installations.reduce((sum, inst) => sum + inst.media_controllers, 0)}</p>

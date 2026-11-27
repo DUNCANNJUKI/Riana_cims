@@ -1,6 +1,7 @@
 const crypto=require('node:crypto');
 const {RRule}=require('rrule');
 const {hasCapability}=require('../security/accessControl');
+const {runBusinessWrite}=require('./businessWrites');
 const T=require('./schedulingTime');
 const parse=(value)=>typeof value==='string'?JSON.parse(value):value;
 const active="e.status IN ('scheduled','in_progress')";
@@ -201,11 +202,12 @@ function createScheduling(pool,{clock=()=>new Date()}={}){
   }
   async function legacyWrite(req,id,before,next,work){
     const changed=!before||['client_id','branch_id','installation_start_date','scheduled_end_date','hardware_technician_id','software_technician_id'].some(k=>Object.hasOwn(req.body,k)&&String(before[k]||'')!==String(next[k]||''));
-    if(!changed)return work(pool);
+    if(!changed)return runBusinessWrite(pool,req.businessSubsidiaryId,work);
     allowed(req.user,true);
     if(!before && !next.installation_start_date)throw fail('SCHEDULE_POLICY_VIOLATION','Select an installation start date.');
     return transaction(async db=>{
-      const [[client]]=await db.query('SELECT subsidiary_id FROM clients WHERE id=?',[next.client_id]);if(!client)throw fail('SCHEDULE_POLICY_VIOLATION','Client not found.');scope(req.user,client.subsidiary_id);
+      const [[client]]=await db.query('SELECT subsidiary_id FROM clients WHERE id=?',[next.client_id]);if(!client)throw fail('SCHEDULE_POLICY_VIOLATION','Client not found.');
+      scope(req.businessSubsidiaryId ? {...req.user,subsidiary_id:req.businessSubsidiaryId} : req.user,client.subsidiary_id);
       const ids=[...new Set([next.hardware_technician_id,next.software_technician_id,before?.hardware_technician_id,before?.software_technician_id].filter(Boolean))].sort();
       await lockResources(db,ids,client.subsidiary_id,[...new Set([next.hardware_technician_id,next.software_technician_id].filter(Boolean))]);
       if(next.installation_start_date && !['completed','cancelled','canceled'].includes(next.status)){

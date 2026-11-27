@@ -1,4 +1,6 @@
 import type { Client, Installation } from '@/types';
+import { EquipmentIcon } from '@/components/inventory/EquipmentIcon';
+import type { EquipmentIconKind } from '@/utils/equipmentImages';
 import { useState, useEffect } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -25,7 +27,7 @@ export const AnalyticsModule = ({ user }: AnalyticsModuleProps) => {
   const [clientsByIndustry, setClientsByIndustry] = useState<Array<{ name: string; count: number; percentage: number }>>([]);
   const [installationsByMonth, setInstallationsByMonth] = useState<Array<{ month: string; installations: number; clients: number }>>([]);
   const [contractTypes, setContractTypes] = useState<Array<{ name: string; value: number; color: string }>>([]);
-  const [equipmentStats, setEquipmentStats] = useState<Array<{ equipment: string; count: number; trend: string; change: string }>>([]);
+  const [equipmentStats, setEquipmentStats] = useState<Array<{ equipment: string; count: number; trend: string; change: string; icon?: EquipmentIconKind }>>([]);
   const [performanceMetrics, setPerformanceMetrics] = useState({
     totalInstallations: 0,
     avgInstallationTime: 0,
@@ -119,8 +121,8 @@ export const AnalyticsModule = ({ user }: AnalyticsModuleProps) => {
       const totalUPS = installations?.reduce((sum: number, i: Installation) => sum + (i.ups_count || 0), 0) || 0;
 
       setEquipmentStats([
-        { equipment: 'Total Kiosks', count: totalKiosks, trend: 'up', change: '+' + Math.round(totalKiosks * 0.05) + '%' },
-        { equipment: 'Total Displays', count: totalDisplays, trend: 'up', change: '+' + Math.round(totalDisplays * 0.03) + '%' },
+        { equipment: 'Total Kiosks', count: totalKiosks, trend: 'up', change: '+' + Math.round(totalKiosks * 0.05) + '%', icon: 'kiosk' },
+        { equipment: 'Total Displays', count: totalDisplays, trend: 'up', change: '+' + Math.round(totalDisplays * 0.03) + '%', icon: 'display' },
         { equipment: 'Total Tablets', count: totalTablets, trend: 'up', change: '+' + Math.round(totalTablets * 0.02) + '%' },
         { equipment: 'Total UPS Units', count: totalUPS, trend: 'up', change: '+' + Math.round(totalUPS * 0.07) + '%' },
       ]);
@@ -267,7 +269,9 @@ export const AnalyticsModule = ({ user }: AnalyticsModuleProps) => {
                         </span>
                       </div>
                     </div>
-                    <Activity className="h-6 w-6 sm:h-8 sm:w-8 text-muted-foreground shrink-0 hidden xs:block" />
+                    {stat.icon ? (
+                      <div className="hidden xs:block"><EquipmentIcon kind={stat.icon} /></div>
+                    ) : <Activity className="h-6 w-6 sm:h-8 sm:w-8 text-muted-foreground shrink-0 hidden xs:block" />}
                   </div>
                 </CardContent>
               </Card>

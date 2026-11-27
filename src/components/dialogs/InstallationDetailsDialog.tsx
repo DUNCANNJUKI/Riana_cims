@@ -2,10 +2,12 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Package, Monitor, Smartphone, Wifi, Calendar, User as UserIcon } from "lucide-react";
+import { Package, Calendar } from "lucide-react";
 import { Installation, Client, User, HandoverEquipmentItem } from "@/types";
 import { normalizeHandoverEquipmentConfiguration, equipmentQuantity } from '@/utils/equipmentConfiguration';
 import { InstallationHardware } from '@/components/inventory/InstallationHardware';
+import { EquipmentIcon } from '@/components/inventory/EquipmentIcon';
+import { equipmentIconKind } from '@/utils/equipmentImages';
 
 interface InstallationDetailsDialogProps {
   installation: Installation | null;
@@ -38,7 +40,7 @@ export const InstallationDetailsDialog = ({
 
   const equipmentList = normalizeHandoverEquipmentConfiguration(equipmentConfiguration)
     .filter((item)=>!['kiosk_type','screen_with_size','staff_trained'].includes(item.field))
-    .map((item)=>({label:item.label,value:equipmentQuantity(installation,item.field),icon:Package}));
+    .map((item)=>({ ...item, value: equipmentQuantity(installation, item.field), kind: equipmentIconKind(item.field) }));
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
@@ -103,18 +105,15 @@ export const InstallationDetailsDialog = ({
             </CardHeader>
             <CardContent>
               <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                {equipmentList.map((equipment, index) => {
-                  const Icon = equipment.icon;
-                  return (
-                    <div key={index} className="flex items-center gap-3 p-3 bg-muted/50 rounded-lg">
-                      <Icon className="h-5 w-5 text-primary" />
-                      <div>
-                        <div className="font-medium">{equipment.value}</div>
-                        <div className="text-sm text-muted-foreground">{equipment.label}</div>
-                      </div>
+                {equipmentList.map((equipment) => (
+                  <div key={equipment.field} className="flex min-w-0 items-center gap-2 p-3 bg-muted/50 rounded-lg">
+                    {equipment.kind ? <EquipmentIcon kind={equipment.kind} /> : <Package className="size-5 shrink-0 text-primary" />}
+                    <div className="min-w-0 break-words">
+                      <div className="font-medium">{equipment.value}</div>
+                      <div className="text-sm text-muted-foreground">{equipment.label}</div>
                     </div>
-                  );
-                })}
+                  </div>
+                ))}
               </div>
             </CardContent>
           </Card>

@@ -18,10 +18,12 @@ test('inventory report totals distinguish recorded stock from assignable stock a
   assert.equal(result.status_totals.Faulty,2);
   assert.equal(result.pending,1);
   assert.equal(Object.values(result.status_totals).reduce((a,b)=>a+b,0),result.total);
-  assert.match(statement.sql,/a.subsidiary_id=\?/);
-  assert.deepEqual(statement.args,['a','warehouse']);
+  assert.doesNotMatch(statement.sql,/a.subsidiary_id=\?/);
+  assert.deepEqual(statement.args,['warehouse']);
   assert.match(statement.sql,/a.archived_at IS NULL/);
-  await assert.rejects(service.summary(officer,{subsidiary_id:'b'}),/restricted to your subsidiary/);
+  await service.summary({ ...officer, subsidiary_id: null }, { subsidiary_id: 'b' });
+  assert.match(statement.sql,/a.subsidiary_id=\?/);
+  assert.deepEqual(statement.args,['b']);
   await assert.rejects(service.summary({id:'tech',role:'Developer',subsidiary_id:'a'}),/permissions/);
 });
 
@@ -34,7 +36,7 @@ test('in-stock and issued drill-down reports filter the same lifecycle groups as
   await service.list(officer,{report:'in_stock'});
   assert.ok(statements.some(({sql})=>sql.includes("a.status IN ('Available','Reserved','Returned')")));
   statements.length=0;
-  await service.list(officer,{report:'out'});
+  await service.list(officer,{report:'out',subsidiary_id:'b'});
   assert.ok(statements.some(({sql})=>sql.includes("a.status IN ('Assigned','Installed','In Transit')")));
-  assert.ok(statements.every(({args})=>args[0]==='a'));
+  assert.ok(statements.every(({args})=>args[0]==='b'));
 });

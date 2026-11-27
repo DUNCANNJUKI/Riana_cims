@@ -61,13 +61,14 @@ const roleCapabilities: Record<User['role'], Capability[]> = {
   Management: all.filter((code) => !['installations.manage', 'progress.manage'].includes(code)
     && (!code.startsWith('inventory.') || ['inventory.view','inventory.view_reports','inventory.export'].includes(code))),
   Admin: ['clients.view','clients.manage','installations.view','installations.manage','assignments.view','assignments.manage','progress.view','progress.manage','reports.view','finances.view','finances.manage','analytics.view','announcements.manage','import.manage','users.manage'],
+  HeadOfBusiness: ['clients.view','clients.manage','installations.view','installations.manage','assignments.view','assignments.manage','reports.view','analytics.view'],
   Teamlead: ['clients.view','clients.manage','installations.view','installations.manage','assignments.view','assignments.manage','progress.view','progress.manage','reports.view','finances.view','finances.manage','analytics.view','announcements.manage','import.manage'],
   Finance: ['clients.view','installations.view','assignments.view','progress.view','reports.view'],
   Sales: ['reports.view'],
   Developer: [],
   User: ['clients.view','installations.view','installations.manage','reports.view', ...fieldOperations],
   InventoryOfficer: [...all.filter(code=>code.startsWith('inventory.') && ![
-    'inventory.policy','inventory.approve_models','inventory.cross_subsidiary','inventory.retire_approve',
+    'inventory.policy','inventory.approve_models','inventory.retire_approve',
     'inventory.modify_identity','inventory.import','inventory.approve_import','inventory.field_register',
   ].includes(code))],
 };
@@ -78,8 +79,8 @@ const roleDeniedCapabilities: Partial<Record<User['role'], Capability[]>> = {
 export const can = (user: Pick<User, 'role' | 'permissions' | 'extra_permissions'>, capability: Capability) => (
   !roleDeniedCapabilities[user.role]?.includes(capability) && (user.role === 'SuperAdmin'
   || roleCapabilities[user.role]?.includes(capability)
-  || user.permissions?.includes(capability)
-  || user.extra_permissions?.includes(capability)
+  || (user.role !== 'HeadOfBusiness' && (user.permissions?.includes(capability)
+    || user.extra_permissions?.includes(capability)))
 ));
 
 export const isCapabilityDeniedForRole = (role: User['role'], capability: Capability) => roleDeniedCapabilities[role]?.includes(capability) || false;

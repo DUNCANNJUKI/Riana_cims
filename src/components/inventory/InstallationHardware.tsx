@@ -26,7 +26,9 @@ import {
   type HardwareCatalog,
   normalizeHardwareCatalog,
 } from "./hardwareApi";
-import { HardwareSelect } from "./HardwareInventoryModule";
+import { HardwareSelect } from "./HardwareSelect";
+import { EquipmentIcon } from './EquipmentIcon';
+import { equipmentIconKind } from '@/utils/equipmentImages';
 import { QrScanner } from "./QrScanner";
 import { Plus, CheckCircle2, Loader2 } from "lucide-react";
 
@@ -233,7 +235,7 @@ export function InstallationHardware({
                   }}
                   options={[
                     ...new Set(catalog.data.variants.map((v) => v.family)),
-                  ].map((v) => ({ value: v, label: v }))}
+                  ].map((v) => ({ value: v, label: v, icon: equipmentIconKind(null, v) }))}
                   empty="All Families"
                 />
                 <HardwareSelect
@@ -242,7 +244,7 @@ export function InstallationHardware({
                   onChange={setModel}
                   options={catalog.data.models
                     .filter((m) => !family || m.family === family)
-                    .map((m) => ({ value: m.id, label: m.model_number }))}
+                    .map((m) => ({ value: m.id, label: m.model_number, icon: equipmentIconKind(m.equipment_field, m.family) }))}
                   empty="All Models"
                 />
               </div>
@@ -261,7 +263,12 @@ export function InstallationHardware({
                     {available.data?.rows.map((a) => (
                       <TableRow key={a.id}>
                         <TableCell>{a.serial_number}</TableCell>
-                        <TableCell>{a.model_number}</TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-2">
+                            <EquipmentIcon kind={equipmentIconKind(a.equipment_field, a.family)} />
+                            {a.model_number}
+                          </div>
+                        </TableCell>
                         <TableCell>{a.location_name}<p className="text-xs text-muted-foreground">{a.unavailable_reason}</p></TableCell>
                         <TableCell>
                           {can(user, "inventory.assign") && (
@@ -316,7 +323,7 @@ export function InstallationHardware({
                     (m) =>
                       m.approval_status === "Approved" && !m.historical_only,
                   )
-                  .map((m) => ({ value: m.id, label: m.model_number }))}
+                  .map((m) => ({ value: m.id, label: m.model_number, icon: equipmentIconKind(m.equipment_field, m.family) }))}
               />
               <div className="grid gap-3 sm:grid-cols-2">
                 <div>

@@ -3,11 +3,13 @@ import { useAuth } from "@/hooks/useAuth";
 import { LoginForm } from "@/components/auth/LoginForm";
 import { ForcePasswordChange } from "@/components/auth/ForcePasswordChange";
 import { Header } from "@/components/layout/Header";
+import { MeetingSummary } from "@/components/chat/MeetingSummary";
+import type { ChatMessage } from "@/hooks/useChat";
+import { BusinessOverview } from "@/components/dashboard/BusinessOverview";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { HelpModule } from "@/components/help/HelpModule";
 import { ChatbotWidget } from "@/components/chatbot/ChatbotWidget";
 import { SiteLoader } from "@/components/common/SiteLoader";
-import { usePushNotifications } from "@/hooks/usePushNotifications";
 import { useOfflineSync } from "@/hooks/useOfflineSync";
 import { InactivityGuard } from "@/components/auth/InactivityGuard";
 import { SecureAppLock } from "@/components/auth/SecureAppLock";
@@ -55,6 +57,8 @@ const Index = () => {
   const scannedAssetId = new URLSearchParams(location.search).get('hardware');
 
   const [activeModule, setActiveModule] = useState('dashboard');
+  const [meeting, setMeeting] = useState<{ call: ChatMessage; joined: boolean } | null>(null);
+  const [meetingRequest, setMeetingRequest] = useState<{ id: string } | null>(null);
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
   const [systemTourActive, setSystemTourActive] = useState(false);
   const [lockPreferences, setLockPreferences] = useState({ inactivityTimeoutMinutes: 10, lockOnResume: false });
@@ -66,8 +70,6 @@ const Index = () => {
     setSystemTourActive(active);
   };
 
-  // Initialize push notifications and offline sync
-  usePushNotifications();
   const { isOnline } = useOfflineSync();
 
   useEffect(() => {
@@ -132,6 +134,7 @@ const Index = () => {
     switch (activeModule) {
       case 'dashboard':
         if(user.role==='InventoryOfficer')return <HardwareInventoryModule user={user}/>;
+        if(user.role==='HeadOfBusiness')return <BusinessOverview/>;
         return <Dashboard user={user} onNavigate={setActiveModule} />;
       case 'technician-dashboard':
         return <TechnicianMobileDashboard user={user} />;
@@ -198,11 +201,13 @@ const Index = () => {
         <div className="flex min-w-0 flex-1 flex-col">
           <Header
             user={user}
-            className="sticky top-0 z-40"
+            className="sticky top-0 z-40 shrink-0"
             setActiveModule={setActiveModule}
             onOpenMobileMenu={() => setIsMobileSidebarOpen(true)}
             onProfileUpdate={refreshUserProfile}
             onTourNavigationPreview={previewTourNavigation}
+            onMeetingChange={setMeeting}
+            meetingRequest={meetingRequest}
           />
           {maintenance?.enabled && user.role === 'SuperAdmin' && (
             <MaintenanceBanner maintenance={maintenance} />
@@ -215,12 +220,15 @@ const Index = () => {
           <main className="cims-content min-w-0 flex-1 overflow-auto overscroll-contain p-3 sm:p-5 lg:p-7">
             <Suspense fallback={<SiteLoader isLoading status="Loading your workspace..." />}>
               <div className="mx-auto w-full max-w-[1600px] min-w-0">
+                {meeting && ["dashboard", "technician-dashboard"].includes(activeModule) && (
+                  <div className="mb-3"><MeetingSummary {...meeting} onOpen={() => setMeetingRequest({ id: meeting.call.id })} /></div>
+                )}
                 {renderContent()}
               </div>
             </Suspense>
           </main>
           {/* Footer */}
-          <footer className="cims-system-footer shrink-0 border-t border-border bg-muted/30 px-3 py-2 text-center sm:px-4 sm:py-3">
+          <footer className="cims-system-footer mt-auto shrink-0 border-t border-border bg-muted/30 px-3 pb-[max(0.25rem,env(safe-area-inset-bottom))] pt-1 text-center sm:px-4 sm:pt-1.5">
             <p className="truncate text-[10px] text-muted-foreground sm:text-xs">
               © {currentYear} RIANA Group. All rights reserved. | www.riana.co
             </p>
@@ -228,7 +236,7 @@ const Index = () => {
         </div>
       </div>
       
-      {user.role!=='InventoryOfficer' && <ChatbotWidget user={user} currentModule={activeModule} />}
+      {user.role!=='InventoryOfficer' && user.role!=='HeadOfBusiness' && <ChatbotWidget user={user} currentModule={activeModule} />}
       <InactivityGuard active={isAuthenticated} timeoutMinutes={lockPreferences.inactivityTimeoutMinutes} onLock={() => requestAppLock("inactivity")} />
       </div>
       <SecureAppLock active={isAuthenticated} onLogout={logout} />

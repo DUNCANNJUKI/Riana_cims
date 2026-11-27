@@ -5,6 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
+import { AuthNetworkBackground } from "./AuthNetworkBackground";
 
 export const ForcePasswordChange = () => {
   const [newPassword, setNewPassword] = useState("");
@@ -60,10 +61,11 @@ export const ForcePasswordChange = () => {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center p-4 bg-gradient-to-br from-primary/20 via-background to-secondary/20">
+    <div className="riana-login-page auth-network-surface">
+      <AuthNetworkBackground />
       <Dialog open={true} onOpenChange={() => {}}>
         <DialogContent 
-          className="sm:max-w-md" 
+          className="max-w-[360px] sm:max-w-[360px]"
           onPointerDownOutside={(e) => e.preventDefault()}
           onEscapeKeyDown={(e) => e.preventDefault()}
         >

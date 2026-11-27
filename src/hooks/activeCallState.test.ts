@@ -40,9 +40,9 @@ test('pending invitation updates never activate media before acceptance', () => 
   assert.equal(isPendingCallInvitation(call('invitation', 'ended', 'ringing'), 'member'), false);
   assert.equal(isPendingCallInvitation(call('invitation', 'missed', 'invited'), 'member'), false);
   const accepted = call('invitation');
-  assert.equal(activeCallAfterUpdate(null, accepted, 'member'), accepted);
+  assert.equal(activeCallAfterUpdate(null, accepted, 'member'), null);
   const outgoing = call('outgoing', 'ringing', 'accepted');
-  assert.equal(activeCallAfterUpdate(null, outgoing, 'organizer'), outgoing);
+  assert.equal(activeCallAfterUpdate(null, outgoing, 'organizer'), null);
 });
 
 test('a following call update cannot reactivate a call answered on another device', () => {

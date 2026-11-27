@@ -7,14 +7,16 @@ import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { X, Send, Check, CheckCheck, Search, Users, UserPlus, MessageSquare, Phone, Video, VideoOff, Paperclip, Download, Image as ImageIcon, FileText, Reply, PhoneOff, Mic, MicOff, MonitorUp, MoreVertical, MoreHorizontal, RotateCw, FlipHorizontal, Copy, SmilePlus, Edit3, Trash2, BellOff, ScreenShare, ScreenShareOff, LayoutGrid, PanelTop, Settings2, Maximize2, Minimize2, Minus, Hand, Pin, PinOff, PictureInPicture2, ChevronLeft, ChevronRight, CircleDot, Square, Film, Play, Upload, ShieldAlert, PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
 import { resolveAvatarUrl } from "@/utils/avatar";
 import { isHostedPlaceholderMessage, stripHostedPlaceholderLines } from "@/utils/chatMessageVisibility";
 import { useToast } from "@/hooks/use-toast";
-import { playCallHangupSound, playCallPickupSound, playCallRingSound } from "@/utils/notificationSound";
+import { playCallHangupSound, playCallPickupSound } from "@/utils/notificationSound";
+import { ScheduledMeetings, type ScheduledMeeting } from "./ScheduledMeetings";
+import { NewCall } from "./NewCall";
 import { CALL_VIDEO_BACKGROUND_OPTIONS, createCallVideoBackground, createRotatedVideoTrack, type CallVideoBackground } from "@/utils/callVideoBackground";
 import { callBackgroundErrorMessage } from "@/utils/callBackgroundError";
 import { startCallRecordingSession, type CallRecordingSession } from "@/utils/callRecordingComposer";
@@ -169,7 +171,7 @@ export const ChatModule = ({ currentUser, chat, onClose, onMinimize, onToggleFul
     messages, users, activeChatUserId, setActiveChatUserId,
     sendMessage, editMessage, setReaction, removeReaction, deleteMessageForMe, deleteMessageForEveryone, setTyping, typingUsers, unreadCounts, isConnected,
     incomingCall, activeCall, callSignals, startCall, updateCallStatus,
-    sendCallSignal, clearCallSignals, clearCallState, inviteCallParticipants, cancelCallInvitation, getCallIceServers, onlineUserCount, isLoadingUsers, usersError, loadUsers,
+    sendCallSignal, clearCallSignals, clearCallState, silenceIncomingCall, inviteCallParticipants, cancelCallInvitation, transferOrganizer, getCallIceServers, onlineUserCount, isLoadingUsers, usersError, loadUsers,
     callRecordings, isLoadingRecordings, loadCallRecordings, startCallRecording, stopCallRecording, failCallRecording, deleteCallRecording,
   } = chat;
   const { toast } = useToast();
@@ -185,9 +187,14 @@ export const ChatModule = ({ currentUser, chat, onClose, onMinimize, onToggleFul
   const [remoteStreams, setRemoteStreams] = useState<Record<string, MediaStream>>({});
   const [callError, setCallError] = useState<string | null>(null);
   const [selectedCallParticipantIds, setSelectedCallParticipantIds] = useState<string[]>([]);
-  const [isRingtoneSilenced, setIsRingtoneSilenced] = useState(false);
+  const startingCallRef = useRef(false);
   const [isMicrophoneMuted, setIsMicrophoneMuted] = useState(false);
   const [isCameraEnabled, setIsCameraEnabled] = useState(true);
+  const [joinMuted, setJoinMuted] = useState(false);
+  const [joinCameraOff, setJoinCameraOff] = useState(false);
+  const [joiningMeeting, setJoiningMeeting] = useState(false);
+  const [roundTripMs, setRoundTripMs] = useState<number | null>(null);
+  const meetingVideoPanel = useRef<HTMLDivElement>(null);
   const [hasLiveLocalVideo, setHasLiveLocalVideo] = useState(false);
   const [isScreenSharing, setIsScreenSharing] = useState(false);
   const [cameraRotation, setCameraRotation] = useState<0 | 90 | 180 | 270>(() => {
@@ -243,6 +250,7 @@ export const ChatModule = ({ currentUser, chat, onClose, onMinimize, onToggleFul
   const [showRecordingsPanel, setShowRecordingsPanel] = useState(false);
   const [activePlaybackRecording, setActivePlaybackRecording] = useState<CallRecordingItem | null>(null);
   const [isRecordingConfirmOpen, setIsRecordingConfirmOpen] = useState(false);
+  const endingCallRef = useRef(false);
   const [isStopRecordingConfirmOpen, setIsStopRecordingConfirmOpen] = useState(false);
   const [isLocalRecording, setIsLocalRecording] = useState(false);
   const [isSavingRecording, setIsSavingRecording] = useState(false);
@@ -268,7 +276,6 @@ export const ChatModule = ({ currentUser, chat, onClose, onMinimize, onToggleFul
   const screenStreamRef = useRef<MediaStream | null>(null);
   const processedSignalsRef = useRef<Set<string>>(new Set());
   const pendingIceCandidatesRef = useRef<Map<string, RTCIceCandidateInit[]>>(new Map());
-  const ringtoneTimerRef = useRef<number | null>(null);
   const endLocalCallStateRef = useRef<() => void>(() => undefined);
   const createPeerConnectionRef = useRef<(call: ChatMessage, targetUserId: string) => RTCPeerConnection>(() => {
     throw new Error("Call connection is not initialized.");
@@ -293,7 +300,38 @@ export const ChatModule = ({ currentUser, chat, onClose, onMinimize, onToggleFul
   raisedHandsRef.current = raisedHands;
   screenSharingRef.current = isScreenSharing;
   const activeCallId = activeCall?.id;
+  useEffect(() => {
+    setRoundTripMs(null);
+    if (!activeCallId) return;
+    let disposed = false;
+    let pending = false;
+    const sample = async () => {
+      if (document.hidden || pending) return;
+      pending = true;
+      try {
+        const peers = [...peerRefs.current.values()].filter(peer => peer.connectionState === "connected");
+        const reports = await Promise.allSettled(peers.map(peer => peer.getStats()));
+        const samples: number[] = [];
+        for (const report of reports) {
+          if (report.status !== "fulfilled") continue;
+          report.value.forEach(stat => {
+            if (stat.type === "candidate-pair" && stat.nominated && stat.state === "succeeded"
+              && typeof stat.currentRoundTripTime === "number" && Number.isFinite(stat.currentRoundTripTime)) {
+              samples.push(stat.currentRoundTripTime * 1000);
+            }
+          });
+        }
+        if (!disposed) setRoundTripMs(samples.length ? Math.round(Math.max(...samples)) : null);
+      } finally {
+        pending = false;
+      }
+    };
+    const timer = window.setInterval(() => void sample(), 5000);
+    return () => { disposed = true; window.clearInterval(timer); };
+  }, [activeCallId]);
   const activeUser = visibleUsers.find(u => u.id === activeChatUserId);
+  const organizerId = activeCall?.call_organizer_id || activeCall?.sender_id;
+  const isOrganizer = organizerId === currentUser.id;
   const activeCallParticipantIds = activeCall
     ? Array.from(new Set(Array.isArray(activeCall.call_participants)
       ? activeCall.call_participants.filter(participant => String(participant.status) === "accepted").map(participant => participant.user_id)
@@ -310,6 +348,7 @@ export const ChatModule = ({ currentUser, chat, onClose, onMinimize, onToggleFul
     return 0;
   });
   const activeCallParticipantKey = activeCallParticipantIds.join("|");
+  const livePeerKey = [...activeCallParticipantIds, ...activeCallPendingInviteIds].sort().join("|");
   remoteStreamsRef.current = remoteStreams;
   remoteMediaStatesRef.current = remoteMediaStates;
   activeSpeakerIdRef.current = activeSpeakerId;
@@ -411,7 +450,7 @@ export const ChatModule = ({ currentUser, chat, onClose, onMinimize, onToggleFul
   };
 
   const setMeetingSpotlight = (participantId: string | null) => {
-    if (!activeCall || String(activeCall.sender_id) !== String(currentUser.id)) return;
+    if (!activeCall || !isOrganizer) return;
     setSpotlightParticipantId(participantId);
     setGalleryPage(0);
     void Promise.allSettled(activeCallOtherParticipants.map(id => sendCallSignal(activeCall.id, id, "spotlight", { userId: participantId })));
@@ -449,14 +488,11 @@ export const ChatModule = ({ currentUser, chat, onClose, onMinimize, onToggleFul
   };
 
   useEffect(() => {
-    if (!activeCallId) {
-      notifiedRecordingCallIdRef.current = null;
-      return;
-    }
-    if (typeof window !== "undefined" && window.innerWidth < 1280) {
+    if (!activeCallId) notifiedRecordingCallIdRef.current = null;
+    if ((activeCallId || incomingCall?.id) && window.innerWidth < 1280) {
       setIsSidebarOpen(false);
     }
-  }, [activeCallId]);
+  }, [activeCallId, incomingCall?.id]);
 
   useEffect(() => {
     if (
@@ -637,7 +673,7 @@ export const ChatModule = ({ currentUser, chat, onClose, onMinimize, onToggleFul
   };
 
   const lowerRaisedHand = (userId: string) => {
-    if (!activeCall || String(activeCall.sender_id) !== String(currentUser.id)) return;
+    if (!activeCall || !isOrganizer) return;
     setRaisedHands(current => ({ ...current, [userId]: false }));
     setRaisedHandOrder(current => { const next = { ...current }; delete next[userId]; return next; });
     void broadcastMeetingEvent("hand-state", { raised: false, targetUserId: userId });
@@ -700,10 +736,6 @@ export const ChatModule = ({ currentUser, chat, onClose, onMinimize, onToggleFul
     setIsCameraEnabled(true);
   };
 
-  const stopRingtone = () => {
-    if (ringtoneTimerRef.current) window.clearInterval(ringtoneTimerRef.current);
-    ringtoneTimerRef.current = null;
-  };
 
   const closePeer = () => {
     iceRestartTimersRef.current.forEach(timer => window.clearTimeout(timer));
@@ -779,7 +811,7 @@ export const ChatModule = ({ currentUser, chat, onClose, onMinimize, onToggleFul
         setCallError(null);
         if (localStreamRef.current) void publishLocalMediaState(call, [targetUserId]);
         if (raisedHandsRef.current[currentUser.id]) void sendCallSignal(call.id, targetUserId, "hand-state", { raised: true });
-        if (String(call.sender_id) === String(currentUser.id)) void sendCallSignal(call.id, targetUserId, "spotlight", { userId: spotlightParticipantId });
+        if ((call.call_organizer_id || call.sender_id) === currentUser.id) void sendCallSignal(call.id, targetUserId, "spotlight", { userId: spotlightParticipantId });
         if (recordingSessionRef.current && activeRecordingIdRef.current) {
           void sendCallSignal(call.id, targetUserId, "recording-state", {
             active: true,
@@ -815,7 +847,7 @@ export const ChatModule = ({ currentUser, chat, onClose, onMinimize, onToggleFul
     return createCallVideoBackground(sourceTrack, callVideoBackgroundRef.current, rotation, true);
   };
 
-  const openMedia = async (withVideo: boolean) => {
+  const openMedia = async (withVideo: boolean, { mute = false, cameraOff = false } = {}) => {
     if (!navigator.mediaDevices?.getUserMedia) throw new Error("This browser does not support secure audio/video calling.");
     const stream = await navigator.mediaDevices.getUserMedia({
       audio: { deviceId: audioInputDeviceId ? { exact: audioInputDeviceId } : undefined, echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: { ideal: 1 } },
@@ -823,6 +855,8 @@ export const ChatModule = ({ currentUser, chat, onClose, onMinimize, onToggleFul
     });
     const audioTrack = stream.getAudioTracks()[0];
     const sourceVideoTrack = stream.getVideoTracks()[0];
+    if (audioTrack) audioTrack.enabled = !mute;
+    if (sourceVideoTrack) sourceVideoTrack.enabled = !cameraOff;
     sourceCameraTrackRef.current = sourceVideoTrack || null;
     let outgoingVideoTrack = sourceVideoTrack;
     if (sourceVideoTrack) {
@@ -837,6 +871,7 @@ export const ChatModule = ({ currentUser, chat, onClose, onMinimize, onToggleFul
       }
     }
     const outgoingStream = new MediaStream([...stream.getAudioTracks(), ...(outgoingVideoTrack ? [outgoingVideoTrack] : [])]);
+    if (outgoingVideoTrack) outgoingVideoTrack.enabled = !cameraOff;
     localStreamRef.current = outgoingStream;
     setIsMicrophoneMuted(Boolean(audioTrack && !audioTrack.enabled));
     setIsCameraEnabled(Boolean(sourceVideoTrack?.enabled));
@@ -1280,6 +1315,29 @@ export const ChatModule = ({ currentUser, chat, onClose, onMinimize, onToggleFul
 
   useEffect(() => {
     if (!activeCallId) return;
+    const livePeers = new Set(livePeerKey.split("|"));
+    const departed = new Set<string>();
+    for (const [userId, connection] of peerRefs.current) {
+      if (livePeers.has(userId)) continue;
+      const restartTimer = iceRestartTimersRef.current.get(userId);
+      if (restartTimer !== undefined) window.clearTimeout(restartTimer);
+      iceRestartTimersRef.current.delete(userId);
+      iceRestartAttemptsRef.current.delete(userId);
+      pendingIceCandidatesRef.current.delete(userId);
+      connection.onconnectionstatechange = null;
+      connection.ontrack = null;
+      connection.onicecandidate = null;
+      connection.close();
+      peerRefs.current.delete(userId);
+      departed.add(userId);
+    }
+    if (departed.size > 0) {
+      setRemoteStreams(current => Object.fromEntries(Object.entries(current).filter(([id]) => !departed.has(id))));
+    }
+  }, [activeCallId, livePeerKey]);
+
+  useEffect(() => {
+    if (!activeCallId) return;
     const activeIds = new Set(activeCallParticipantKey ? activeCallParticipantKey.split("|") : []);
     setRaisedHands(current => Object.fromEntries(Object.entries(current).filter(([userId]) => activeIds.has(userId))));
     setRaisedHandOrder(current => Object.fromEntries(Object.entries(current).filter(([userId]) => activeIds.has(userId))));
@@ -1308,13 +1366,13 @@ export const ChatModule = ({ currentUser, chat, onClose, onMinimize, onToggleFul
   }, [messages]);
 
   useEffect(() => {
-    if (!activeChatUserId) return;
+    if (!activeChatUserId || isLoadingUsers) return;
     const canChatWithActiveUser = activeChatUserId !== currentUser.id && users.some(user => user.id === activeChatUserId && user.id !== currentUser.id);
     if (!canChatWithActiveUser) {
       setActiveChatUserId(null);
       setSelectedCallParticipantIds([]);
     }
-  }, [activeChatUserId, currentUser.id, users, setActiveChatUserId]);
+  }, [activeChatUserId, currentUser.id, isLoadingUsers, users, setActiveChatUserId]);
 
   useEffect(() => () => {
     if (typingTimerRef.current) window.clearTimeout(typingTimerRef.current);
@@ -1346,24 +1404,7 @@ export const ChatModule = ({ currentUser, chat, onClose, onMinimize, onToggleFul
   }, [localStream]);
 
   const incomingCallId = incomingCall?.id;
-  const shouldRing = Boolean(incomingCallId && !activeCallId && !isRingtoneSilenced);
-  const shouldResetRingtoneSilence = !incomingCallId;
   const shouldEndLocalCall = (!activeCallId && !incomingCallId) || ["ended", "declined", "missed"].includes(String(activeCall?.call_status));
-
-  useEffect(() => {
-    if (!shouldRing) {
-      stopRingtone();
-      return;
-    }
-    stopRingtone();
-    playCallRingSound();
-    ringtoneTimerRef.current = window.setInterval(() => playCallRingSound(), 2200);
-    return stopRingtone;
-  }, [shouldRing]);
-
-  useEffect(() => {
-    if (shouldResetRingtoneSilence) setIsRingtoneSilenced(false);
-  }, [shouldResetRingtoneSilence]);
 
   useEffect(() => {
     if (shouldEndLocalCall) endLocalCallStateRef.current();
@@ -1378,6 +1419,8 @@ export const ChatModule = ({ currentUser, chat, onClose, onMinimize, onToggleFul
         if (signal.callId !== call.id || processedSignalsRef.current.has(key)) continue;
         processedSignalsRef.current.add(key);
         const targetUserId = signal.senderId;
+        const senderState = call.call_participants?.find(participant => participant.user_id === targetUserId)?.status;
+        if (senderState && !["accepted", "invited", "ringing"].includes(senderState)) continue;
         if (signal.signalType === "reaction") {
           const emoji = (signal.payload as { emoji?: unknown }).emoji;
           if (typeof emoji === "string" && (MEETING_REACTIONS as readonly string[]).includes(emoji)) {
@@ -1532,26 +1575,34 @@ export const ChatModule = ({ currentUser, chat, onClose, onMinimize, onToggleFul
     }
   };
 
-  const startOutgoingCall = async (callType: "audio" | "video") => {
-    if (!selectedCallTargets.length) return;
+  const startOutgoingCall = async (callType: "audio" | "video", recipients = selectedCallTargets, scheduled?: ScheduledMeeting) => {
+    if ((!scheduled && !recipients.length) || activeCall || incomingCall || startingCallRef.current) return false;
+    startingCallRef.current = true;
     try {
       setCallError(null);
       const iceServers = await getCallIceServers();
       if (iceServers.length) iceServersRef.current = iceServers;
       await openMedia(callType === "video");
-      const call = await startCall(selectedCallTargets, callType);
-      await Promise.all(selectedCallTargets.map(async targetId => {
+      const call = await startCall(recipients, callType, scheduled?.id);
+      const targets = scheduled ? (call.call_participants || []).filter(member => member.user_id !== currentUser.id && ["invited", "ringing"].includes(member.status)).map(member => member.user_id) : recipients;
+      if (targets[0] && !targets.includes(activeChatUserId || "")) setActiveChatUserId(targets[0]);
+      await Promise.all(targets.map(async targetId => {
         const connection = createPeerConnection(call, targetId);
         if (connection.signalingState !== "stable" || connection.localDescription) return;
         const offer = await connection.createOffer();
         await connection.setLocalDescription(offer);
         await sendCallSignal(call.id, targetId, "offer", connection.localDescription || offer);
       }));
-      await publishLocalMediaState(call, selectedCallTargets);
+      await publishLocalMediaState(call, targets);
+      return true;
     } catch (error) {
       endLocalCallState();
       clearCallState();
+      if (scheduled) throw error;
       toast({ title: "Call failed", description: error instanceof Error ? error.message : "Unable to start the call.", variant: "destructive" });
+      return false;
+    } finally {
+      startingCallRef.current = false;
     }
   };
 
@@ -1579,18 +1630,30 @@ export const ChatModule = ({ currentUser, chat, onClose, onMinimize, onToggleFul
   };
 
   const acceptIncomingCall = async () => {
-    if (!incomingCall) return;
+    if (!incomingCall || joiningMeeting) return;
+    setJoiningMeeting(true);
     try {
       setCallError(null);
-      stopRingtone();
-      await openMedia(incomingCall.call_type === "video");
-      const call = await updateCallStatus(incomingCall.id, "accepted");
-      createPeerConnection(call, call.sender_id);
+      silenceIncomingCall();
+      await openMedia(incomingCall.call_type === "video", { mute: joinMuted, cameraOff: joinCameraOff });
+      const call = await updateCallStatus(incomingCall.id, "accepted", false, incomingCall.can_rejoin);
+      const organizerStillJoined = call.call_participants?.some(peer => peer.user_id === call.sender_id && peer.status === "accepted");
+      if (incomingCall.can_rejoin || (call.call_participants?.length && !organizerStillJoined)) {
+        const peers = call.call_participants?.filter(peer => peer.status === "accepted" && peer.user_id !== currentUser.id) ?? [];
+        await Promise.allSettled(peers.map(async peer => {
+          createPeerConnection(call, peer.user_id);
+          await sendCallSignal(call.id, peer.user_id, "rejoin", {});
+        }));
+      } else {
+        createPeerConnection(call, call.sender_id);
+      }
       await publishLocalMediaState(call, call.call_participant_ids || [call.sender_id]);
       playCallPickupSound();
     } catch (error) {
       endLocalCallState();
       toast({ title: "Unable to answer", description: error instanceof Error ? error.message : "Check microphone/camera permissions.", variant: "destructive" });
+    } finally {
+      setJoiningMeeting(false);
     }
   };
 
@@ -1616,30 +1679,54 @@ export const ChatModule = ({ currentUser, chat, onClose, onMinimize, onToggleFul
 
   const declineIncomingCall = async () => {
     if (!incomingCall) return;
-    stopRingtone();
+    silenceIncomingCall();
     playCallHangupSound();
-    await updateCallStatus(incomingCall.id, "declined").catch(() => undefined);
+    if (!incomingCall.can_rejoin) await updateCallStatus(incomingCall.id, "declined").catch(() => undefined);
     clearCallState();
     endLocalCallState();
   };
 
-  const silenceIncomingCall = () => {
-    setIsRingtoneSilenced(true);
-    stopRingtone();
-  };
-
-  const hangUpCall = async () => {
+  const hangUpCall = async (endForEveryone = false) => {
     const callId = activeCall?.id || incomingCall?.id;
-    if (callId && recordingSessionRef.current && recordingCallIdRef.current === callId) {
-      await finalizeActiveRecording(callId);
+    if (!callId || endingCallRef.current) return;
+    endingCallRef.current = true;
+    try {
+      if (recordingSessionRef.current && recordingCallIdRef.current === callId) {
+        await finalizeActiveRecording(callId);
+      }
+      await updateCallStatus(callId, "ended", endForEveryone);
+      playCallHangupSound();
+      clearCallState();
+      endLocalCallState();
+    } catch {
+      toast({ title: "Unable to update the meeting", description: "Check your connection and try again.", variant: "destructive" });
+    } finally {
+      endingCallRef.current = false;
     }
-    stopRingtone();
-    playCallHangupSound();
-    clearCallState();
-    endLocalCallState();
-    if (callId) await updateCallStatus(callId, "ended").catch(() => undefined);
   };
 
+  const isGroupMeeting = (activeCall?.call_participant_count ?? activeCall?.call_participants?.length ?? 0) > 2;
+  const isMeetingOrganizer = isGroupMeeting && isOrganizer;
+  const handOffMeeting = async (participantId: string, participantName: string) => {
+    if (!activeCall || !isMeetingOrganizer || !window.confirm(`Make ${participantName} the meeting organizer?`)) return;
+    try {
+      await transferOrganizer(activeCall.id, participantId);
+      toast({ title: "Meeting organizer updated" });
+    } catch (error) {
+      toast({ title: "Could not transfer meeting control", description: error instanceof Error ? error.message : "Try again.", variant: "destructive" });
+    }
+  };
+  const openBrowserPictureInPicture = async () => {
+    const video = [...(meetingVideoPanel.current?.querySelectorAll("video") ?? [])]
+      .find(element => element.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA && element.videoWidth > 0);
+    try {
+      if (document.pictureInPictureElement) await document.exitPictureInPicture();
+      else if (video) await video.requestPictureInPicture();
+      else toast({ title: "No live video available for picture-in-picture" });
+    } catch {
+      toast({ title: "Picture-in-picture unavailable", description: "Your browser or device could not open a video window." });
+    }
+  };
 
   const handleMessageReaction = async (message: ChatMessage, reactionType: string) => {
     try {
@@ -1789,10 +1876,15 @@ export const ChatModule = ({ currentUser, chat, onClose, onMinimize, onToggleFul
           <div className="flex items-center justify-between">
             <h2 className="flex items-center gap-2 text-lg font-bold text-primary"><MessageSquare className="h-5 w-5" /> Messages</h2>
             <div className="flex items-center gap-2">
+              <ScheduledMeetings userId={currentUser.id} users={visibleUsers} canStart={!activeCall && !incomingCall} onStart={async meeting => { await startOutgoingCall(meeting.call_type, [], meeting); }} />
               <div className={cn("h-2.5 w-2.5 rounded-full animate-pulse", isConnected ? "bg-green-500" : "bg-red-500")} />
               <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">{isConnected ? "Live" : "Reconnecting"}</span>
+              {onClose && !activeChatUserId && !activeCall && !incomingCall && (
+                <Button variant="ghost" size="icon" className="size-8 shrink-0" onClick={onClose} title="Close messaging" aria-label="Close messaging"><X className="size-4" /></Button>
+              )}
             </div>
           </div>
+          <NewCall users={visibleUsers} loading={isLoadingUsers} disabled={Boolean(activeCall || incomingCall)} onStart={startOutgoingCall} />
           <div className="relative group">
             <Search className="absolute left-3 top-3.5 h-4 w-4 text-primary opacity-40" />
             <Input placeholder="Search colleagues..." className="h-11 rounded-xl border-[hsl(var(--comm-border))] bg-[hsl(var(--comm-surface))] pl-9 text-sm shadow-sm placeholder:text-muted-foreground/80 focus-visible:ring-primary/25" value={searchTerm} onChange={(event) => setSearchTerm(event.target.value)} aria-label="Search conversations" />
@@ -1886,7 +1978,7 @@ export const ChatModule = ({ currentUser, chat, onClose, onMinimize, onToggleFul
       </div>
 
       <div className={cn("chat-conversation-surface relative min-w-0 flex-1 flex-col bg-[hsl(var(--comm-page))]", isSidebarOpen ? "hidden md:flex" : "flex", activeCall && (isDesktopChatOpen ? "lg:grid lg:grid-cols-[minmax(0,1.45fr)_minmax(320px,0.55fr)] lg:grid-rows-[auto_minmax(0,1fr)_auto]" : "lg:grid lg:grid-cols-1 lg:grid-rows-[auto_minmax(0,1fr)]"))}>
-        {activeChatUserId ? (
+        {(activeChatUserId || activeCall || incomingCall) ? (
           <>
             <header className={cn("z-[var(--z-sticky)] flex min-w-0 flex-wrap items-center justify-between gap-x-2 gap-y-1 border-b border-[hsl(var(--comm-border))] bg-[hsl(var(--comm-panel-elevated))] px-3 py-2.5 shadow-sm backdrop-blur-xl sm:flex-nowrap sm:gap-2 sm:px-5 sm:py-3", activeCall && "lg:col-span-2 lg:col-start-1 lg:row-start-1")}>
               <div className="flex min-w-0 flex-1 items-center gap-2 sm:gap-4">
@@ -1943,13 +2035,15 @@ export const ChatModule = ({ currentUser, chat, onClose, onMinimize, onToggleFul
                       {incomingCall.call_type === "video" ? <Video className="h-5 w-5" /> : <Phone className="h-5 w-5" />}
                     </div>
                     <div className="min-w-0">
-                      <p className="text-sm font-bold text-foreground">Incoming {incomingCall.call_type === "video" ? "video" : "phone"} call</p>
-                      <p className="truncate text-xs text-muted-foreground">{incomingCall.sender_first_name || "A colleague"} is calling you</p>
+                      <p className="text-sm font-bold text-foreground">{incomingCall.can_rejoin ? "Rejoin meeting" : "Prepare to join"}</p>
+                      <p className="truncate text-xs text-muted-foreground">{incomingCall.content || "Meeting"} · {incomingCall.sender_first_name || "A colleague"}</p>
                     </div>
                   </div>
                   <div className="flex flex-wrap gap-2">
-                    <Button size="sm" className="rounded-full px-4 shadow-riana" onClick={() => void acceptIncomingCall()}><Phone className="mr-2 h-4 w-4" />Answer</Button>
-                    <Button
+                    <Button size="sm" disabled={joiningMeeting} onClick={() => void acceptIncomingCall()}>
+                      {joiningMeeting ? "Joining…" : incomingCall.can_rejoin ? "Rejoin" : "Join now"}
+                    </Button>
+                    {incomingCall.call_status === "ringing" && <Button
                       size="sm"
                       variant="outline"
                       className="rounded-full border-slate-300 bg-white/95 px-4 text-xs font-semibold text-slate-800 shadow-sm transition-colors hover:border-slate-400 hover:bg-slate-100 hover:text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:hover:bg-slate-700"
@@ -1959,15 +2053,31 @@ export const ChatModule = ({ currentUser, chat, onClose, onMinimize, onToggleFul
                     >
                       <BellOff className="mr-2 h-4 w-4 text-slate-700 dark:text-slate-200" />
                       Silence
-                    </Button>
-                    <Button size="sm" variant="destructive" className="rounded-full px-4" onClick={() => void declineIncomingCall()}><PhoneOff className="mr-2 h-4 w-4" />Decline</Button>
+                    </Button>}
+                    <Button size="sm" variant="outline" disabled={joiningMeeting} onClick={() => void declineIncomingCall()}>{incomingCall.can_rejoin ? "Dismiss" : "Decline"}</Button>
                   </div>
+                </div>
+                <div className="mt-3 grid gap-2 text-sm sm:grid-cols-2">
+                  <label className="flex items-center gap-2"><input type="checkbox" checked={joinMuted} disabled={joiningMeeting} onChange={event => setJoinMuted(event.target.checked)} /> Start muted</label>
+                  {incomingCall.call_type === "video" && <label className="flex items-center gap-2"><input type="checkbox" checked={joinCameraOff} disabled={joiningMeeting} onChange={event => setJoinCameraOff(event.target.checked)} /> Start with camera off</label>}
+                  <label className="grid gap-1">Microphone
+                    <select className="min-w-0 rounded-md border border-input bg-background p-2" value={audioInputDeviceId} disabled={joiningMeeting} onChange={event => setAudioInputDeviceId(event.target.value)}>
+                      <option value="">System default</option>
+                      {mediaDevices.filter(device => device.kind === "audioinput" && device.deviceId).map((device, index) => <option value={device.deviceId} key={device.deviceId}>{device.label || `Microphone ${index + 1}`}</option>)}
+                    </select>
+                  </label>
+                  {incomingCall.call_type === "video" && <label className="grid gap-1">Camera
+                    <select className="min-w-0 rounded-md border border-input bg-background p-2" value={videoInputDeviceId} disabled={joiningMeeting} onChange={event => setVideoInputDeviceId(event.target.value)}>
+                      <option value="">System default</option>
+                      {mediaDevices.filter(device => device.kind === "videoinput" && device.deviceId).map((device, index) => <option value={device.deviceId} key={device.deviceId}>{device.label || `Camera ${index + 1}`}</option>)}
+                    </select>
+                  </label>}
                 </div>
               </div>
             )}
 
             {activeCall && (
-              <div className="call-panel relative mx-2 my-2 flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-[hsl(var(--comm-border-strong))] p-3 shadow-lg sm:mx-3 sm:my-3 lg:col-start-1 lg:row-start-2 lg:row-span-2 lg:m-3">
+              <div ref={meetingVideoPanel} className="call-panel relative mx-2 my-2 flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-[hsl(var(--comm-border-strong))] p-3 shadow-lg sm:mx-3 sm:my-3 lg:col-start-1 lg:row-start-2 lg:row-span-2 lg:m-3">
                 <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
                   <div className="flex min-w-0 flex-wrap items-center gap-2.5 text-sm font-semibold">
                     <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
@@ -1988,6 +2098,7 @@ export const ChatModule = ({ currentUser, chat, onClose, onMinimize, onToggleFul
                     <Badge variant="outline" className="rounded-full border-border bg-muted/40 text-[11px] font-medium">
                       {totalGalleryTiles} {totalGalleryTiles === 1 ? "participant" : "participants"}
                     </Badge>
+                    {roundTripMs !== null && <Badge variant="outline" title="Highest round-trip latency across connected meeting peers">{roundTripMs} ms</Badge>}
                     {isCallRecordingActive && (
                       <span className="inline-flex items-center gap-1.5 rounded-full border border-red-500/40 bg-red-500/15 px-2.5 py-0.5 text-[11px] font-bold text-red-600 dark:text-red-400" role="status" aria-live="polite">
                         <span className="h-2 w-2 rounded-full bg-red-500 animate-pulse" />
@@ -2168,7 +2279,7 @@ export const ChatModule = ({ currentUser, chat, onClose, onMinimize, onToggleFul
                       <DropdownMenuContent align="end" className="max-h-[min(70vh,32rem)] w-64 overflow-y-auto">
                         <div className="flex items-center justify-between px-2 py-1.5 text-xs text-muted-foreground sm:hidden">
                           <span>Reactions</span>
-                          <div className="flex gap-1">{MEETING_REACTIONS.map(emoji => <button key={emoji} type="button" className="rounded p-1.5 text-lg hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary" onClick={() => sendMeetingReaction(emoji)} aria-label={`React ${emoji}`}>{emoji}</button>)}</div>
+                          <div className="flex flex-wrap gap-1">{MEETING_REACTIONS.map(emoji => <button key={emoji} type="button" className="rounded p-1.5 text-lg hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary" onClick={() => sendMeetingReaction(emoji)} aria-label={`React ${emoji}`}>{emoji}</button>)}</div>
                         </div>
                         <DropdownMenuItem onSelect={() => setCallLayout("gallery")}><LayoutGrid className="mr-2 h-4 w-4" />Gallery view</DropdownMenuItem>
                         <DropdownMenuItem onSelect={() => setCallLayout("speaker")}><PanelTop className="mr-2 h-4 w-4" />Speaker view</DropdownMenuItem>
@@ -2202,6 +2313,23 @@ export const ChatModule = ({ currentUser, chat, onClose, onMinimize, onToggleFul
                         <DropdownMenuItem onSelect={() => { setShowRecordingsPanel(value => { const next = !value; if (next) { setShowInvitePanel(false); setIsDesktopParticipantsOpen(false); setShowDeviceSettings(false); void loadCallRecordings(activeCall.id); } return next; }); }}><Film className="mr-2 h-4 w-4" />Meeting recordings ({callRecordings.length})</DropdownMenuItem>
                         {onMinimize && <DropdownMenuItem onSelect={onMinimize}><Minus className="mr-2 h-4 w-4" />Minimize call</DropdownMenuItem>}
                         {onToggleFullscreen && <DropdownMenuItem onSelect={onToggleFullscreen}>{isFullscreen ? <Minimize2 className="mr-2 h-4 w-4" /> : <Maximize2 className="mr-2 h-4 w-4" />}{isFullscreen ? "Exit full screen" : "Full screen"}</DropdownMenuItem>}
+                        {activeCall.call_type === "video" && document.pictureInPictureEnabled && (
+                          <DropdownMenuGroup>
+                            <DropdownMenuItem inset onSelect={event => {
+                              event.preventDefault();
+                              void openBrowserPictureInPicture();
+                            }}>Browser picture-in-picture</DropdownMenuItem>
+                          </DropdownMenuGroup>
+                        )}
+                        {isMeetingOrganizer && (
+                          <DropdownMenuGroup>
+                            <DropdownMenuItem inset onSelect={() => {
+                              if (window.confirm("End this meeting for everyone?")) void hangUpCall(true);
+                            }}>
+                              End for everyone
+                            </DropdownMenuItem>
+                          </DropdownMenuGroup>
+                        )}
                       </DropdownMenuContent>
                     </DropdownMenu>
                   </div>
@@ -2210,7 +2338,7 @@ export const ChatModule = ({ currentUser, chat, onClose, onMinimize, onToggleFul
                   <div className="ml-auto flex shrink-0 items-center gap-1.5 border-l border-[hsl(var(--comm-border))] pl-1.5 sm:pl-2" role="group" aria-label="Call management">
                     {onMinimize && <Button size="icon" variant="outline" className="call-control-button hidden h-9 w-9 shrink-0 rounded-lg lg:inline-flex" onClick={onMinimize} title="Minimize call" aria-label="Minimize active call"><Minus className="h-4 w-4" /></Button>}
                     {onToggleFullscreen && <Button size="icon" variant="outline" className="call-control-button hidden h-9 w-9 shrink-0 rounded-lg lg:inline-flex" onClick={onToggleFullscreen} title={isFullscreen ? "Exit full screen" : "Full screen call"} aria-label={isFullscreen ? "Exit full screen call" : "Open call full screen"} aria-pressed={isFullscreen}>{isFullscreen ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}</Button>}
-                    <Button size="sm" variant="destructive" className="call-hangup h-9 shrink-0 rounded-lg px-3.5 text-xs font-semibold whitespace-nowrap" onClick={() => void hangUpCall()} title="End call" aria-label="Hang up call"><PhoneOff className="h-4 w-4 sm:mr-1.5" /><span className="hidden sm:inline">Hang up</span></Button>
+                    <Button size="sm" variant="destructive" className="call-hangup h-9 shrink-0 whitespace-nowrap" onClick={() => void hangUpCall()} title={isGroupMeeting ? "Leave meeting" : "End call"} aria-label={isGroupMeeting ? "Leave meeting" : "End call"}><PhoneOff data-icon="inline-start" /><span className="hidden sm:inline">{isGroupMeeting ? "Leave" : "End call"}</span></Button>
                   </div>
                 </div>
                 <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden lg:flex-row-reverse">
@@ -2283,16 +2411,19 @@ export const ChatModule = ({ currentUser, chat, onClose, onMinimize, onToggleFul
                 {(mobileMeetingView === "participants" || isDesktopParticipantsOpen) && <section className="max-h-[52dvh] w-full shrink-0 overflow-y-auto rounded-xl border border-[hsl(var(--comm-border))] bg-background/95 p-3.5 shadow-md lg:max-h-full lg:w-[320px] xl:w-[340px]" aria-label="Meeting participants">
                   <div className="mb-2.5 flex items-center justify-between"><h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Participants ({activeCallParticipantIds.length})</h4><Button type="button" size="icon" variant="ghost" className="h-7 w-7 rounded-lg" onClick={() => { setMobileMeetingView("gallery"); setIsDesktopParticipantsOpen(false); }} title="Close participants panel" aria-label="Close participants panel"><X className="h-3.5 w-3.5" /></Button></div>
                   <ul className="grid gap-1 sm:grid-cols-2 lg:grid-cols-1">
-                    {meetingParticipants.map(participant => <li key={participant.userId} className="flex min-w-0 items-center gap-2 rounded-lg border border-transparent px-2 py-2 hover:border-border hover:bg-muted/50">
+                    {meetingParticipants.map(participant => <li key={participant.userId} className="flex min-w-0 flex-wrap items-center gap-2 rounded-lg border border-transparent px-2 py-2 hover:border-border hover:bg-muted/50">
                       <Avatar className="h-9 w-9 shrink-0"><AvatarImage src={resolveAvatarUrl(participant.profile?.avatar_url)} alt={formatUserName(participant.profile)} /><AvatarFallback>{formatUserName(participant.profile).split(/\s+/).map(part => part[0]).join("").slice(0, 2).toUpperCase()}</AvatarFallback></Avatar>
                       <div className="min-w-0 flex-1"><p className="truncate text-sm font-medium">{participant.userId === currentUser.id ? `${formatUserName(currentUser)} (You)` : formatUserName(participant.profile)}</p><p className="truncate text-[11px] text-muted-foreground">{participant.status === "accepted" ? participant.userId === currentUser.id || remoteStreams[participant.userId] ? "Connected" : "Connecting" : participant.status === "invited" ? "Invited" : participant.status === "ringing" ? "Ringing" : participant.status[0].toUpperCase() + participant.status.slice(1)}</p></div>
                       {participant.handRaised && <Hand className="h-4 w-4 shrink-0 text-amber-600" aria-label="Hand raised" />}
                       {remoteMediaStates[participant.userId]?.audioEnabled === false && <MicOff className="h-4 w-4 shrink-0 text-muted-foreground" aria-label="Microphone muted" />}
                       {remoteMediaStates[participant.userId]?.videoEnabled === false && <VideoOff className="h-4 w-4 shrink-0 text-muted-foreground" aria-label="Camera off" />}
                       {activeCallParticipantIds.includes(participant.userId) && <Button type="button" size="icon" variant="ghost" className="h-8 w-8 shrink-0" onClick={() => setPinnedParticipantId(current => current === participant.userId ? null : participant.userId)} title={pinnedParticipantId === participant.userId ? "Unpin participant" : "Pin participant"} aria-label={pinnedParticipantId === participant.userId ? "Unpin participant" : `Pin ${formatUserName(participant.profile)}`} aria-pressed={pinnedParticipantId === participant.userId}>{pinnedParticipantId === participant.userId ? <PinOff className="h-4 w-4" /> : <Pin className="h-4 w-4" />}</Button>}
-                      {activeCallParticipantIds.includes(participant.userId) && String(activeCall.sender_id) === String(currentUser.id) && <Button type="button" size="icon" variant={spotlightParticipantId === participant.userId ? "default" : "ghost"} className="h-8 w-8 shrink-0" onClick={() => setMeetingSpotlight(spotlightParticipantId === participant.userId ? null : participant.userId)} title={spotlightParticipantId === participant.userId ? "Remove spotlight" : "Spotlight participant"} aria-label={spotlightParticipantId === participant.userId ? "Remove spotlight" : `Spotlight ${formatUserName(participant.profile)}`} aria-pressed={spotlightParticipantId === participant.userId}><PanelTop className="h-4 w-4" /></Button>}
-                      {String(activeCall.sender_id) === String(currentUser.id) && ["invited", "ringing"].includes(participant.status) && <Button type="button" size="sm" variant="outline" className="h-8 shrink-0 px-2" onClick={() => void cancelCallInvitation(activeCall.id, participant.userId).catch(error => toast({ title: "Invitation not cancelled", description: error instanceof Error ? error.message : "Please try again.", variant: "destructive" }))}>Cancel</Button>}
-                      {String(activeCall.sender_id) === String(currentUser.id) && participant.handRaised && participant.userId !== currentUser.id && <Button type="button" size="sm" variant="outline" className="h-8 shrink-0 px-2" onClick={() => lowerRaisedHand(participant.userId)}>Lower</Button>}
+                      {activeCallParticipantIds.includes(participant.userId) && isOrganizer && <Button type="button" size="icon" variant={spotlightParticipantId === participant.userId ? "default" : "ghost"} className="h-8 w-8 shrink-0" onClick={() => setMeetingSpotlight(spotlightParticipantId === participant.userId ? null : participant.userId)} title={spotlightParticipantId === participant.userId ? "Remove spotlight" : "Spotlight participant"} aria-label={spotlightParticipantId === participant.userId ? "Remove spotlight" : `Spotlight ${formatUserName(participant.profile)}`} aria-pressed={spotlightParticipantId === participant.userId}><PanelTop className="h-4 w-4" /></Button>}
+                      {isOrganizer && ["invited", "ringing"].includes(participant.status) && <Button type="button" size="sm" variant="outline" className="h-8 shrink-0 px-2" onClick={() => void cancelCallInvitation(activeCall.id, participant.userId).catch(error => toast({ title: "Invitation not cancelled", description: error instanceof Error ? error.message : "Please try again.", variant: "destructive" }))}>Cancel</Button>}
+                      {isOrganizer && participant.handRaised && participant.userId !== currentUser.id && <Button type="button" size="sm" variant="outline" className="h-8 shrink-0 px-2" onClick={() => lowerRaisedHand(participant.userId)}>Lower</Button>}
+                      {isMeetingOrganizer && activeCall.call_status === "accepted" && participant.status === "accepted" && participant.userId !== currentUser.id && (
+                        <Button type="button" size="sm" variant="outline" className="h-8 shrink-0 px-2" onClick={() => void handOffMeeting(participant.userId, formatUserName(participant.profile))}>Make organizer</Button>
+                      )}
                     </li>)}
                   </ul>
                 </section>}

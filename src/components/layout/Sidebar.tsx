@@ -35,7 +35,7 @@ export const Sidebar = ({ user, activeModule, setActiveModule, isMobileOpen, onM
   const avatarSrc = resolveAvatarUrl(user.avatar_url);
   const developerModuleRole = user.module_roles?.crms;
   const effectiveDeveloperRole = user.role === 'SuperAdmin' ? 'SuperAdmin' : developerModuleRole || user.role;
-  const canAccessDevelopers = ['SuperAdmin', 'Admin', 'Management', 'Teamlead', 'Developer', 'Sales', 'User'].includes(effectiveDeveloperRole);
+  const canAccessDevelopers = user.role !== 'HeadOfBusiness' && ['SuperAdmin', 'Admin', 'Management', 'Teamlead', 'Developer', 'Sales', 'User'].includes(effectiveDeveloperRole);
 
   useEffect(() => {
     const loadSettings = async () => {
@@ -60,7 +60,7 @@ export const Sidebar = ({ user, activeModule, setActiveModule, isMobileOpen, onM
   }, []);
   
   const menuItems = [
-    { key: 'dashboard', label: 'Dashboard', icon: Home, roles: ['SuperAdmin', 'Admin', 'Management', 'Finance', 'Teamlead', 'Developer', 'Sales', 'User'], category: 'main' },
+    { key: 'dashboard', label: 'Dashboard', icon: Home, roles: ['SuperAdmin', 'Admin', 'Management', 'Finance', 'Teamlead', 'Developer', 'Sales', 'User', 'HeadOfBusiness'], category: 'main' },
     { key: 'technician-dashboard', label: 'My Tasks', icon: Wrench, roles: ['User'], mobileOnly: true, category: 'main' },
     { key: 'clients', label: 'Clients', icon: Building2, roles: [], capability: 'clients.view' as Capability, category: 'management' },
     { key: 'assignments', label: 'Assigned Technicians', icon: UserCheck, roles: [], capability: 'assignments.view' as Capability, category: 'management' },
@@ -149,7 +149,7 @@ export const Sidebar = ({ user, activeModule, setActiveModule, isMobileOpen, onM
     return next;
   });
 
-  const SidebarContent = ({ collapsed = false }: { collapsed?: boolean }) => (
+  const renderSidebarContent = (collapsed = false) => (
     <div className="flex h-full min-h-0 flex-col">
       {collapsed !== undefined && <div className={cn("hidden border-b border-border p-2 lg:flex", collapsed ? "justify-center" : "justify-end")}>
         <Button type="button" variant="ghost" size="icon" className="h-8 w-8 rounded-lg" onClick={toggleCollapsed} aria-label={collapsed ? "Expand navigation" : "Collapse navigation"} title={collapsed ? "Expand navigation" : "Collapse navigation"}>
@@ -176,21 +176,21 @@ export const Sidebar = ({ user, activeModule, setActiveModule, isMobileOpen, onM
                         data-tour-nav={item.key}
                         variant="ghost"
                         className={cn(
-                          "group relative h-9 w-full rounded-lg px-2.5 text-left text-[13px] font-medium transition-colors duration-150",
+                          "group relative h-auto min-h-9 w-full rounded-lg px-2.5 py-1.5 text-left text-[13px] font-medium transition-colors duration-150",
                           collapsed ? "justify-center" : "justify-start",
                           isActive 
                             ? "bg-primary/12 text-primary shadow-none hover:bg-primary/16 hover:text-primary"
                             : "text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
                         )}
                         onClick={() => handleModuleClick(item.key)}
-                        title={collapsed ? item.label : undefined} aria-label={item.label}
+                        title={collapsed ? item.label : undefined} aria-label={item.label} aria-current={isActive ? "page" : undefined}
                       >
                         <div className={cn(
                           "absolute left-0 top-1/2 -translate-y-1/2 w-1 h-6 rounded-r-full transition-all duration-200",
                           isActive ? "bg-primary" : "bg-transparent group-hover:bg-primary/30"
                         )} />
-                        <item.icon className={cn("h-4 w-4 shrink-0", !collapsed && "mr-2.5")} />
-                        <span className={cn("truncate font-medium", collapsed && "sr-only")}>{item.label}</span>
+                        <item.icon className={cn("h-4 w-4 shrink-0", !collapsed && "mr-1")} />
+                        <span className={cn("min-w-0 whitespace-normal break-words font-medium leading-tight", collapsed && "sr-only")}>{item.label}</span>
                         <ChevronRight className={cn(
                           "ml-auto h-3.5 w-3.5 opacity-0 -translate-x-2 transition-all duration-200",
                           collapsed && "hidden",
@@ -230,7 +230,7 @@ export const Sidebar = ({ user, activeModule, setActiveModule, isMobileOpen, onM
 
       {/* User Info Card */}
       <div className={cn("border-t border-border", collapsed ? "p-2" : "p-3")}>
-        <div className={cn("rounded-lg bg-gradient-to-br from-primary/10 to-primary/5 dark:from-primary/20 dark:to-primary/10", collapsed ? "p-2" : "space-y-2 p-3")}>
+        <div className={cn("rounded-lg bg-muted/60", collapsed ? "p-2" : "p-2.5")}>
           <div className="flex items-center gap-2">
             <Avatar className="h-8 w-8 border border-primary/20">
               <AvatarImage src={avatarSrc} alt={user.first_name ? `${user.first_name} ${user.last_name || ''}`.trim() : user.email} />
@@ -250,12 +250,12 @@ export const Sidebar = ({ user, activeModule, setActiveModule, isMobileOpen, onM
       
       {/* Footer with auto-updating year */}
       <div className={cn("shrink-0 border-t border-border", collapsed ? "px-2 py-3" : "px-4 py-3")}>
-        <div className="flex items-center justify-start gap-2 overflow-hidden h-10 px-2">
-          <div className="shrink-0 w-16 h-8 flex items-center justify-center overflow-hidden">
+        <div className={cn("flex h-8 items-center gap-2", collapsed ? "justify-center" : "px-2")}>
+          <div className={cn("flex h-8 shrink-0 items-center justify-center", collapsed ? "w-full" : "w-16")}>
             <img 
               src={logoPath} 
               alt="RIANA" 
-              className="h-full w-auto object-contain"
+              className="h-full max-w-full object-contain"
               onError={(e) => {
                 if (e.currentTarget.src.includes(logoPath) && logoPath !== "/Riana_logo.png") {
                   setLogoPath("/Riana_logo.png");
@@ -274,15 +274,15 @@ export const Sidebar = ({ user, activeModule, setActiveModule, isMobileOpen, onM
   return (
     <>
       {/* Desktop Sidebar */}
-      <aside className={cn("hidden min-h-[calc(100vh-4rem)] shrink-0 flex-col border-r border-sidebar-border bg-sidebar transition-[width] duration-200 lg:flex", isCollapsed ? "w-20" : "w-64")}>
-        <SidebarContent collapsed={isCollapsed} />
+      <aside className={cn("hidden min-h-0 shrink-0 flex-col border-r border-sidebar-border bg-sidebar transition-[width] duration-200 motion-reduce:transition-none lg:flex", isCollapsed ? "w-16" : "w-56")}>
+        {renderSidebarContent(isCollapsed)}
       </aside>
 
       {/* Mobile Sidebar Sheet */}
       <Sheet modal={!tourMode} open={isMobileOpen} onOpenChange={(open) => !open && onMobileClose?.()}>
         <SheetContent side="left" className="w-[min(86vw,320px)] p-0" onInteractOutside={(event) => { if (tourMode) event.preventDefault(); }} onEscapeKeyDown={(event) => { if (tourMode) event.preventDefault(); }} onOpenAutoFocus={(event) => { if (tourMode) event.preventDefault(); }}>
           <SheetTitle className="sr-only">Navigation</SheetTitle>
-          <SidebarContent />
+          {renderSidebarContent()}
         </SheetContent>
       </Sheet>
     </>

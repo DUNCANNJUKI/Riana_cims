@@ -21,26 +21,23 @@ class NotificationSoundManager {
             if (!AudioContextConstructor) return;
             this.audioContext = new AudioContextConstructor();
           }
-          if (this.audioContext.state === 'suspended') await this.audioContext.resume();
+          if (this.audioContext.state !== 'running') await this.audioContext.resume();
           this.isUnlocked = this.audioContext.state === 'running';
         } catch {
           this.isUnlocked = false;
         }
 
-        if (this.isUnlocked) {
-          document.removeEventListener('pointerdown', unlockAudio);
-          document.removeEventListener('keydown', unlockAudio);
-        }
       };
       document.addEventListener('pointerdown', unlockAudio);
       document.addEventListener('keydown', unlockAudio);
+      document.addEventListener('touchend', unlockAudio);
     }
   }
 
   // Play a clear notification chime. Kept local with Web Audio so alerts do not
   // depend on third-party audio files or network availability.
   playNotificationSound(type: NotificationSoundType = 'default') {
-    if (!this.isEnabled || !this.isUnlocked || this.audioContext?.state !== 'running') return;
+    if (!this.getEnabled() || !this.isUnlocked || this.audioContext?.state !== 'running') return;
 
     try {
       const ctx = this.audioContext;

@@ -71,13 +71,14 @@ const ROLE_CAPABILITIES = {
   Management: new Set([...ALL_CAPABILITIES].filter((code) => !['installations.manage', 'progress.manage'].includes(code)
     && (!code.startsWith('inventory.') || ['inventory.view','inventory.view_reports','inventory.export'].includes(code)))),
   Admin: ADMIN_CAPABILITIES,
+  HeadOfBusiness: new Set(['clients.view', 'clients.manage', 'installations.view', 'installations.manage', 'assignments.view', 'assignments.manage', 'reports.view', 'analytics.view']),
   Teamlead: TEAMLEAD_CAPABILITIES,
   Finance: VIEW_ONLY,
   Sales: new Set(['reports.view']),
   Developer: new Set(),
   User: new Set(['clients.view', 'installations.view', 'installations.manage', 'reports.view', 'files.upload', 'files.view', 'files.download', ...FIELD_OPERATIONS_CAPABILITIES]),
   InventoryOfficer: new Set(['files.upload','files.view','files.download', ...CAPABILITY_DEFINITIONS.map(d=>d.code).filter(code=>code.startsWith('inventory.') && ![
-    'inventory.policy','inventory.approve_models','inventory.cross_subsidiary','inventory.retire_approve',
+    'inventory.policy','inventory.approve_models','inventory.retire_approve',
     'inventory.modify_identity','inventory.import','inventory.approve_import','inventory.field_register',
   ].includes(code))]),
 };
@@ -93,14 +94,14 @@ const normalizePermissions = (value) => {
 
 const getEffectiveCapabilities = (role, extraPermissions) => Array.from(new Set([
   ...(ROLE_CAPABILITIES[role] || []),
-  ...normalizePermissions(extraPermissions),
+  ...(role === 'HeadOfBusiness' ? [] : normalizePermissions(extraPermissions)),
 ])).filter((capability) => !(ROLE_DENIED_CAPABILITIES[role]?.has(capability))).sort();
 
 const hasCapability = (user, capability) => (
   !(ROLE_DENIED_CAPABILITIES[user?.role]?.has(capability)) && (user?.role === 'SuperAdmin'
   || (ROLE_CAPABILITIES[user?.role]?.has(capability) ?? false)
-  || normalizePermissions(user?.extra_permissions).includes(capability)
-  || normalizePermissions(user?.permissions).includes(capability)
+  || (user?.role !== 'HeadOfBusiness' && (normalizePermissions(user?.extra_permissions).includes(capability)
+    || normalizePermissions(user?.permissions).includes(capability)))
 ));
 
 const requireCapability = (capability) => (req, res, next) => (

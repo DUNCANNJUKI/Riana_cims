@@ -13,6 +13,16 @@ RIANA CIMS provides Client Installation Management and the Developers change-req
 
 Modules include clients, installations, technician assignments, inventory, scheduling, tasks, handovers, feedback, reports, user permissions, company settings, Developers requests, support and communication. Developer accounts enter their workspace after sign-in; other roles use their granted modules. SuperAdmin retains platform-wide authority.
 
+### Business and inventory roles
+
+Super Admin can create and assign **Head of Business** and **Inventory Officer** accounts. Head of Business requires a primary subsidiary. To grant access to more subsidiaries, open the saved Head of Business account in **Users**, select the additional subsidiaries under **Delegated subsidiaries**, and save. Head of Business can switch between their authorized subsidiaries on **Business overview**. The API checks every delegated request against the current grants.
+
+Head of Business can maintain clients, branches, departments, installations, and technician assignments in the selected subsidiary. Installation and assignment writes validate the client, branch, department and staff references in the same transaction. Commercial decisions are available for pending change requests and retain the existing approval audit and notification path. Staff status controls apply to standard User accounts in the selected subsidiary. Reactivation can reverse only a suspension recorded through the business dashboard. Platform settings, staff role grants, client deletion, technical approvals, inventory selection, and signed-handover workflows use their existing authorized roles.
+
+An Inventory Officer can use **All subsidiaries** or filter the inventory to a specific subsidiary. The user account can have no subsidiary. Registration and other stock operations still require the owning or destination subsidiary where applicable. Cross-subsidiary transfers require an approval reference and a location in the destination subsidiary. Inventory documents follow equipment access; unrelated files are scoped separately.
+
+Before staging deployment, create and verify a backup and apply `20261127_business_inventory_roles.sql` and `20261127_business_delegation.sql` with the ordered migration runner. Verify the role catalogue and sign in with scoped test accounts before assigning either role. The migrations add the role enum value, permission catalogue entries, delegation and suspension records without changing existing profile assignments. For rollback, keep the additive schema and use a build that understands the new enum. An older build that narrows the enum requires a reviewed account migration or verified database restore before startup if any Head of Business profiles exist.
+
 ## Local setup
 
 Use Node.js 22.12+ or 24, npm and the configured MySQL-compatible server. The API's standalone minimum is declared in `server/package.json`; the complete frontend/test toolchain requires the newer Node version.
@@ -86,6 +96,20 @@ The client portal migration is `server/migrations/20261110_client_change_request
 
 The existing authenticated messaging and bounded peer-to-peer calling module provides participants, device controls, reactions, hand state, screen sharing, recording and background effects. It is a mesh implementation; SFU capacity and TURN infrastructure require separate provisioning and acceptance. Optional effect failure must preserve the original camera and audio.
 
+Select **Messages → New call**, choose one colleague for a direct call or multiple colleagues for a group call, and select **Audio call** or **Video call**.
+
+In a group meeting, **Leave** disconnects your participant session. The meeting continues while another joined participant remains. The joined organizer can use **More meeting options → End for everyone** and confirm to close the meeting. Direct calls still end when either party hangs up. On refresh, the active-call lookup restores membership for the owning device. Use **Reconnect camera and microphone** to reopen local media.
+
+The dashboard, notification panel, and Communication use the same authenticated meeting state. Select **Join now** or **Rejoin** to review available devices and choose initial microphone and camera settings before joining. `CHAT_MEETING_REJOIN_GRACE_SECONDS` defaults to 300 seconds and accepts 0–3600 seconds. The grace period applies to previously joined members of an ongoing group meeting. Setting it to zero disables rejoin after explicitly leaving. You can move the minimized meeting window with its drag handle or the arrow keys.
+
+The ringing timeout applies before a call starts. Participants invited to an in-progress meeting can join while it is active, even if Web Push delivery fails. An explicit decline, invitation cancellation, or meeting end closes the invitation.
+
+Open **Messages → Scheduled meetings** to reserve an audio or video meeting and select attendees. The organizer starts or cancels it from the same list. When it starts, attendees receive the usual call invitation. In an active group meeting the organizer can use **Participants → Make organizer** to hand off control. If the organizer leaves through CIMS, the longest joined participant takes over. Recording permissions follow the existing recording policy.
+
+In **Preferences → Notifications & preferences**, use **Enable device notifications** for background alerts and **Test alert sound** to check in-app sound. An incoming call rings while the workspace can run and shows a pre-join overlay. **Silence ringtone** stops that call's ringtone. Background delivery requires configured VAPID and a browser subscription. Browser autoplay rules can require a click or tap before in-app sound plays. The OS controls notification sound for background and closed-app delivery.
+
+Apply `20261127_meeting_coordination.sql` through the existing backup-verified migration runner before staging or deployment. It adds scheduled meetings, organizer ownership and presence tracking. Clients renew presence every 30 seconds while in a call. A minute-based cleanup closes an active meeting after all joined devices with recorded presence have been idle for ten minutes. Meetings with untracked legacy clients are preserved. Roll back by restoring the prior application build and retaining the additive tables and columns for later recovery.
+
 Production background failure was reproduced on `https://rianacims.marezi.co`: its document CSP rejected even a minimal WebAssembly module. The loader, WASM and model endpoints returned valid assets. The repository's security middleware permits only the additional `'wasm-unsafe-eval'` capability; JavaScript eval and external script origins remain blocked. A proxy/edge policy can still block execution even if another header permits it.
 
 The build now stages matching SDK/runtime/model files under content-versioned URLs and emits `dist/call-background-runtime.json`. New bundles cannot select old CacheFirst entries under another revision. No authentication storage or user data is cleared. Generated runtime binaries, manifests and build outputs are not committed.
@@ -125,6 +149,8 @@ The checker loads the API's root environment while preserving inherited values a
 Apply migrations against the intended existing database only after a verified backup. The GitLab runner verifies migration history and required schema. Manual packages provide one ordered `LIVE_DB_UPDATE_ALL.sql` or their explicitly named live-update entrypoint. Do not combine old release SQL with a newer consolidated entrypoint. `hosting/Mysql_host/riana_cims_host.sql` is a sanitized clean-install/reference export with destructive table definitions; it is not a production backup.
 
 Inventory allocation uses model/equipment mappings and atomic transactions. Subsidiary serial requirements, feature flags and storage policy govern issuance; missing policy must not silently enable allocation. Retain issued serials, assignment history, references, counters and uploaded evidence. QR labels use the correct HTTPS deployment origin and expose only their intended public redacted view.
+
+Equipment previews use the original kiosk, TV, LED service point and media controller images extracted from the Lifecare Kikuyu survey. The transparent WebP assets are in `public/equipment`, and the display mapping is in `src/utils/equipmentImages.ts`. The PWA build precaches all four images for installed clients after the new service worker activates.
 
 Enable hardware/scheduling features only after their required migrations and policy are configured. Verify scoped calendar access, time zones, `/api/time`, overlapping-booking rejection, recurrence and reminder transactions. Keep host/database clocks synchronized. Current scheduling reminders are in-app; do not claim live SMS/email delivery from mocked provider tests.
 

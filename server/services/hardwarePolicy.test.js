@@ -92,19 +92,20 @@ test("lifecycle blocks conflicting installation and terminal-state reuse", () =>
     /Archived/,
   );
 });
-test("Inventory Officer is scoped and sensitive privileges require separate grants", () => {
+test("Inventory Officer can work group-wide while inventory governance requires separate grants", () => {
   const user = { role: "InventoryOfficer", subsidiary_id: "a" };
   assert.equal(P.scopedSubsidiary(user, "a"), "a");
-  assert.throws(() => P.scopedSubsidiary(user, "b"), /restricted/);
+  assert.equal(P.scopedSubsidiary(user, "b"), "b");
+  assert.equal(P.scopedSubsidiary({ ...user, subsidiary_id: null }, "b"), "b");
+  assert.equal(hasCapability(user, "inventory.cross_subsidiary"), true);
   assert.throws(
     () => P.scopedSubsidiary({ ...user, subsidiary_id: null }),
-    /restricted/,
+    /owning subsidiary/,
   );
   assert.equal(hasCapability(user, "inventory.generate_serial"), true);
   for (const permission of [
     "inventory.policy",
     "inventory.approve_models",
-    "inventory.cross_subsidiary",
     "inventory.retire_approve",
     "inventory.modify_identity",
     "inventory.approve_import",

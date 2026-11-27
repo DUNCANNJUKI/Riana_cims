@@ -22,6 +22,9 @@ const migrationIds = [
   '20261123_hardware_components',
   '20261124_role_defaults_and_module_roles',
   '20261126_crms_user_role',
+  '20261127_meeting_coordination',
+  '20261127_business_inventory_roles',
+  '20261127_business_delegation',
 ];
 
 const splitSqlStatements = (sql) => {
@@ -154,7 +157,18 @@ async function run() {
   );
   if (!crmsUserRole) throw new Error('The Developers User role is missing from the role catalogue.');
 
-  const requiredTables = ['call_device_sessions', 'call_meeting_state', 'call_recordings', 'message_reactions', 'message_recipient_status', ...Object.keys(passkeySchema)];
+  const [businessRoles] = await pool.query(
+    "SELECT code FROM roles WHERE module_id = 'cims' AND code IN ('HeadOfBusiness', 'InventoryOfficer')",
+  );
+  if (new Set(businessRoles.map(({ code }) => code)).size !== 2) {
+    throw new Error('The CIMS business or inventory role is missing from the role catalogue.');
+  }
+
+  const requiredTables = [
+    'call_device_sessions', 'call_meeting_state', 'call_recordings', 'message_reactions', 'message_recipient_status',
+    'scheduled_meetings', 'scheduled_meeting_participants', 'business_subsidiary_grants', 'business_staff_suspensions',
+    ...Object.keys(passkeySchema),
+  ];
   const [tableRowsAfter] = await pool.query(
     `SELECT TABLE_NAME FROM information_schema.TABLES
      WHERE TABLE_SCHEMA=DATABASE() AND TABLE_TYPE='BASE TABLE'
@@ -167,9 +181,13 @@ async function run() {
 
   const requiredColumns = {
     ...passkeySchema,
-    messages: ['message_kind', 'call_type', 'call_status', 'call_started_at', 'call_ended_at', 'reply_to_message_id'],
+    messages: ['message_kind', 'call_type', 'call_status', 'call_started_at', 'call_ended_at', 'reply_to_message_id', 'call_organizer_id'],
     call_participants: ['status', 'joined_at', 'left_at', 'hand_raised', 'hand_raised_at', 'audio_enabled', 'video_enabled', 'screen_sharing'],
-    call_device_sessions: ['call_id', 'user_id', 'device_id', 'status', 'accepted_at', 'resolved_at', 'last_seen_at'],
+    call_device_sessions: ['call_id', 'user_id', 'device_id', 'status', 'accepted_at', 'resolved_at', 'last_seen_at', 'meeting_heartbeat_at'],
+    scheduled_meetings: ['id', 'organizer_id', 'title', 'call_type', 'starts_at', 'status', 'call_id'],
+    scheduled_meeting_participants: ['meeting_id', 'user_id'],
+    business_subsidiary_grants: ['user_id', 'subsidiary_id', 'granted_by', 'granted_at'],
+    business_staff_suspensions: ['user_id', 'subsidiary_id', 'session_version'],
     message_recipient_status: ['message_id', 'user_id', 'delivered_at', 'read_at'],
     crms_client_acceptances: ['feedback_rating', 'feedback_comment', 'feedback_submitted_at'],
     crms_affected_modules: ['id', 'name', 'is_active', 'sort_order', 'version'],

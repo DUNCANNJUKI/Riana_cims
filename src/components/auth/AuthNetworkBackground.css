@@ -1,0 +1,90 @@
+.auth-network-surface {
+  isolation: isolate;
+}
+
+.auth-network-surface.riana-login-page {
+  position: relative;
+}
+
+.auth-network {
+  --auth-network-link: hsl(var(--primary) / 0.17);
+  --auth-network-node: hsl(var(--primary) / 0.66);
+  --auth-network-signal: hsl(var(--primary) / 0.72);
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.dark .auth-network {
+  --auth-network-link: hsl(var(--primary-light) / 0.18);
+  --auth-network-node: hsl(var(--primary-light) / 0.59);
+  --auth-network-signal: hsl(var(--primary-light) / 0.65);
+}
+
+.auth-network__graph {
+  display: block;
+  animation: auth-network-enter 1.4s ease-out both;
+}
+
+.auth-network__graph--mobile {
+  display: none;
+}
+
+.auth-network__links {
+  stroke: var(--auth-network-link);
+  stroke-width: 1px;
+}
+
+.auth-network__nodes circle {
+  fill: var(--auth-network-node);
+  opacity: 0.54;
+  animation: auth-network-node ease-in-out infinite;
+}
+
+.auth-network__signals line {
+  stroke: var(--auth-network-signal);
+  stroke-width: 1.5px;
+  stroke-linecap: round;
+  stroke-dasharray: 1.8 98.2;
+  opacity: 0;
+  animation: auth-network-signal linear infinite;
+}
+
+.auth-network[data-paused] :is(svg, circle, line) {
+  animation-play-state: paused;
+}
+
+@media (max-width: 640px) {
+  .auth-network__graph--desktop { display: none; }
+  .auth-network__graph--mobile { display: block; }
+}
+
+@keyframes auth-network-enter {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes auth-network-node {
+  0%, 100% { opacity: 0.42; }
+  35% { opacity: 0.5; }
+  53% { opacity: 0.9; }
+  77% { opacity: 0.5; }
+}
+
+@keyframes auth-network-signal {
+  0%, 63% { opacity: 0; stroke-dashoffset: 2; }
+  70% { opacity: 0.48; }
+  82% { opacity: 0.8; }
+  94% { opacity: 0.42; }
+  100% { opacity: 0; stroke-dashoffset: -100; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .auth-network :is(svg, circle, line) { animation: none; }
+}
+
+@media (forced-colors: active) {
+  .auth-network { display: none; }
+}

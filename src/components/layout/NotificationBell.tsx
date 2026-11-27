@@ -36,9 +36,10 @@ interface NotificationBellProps {
   user: User;
   onNavigate?: (module: string) => void;
   triggerClassName?: string;
+  meetingContent?: React.ReactNode;
 }
 
-export const NotificationBell = ({ user, onNavigate, triggerClassName }: NotificationBellProps) => {
+export const NotificationBell = ({ user, onNavigate, triggerClassName, meetingContent }: NotificationBellProps) => {
   const navigate = useNavigate();
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [isOpen, setIsOpen] = useState(false);
@@ -79,10 +80,11 @@ export const NotificationBell = ({ user, onNavigate, triggerClassName }: Notific
     try {
       const newNotifications: Notification[] = [];
       
+      const loadOperations = !['InventoryOfficer', 'HeadOfBusiness'].includes(user.role);
       const [assignments, installations, announcements, persistentSummary] = await Promise.all([
-        user.role==='InventoryOfficer' ? Promise.resolve([]) : apiClient.get('/client_assignments'),
-        user.role==='InventoryOfficer' ? Promise.resolve([]) : apiClient.get('/installations'),
-        apiClient.get(`/announcements?scope=active&user_id=${encodeURIComponent(user.id)}`),
+        loadOperations ? apiClient.get('/client_assignments') : Promise.resolve([]),
+        loadOperations ? apiClient.get('/installations') : Promise.resolve([]),
+        user.role === 'HeadOfBusiness' ? Promise.resolve([]) : apiClient.get(`/announcements?scope=active&user_id=${encodeURIComponent(user.id)}`),
         apiClient.get('/notifications/summary').catch(() => ({ notifications: [], unread_count: 0 })),
       ]);
       const persistentNotifications = persistentSummary.notifications || [];
@@ -403,6 +405,9 @@ export const NotificationBell = ({ user, onNavigate, triggerClassName }: Notific
           </div>
         )}
 
+        {meetingContent && <div className="p-2" onClickCapture={event => {
+          if (event.target instanceof Element && event.target.closest("button")) setIsOpen(false);
+        }}>{meetingContent}</div>}
         <ScrollArea className="max-h-[50vh] sm:max-h-80">
           {notifications.length === 0 ? (
             <div className="p-6 sm:p-8 text-center">

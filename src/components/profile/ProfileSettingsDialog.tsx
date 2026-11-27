@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from "react";
+import { usePushNotifications } from "@/hooks/usePushNotifications";
+import { notificationSound } from "@/utils/notificationSound";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -78,6 +80,21 @@ export const ProfileSettingsDialog = ({ isOpen, onClose, user, onProfileUpdate, 
   const [isSavingPreferences, setIsSavingPreferences] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
+  const push = usePushNotifications();
+  const [isEnablingPush, setIsEnablingPush] = useState(false);
+  const [soundEnabled, setSoundEnabled] = useState(() => notificationSound.getEnabled());
+  const enableDeviceNotifications = async () => {
+    setIsEnablingPush(true);
+    try {
+      const permission = await push.requestPermission();
+      if (permission !== "granted") throw new Error("Allow notifications in your browser or device settings and try again.");
+      toast({ title: "Device notifications enabled" });
+    } catch (error) {
+      toast({ title: "Device notifications unavailable", description: error instanceof Error ? error.message : "Try again shortly.", variant: "destructive" });
+    } finally {
+      setIsEnablingPush(false);
+    }
+  };
 
   useEffect(() => {
     if (isOpen) setActiveTab(view === "profile" ? "profile" : "preferences");
@@ -583,6 +600,14 @@ export const ProfileSettingsDialog = ({ isOpen, onClose, user, onProfileUpdate, 
               <Card className="border-primary/10 shadow-sm">
                 <CardHeader><CardTitle className="flex items-center gap-2 text-lg"><Bell className="h-5 w-5 text-primary" /> Notifications &amp; preferences</CardTitle><CardDescription>Manage the existing messaging, calling, history, quiet-hours, and timezone preferences from one place.</CardDescription></CardHeader>
                 <CardContent className="space-y-4">
+                  <div className="flex flex-wrap items-center gap-2">
+                    {push.isSupported && <Button type="button" variant="outline" onClick={() => void enableDeviceNotifications()} disabled={isEnablingPush}>Enable device notifications</Button>}
+                    <Button type="button" variant="outline" onClick={() => notificationSound.playNotificationSound()} disabled={!soundEnabled}>Test alert sound</Button>
+                  </div>
+                  <div className="flex items-center justify-between gap-4 rounded-lg border p-4">
+                    <Label htmlFor="local-alert-sounds">Play alert sounds on this device</Label>
+                    <Switch id="local-alert-sounds" checked={soundEnabled} onCheckedChange={(enabled) => { notificationSound.setEnabled(enabled); setSoundEnabled(enabled); }} />
+                  </div>
                   {([
                     ["notifications_enabled", "Browser and push notifications", "Allow eligible communication notifications."],
                     ["message_notifications", "Message notifications", "Notify me about new direct and group messages."],

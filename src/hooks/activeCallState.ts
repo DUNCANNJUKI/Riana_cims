@@ -27,8 +27,8 @@ export const activeCallAfterUpdate = <T extends ActiveCallStateItem>(
   if (resolvedOnAnotherDevice || terminalStatuses.has(String(update.call_status)) || terminalStatuses.has(String(ownStatus))) {
     return clearMatchingActiveCall(current, update.id);
   }
-  // Other calls can still publish invitation and lifecycle events while this
-  // device is in a meeting. Those events must not replace its active media.
-  if (current && current.id !== update.id) return current;
+  // Broadcast snapshots are account-scoped. Only an explicit answer, start,
+  // or device-scoped restore can activate media on this device.
+  if (current?.id !== update.id) return current;
   return isPendingCallInvitation(update, currentUserId) ? current : update;
 };

@@ -1,7 +1,28 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const crypto = require('node:crypto');
-const { createIceServers, isValidCallSignalPayload, canManageCallRecording } = require('./communicationCalls');
+const { createIceServers, isValidCallSignalPayload, canManageCallRecording, endsMeetingOnDeparture, getMeetingRejoinGraceSeconds, canRejoinMeeting } = require('./communicationCalls');
+
+test('only a recent departure from an ongoing group meeting is eligible to rejoin', () => {
+  const ongoing = { status: 'accepted', participantCount: 3, recentDeparture: 1 };
+  assert.equal(getMeetingRejoinGraceSeconds(undefined), 300);
+  assert.equal(getMeetingRejoinGraceSeconds('0'), 0);
+  assert.equal(getMeetingRejoinGraceSeconds('450'), 450);
+  assert.equal(getMeetingRejoinGraceSeconds('-1'), 300);
+  assert.equal(getMeetingRejoinGraceSeconds('100000'), 300);
+  assert.equal(canRejoinMeeting(ongoing), true);
+  assert.equal(canRejoinMeeting({ ...ongoing, participantCount: 2 }), false);
+  assert.equal(canRejoinMeeting({ ...ongoing, status: 'ended' }), false);
+  assert.equal(canRejoinMeeting({ ...ongoing, recentDeparture: '0' }), false);
+});
+
+test('group departure preserves joined peers, while direct, empty and explicitly ended calls close', () => {
+  assert.equal(endsMeetingOnDeparture({ participantCount: 3, remainingJoined: 2, endForEveryone: false }), false);
+  assert.equal(endsMeetingOnDeparture({ participantCount: 3, remainingJoined: 1, endForEveryone: false }), false);
+  assert.equal(endsMeetingOnDeparture({ participantCount: 3, remainingJoined: 0, endForEveryone: false }), true);
+  assert.equal(endsMeetingOnDeparture({ participantCount: 2, remainingJoined: 1, endForEveryone: false }), true);
+  assert.equal(endsMeetingOnDeparture({ participantCount: 3, remainingJoined: 2, endForEveryone: true }), true);
+});
 
 test('ICE configuration returns STUN only when TURN credentials are incomplete', () => {
   assert.deepEqual(createIceServers('user-1', { WEBRTC_TURN_URL: 'turn:relay.example' }), [{ urls: 'stun:stun.l.google.com:19302' }]);

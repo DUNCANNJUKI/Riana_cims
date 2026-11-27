@@ -8,9 +8,10 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { Plus, Search, Edit, Trash2, Building2, Phone, Calendar, Loader2, Eye } from "lucide-react";
+import { Plus, Search, Edit, Trash2, Building2, Phone, Calendar, Loader2, Eye, MoreHorizontal } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useDatabase } from "@/hooks/useDatabase";
 import { User, Client } from "@/types";
@@ -579,29 +580,14 @@ export const ClientsModule = ({ user }: ClientsModuleProps) => {
                     </div>
                   </TableCell>
                   <TableCell mobileLabel="Actions">
-                    <div className="flex flex-wrap items-center gap-1.5">
-                      <Button variant="outline" size="sm" onClick={() => handleViewDetails(client)}>
-                        <Eye className="h-3 w-3 mr-1" />
-                        View
-                      </Button>
-                      {canManageClients && (
-                        <>
-                          <Button variant="outline" size="sm" onClick={() => handleEditClient(client)}>
-                            <Edit className="h-3 w-3 mr-1" />
-                            Edit
-                          </Button>
-                          <Button 
-                            variant="outline" 
-                            size="sm" 
-                            className="text-destructive hover:text-destructive"
-                            onClick={() => confirmDeleteClient(client.id)}
-                          >
-                            <Trash2 className="h-3 w-3 mr-1" />
-                            Delete
-                          </Button>
-                        </>
-                      )}
-                    </div>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild><Button variant="outline" size="sm" aria-label={`Actions for ${client.client_name}`}><MoreHorizontal /></Button></DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem onSelect={() => handleViewDetails(client)}><Eye className="mr-2 size-4" />View details</DropdownMenuItem>
+                        {canManageClients && <DropdownMenuItem onSelect={() => handleEditClient(client)}><Edit className="mr-2 size-4" />Edit client</DropdownMenuItem>}
+                        {canManageClients && user.role !== 'HeadOfBusiness' && <DropdownMenuItem className="text-destructive" onSelect={() => confirmDeleteClient(client.id)}><Trash2 className="mr-2 size-4" />Delete client</DropdownMenuItem>}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                   </TableCell>
                 </TableRow>
               ))}

@@ -56,6 +56,7 @@ export const AssignmentModule = ({ user }: AssignmentModuleProps) => {
   const [clients, setClients] = useState<Client[]>([]);
   const [technicians, setTechnicians] = useState<User[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
+  const [statusFilter, setStatusFilter] = useState("");
   const [isAssignDialogOpen, setIsAssignDialogOpen] = useState(false);
   const [newAssignment, setNewAssignment] = useState<Partial<ClientAssignment>>({});
   const [selectedClient, setSelectedClient] = useState<Client | null>(null);
@@ -106,6 +107,7 @@ export const AssignmentModule = ({ user }: AssignmentModuleProps) => {
   }
 
   const filteredAssignments = assignments.filter(assignment => {
+    if (statusFilter && assignment.status !== statusFilter) return false;
     if (!searchTerm) return true;
     const client = clients.find(c => c.id === assignment.client_id);
     const hardwareTech = technicians.find(t => t.id === assignment.hardware_technician_id);
@@ -539,16 +541,31 @@ export const AssignmentModule = ({ user }: AssignmentModuleProps) => {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="flex items-center gap-4 mb-4">
-            <div className="relative flex-1">
+          <div className="mb-4 space-y-2">
+            <div className="relative">
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
               <Input
                 placeholder="Search by client, branch, or technician name..."
+                aria-label="Search assignments"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 className="pl-10"
               />
             </div>
+            <details className="rounded-lg border p-2 text-sm">
+              <summary className="cursor-pointer font-medium">Filters{statusFilter && ` · ${statusFilter.replace(/_/g, " ")}`}</summary>
+              <div className="mt-2 flex flex-wrap items-end gap-2">
+                <label className="grid gap-1">Status
+                  <select className="rounded-md border bg-background px-2 py-1.5" value={statusFilter} onChange={event => setStatusFilter(event.target.value)}>
+                    <option value="">All statuses</option>
+                    {[...new Set(assignments.map(assignment => assignment.status).filter(Boolean))].sort().map(status => (
+                      <option key={status} value={status}>{status.replace(/_/g, " ")}</option>
+                    ))}
+                  </select>
+                </label>
+                <Button size="sm" variant="ghost" type="button" onClick={() => { setStatusFilter(""); setSearchTerm(""); }}>Reset filters</Button>
+              </div>
+            </details>
           </div>
 
           <Table>

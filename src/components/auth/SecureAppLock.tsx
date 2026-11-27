@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { APP_LOCK_STATE_KEY, REQUEST_APP_LOCK_EVENT } from "@/utils/appLock";
+import { AuthNetworkBackground } from "./AuthNetworkBackground";
 
 export function SecureAppLock({ active, onLogout }: { active: boolean; onLogout: () => void }) {
   const [locked, setLocked] = useState(false);
@@ -90,8 +91,9 @@ export function SecureAppLock({ active, onLogout }: { active: boolean; onLogout:
   if (!active) return null;
   if (!locked) return error ? <div className="fixed bottom-4 right-4 z-[100] max-w-sm rounded-lg border border-destructive/20 bg-background p-4 text-sm text-destructive shadow-lg" role="alert">{error}</div> : null;
   return (
-    <div className="fixed inset-0 z-[100] grid place-items-center overflow-y-auto bg-background p-4" role="dialog" aria-modal="true" aria-labelledby="app-lock-title">
-      <div className="w-full max-w-md space-y-5 rounded-2xl border bg-card p-6 shadow-2xl">
+    <div className="auth-network-surface fixed inset-0 z-[100] grid place-items-center overflow-y-auto bg-background p-4" role="dialog" aria-modal="true" aria-labelledby="app-lock-title">
+      <AuthNetworkBackground />
+      <div className="w-full max-w-[360px] space-y-4 rounded-lg border bg-card p-5 shadow-sm">
         <div className="flex items-start gap-3"><span className="rounded-full bg-primary/10 p-3"><LockKeyhole className="h-6 w-6 text-primary" /></span><div><h1 id="app-lock-title" className="text-xl font-semibold">CIMS is locked</h1><p className="text-sm text-muted-foreground">Protected API access and the workspace remain restricted until you verify your identity.</p></div></div>
         <div className="space-y-2"><Label htmlFor="app-unlock-password">Account password</Label><Input id="app-unlock-password" type="password" autoComplete="current-password" value={password} onChange={(event) => setPassword(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") void unlockWithPassword(); }} autoFocus /></div>
         {error && <p role="alert" className="rounded-lg border border-destructive/20 bg-destructive/10 p-3 text-sm text-destructive">{error}</p>}

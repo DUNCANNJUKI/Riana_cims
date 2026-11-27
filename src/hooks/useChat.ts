@@ -25,9 +25,12 @@ export interface ChatMessage {
   call_type?: 'audio' | 'video' | null;
   call_status?: 'ringing' | 'accepted' | 'declined' | 'missed' | 'ended' | null;
   call_started_at?: string | null;
+  call_organizer_id?: string | null;
   call_ended_at?: string | null;
   call_participant_ids?: string[];
   call_participant_count?: number;
+  can_rejoin?: boolean;
+  rejoin_until?: number | null;
   call_participants?: Array<{ user_id: string; status: string; hand_raised?: boolean; hand_raised_at?: string | null; audio_enabled?: boolean | null; video_enabled?: boolean | null; screen_sharing?: boolean; first_name?: string; last_name?: string; email?: string }>;
   spotlight_user_id?: string | null;
   recording_active?: boolean;
@@ -131,8 +134,11 @@ export const getCallRecordingMediaUrl = (recordingId?: string | null, download =
   return `${API_URL}/chat/recordings/${encodeURIComponent(recordingId)}/media${download ? '?download=1' : ''}`;
 };
 
-export const useChat = (currentUser: User | null) => {
+export const useChat = (currentUser: User | null, isChatOpen: boolean) => {
   const currentUserId = currentUser?.id;
+  const isChatOpenRef = useRef(isChatOpen);
+  isChatOpenRef.current = isChatOpen;
+  const [silencedCallId, setSilencedCallId] = useState<string | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [users, setUsers] = useState<ChatUser[]>([]);
   const [typingUsers, setTypingUsers] = useState<Record<string, boolean>>({});
@@ -182,7 +188,7 @@ export const useChat = (currentUser: User | null) => {
     try {
       const data = await apiClient.get(`/chat/messages/${userId}`);
       setMessages(data);
-      if (data.some((m: ChatMessage) => m.receiver_id === currentUserId && !m.is_read)) {
+      if (isChatOpenRef.current && !document.hidden && data.some((m: ChatMessage) => m.receiver_id === currentUserId && !m.is_read)) {
         await apiClient.patch(`/chat/read-all/${userId}`, {});
         setUnreadCounts(prev => ({ ...prev, [userId]: 0 }));
       }
@@ -190,6 +196,16 @@ export const useChat = (currentUser: User | null) => {
       console.error('Error loading messages:', error);
     }
   }, [currentUserId]);
+
+  useEffect(() => {
+    if (!isChatOpen) return;
+    const refreshVisibleConversation = () => {
+      if (!document.hidden && activeChatUserIdRef.current) void loadMessages(activeChatUserIdRef.current);
+    };
+    refreshVisibleConversation();
+    document.addEventListener('visibilitychange', refreshVisibleConversation);
+    return () => document.removeEventListener('visibilitychange', refreshVisibleConversation);
+  }, [isChatOpen, loadMessages]);
 
   const appendOrReplaceMessage = useCallback((message: ChatMessage) => {
     setMessages(prev => {
@@ -361,19 +377,29 @@ export const useChat = (currentUser: User | null) => {
     }
   }, []);
 
+  const setActiveChatUserId = useCallback((id: string | null) => {
+    activeChatUserIdRef.current = id;
+    setActiveChatUserIdState(id);
+    if (id) void loadMessages(id);
+  }, [loadMessages]);
+
   const loadActiveCall = useCallback(async () => {
     if (!currentUserId) return;
     try {
       const result = await apiClient.get(`/chat/calls/active?device_id=${encodeURIComponent(getCommunicationDeviceId())}`) as { activeCall?: ChatMessage | null };
       const call = result.activeCall;
-      if (!call) {
+      if (!call || !['ringing', 'accepted'].includes(String(call.call_status))) {
         setActiveCall(null);
         setIncomingCall(null);
         return;
       }
       appendOrReplaceMessage(call);
       const ownStatus = call.call_participants?.find(participant => String(participant.user_id) === String(currentUserId))?.status;
-      if (String(call.sender_id) === String(currentUserId) || ownStatus === 'accepted') {
+      if (!call.can_rejoin && (String(call.sender_id) === String(currentUserId) || ownStatus === 'accepted')) {
+        if (!activeChatUserIdRef.current) {
+          const peerId = String(call.sender_id) !== String(currentUserId) ? call.sender_id : call.receiver_id;
+          if (peerId && String(peerId) !== String(currentUserId)) setActiveChatUserId(peerId);
+        }
         setIncomingCall(null);
         setActiveCall(call);
       } else {
@@ -383,7 +409,47 @@ export const useChat = (currentUser: User | null) => {
     } catch (error) {
       console.warn('[Chat] Active call state could not be restored.', error);
     }
-  }, [appendOrReplaceMessage, currentUserId]);
+  }, [appendOrReplaceMessage, currentUserId, setActiveChatUserId]);
+
+  const rejoinUntil = incomingCall?.can_rejoin ? incomingCall.rejoin_until : null;
+  const silenceIncomingCall = useCallback(() => setSilencedCallId(incomingCall?.id || null), [incomingCall?.id]);
+  const ringingCallId = !activeCall && incomingCall?.call_status === 'ringing' && incomingCall.id !== silencedCallId
+    ? incomingCall.id : null;
+  useEffect(() => {
+    if (!ringingCallId) return;
+    playCallRingSound();
+    const timer = window.setInterval(playCallRingSound, 2200);
+    return () => window.clearInterval(timer);
+  }, [ringingCallId]);
+
+  const activeMeetingId = activeCall?.id;
+  useEffect(() => {
+    if (!activeMeetingId) return;
+    let sending = false;
+    const heartbeat = async () => {
+      if (sending || !navigator.onLine) return;
+      sending = true;
+      try {
+        await apiClient.put(`/chat/calls/${activeMeetingId}/presence`, { device_id: getCommunicationDeviceId() });
+      } catch { /* Keep media alive during temporary signaling failures. */ }
+      finally { sending = false; }
+    };
+    void heartbeat();
+    const timer = window.setInterval(heartbeat, 30000);
+    window.addEventListener('online', heartbeat);
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener('online', heartbeat);
+    };
+  }, [activeMeetingId]);
+
+  useEffect(() => {
+    if (!rejoinUntil) return;
+    const timer = window.setTimeout(() => {
+      setIncomingCall(current => current?.rejoin_until === rejoinUntil ? null : current);
+    }, Math.max(0, rejoinUntil - Date.now()));
+    return () => window.clearTimeout(timer);
+  }, [rejoinUntil]);
 
   const sendMessage = async (
     receiverId: string,
@@ -441,14 +507,19 @@ export const useChat = (currentUser: User | null) => {
     }
   }, []);
 
-  const startCall = useCallback(async (receiverIds: string | string[], callType: 'audio' | 'video') => {
+  const startCall = useCallback(async (receiverIds: string | string[], callType: 'audio' | 'video', scheduledMeetingId?: string) => {
     const targetIds = Array.isArray(receiverIds) ? receiverIds : [receiverIds];
-    const call = await apiClient.post('/chat/calls', { receiver_id: targetIds[0], receiver_ids: targetIds, call_type: callType, device_id: getCommunicationDeviceId() }) as ChatMessage;
+    const call = await apiClient.post('/chat/calls', { receiver_id: targetIds[0], receiver_ids: targetIds, call_type: callType, device_id: getCommunicationDeviceId(), scheduled_meeting_id: scheduledMeetingId }) as ChatMessage;
     callsResolvedOnAnotherDeviceRef.current.delete(call.id);
     setActiveCall(call);
     appendOrReplaceMessage(call);
     return call;
   }, [appendOrReplaceMessage]);
+
+  const transferOrganizer = async (callId: string, userId: string) => {
+    const result = await apiClient.patch(`/chat/calls/${callId}/organizer`, { user_id: userId });
+    setActiveCall(current => current?.id === callId ? { ...current, call_organizer_id: result.organizer_id } : current);
+  };
 
   const inviteCallParticipants = useCallback(async (callId: string, receiverIds: string[]) => {
     const result = await apiClient.post(`/chat/calls/${encodeURIComponent(callId)}/participants`, { receiver_ids: receiverIds }) as { call: ChatMessage; invited_user_ids: string[] };
@@ -466,8 +537,13 @@ export const useChat = (currentUser: User | null) => {
     return Array.isArray(result.iceServers) ? result.iceServers : [{ urls: 'stun:stun.l.google.com:19302' }];
   }, []);
 
-  const updateCallStatus = useCallback(async (callId: string, status: 'accepted' | 'declined' | 'ended' | 'missed') => {
-    const call = await apiClient.patch(`/chat/calls/${callId}`, { status, device_id: getCommunicationDeviceId() }) as ChatMessage;
+  const updateCallStatus = useCallback(async (callId: string, status: 'accepted' | 'declined' | 'ended' | 'missed', endForEveryone = false, rejoin = false) => {
+    const call = await apiClient.patch(`/chat/calls/${callId}`, {
+      status,
+      device_id: getCommunicationDeviceId(),
+      ...(endForEveryone ? { end_for_everyone: true } : {}),
+      ...(rejoin ? { rejoin: true } : {}),
+    }) as ChatMessage;
     if (status === 'accepted') callsResolvedOnAnotherDeviceRef.current.delete(callId);
     setActiveCall(current => ['declined', 'ended', 'missed'].includes(status) ? clearMatchingActiveCall(current, callId) : call);
     setIncomingCall(current => current?.id === callId ? null : current);
@@ -516,12 +592,15 @@ export const useChat = (currentUser: User | null) => {
         if (data.type === 'new_message') {
           const msg = data.message as ChatMessage;
           const otherUserId = msg.sender_id === currentUserId ? msg.receiver_id : msg.sender_id;
-          if (activeChatUserIdRef.current === otherUserId) {
-            appendOrReplaceMessage(msg);
-            if (msg.receiver_id === currentUserId) void apiClient.patch(`/chat/messages/${msg.id}/read`, {});
-          } else if (msg.receiver_id === currentUserId) {
-            setUnreadCounts(prev => ({ ...prev, [msg.sender_id]: (prev[msg.sender_id] || 0) + 1 }));
-            playMessageSound();
+          const isSelected = activeChatUserIdRef.current === otherUserId;
+          if (isSelected) appendOrReplaceMessage(msg);
+          if (msg.receiver_id === currentUserId) {
+            if (isSelected && isChatOpenRef.current && !document.hidden) {
+              void apiClient.patch(`/chat/messages/${msg.id}/read`, {});
+            } else {
+              setUnreadCounts(prev => ({ ...prev, [msg.sender_id]: (prev[msg.sender_id] || 0) + 1 }));
+              playMessageSound();
+            }
           }
         } else if (data.type === 'message_updated') {
           appendOrReplaceMessage(data.message as ChatMessage);
@@ -531,16 +610,23 @@ export const useChat = (currentUser: User | null) => {
           const call = data.call as ChatMessage;
           setIncomingCall(call);
           appendOrReplaceMessage(call);
-          playCallRingSound();
         } else if (data.type === 'call_invitation') {
           const call = data.call as ChatMessage;
           setIncomingCall(call);
           appendOrReplaceMessage(call);
-          playCallRingSound();
+          if (call.call_status === 'accepted') playCallRingSound();
         } else if (data.type === 'call_updated') {
           const call = data.call as ChatMessage;
           appendOrReplaceMessage(call);
-          if (!isPendingCallInvitation(call, currentUserId)) setIncomingCall(current => current?.id === call.id ? null : current);
+          setIncomingCall(current => {
+            if (current?.id !== call.id) return current;
+            if (isPendingCallInvitation(call, currentUserId)) return call;
+            if (current.can_rejoin && call.call_status === 'accepted'
+              && call.call_participants?.some(participant => participant.user_id === currentUserId && participant.status === 'ended')) {
+              return { ...call, can_rejoin: true, rejoin_until: current.rejoin_until };
+            }
+            return null;
+          });
           setActiveCall(current => activeCallAfterUpdate(current, call, currentUserId, callsResolvedOnAnotherDeviceRef.current.has(call.id)));
           if (call.call_status === 'missed' && call.receiver_id === currentUserId) mergeMissedCalls([call]);
         } else if (data.type === 'call_recording_state') {
@@ -664,11 +750,7 @@ export const useChat = (currentUser: User | null) => {
     isLoadingUsers,
     usersError,
     activeChatUserId,
-    setActiveChatUserId: (id: string | null) => {
-      activeChatUserIdRef.current = id;
-      setActiveChatUserIdState(id);
-      if (id) void loadMessages(id);
-    },
+    setActiveChatUserId,
     sendMessage,
     editMessage,
     setReaction,
@@ -690,6 +772,7 @@ export const useChat = (currentUser: User | null) => {
     failCallRecording,
     deleteCallRecording,
     startCall,
+    transferOrganizer,
     updateCallStatus,
     inviteCallParticipants,
     cancelCallInvitation,
@@ -697,6 +780,7 @@ export const useChat = (currentUser: User | null) => {
     sendCallSignal,
     clearCallSignals,
     clearCallState,
+    silenceIncomingCall,
     missedCalls,
     dismissingMissedCallIds,
     loadUsers,
