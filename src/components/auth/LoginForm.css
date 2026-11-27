@@ -377,7 +377,7 @@
   margin-top: 2px;
   color: #087f92;
   background: transparent;
-  border: 1px solid transparent;
+  border: 0;
   border-radius: 13px;
   cursor: pointer;
   box-shadow: none;
